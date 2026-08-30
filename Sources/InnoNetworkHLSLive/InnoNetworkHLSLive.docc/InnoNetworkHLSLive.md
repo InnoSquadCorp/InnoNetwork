@@ -83,7 +83,11 @@ let recorder = HLSLiveDVRRecorder(
             maximumSegmentCount: 300,
             maximumTotalMediaBytes: 2 * 1_024 * 1_024 * 1_024
         ),
-        startPosition: .nextCompletedSegment
+        startPosition: .nextCompletedSegment,
+        renditions: HLSLiveDVRRenditionPack(
+            audio: .preferredLanguages(["ko", "en"]),
+            subtitles: .preferredLanguages(["ko", "en"])
+        )
     )
 )
 
@@ -98,28 +102,47 @@ for try await event in recorder.events(
             duration: progress.recordedDuration
         )
     case .completed(let receipt):
-        play(receipt.playlistURL)
+        play(receipt.entryPlaylistURL)
     }
 }
 ```
 
 Only complete segments are retained. Duration, segment count, per-resource
-bytes, total media bytes, request timeout, destination free capacity, and
-event buffering are bounded. ``HLSLiveDVRLimitPack/diskCapacityPolicy`` uses
-the same required, best-effort, or disabled capacity contract as VOD storage.
-When the duration, count, or total-byte boundary is reached, the recorder
-finishes at the last complete segment. Exact `206` and `Content-Range`
-validation localizes byte-range segments as complete files.
+bytes, total media bytes, external renditions per kind, request timeout,
+destination free capacity, and event buffering are bounded.
+``HLSLiveDVRLimitPack/diskCapacityPolicy`` uses the same required,
+best-effort, or disabled capacity contract as VOD storage. When the duration,
+count, or total-byte boundary is reached, the recorder finishes at the last
+complete segment. Exact `206` and `Content-Range` validation localizes
+byte-range segments as complete files.
 
 MPEG transport streams and fragmented MP4 with one stable initialization map
 are written as a URL-free local VOD playlist. Identity-format AES-128 uses
 explicit or media-sequence IVs, caches each 16-byte key only for the recording,
 supports key rotation and encrypted fMP4 maps, and persists plaintext media
-without `EXT-X-KEY` or source key URLs. Source URLs, signed query values, key
-bytes, Date Range metadata, and request errors are not persisted. Gaps,
-FairPlay or sample encryption, external rendition playlists, external timeline
-resources, and missing or changing initialization maps fail with
-``HLSLiveDVRError`` rather than producing an incomplete presentation.
+without `EXT-X-KEY` or source key URLs.
+
+The default rendition pack retains one external audio rendition. Applications
+can select external audio, alternate video, and subtitle playlists by default,
+preferred language, exact name, or all referenced renditions. A URL-free local
+master becomes ``HLSLiveDVRReceipt/entryPlaylistURL`` and
+``HLSLiveDVRReceipt/tracks`` describes each retained local playlist. Content
+Steering may move a rendition only when its stable rendition ID remains the
+same; every selected rendition must cover the retained primary timeline or the
+whole recording fails atomically.
+
+Program Date Time and self-contained, standard Date Range attributes are
+preserved for the recorded interval. Source URLs, signed query values, key
+bytes, redacted Date Range extension values, and request errors are never
+persisted. Gaps, FairPlay or sample encryption, externally resolved timeline
+resources, unrepresentable timeline metadata, incomplete external renditions,
+and missing or changing initialization maps fail with ``HLSLiveDVRError``
+rather than producing an incomplete presentation.
+
+The package targets application-owned serving or resource loading. An
+arbitrary `file://` HLS directory is not advertised as directly AVFoundation
+playable; use `InnoNetworkHLSAVFoundation` for system-managed playback and
+persistence.
 
 The destination is reserved in-process and across cooperating processes.
 Staging is a hidden sibling directory, and the complete package becomes
@@ -147,9 +170,13 @@ ephemeral staging data; recordings are not resumed after interruption.
 - ``HLSLiveDVRRecorder``
 - ``HLSLiveDVRConfiguration``
 - ``HLSLiveDVRLimitPack``
+- ``HLSLiveDVRRenditionPack``
+- ``HLSLiveDVRRenditionSelectionPolicy``
 - ``HLSLiveDVRStartPosition``
 - ``HLSLiveDVREvent``
 - ``HLSLiveDVRProgress``
 - ``HLSLiveDVRReceipt``
+- ``HLSLiveDVRTrack``
+- ``HLSLiveDVRTrackKind``
 - ``HLSLiveDVRError``
 - ``HLSLiveDVRUnsupportedFeature``

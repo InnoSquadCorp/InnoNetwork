@@ -31,6 +31,7 @@ public struct HLSLiveSegment: Equatable, Sendable {
     /// Whether the segment is intentionally unavailable.
     public let isGap: Bool
 
+    let programDateTime: Date?
     let encryption: HLSLiveAES128Encryption?
 
     init(record: HLSLiveSegmentRecord) {
@@ -40,6 +41,7 @@ public struct HLSLiveSegment: Equatable, Sendable {
         self.byteRange = record.byteRange
         self.beginsDiscontinuity = record.beginsDiscontinuity
         self.isGap = record.isGap
+        self.programDateTime = record.programDateTime
         self.encryption = record.encryption.map(
             HLSLiveAES128Encryption.init(record:)
         )
@@ -52,6 +54,7 @@ public struct HLSLiveSegment: Equatable, Sendable {
         byteRange: HLSByteRange?,
         beginsDiscontinuity: Bool,
         isGap: Bool,
+        programDateTime: Date? = nil,
         encryption: HLSLiveAES128Encryption? = nil
     ) {
         self.sequenceNumber = sequenceNumber
@@ -60,6 +63,7 @@ public struct HLSLiveSegment: Equatable, Sendable {
         self.byteRange = byteRange
         self.beginsDiscontinuity = beginsDiscontinuity
         self.isGap = isGap
+        self.programDateTime = programDateTime
         self.encryption = encryption
     }
 }
@@ -165,6 +169,7 @@ public struct HLSLivePlaylistSnapshot: Equatable, Sendable {
 
     let initializationSegments: [HLSLiveInitializationSegment]
     let encryptionMethod: String?
+    let multivariantVariables: [String: String]
 
     init(
         playlist: HLSPlaylist,
@@ -178,7 +183,8 @@ public struct HLSLivePlaylistSnapshot: Equatable, Sendable {
         isDeltaUpdate: Bool,
         isEnded: Bool,
         initializationSegments: [HLSLiveInitializationSegment] = [],
-        encryptionMethod: String? = nil
+        encryptionMethod: String? = nil,
+        multivariantVariables: [String: String] = [:]
     ) {
         self.playlist = playlist
         self.segments = segments
@@ -192,6 +198,7 @@ public struct HLSLivePlaylistSnapshot: Equatable, Sendable {
         self.isEnded = isEnded
         self.initializationSegments = initializationSegments
         self.encryptionMethod = encryptionMethod
+        self.multivariantVariables = multivariantVariables
     }
 }
 

@@ -176,7 +176,8 @@ public struct HLSDateRange: Equatable, Sendable {
     /// Typed preload metadata for `com.apple.hls.preload`.
     public let preload: HLSDateRangePreload?
 
-    /// Extension attribute names, without their potentially sensitive values.
+    /// Extension and SCTE-35 attribute names, without their potentially
+    /// sensitive values.
     public let extensionAttributeNames: [String]
 
     /// Creates consolidated Date Range metadata.

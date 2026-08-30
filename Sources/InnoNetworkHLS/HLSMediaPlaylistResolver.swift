@@ -23,16 +23,20 @@ struct HLSMediaPlaylistResolver: Sendable {
     private let selectionPolicy: HLSVariantSelectionPolicy
     private let contentSteeringResolver: HLSContentSteeringResolver
     private let contentSteering: HLSContentSteeringSettings
+    private let allowsSeparateAudioRenditions: Bool
 
     init(
         client: HLSHTTPClient,
         selectionPolicy: HLSVariantSelectionPolicy,
-        contentSteering: HLSContentSteeringSettings
+        contentSteering: HLSContentSteeringSettings,
+        allowsSeparateAudioRenditions: Bool = false
     ) {
         self.playlistResolver = PlaylistResolver(client: client)
         self.variantSelector = VariantSelector()
         self.selectionPolicy = selectionPolicy
         self.contentSteering = contentSteering
+        self.allowsSeparateAudioRenditions =
+            allowsSeparateAudioRenditions
         self.contentSteeringResolver = HLSContentSteeringResolver(
             client: client,
             settings: contentSteering
@@ -148,12 +152,15 @@ struct HLSMediaPlaylistResolver: Sendable {
                         : nil
                 }
             )
-            let supportedVariants = pathway.variants.filter { variant in
-                guard let audioGroupID = variant.audioGroupID else {
-                    return true
+            let supportedVariants =
+                allowsSeparateAudioRenditions
+                ? pathway.variants
+                : pathway.variants.filter { variant in
+                    guard let audioGroupID = variant.audioGroupID else {
+                        return true
+                    }
+                    return !separateAudioGroupIDs.contains(audioGroupID)
                 }
-                return !separateAudioGroupIDs.contains(audioGroupID)
-            }
             guard !supportedVariants.isEmpty else {
                 if let audioGroupID = pathway.variants
                     .compactMap(\.audioGroupID)

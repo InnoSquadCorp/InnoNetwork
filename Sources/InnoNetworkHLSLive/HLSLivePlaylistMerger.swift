@@ -8,7 +8,8 @@ enum HLSLivePlaylistMerger {
         generation: Int,
         selectedVariant: HLSVariant? = nil,
         availableRenditions: [HLSRendition] = [],
-        pathwayID: String? = nil
+        pathwayID: String? = nil,
+        multivariantVariables: [String: String] = [:]
     ) throws -> HLSLivePlaylistSnapshot {
         guard document.playlist.kind == .media else {
             throw HLSLiveError.mediaPlaylistRequired
@@ -55,7 +56,8 @@ enum HLSLivePlaylistMerger {
                 document.initializationSegments.map(
                     HLSLiveInitializationSegment.init(record:)
                 ),
-            encryptionMethod: document.encryptionMethod
+            encryptionMethod: document.encryptionMethod,
+            multivariantVariables: multivariantVariables
         )
     }
 
@@ -106,7 +108,39 @@ enum HLSLivePlaylistMerger {
         else {
             throw HLSLiveError.deltaBaseUnavailable
         }
-        return prefix + listed
+        return inferProgramDates(in: prefix + listed)
+    }
+
+    private static func inferProgramDates(
+        in segments: [HLSLiveSegment]
+    ) -> [HLSLiveSegment] {
+        var nextDate: Date?
+        return segments.map { segment in
+            if segment.beginsDiscontinuity,
+                segment.programDateTime == nil
+            {
+                nextDate = nil
+            }
+            let resolvedDate = segment.programDateTime ?? nextDate
+            if let resolvedDate {
+                nextDate = resolvedDate.addingTimeInterval(
+                    segment.duration
+                )
+            }
+            guard resolvedDate != segment.programDateTime else {
+                return segment
+            }
+            return HLSLiveSegment(
+                sequenceNumber: segment.sequenceNumber,
+                duration: segment.duration,
+                url: segment.url,
+                byteRange: segment.byteRange,
+                beginsDiscontinuity: segment.beginsDiscontinuity,
+                isGap: segment.isGap,
+                programDateTime: resolvedDate,
+                encryption: segment.encryption
+            )
+        }
     }
 
     private static func mergeDateRanges(

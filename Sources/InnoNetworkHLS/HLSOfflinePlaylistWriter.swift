@@ -117,7 +117,7 @@ enum HLSOfflineMediaPlaylistWriter {
     }
 }
 
-enum HLSOfflineMasterPlaylistWriter {
+package enum HLSPackageMasterPlaylistWriter {
     static func make(
         plan: HLSOfflinePackagePlan
     ) throws -> String {
@@ -227,10 +227,12 @@ enum HLSOfflineMasterPlaylistWriter {
         return lines.joined(separator: "\n") + "\n"
     }
 
-    private static func variantAttributes(
+    package static func variantAttributes(
         _ variant: HLSVariant?,
         fallbackBandwidth: Int,
-        includesFrameRate: Bool
+        includesFrameRate: Bool,
+        includesCodecs: Bool = true,
+        includesContentProtectionAttributes: Bool = true
     ) throws -> [String] {
         var attributes = [
             "BANDWIDTH=\(max(1, variant?.bandwidth ?? fallbackBandwidth))"
@@ -248,13 +250,16 @@ enum HLSOfflineMasterPlaylistWriter {
         if let width = variant?.width, let height = variant?.height {
             attributes.append("RESOLUTION=\(width)x\(height)")
         }
-        if let codecs = variant?.codecs, !codecs.isEmpty {
+        if includesCodecs, let codecs = variant?.codecs, !codecs.isEmpty {
             try codecs.forEach(validateQuotedAttribute)
             attributes.append(
                 "CODECS=\"\(codecs.joined(separator: ","))\""
             )
         }
-        if let codecs = variant?.supplementalCodecs, !codecs.isEmpty {
+        if includesCodecs,
+            let codecs = variant?.supplementalCodecs,
+            !codecs.isEmpty
+        {
             try codecs.forEach(validateQuotedAttribute)
             attributes.append(
                 "SUPPLEMENTAL-CODECS=\""
@@ -267,11 +272,14 @@ enum HLSOfflineMasterPlaylistWriter {
         if let videoRange = variant?.videoRange {
             attributes.append("VIDEO-RANGE=\(videoRange)")
         }
-        if let hdcpLevel = variant?.hdcpLevel {
+        if includesContentProtectionAttributes,
+            let hdcpLevel = variant?.hdcpLevel
+        {
             attributes.append("HDCP-LEVEL=\(hdcpLevel.rawValue)")
         }
-        if let configurations =
-            variant?.allowedContentProtectionConfigurations,
+        if includesContentProtectionAttributes,
+            let configurations =
+                variant?.allowedContentProtectionConfigurations,
             !configurations.isEmpty
         {
             let value =
@@ -371,7 +379,7 @@ enum HLSOfflineMasterPlaylistWriter {
         return "#EXT-X-MEDIA:" + attributes.joined(separator: ",")
     }
 
-    private static func validateQuotedAttribute(
+    package static func validateQuotedAttribute(
         _ value: String
     ) throws {
         guard
@@ -383,7 +391,7 @@ enum HLSOfflineMasterPlaylistWriter {
         }
     }
 
-    private static func decimalFloatingPoint(
+    package static func decimalFloatingPoint(
         _ value: Double
     ) throws -> String {
         guard value.isFinite, value > 0 else {

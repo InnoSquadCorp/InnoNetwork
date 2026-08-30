@@ -5,6 +5,7 @@ struct HLSLiveDVRStoredSegment: Equatable, Sendable {
     let sequenceNumber: Int64
     let duration: TimeInterval
     let beginsDiscontinuity: Bool
+    let programDateTime: Date?
     let fileName: String
 }
 
@@ -12,7 +13,8 @@ enum HLSLiveDVRPlaylistWriter {
     static func make(
         container: HLSMediaContainer,
         initializationFileName: String?,
-        segments: [HLSLiveDVRStoredSegment]
+        segments: [HLSLiveDVRStoredSegment],
+        dateRanges: [HLSDateRange] = []
     ) throws -> String {
         guard
             let first = segments.first,
@@ -55,14 +57,89 @@ enum HLSLiveDVRPlaylistWriter {
             )
         }
 
-        for segment in segments {
+        for (index, segment) in segments.enumerated() {
             if segment.beginsDiscontinuity {
                 lines.append("#EXT-X-DISCONTINUITY")
+            }
+            if let programDateTime = segment.programDateTime {
+                lines.append(
+                    "#EXT-X-PROGRAM-DATE-TIME:"
+                        + dateString(programDateTime)
+                )
+            }
+            if index == 0 {
+                lines.append(
+                    contentsOf: try dateRanges.map(dateRangeLine)
+                )
             }
             lines.append("#EXTINF:\(durationString(segment.duration)),")
             lines.append(segment.fileName)
         }
         lines.append("#EXT-X-ENDLIST")
+        return lines.joined(separator: "\n") + "\n"
+    }
+
+    static func makeMaster(
+        variant: HLSVariant?,
+        renditions: [HLSLiveDVRSelectedRendition],
+        inBandClosedCaptions: [HLSRendition]
+    ) throws -> String {
+        let protocolVersion = inBandClosedCaptions.isEmpty ? 7 : 13
+        var lines = [
+            "#EXTM3U",
+            "#EXT-X-VERSION:\(protocolVersion)",
+        ]
+        for kind in [
+            HLSRenditionKind.video,
+            .audio,
+            .subtitles,
+        ] {
+            lines.append(
+                contentsOf:
+                    try renditions
+                    .filter { $0.rendition.kind == kind }
+                    .map(mediaLine)
+            )
+        }
+        lines.append(
+            contentsOf: try inBandClosedCaptions.map {
+                try mediaLine(
+                    rendition: $0,
+                    relativePlaylistPath: nil
+                )
+            }
+        )
+
+        var attributes =
+            try HLSPackageMasterPlaylistWriter
+            .variantAttributes(
+                variant,
+                fallbackBandwidth: 1,
+                includesFrameRate: true,
+                includesCodecs: false,
+                includesContentProtectionAttributes: false
+            )
+        if renditions.contains(where: { $0.rendition.kind == .video }) {
+            attributes.append("VIDEO=\"live-dvr-video\"")
+        }
+        if renditions.contains(where: { $0.rendition.kind == .audio }) {
+            attributes.append("AUDIO=\"live-dvr-audio\"")
+        }
+        if renditions.contains(where: { $0.rendition.kind == .subtitles }) {
+            attributes.append("SUBTITLES=\"live-dvr-subtitles\"")
+        }
+        if !inBandClosedCaptions.isEmpty {
+            attributes.append(
+                "CLOSED-CAPTIONS=\"live-dvr-closed-captions\""
+            )
+        } else if variant?.closedCaptions == .explicitlyNone {
+            attributes.append("CLOSED-CAPTIONS=NONE")
+        }
+        lines.append(
+            "#EXT-X-STREAM-INF:"
+                + attributes.joined(separator: ",")
+        )
+        lines.append("index.m3u8")
         return lines.joined(separator: "\n") + "\n"
     }
 
@@ -98,5 +175,167 @@ enum HLSLiveDVRPlaylistWriter {
             value.append("0")
         }
         return value
+    }
+
+    private static func mediaLine(
+        _ selection: HLSLiveDVRSelectedRendition
+    ) throws -> String {
+        try mediaLine(
+            rendition: selection.rendition,
+            relativePlaylistPath:
+                selection.track.relativePlaylistPath
+        )
+    }
+
+    private static func mediaLine(
+        rendition: HLSRendition,
+        relativePlaylistPath: String?
+    ) throws -> String {
+        let type: String
+        let groupID: String
+        switch rendition.kind {
+        case .audio:
+            type = "AUDIO"
+            groupID = "live-dvr-audio"
+        case .video:
+            type = "VIDEO"
+            groupID = "live-dvr-video"
+        case .subtitles:
+            type = "SUBTITLES"
+            groupID = "live-dvr-subtitles"
+        case .closedCaptions:
+            type = "CLOSED-CAPTIONS"
+            groupID = "live-dvr-closed-captions"
+        }
+        try HLSPackageMasterPlaylistWriter.validateQuotedAttribute(
+            rendition.name
+        )
+        var attributes = [
+            "TYPE=\(type)",
+            "GROUP-ID=\"\(groupID)\"",
+            "NAME=\"\(rendition.name)\"",
+        ]
+        if let language = rendition.language {
+            try HLSPackageMasterPlaylistWriter
+                .validateQuotedAttribute(language)
+            attributes.append("LANGUAGE=\"\(language)\"")
+        }
+        if let associatedLanguage = rendition.associatedLanguage {
+            try HLSPackageMasterPlaylistWriter
+                .validateQuotedAttribute(associatedLanguage)
+            attributes.append(
+                "ASSOC-LANGUAGE=\"\(associatedLanguage)\""
+            )
+        }
+        if let stableID = rendition.stableID {
+            try HLSPackageMasterPlaylistWriter
+                .validateQuotedAttribute(stableID)
+            attributes.append(
+                "STABLE-RENDITION-ID=\"\(stableID)\""
+            )
+        }
+        if let instreamID = rendition.instreamID {
+            try HLSPackageMasterPlaylistWriter
+                .validateQuotedAttribute(instreamID)
+            attributes.append("INSTREAM-ID=\"\(instreamID)\"")
+        }
+        attributes.append(
+            "DEFAULT=\(rendition.isDefault ? "YES" : "NO")"
+        )
+        attributes.append(
+            "AUTOSELECT=\(rendition.isAutoselect ? "YES" : "NO")"
+        )
+        if rendition.kind == .subtitles {
+            attributes.append(
+                "FORCED=\(rendition.isForced ? "YES" : "NO")"
+            )
+        }
+        if !rendition.characteristics.isEmpty {
+            try rendition.characteristics.forEach(
+                HLSPackageMasterPlaylistWriter
+                    .validateQuotedAttribute
+            )
+            attributes.append(
+                "CHARACTERISTICS=\""
+                    + rendition.characteristics.joined(separator: ",")
+                    + "\""
+            )
+        }
+        if rendition.kind == .audio {
+            if let channels = rendition.channels {
+                try HLSPackageMasterPlaylistWriter
+                    .validateQuotedAttribute(channels)
+                attributes.append("CHANNELS=\"\(channels)\"")
+            }
+            if let bitDepth = rendition.audioBitDepth {
+                attributes.append("BIT-DEPTH=\(bitDepth)")
+            }
+            if let sampleRate = rendition.audioSampleRate {
+                attributes.append("SAMPLE-RATE=\(sampleRate)")
+            }
+        }
+        if let relativePlaylistPath {
+            attributes.append("URI=\"\(relativePlaylistPath)\"")
+        }
+        return "#EXT-X-MEDIA:" + attributes.joined(separator: ",")
+    }
+
+    private static func dateRangeLine(
+        _ dateRange: HLSDateRange
+    ) throws -> String {
+        try HLSPackageMasterPlaylistWriter.validateQuotedAttribute(
+            dateRange.id
+        )
+        var attributes = [
+            "ID=\"\(dateRange.id)\"",
+            "START-DATE=\"\(dateString(dateRange.startDate))\"",
+        ]
+        if let className = dateRange.className {
+            try HLSPackageMasterPlaylistWriter
+                .validateQuotedAttribute(className)
+            attributes.append("CLASS=\"\(className)\"")
+        }
+        if let endDate = dateRange.endDate {
+            attributes.append(
+                "END-DATE=\"\(dateString(endDate))\""
+            )
+        }
+        if let duration = dateRange.duration {
+            attributes.append("DURATION=\(durationString(duration))")
+        }
+        if let plannedDuration = dateRange.plannedDuration {
+            attributes.append(
+                "PLANNED-DURATION=\(durationString(plannedDuration))"
+            )
+        }
+        if !dateRange.cues.isEmpty {
+            let cueValues = dateRange.cues.map { cue in
+                switch cue {
+                case .pre:
+                    return "PRE"
+                case .post:
+                    return "POST"
+                case .once:
+                    return "ONCE"
+                }
+            }
+            attributes.append(
+                "CUE=\"\(cueValues.joined(separator: ","))\""
+            )
+        }
+        if dateRange.endsOnNext {
+            attributes.append("END-ON-NEXT=YES")
+        }
+        return "#EXT-X-DATERANGE:"
+            + attributes.joined(separator: ",")
+    }
+
+    private static func dateString(_ date: Date) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [
+            .withInternetDateTime,
+            .withFractionalSeconds,
+        ]
+        return formatter.string(from: date)
     }
 }

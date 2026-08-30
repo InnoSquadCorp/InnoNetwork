@@ -272,7 +272,7 @@ struct HLSOfflinePackageOperation: Sendable {
 
             let entryPlaylistName = "index.m3u8"
             let masterPlaylist =
-                try HLSOfflineMasterPlaylistWriter.make(plan: plan)
+                try HLSPackageMasterPlaylistWriter.make(plan: plan)
             try Data(masterPlaylist.utf8).write(
                 to: preparedWorkspace.packageURL.appendingPathComponent(
                     entryPlaylistName

@@ -1,11 +1,10 @@
-import Darwin
 import Foundation
 import InnoNetworkHLS
 
 /// Records complete live segments into one bounded local HLS package.
 public struct HLSLiveDVRRecorder: Sendable {
     private let liveClient: HLSLivePlaylistClient
-    private let resourceLoader: HLSLiveDVRResourceLoader
+    private let resourceWriter: HLSLiveDVRResourceWriter
     private let configuration: HLSLiveDVRConfiguration
 
     /// Creates a recorder backed by the default live client.
@@ -25,10 +24,9 @@ public struct HLSLiveDVRRecorder: Sendable {
         configuration: HLSLiveDVRConfiguration = .safeDefaults()
     ) {
         self.liveClient = client
-        self.resourceLoader = HLSLiveDVRResourceLoader(
+        self.resourceWriter = HLSLiveDVRResourceWriter(
             client: client.resourceClient,
-            requestTimeout:
-                configuration.limits.requestTimeout
+            configuration: configuration
         )
         self.configuration = configuration
     }
@@ -143,8 +141,8 @@ public struct HLSLiveDVRRecorder: Sendable {
             throw HLSLiveDVRError.destinationAlreadyExists
         }
 
-        let workspace = try makeWorkspace(
-            destinationDirectoryURL: destinationDirectoryURL
+        let workspace = try HLSLiveDVRWorkspace.make(
+            for: destinationDirectoryURL
         )
         var committed = false
         defer {
@@ -159,18 +157,75 @@ public struct HLSLiveDVRRecorder: Sendable {
             configuration: configuration,
             workspace: workspace
         )
-        let resourceContext = HLSLiveDVRResourceContext(
-            keyCache: HLSAES128KeyCache(
-                client: liveClient.resourceClient
-            ),
-            diskCapacityGuard: HLSDiskCapacityGuard(
-                directoryURL: workspace.directoryURL,
-                policy: configuration.limits.diskCapacityPolicy
-            )
+        let resourceContext = resourceWriter.makeContext(
+            workspace: workspace
         )
         do {
             recordingLoop: for try await snapshot in liveClient.snapshots(from: sourceURL) {
                 try state.validatePresentation(snapshot)
+                let renditionRequests = try state.renditionRequests(
+                    in: snapshot
+                )
+                var renditionSnapshots: [(HLSLiveDVRRenditionRequest, HLSLivePlaylistSnapshot)] = []
+                for request in renditionRequests {
+                    let renditionSnapshot =
+                        try await liveClient
+                        .renditionSnapshot(
+                            from: request.url,
+                            multivariantVariables:
+                                request.multivariantVariables,
+                            generation: request.generation
+                        )
+                    try state.validateRendition(
+                        renditionSnapshot,
+                        at: request.index
+                    )
+                    renditionSnapshots.append(
+                        (request, renditionSnapshot)
+                    )
+                }
+                for (request, renditionSnapshot) in renditionSnapshots {
+                    let renditionCandidates =
+                        try state
+                        .renditionCandidates(
+                            in: renditionSnapshot,
+                            at: request.index
+                        )
+                    for segment in renditionCandidates {
+                        guard
+                            state.canRetainRendition(
+                                segment,
+                                at: request.index
+                            )
+                        else {
+                            throw HLSLiveDVRError.unsupportedFeature(
+                                .incompleteExternalRendition
+                            )
+                        }
+                        try state.validateRenditionSegment(
+                            segment,
+                            at: request.index
+                        )
+                        guard
+                            try await resourceWriter
+                                .retainRenditionInitializationIfNeeded(
+                                    at: request.index,
+                                    state: &state,
+                                    context: resourceContext
+                                ),
+                            try await resourceWriter.retainRendition(
+                                segment,
+                                at: request.index,
+                                state: &state,
+                                context: resourceContext
+                            )
+                        else {
+                            throw HLSLiveDVRError.unsupportedFeature(
+                                .incompleteExternalRendition
+                            )
+                        }
+                    }
+                }
                 let candidates = try state.candidates(
                     in: snapshot
                 )
@@ -180,18 +235,19 @@ public struct HLSLiveDVRRecorder: Sendable {
                     }
                     try state.validate(segment)
                     guard
-                        try await retainInitializationIfNeeded(
-                            state: &state,
-                            resourceContext: resourceContext
-                        )
+                        try await resourceWriter
+                            .retainInitializationIfNeeded(
+                                state: &state,
+                                context: resourceContext
+                            )
                     else {
                         break recordingLoop
                     }
                     guard
-                        try await retain(
+                        try await resourceWriter.retain(
                             segment,
                             state: &state,
-                            resourceContext: resourceContext
+                            context: resourceContext
                         )
                     else {
                         break recordingLoop
@@ -228,562 +284,5 @@ public struct HLSLiveDVRRecorder: Sendable {
         )
         committed = true
         return receipt
-    }
-
-    private func retainInitializationIfNeeded(
-        state: inout HLSLiveDVRRecordingState,
-        resourceContext: HLSLiveDVRResourceContext
-    ) async throws -> Bool {
-        guard
-            state.container == .fragmentedMP4,
-            state.initializationFileName == nil
-        else {
-            return true
-        }
-        guard let initialization = state.initializationSegment else {
-            throw HLSLiveDVRError.unsupportedFeature(
-                .missingInitializationSegment
-            )
-        }
-        let fallbackExtension = "mp4"
-        let path =
-            "resources/initialization."
-            + HLSLiveDVRPlaylistWriter.fileExtension(
-                for: initialization.url,
-                fallback: fallbackExtension
-            )
-        let destinationURL =
-            state.workspace.directoryURL
-            .appendingPathComponent(path)
-        let result = try await load(
-            sourceURL: initialization.url,
-            byteRange: initialization.byteRange,
-            encryption: initialization.encryption,
-            resourceIndex: state.nextResourceIndex,
-            destinationURL: destinationURL,
-            state: state,
-            resourceContext: resourceContext
-        )
-        switch result {
-        case .retained(let byteCount):
-            try state.retainInitialization(
-                fileName: path,
-                byteCount: byteCount
-            )
-            return true
-        case .totalLimitReached:
-            return false
-        }
-    }
-
-    private func retain(
-        _ segment: HLSLiveSegment,
-        state: inout HLSLiveDVRRecordingState,
-        resourceContext: HLSLiveDVRResourceContext
-    ) async throws -> Bool {
-        let fallbackExtension: String
-        switch state.container {
-        case .mpegTransportStream:
-            fallbackExtension = "ts"
-        case .fragmentedMP4:
-            fallbackExtension = "m4s"
-        case nil:
-            throw HLSLiveDVRError.unsupportedFeature(
-                .unknownMediaContainer
-            )
-        }
-        let path = String(
-            format:
-                "resources/%05d.%@",
-            state.segments.count,
-            HLSLiveDVRPlaylistWriter.fileExtension(
-                for: segment.url,
-                fallback: fallbackExtension
-            )
-        )
-        let destinationURL =
-            state.workspace.directoryURL
-            .appendingPathComponent(path)
-        let result = try await load(
-            sourceURL: segment.url,
-            byteRange: segment.byteRange,
-            encryption: segment.encryption,
-            resourceIndex: state.nextResourceIndex,
-            destinationURL: destinationURL,
-            state: state,
-            resourceContext: resourceContext
-        )
-        switch result {
-        case .retained(let byteCount):
-            try state.retain(
-                segment,
-                fileName: path,
-                byteCount: byteCount
-            )
-            return true
-        case .totalLimitReached:
-            return false
-        }
-    }
-
-    private func load(
-        sourceURL: URL,
-        byteRange: HLSByteRange?,
-        encryption: HLSLiveAES128Encryption?,
-        resourceIndex: Int,
-        destinationURL: URL,
-        state: HLSLiveDVRRecordingState,
-        resourceContext: HLSLiveDVRResourceContext
-    ) async throws -> HLSLiveDVRLoadResult {
-        let remainingBytes =
-            configuration.limits.maximumTotalMediaBytes
-            - state.mediaByteCount
-        guard remainingBytes > 0 else {
-            return .totalLimitReached
-        }
-        let maximumRetainedBytes64 = min(
-            Int64(configuration.limits.maximumMediaResourceBytes),
-            remainingBytes,
-            Int64(Int.max)
-        )
-        guard maximumRetainedBytes64 > 0 else {
-            return .totalLimitReached
-        }
-        let paddingAllowance: Int64 = encryption == nil ? 0 : 16
-        let (totalBoundedTransferBytes, transferOverflow) =
-            maximumRetainedBytes64.addingReportingOverflow(
-                paddingAllowance
-            )
-        let maximumBytes64 = min(
-            Int64(configuration.limits.maximumMediaResourceBytes),
-            transferOverflow ? .max : totalBoundedTransferBytes,
-            Int64(Int.max)
-        )
-        do {
-            return .retained(
-                try await resourceLoader.load(
-                    from: sourceURL,
-                    byteRange: byteRange,
-                    encryption: encryption,
-                    resourceIndex: resourceIndex,
-                    maximumBytes: Int(maximumBytes64),
-                    maximumRetainedBytes:
-                        Int(maximumRetainedBytes64),
-                    keyCache: resourceContext.keyCache,
-                    diskCapacityGuard:
-                        resourceContext.diskCapacityGuard,
-                    destinationURL: destinationURL
-                )
-            )
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch let error as HLSLiveDVRResourceLoadError {
-            switch error {
-            case .bodyLimitExceeded:
-                if maximumBytes64
-                    < Int64(
-                        configuration.limits.maximumMediaResourceBytes
-                    )
-                {
-                    return .totalLimitReached
-                }
-                throw HLSLiveDVRError.mediaResourceTooLarge
-            case .retainedLimitExceeded:
-                return .totalLimitReached
-            case .invalidByteRangeResponse:
-                throw HLSLiveDVRError.invalidByteRangeResponse
-            case .invalidResponseStatus(let statusCode):
-                throw
-                    HLSLiveDVRError
-                    .invalidMediaResponseStatus(statusCode)
-            case .emptyResponse, .transferFailed:
-                throw HLSLiveDVRError.transferFailed
-            }
-        } catch let error as HLSLiveDVRError {
-            throw error
-        } catch let error as HLSDownloadError {
-            switch error {
-            case .invalidAES128Key:
-                throw HLSLiveDVRError.invalidEncryptionKey
-            case .invalidAES128KeyResponseStatus(let statusCode):
-                throw
-                    HLSLiveDVRError
-                    .invalidEncryptionKeyResponseStatus(statusCode)
-            case .aes128DecryptionFailed:
-                throw HLSLiveDVRError.decryptionFailed
-            case .diskCapacityUnavailable:
-                throw HLSLiveDVRError.diskCapacityUnavailable
-            case .insufficientDiskCapacity(let required, let available):
-                throw HLSLiveDVRError.insufficientDiskCapacity(
-                    required: required,
-                    available: available
-                )
-            default:
-                throw HLSLiveDVRError.transferFailed
-            }
-        } catch {
-            throw HLSLiveDVRError.storageFailed
-        }
-    }
-
-    private func makeWorkspace(
-        destinationDirectoryURL: URL
-    ) throws -> HLSLiveDVRWorkspace {
-        let fileManager = FileManager.default
-        let parentURL =
-            destinationDirectoryURL.deletingLastPathComponent()
-        let directoryURL = parentURL.appendingPathComponent(
-            ".\(destinationDirectoryURL.lastPathComponent)."
-                + "\(UUID().uuidString).live-dvr-staging",
-            isDirectory: true
-        )
-        do {
-            try fileManager.createDirectory(
-                at: parentURL,
-                withIntermediateDirectories: true
-            )
-            try fileManager.createDirectory(
-                at:
-                    directoryURL.appendingPathComponent(
-                        "resources",
-                        isDirectory: true
-                    ),
-                withIntermediateDirectories: true
-            )
-        } catch {
-            throw HLSLiveDVRError.storageFailed
-        }
-        return HLSLiveDVRWorkspace(
-            directoryURL: directoryURL
-        )
-    }
-}
-
-private enum HLSLiveDVRLoadResult {
-    case retained(Int64)
-    case totalLimitReached
-}
-
-private struct HLSLiveDVRWorkspace: Sendable {
-    let directoryURL: URL
-}
-
-private struct HLSLiveDVRResourceContext: Sendable {
-    let keyCache: HLSAES128KeyCache
-    let diskCapacityGuard: HLSDiskCapacityGuard
-}
-
-private struct HLSLiveDVRRecordingState {
-    let configuration: HLSLiveDVRConfiguration
-    let workspace: HLSLiveDVRWorkspace
-
-    private(set) var container: HLSMediaContainer?
-    private(set) var initializationSegment: HLSLiveInitializationSegment?
-    private(set) var initializationFileName: String?
-    private(set) var segments: [HLSLiveDVRStoredSegment] = []
-    private(set) var recordedDuration: TimeInterval = 0
-    private(set) var mediaByteCount: Int64 = 0
-    private(set) var lastObservedSequence: Int64?
-    private(set) var didObserveInitialSnapshot = false
-    private(set) var nextResourceIndex = 0
-
-    var reachedLimit: Bool {
-        segments.count >= configuration.limits.maximumSegmentCount
-            || recordedDuration
-                >= configuration.limits.maximumDuration
-            || mediaByteCount
-                >= configuration.limits.maximumTotalMediaBytes
-    }
-
-    var progress: HLSLiveDVRProgress {
-        HLSLiveDVRProgress(
-            segmentCount: segments.count,
-            recordedDuration: recordedDuration,
-            mediaByteCount: mediaByteCount
-        )
-    }
-
-    mutating func validatePresentation(
-        _ snapshot: HLSLivePlaylistSnapshot
-    ) throws {
-        guard let snapshotContainer = snapshot.playlist.mediaContainer else {
-            throw HLSLiveDVRError.unsupportedFeature(
-                .unknownMediaContainer
-            )
-        }
-        if let container, container != snapshotContainer {
-            throw HLSLiveDVRError.unsupportedFeature(
-                .changingInitializationSegment
-            )
-        }
-        container = snapshotContainer
-
-        if let encryptionMethod = snapshot.encryptionMethod,
-            encryptionMethod != "AES-128"
-        {
-            throw HLSLiveDVRError.unsupportedFeature(
-                .encryptedMedia
-            )
-        }
-
-        if let selectedVariant = snapshot.selectedVariant,
-            selectedVariant.audioGroupID != nil
-                || selectedVariant.videoGroupID != nil
-                || selectedVariant.subtitleGroupID != nil
-        {
-            throw HLSLiveDVRError.unsupportedFeature(
-                .externalRendition
-            )
-        }
-        if snapshot.dateRanges.contains(where: {
-            $0.interstitial != nil
-                || $0.externalResource != nil
-                || $0.preload != nil
-        }) {
-            throw HLSLiveDVRError.unsupportedFeature(
-                .externalTimelineResource
-            )
-        }
-
-        guard snapshot.initializationSegments.count <= 1 else {
-            throw HLSLiveDVRError.unsupportedFeature(
-                .changingInitializationSegment
-            )
-        }
-        let candidate = snapshot.initializationSegments.first
-        switch snapshotContainer {
-        case .mpegTransportStream:
-            guard candidate == nil else {
-                throw HLSLiveDVRError.unsupportedFeature(
-                    .changingInitializationSegment
-                )
-            }
-        case .fragmentedMP4:
-            guard let candidate else {
-                throw HLSLiveDVRError.unsupportedFeature(
-                    .missingInitializationSegment
-                )
-            }
-            if let initializationSegment,
-                initializationSegment != candidate
-            {
-                throw HLSLiveDVRError.unsupportedFeature(
-                    .changingInitializationSegment
-                )
-            }
-            initializationSegment = candidate
-        }
-    }
-
-    mutating func candidates(
-        in snapshot: HLSLivePlaylistSnapshot
-    ) throws -> [HLSLiveSegment] {
-        try validateSequence(snapshot.segments)
-        if !didObserveInitialSnapshot {
-            didObserveInitialSnapshot = true
-            if configuration.startPosition
-                == .nextCompletedSegment
-            {
-                lastObservedSequence =
-                    snapshot.segments.last?.sequenceNumber
-                return []
-            }
-        }
-
-        let candidates: [HLSLiveSegment]
-        if let lastObservedSequence {
-            candidates = snapshot.segments.filter {
-                $0.sequenceNumber > lastObservedSequence
-            }
-            if let first = candidates.first {
-                let (expected, overflow) =
-                    lastObservedSequence.addingReportingOverflow(1)
-                guard
-                    !overflow,
-                    first.sequenceNumber == expected
-                else {
-                    throw HLSLiveDVRError.liveWindowAdvanced
-                }
-            }
-        } else {
-            candidates = snapshot.segments
-        }
-        return candidates
-    }
-
-    func canRetain(_ segment: HLSLiveSegment) -> Bool {
-        guard
-            segments.count
-                < configuration.limits.maximumSegmentCount
-        else {
-            return false
-        }
-        let nextDuration = recordedDuration + segment.duration
-        return nextDuration.isFinite
-            && nextDuration
-                <= configuration.limits.maximumDuration
-    }
-
-    func validate(_ segment: HLSLiveSegment) throws {
-        guard segment.duration.isFinite, segment.duration > 0 else {
-            throw HLSLiveDVRError.transferFailed
-        }
-        guard !segment.isGap else {
-            throw HLSLiveDVRError.unsupportedFeature(.gap)
-        }
-    }
-
-    mutating func retainInitialization(
-        fileName: String,
-        byteCount: Int64
-    ) throws {
-        try addMediaBytes(byteCount)
-        initializationFileName = fileName
-        nextResourceIndex += 1
-    }
-
-    mutating func retain(
-        _ segment: HLSLiveSegment,
-        fileName: String,
-        byteCount: Int64
-    ) throws {
-        let nextDuration = recordedDuration + segment.duration
-        guard nextDuration.isFinite else {
-            throw HLSLiveDVRError.storageFailed
-        }
-        try addMediaBytes(byteCount)
-        segments.append(
-            HLSLiveDVRStoredSegment(
-                sequenceNumber: segment.sequenceNumber,
-                duration: segment.duration,
-                beginsDiscontinuity:
-                    segment.beginsDiscontinuity,
-                fileName: fileName
-            )
-        )
-        recordedDuration = nextDuration
-        lastObservedSequence = segment.sequenceNumber
-        nextResourceIndex += 1
-    }
-
-    func commit(
-        to destinationDirectoryURL: URL
-    ) throws -> HLSLiveDVRReceipt {
-        try Task.checkCancellation()
-        guard
-            let container,
-            let first = segments.first,
-            let last = segments.last
-        else {
-            throw HLSLiveDVRError.noSegmentsRecorded
-        }
-        let playlist: String
-        do {
-            playlist = try HLSLiveDVRPlaylistWriter.make(
-                container: container,
-                initializationFileName:
-                    initializationFileName,
-                segments: segments
-            )
-        } catch let error as HLSLiveDVRError {
-            throw error
-        } catch {
-            throw HLSLiveDVRError.storageFailed
-        }
-
-        let stagedPlaylistURL =
-            workspace.directoryURL.appendingPathComponent(
-                "index.m3u8"
-            )
-        do {
-            try Data(playlist.utf8).write(
-                to: stagedPlaylistURL,
-                options: .atomic
-            )
-        } catch {
-            throw HLSLiveDVRError.storageFailed
-        }
-
-        try Task.checkCancellation()
-        let fileManager = FileManager.default
-        guard
-            !HLSLiveDVRFileSystem.itemExists(
-                at: destinationDirectoryURL
-            )
-        else {
-            throw HLSLiveDVRError.destinationAlreadyExists
-        }
-        do {
-            try fileManager.moveItem(
-                at: workspace.directoryURL,
-                to: destinationDirectoryURL
-            )
-        } catch {
-            if HLSLiveDVRFileSystem.itemExists(
-                at: destinationDirectoryURL
-            ) {
-                throw HLSLiveDVRError.destinationAlreadyExists
-            }
-            throw HLSLiveDVRError.storageFailed
-        }
-
-        return HLSLiveDVRReceipt(
-            directoryURL: destinationDirectoryURL,
-            playlistURL:
-                destinationDirectoryURL.appendingPathComponent(
-                    "index.m3u8"
-                ),
-            segmentCount: segments.count,
-            recordedDuration: recordedDuration,
-            mediaByteCount: mediaByteCount,
-            firstMediaSequence: first.sequenceNumber,
-            lastMediaSequence: last.sequenceNumber
-        )
-    }
-
-    private mutating func addMediaBytes(
-        _ byteCount: Int64
-    ) throws {
-        let (nextBytes, overflow) =
-            mediaByteCount.addingReportingOverflow(byteCount)
-        guard
-            !overflow,
-            nextBytes
-                <= configuration.limits.maximumTotalMediaBytes
-        else {
-            throw HLSLiveDVRError.storageFailed
-        }
-        mediaByteCount = nextBytes
-    }
-
-    private func validateSequence(
-        _ segments: [HLSLiveSegment]
-    ) throws {
-        var previous: Int64?
-        for segment in segments {
-            if let previous {
-                let (expected, overflow) =
-                    previous.addingReportingOverflow(1)
-                guard
-                    !overflow,
-                    segment.sequenceNumber == expected
-                else {
-                    throw HLSLiveDVRError.liveWindowAdvanced
-                }
-            }
-            previous = segment.sequenceNumber
-        }
-    }
-}
-
-private enum HLSLiveDVRFileSystem {
-    static func itemExists(at url: URL) -> Bool {
-        var information = stat()
-        return url.withUnsafeFileSystemRepresentation { path in
-            guard let path else {
-                return false
-            }
-            return lstat(path, &information) == 0
-        }
     }
 }

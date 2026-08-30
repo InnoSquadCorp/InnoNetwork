@@ -539,11 +539,21 @@ for await event in await manager.events(for: task) {
 - recording-scoped, memory-only identity AES-128 key reuse and rotation,
   explicit or media-sequence IV decryption, encrypted fMP4 maps, and plaintext-
   only local packages that never persist key declarations or source key URLs
+- bounded external audio, alternate-video, and subtitle selection by default,
+  preferred languages, exact names, or all referenced renditions; URL-free
+  local master playlists expose one package entry point plus typed local-track
+  metadata, and Content Steering failover requires stable rendition identity
+- retained Program Date Time and self-contained standard Date Ranges for the
+  recorded interval, with atomic rejection when redacted extension values,
+  external timeline resources, or an incomplete rendition cannot be preserved
 - configurable destination-capacity enforcement plus typed key status,
   key-length, decryption, and storage failures
-- typed rejection of gaps, DRM/sample encryption, external renditions or
-  timeline resources, missing/changing initialization maps, and live-window
-  loss instead of silently committing an incomplete presentation
+- typed rejection of gaps, DRM/sample encryption, unsupported timeline
+  metadata, missing/changing initialization maps, incomplete renditions, and
+  live-window loss instead of silently committing an incomplete presentation
+- local DVR packages target application-owned serving or resource loading;
+  arbitrary `file://` HLS trees are not advertised as directly AVFoundation
+  playable
 
 ### `InnoNetworkHLSAVFoundation`
 

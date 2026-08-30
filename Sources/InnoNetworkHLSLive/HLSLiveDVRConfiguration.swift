@@ -12,6 +12,71 @@ public enum HLSLiveDVRStartPosition: Equatable, Sendable {
     case currentWindow
 }
 
+/// Controls which external renditions are retained by live DVR.
+public enum HLSLiveDVRRenditionSelectionPolicy: Equatable, Sendable {
+    /// Omits external renditions of this kind.
+    case disabled
+
+    /// Keeps the advertised default, then an autoselect rendition, then the
+    /// first rendition when the group has no preferred marker.
+    case defaultOrFirst
+
+    /// Keeps one rendition for each preferred BCP 47 language, in preference
+    /// order. If no language matches, the default-or-first rendition is kept.
+    case preferredLanguages([String])
+
+    /// Keeps renditions whose names exactly match the supplied order.
+    case named([String])
+
+    /// Keeps every external rendition referenced by the selected variant.
+    case all
+}
+
+/// Groups bounded external-rendition selection for live DVR packaging.
+///
+/// Stored values are opaque immutable input.
+/// The conservative default keeps one external audio rendition and omits
+/// alternate video and subtitles until the application opts in.
+public struct HLSLiveDVRRenditionPack: Sendable {
+    let audio: HLSLiveDVRRenditionSelectionPolicy
+    let video: HLSLiveDVRRenditionSelectionPolicy
+    let subtitles: HLSLiveDVRRenditionSelectionPolicy
+    let maximumRenditionsPerKind: Int
+
+    /// Creates bounded live DVR rendition selection.
+    ///
+    /// The per-kind limit is clamped to `1...32`.
+    public init(
+        audio: HLSLiveDVRRenditionSelectionPolicy = .defaultOrFirst,
+        video: HLSLiveDVRRenditionSelectionPolicy = .disabled,
+        subtitles: HLSLiveDVRRenditionSelectionPolicy = .disabled,
+        maximumRenditionsPerKind: Int = 8
+    ) {
+        self.audio = audio
+        self.video = video
+        self.subtitles = subtitles
+        self.maximumRenditionsPerKind = min(
+            max(1, maximumRenditionsPerKind),
+            32
+        )
+    }
+
+    func policy(
+        for kind: HLSRenditionKind
+    ) -> HLSLiveDVRRenditionSelectionPolicy {
+        switch kind {
+        case .audio:
+            return audio
+        case .video:
+            return video
+        case .subtitles:
+            return subtitles
+        case .closedCaptions:
+            return .disabled
+        }
+    }
+}
+
 /// Groups the hard duration, count, and byte limits for a live DVR recording.
 public struct HLSLiveDVRLimitPack: Sendable {
     private static let maximumDurationLimit: TimeInterval = 24 * 60 * 60
@@ -98,13 +163,16 @@ public struct HLSLiveDVRLimitPack: Sendable {
 public struct HLSLiveDVRConfiguration: Sendable {
     let limits: HLSLiveDVRLimitPack
     let startPosition: HLSLiveDVRStartPosition
+    let renditions: HLSLiveDVRRenditionPack
 
     private init(
         limits: HLSLiveDVRLimitPack,
-        startPosition: HLSLiveDVRStartPosition
+        startPosition: HLSLiveDVRStartPosition,
+        renditions: HLSLiveDVRRenditionPack
     ) {
         self.limits = limits
         self.startPosition = startPosition
+        self.renditions = renditions
     }
 
     /// Returns conservative record-from-now defaults.
@@ -116,11 +184,14 @@ public struct HLSLiveDVRConfiguration: Sendable {
     public static func advanced(
         limits: HLSLiveDVRLimitPack = HLSLiveDVRLimitPack(),
         startPosition: HLSLiveDVRStartPosition =
-            .nextCompletedSegment
+            .nextCompletedSegment,
+        renditions: HLSLiveDVRRenditionPack =
+            HLSLiveDVRRenditionPack()
     ) -> HLSLiveDVRConfiguration {
         HLSLiveDVRConfiguration(
             limits: limits,
-            startPosition: startPosition
+            startPosition: startPosition,
+            renditions: renditions
         )
     }
 }

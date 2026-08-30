@@ -883,13 +883,22 @@ extension HLSLivePlaylistClientTests {
         )
     }
 
-    @Test("external renditions are rejected before media persistence")
-    func externalRenditionsAreRejected() async throws {
+    @Test("default external audio is retained behind a URL-free local master")
+    func retainsDefaultExternalAudio() async throws {
         let masterURL = try url(
             "https://media.example/master-audio.m3u8"
         )
         let mediaURL = try url(
             "https://media.example/video.m3u8"
+        )
+        let audioPlaylistURL = try url(
+            "https://media.example/audio.m3u8"
+        )
+        let videoSegmentURL = try url(
+            "https://media.example/video.ts?token=video"
+        )
+        let audioSegmentURL = try url(
+            "https://media.example/audio.aac?token=audio"
         )
         let fixture = try makeFixture()
         defer {
@@ -901,7 +910,8 @@ extension HLSLivePlaylistClientTests {
                 """
                 #EXTM3U
                 #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="Stereo",DEFAULT=YES,AUTOSELECT=YES,URI="audio.m3u8"
-                #EXT-X-STREAM-INF:BANDWIDTH=1000000,AUDIO="audio"
+                #EXT-X-MEDIA:TYPE=CLOSED-CAPTIONS,GROUP-ID="captions",NAME="English CC",LANGUAGE="en",INSTREAM-ID="CC1"
+                #EXT-X-STREAM-INF:BANDWIDTH=1000000,CODECS="avc1.4d401f,mp4a.40.2",HDCP-LEVEL=TYPE-0,AUDIO="audio",CLOSED-CAPTIONS="captions",ALLOWED-CPC="com.example.drm:HW"
                 video.m3u8
                 """
             ),
@@ -914,37 +924,883 @@ extension HLSLivePlaylistClientTests {
                 #EXT-X-TARGETDURATION:4
                 #EXT-X-MEDIA-SEQUENCE:1
                 #EXTINF:4,
-                video.ts
+                video.ts?token=video
                 #EXT-X-ENDLIST
                 """
             ),
             for: mediaURL
         )
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:1
+                #EXTINF:4,
+                audio.aac?token=audio
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: audioPlaylistURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("video".utf8)),
+            for: videoSegmentURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("audio".utf8)),
+            for: audioSegmentURL
+        )
+
+        let receipt = try await recorder(
+            session: fixture.session,
+            startPosition: .currentWindow
+        ).record(
+            from: masterURL,
+            to: fixture.destinationURL
+        )
+
+        #expect(receipt.entryPlaylistURL.lastPathComponent == "master.m3u8")
+        #expect(receipt.playlistURL.lastPathComponent == "index.m3u8")
+        #expect(receipt.tracks.map(\.kind) == [.primary, .audio])
+        let audioTrack = try #require(receipt.tracks.last)
+        let audioPlaylist = try String(
+            contentsOf: receipt.directoryURL.appendingPathComponent(
+                audioTrack.relativePlaylistPath
+            ),
+            encoding: .utf8
+        )
+        let master = try String(
+            contentsOf: receipt.entryPlaylistURL,
+            encoding: .utf8
+        )
+        let parsedMaster = try PlaylistResolver().resolve(
+            master,
+            relativeTo: receipt.entryPlaylistURL
+        )
+        #expect(master.contains("#EXT-X-MEDIA:TYPE=AUDIO"))
+        #expect(master.contains("AUDIO=\"live-dvr-audio\""))
+        #expect(master.contains(audioTrack.relativePlaylistPath))
+        #expect(audioPlaylist.contains("resources/00000.aac"))
+        #expect(!master.contains("media.example"))
+        #expect(!master.contains("token="))
+        #expect(!master.contains("CODECS"))
+        #expect(!master.contains("HDCP-LEVEL"))
+        #expect(!master.contains("ALLOWED-CPC"))
+        #expect(parsedMaster.kind == .multivariant)
+        #expect(parsedMaster.variants.first?.audioGroupID == "live-dvr-audio")
+        #expect(parsedMaster.renditions.first?.name == "Stereo")
+        #expect(parsedMaster.renditions.last?.name == "English CC")
+        #expect(parsedMaster.renditions.last?.url == nil)
+        #expect(!audioPlaylist.contains("media.example"))
+        #expect(!audioPlaylist.contains("token="))
+        #expect(
+            HLSLiveURLProtocol.capturedRequests()
+                .compactMap(\.url)
+                == [
+                    masterURL,
+                    mediaURL,
+                    audioPlaylistURL,
+                    audioSegmentURL,
+                    videoSegmentURL,
+                ]
+        )
+    }
+
+    @Test("primary and external renditions share the in-memory AES key cache")
+    func sharesAES128KeyAcrossRenditions() async throws {
+        let masterURL = try url("https://media.example/aes-master.m3u8")
+        let videoPlaylistURL = try url(
+            "https://media.example/aes-video.m3u8"
+        )
+        let audioPlaylistURL = try url(
+            "https://media.example/aes-audio.m3u8"
+        )
+        let keyURL = try url("https://media.example/shared.key")
+        let videoURL = try url("https://media.example/aes-video.ts")
+        let audioURL = try url("https://media.example/aes-audio.aac")
+        let key = Data(repeating: 0x71, count: 16)
+        let videoPlaintext = Data("encrypted video".utf8)
+        let audioPlaintext = Data("encrypted audio".utf8)
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="Stereo",DEFAULT=YES,URI="aes-audio.m3u8"
+                #EXT-X-STREAM-INF:BANDWIDTH=1000,AUDIO="audio"
+                aes-video.m3u8
+                """
+            ),
+            for: masterURL
+        )
+        let encryptedPlaylist: (String) -> String = { resource in
+            """
+            #EXTM3U
+            #EXT-X-TARGETDURATION:4
+            #EXT-X-MEDIA-SEQUENCE:1
+            #EXT-X-KEY:METHOD=AES-128,URI="shared.key"
+            #EXTINF:4,
+            \(resource)
+            #EXT-X-ENDLIST
+            """
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(encryptedPlaylist("aes-video.ts")),
+            for: videoPlaylistURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(encryptedPlaylist("aes-audio.aac")),
+            for: audioPlaylistURL
+        )
+        HLSLiveURLProtocol.register(mediaResponse(key), for: keyURL)
+        HLSLiveURLProtocol.register(
+            mediaResponse(
+                try aes128Encrypt(
+                    videoPlaintext,
+                    key: key,
+                    initializationVector: sequenceIV(1)
+                )
+            ),
+            for: videoURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(
+                try aes128Encrypt(
+                    audioPlaintext,
+                    key: key,
+                    initializationVector: sequenceIV(1)
+                )
+            ),
+            for: audioURL
+        )
+
+        let receipt = try await recorder(
+            session: fixture.session,
+            startPosition: .currentWindow
+        ).record(from: masterURL, to: fixture.destinationURL)
+
+        #expect(
+            HLSLiveURLProtocol.capturedRequests().compactMap(\.url)
+                .count { $0 == keyURL } == 1
+        )
+        #expect(
+            try Data(
+                contentsOf: receipt.directoryURL.appendingPathComponent(
+                    "resources/00000.ts"
+                )
+            ) == videoPlaintext
+        )
+        let audioTrack = try #require(
+            receipt.tracks.first(where: { $0.kind == .audio })
+        )
+        let audioDirectory = String(
+            audioTrack.relativePlaylistPath.dropLast(
+                "/index.m3u8".count
+            )
+        )
+        #expect(
+            try Data(
+                contentsOf: receipt.directoryURL.appendingPathComponent(
+                    audioDirectory + "/resources/00000.aac"
+                )
+            ) == audioPlaintext
+        )
+    }
+
+    @Test("program time and standard Date Ranges survive local packaging")
+    func retainsTimelineMetadata() async throws {
+        let sourceURL = try url("https://media.example/timeline.m3u8")
+        let firstURL = try url("https://media.example/10.ts")
+        let secondURL = try url("https://media.example/11.ts")
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:10
+                #EXT-X-PROGRAM-DATE-TIME:2026-08-30T00:00:00.000Z
+                #EXT-X-DATERANGE:ID="chapter-1",CLASS="chapter",START-DATE="2026-08-30T00:00:01.000Z",DURATION=5,PLANNED-DURATION=6,CUE="ONCE"
+                #EXTINF:4,
+                10.ts
+                #EXTINF:4,
+                11.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("first".utf8)),
+            for: firstURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("second".utf8)),
+            for: secondURL
+        )
+
+        let receipt = try await recorder(
+            session: fixture.session,
+            startPosition: .currentWindow
+        ).record(from: sourceURL, to: fixture.destinationURL)
+        let localContents = try String(
+            contentsOf: receipt.playlistURL,
+            encoding: .utf8
+        )
+        let localPlaylist = try PlaylistResolver().resolve(
+            localContents,
+            relativeTo: receipt.playlistURL
+        )
+
+        #expect(localPlaylist.programDateTimes.count == 2)
+        #expect(localPlaylist.dateRanges.count == 1)
+        #expect(localPlaylist.dateRanges[0].id == "chapter-1")
+        #expect(localPlaylist.dateRanges[0].duration == 5)
+        #expect(localPlaylist.dateRanges[0].plannedDuration == 6)
+        #expect(localPlaylist.dateRanges[0].cues == [.once])
+        #expect(
+            localPlaylist.programDateTimes[1].date
+                .timeIntervalSince(
+                    localPlaylist.programDateTimes[0].date
+                ) == 4
+        )
+    }
+
+    @Test("recorded Date Ranges survive later live-window eviction")
+    func retainsEvictedTimelineMetadata() async throws {
+        let sourceURL = try url(
+            "https://media.example/rolling-timeline.m3u8"
+        )
+        let reloadURL = try url(
+            "https://media.example/rolling-timeline.m3u8?_HLS_msn=2"
+        )
+        let firstURL = try url("https://media.example/rolling-1.ts")
+        let secondURL = try url("https://media.example/rolling-2.ts")
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:1
+                #EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES
+                #EXT-X-PROGRAM-DATE-TIME:2026-08-30T00:00:00.000Z
+                #EXT-X-DATERANGE:ID="chapter-1",CLASS="chapter",START-DATE="2026-08-30T00:00:00.000Z",DURATION=4
+                #EXTINF:4,
+                rolling-1.ts
+                """
+            ),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:2
+                #EXT-X-PROGRAM-DATE-TIME:2026-08-30T00:00:04.000Z
+                #EXTINF:4,
+                rolling-2.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: reloadURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("first".utf8)),
+            for: firstURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("second".utf8)),
+            for: secondURL
+        )
+
+        let receipt = try await recorder(
+            session: fixture.session,
+            startPosition: .currentWindow
+        ).record(from: sourceURL, to: fixture.destinationURL)
+        let localContents = try String(
+            contentsOf: receipt.playlistURL,
+            encoding: .utf8
+        )
+        let localPlaylist = try PlaylistResolver().resolve(
+            localContents,
+            relativeTo: receipt.playlistURL
+        )
+        let lines = localContents.components(separatedBy: .newlines)
+        let programDateIndex = try #require(
+            lines.firstIndex(where: {
+                $0.hasPrefix("#EXT-X-PROGRAM-DATE-TIME:")
+            })
+        )
+        let dateRangeIndex = try #require(
+            lines.firstIndex(where: {
+                $0.hasPrefix("#EXT-X-DATERANGE:")
+            })
+        )
+
+        #expect(localPlaylist.dateRanges.map(\.id) == ["chapter-1"])
+        #expect(programDateIndex < dateRangeIndex)
+    }
+
+    @Test("redacted Date Range extension values fail before media persistence")
+    func rejectsUnrepresentableTimelineMetadata() async throws {
+        let sourceURL = try url(
+            "https://media.example/custom-timeline.m3u8"
+        )
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-PROGRAM-DATE-TIME:2026-08-30T00:00:00.000Z
+                #EXT-X-DATERANGE:ID="custom",START-DATE="2026-08-30T00:00:00.000Z",SCTE35-OUT=0xFC
+                #EXTINF:4,
+                media.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: sourceURL
+        )
 
         await #expect(
-            throws:
-                HLSLiveDVRError.unsupportedFeature(
-                    .externalRendition
-                )
+            throws: HLSLiveDVRError.unsupportedFeature(
+                .unrepresentableTimelineMetadata
+            )
         ) {
             try await recorder(
                 session: fixture.session,
                 startPosition: .currentWindow
-            ).record(
-                from: masterURL,
-                to: fixture.destinationURL
-            )
+            ).record(from: sourceURL, to: fixture.destinationURL)
         }
         #expect(
-            HLSLiveURLProtocol.capturedRequests()
-                .compactMap(\.url)
-                == [masterURL]
+            HLSLiveURLProtocol.capturedRequests().compactMap(\.url)
+                == [sourceURL]
         )
         #expect(
             !FileManager.default.fileExists(
                 atPath: fixture.destinationURL.path
             )
         )
+    }
+
+    @Test("external rendition must cover the retained primary timeline")
+    func rejectsIncompleteExternalRenditionAtomically() async throws {
+        let masterURL = try url("https://media.example/short-master.m3u8")
+        let videoPlaylistURL = try url(
+            "https://media.example/short-video.m3u8"
+        )
+        let audioPlaylistURL = try url(
+            "https://media.example/short-audio.m3u8"
+        )
+        let videoURL = try url("https://media.example/short-video.ts")
+        let audioURL = try url("https://media.example/short-audio.aac")
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="Stereo",DEFAULT=YES,URI="short-audio.m3u8"
+                #EXT-X-STREAM-INF:BANDWIDTH=1000,AUDIO="audio"
+                short-video.m3u8
+                """
+            ),
+            for: masterURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXTINF:4,
+                short-video.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: videoPlaylistURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:1
+                #EXTINF:1,
+                short-audio.aac
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: audioPlaylistURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("video".utf8)),
+            for: videoURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("audio".utf8)),
+            for: audioURL
+        )
+
+        await #expect(
+            throws: HLSLiveDVRError.unsupportedFeature(
+                .incompleteExternalRendition
+            )
+        ) {
+            try await recorder(
+                session: fixture.session,
+                startPosition: .currentWindow
+            ).record(from: masterURL, to: fixture.destinationURL)
+        }
+        #expect(
+            !FileManager.default.fileExists(
+                atPath: fixture.destinationURL.path
+            )
+        )
+    }
+
+    @Test("preferred subtitle languages retain imported-variable playlists")
+    func retainsPreferredSubtitleRenditionsWithImportedVariables() async throws {
+        let masterURL = try url("https://media.example/subtitles-master.m3u8")
+        let videoPlaylistURL = try url(
+            "https://media.example/subtitles-video.m3u8"
+        )
+        let koreanPlaylistURL = try url(
+            "https://media.example/ko.m3u8"
+        )
+        let englishPlaylistURL = try url(
+            "https://media.example/en.m3u8"
+        )
+        let videoURL = try url("https://media.example/subtitles-video.ts")
+        let koreanURL = try url("https://media.example/ko.vtt")
+        let englishURL = try url("https://media.example/en.vtt")
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-VERSION:8
+                #EXT-X-DEFINE:NAME="KO_RESOURCE",VALUE="ko.vtt"
+                #EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="English",LANGUAGE="en",AUTOSELECT=YES,URI="en.m3u8"
+                #EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="Korean",LANGUAGE="ko",DEFAULT=YES,AUTOSELECT=YES,URI="ko.m3u8"
+                #EXT-X-STREAM-INF:BANDWIDTH=1000,SUBTITLES="subs"
+                subtitles-video.m3u8
+                """
+            ),
+            for: masterURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXTINF:4,
+                subtitles-video.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: videoPlaylistURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-VERSION:8
+                #EXT-X-DEFINE:IMPORT="KO_RESOURCE"
+                #EXT-X-TARGETDURATION:4
+                #EXTINF:4,
+                {$KO_RESOURCE}
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: koreanPlaylistURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXTINF:4,
+                en.vtt
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: englishPlaylistURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("video".utf8)),
+            for: videoURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("WEBVTT\nko".utf8)),
+            for: koreanURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("WEBVTT\nen".utf8)),
+            for: englishURL
+        )
+
+        let receipt = try await recorder(
+            session: fixture.session,
+            startPosition: .currentWindow,
+            renditions: HLSLiveDVRRenditionPack(
+                audio: .disabled,
+                subtitles: .preferredLanguages(["ko-KR", "en"])
+            )
+        ).record(from: masterURL, to: fixture.destinationURL)
+
+        #expect(
+            receipt.tracks.map(\.kind)
+                == [.primary, .subtitles, .subtitles]
+        )
+        #expect(receipt.tracks.dropFirst().map(\.language) == ["ko", "en"])
+        let master = try String(
+            contentsOf: receipt.entryPlaylistURL,
+            encoding: .utf8
+        )
+        #expect(
+            master.components(separatedBy: "#EXT-X-MEDIA:TYPE=SUBTITLES")
+                .count - 1 == 2
+        )
+        #expect(!master.contains("KO_RESOURCE"))
+        #expect(!master.contains("media.example"))
+    }
+
+    @Test("stable rendition identity survives Content Steering failover")
+    func retainsRenditionAcrossContentSteeringFailover() async throws {
+        let masterURL = try url("https://media.example/dvr-steered.m3u8")
+        let steeringURL = try url("https://media.example/dvr-steering.json")
+        let primaryVideoURL = try url("https://media.example/a-video.m3u8")
+        let primaryReloadURL = try url(
+            "https://media.example/a-video.m3u8?_HLS_msn=2"
+        )
+        let primaryAudioURL = try url("https://media.example/a-audio.m3u8")
+        let fallbackVideoURL = try url(
+            "https://media.example/b-video.m3u8?_HLS_msn=1"
+        )
+        let fallbackAudioURL = try url("https://media.example/b-audio.m3u8")
+        let fallbackVideoSegmentURL = try url(
+            "https://media.example/b-video-2.ts"
+        )
+        let fallbackAudioSegmentURL = try url(
+            "https://media.example/b-audio-2.aac"
+        )
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-CONTENT-STEERING:SERVER-URI="dvr-steering.json",PATHWAY-ID="A"
+                #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="English",STABLE-RENDITION-ID="audio-main",DEFAULT=YES,URI="a-audio.m3u8"
+                #EXT-X-STREAM-INF:BANDWIDTH=1000,RESOLUTION=1280x720,CODECS="avc1.4d401f",AUDIO="audio",STABLE-VARIANT-ID="video-main",PATHWAY-ID="A"
+                a-video.m3u8
+                """
+            ),
+            for: masterURL
+        )
+        HLSLiveURLProtocol.register(
+            HLSLiveURLProtocol.Response(
+                statusCode: 200,
+                data: Data(
+                    """
+                    {
+                      "VERSION": 1,
+                      "TTL": 300,
+                      "PATHWAY-PRIORITY": ["A", "B"],
+                      "PATHWAY-CLONES": [{
+                        "BASE-ID": "A",
+                        "ID": "B",
+                        "URI-REPLACEMENT": {
+                          "PER-VARIANT-URIS": {
+                            "video-main": "https://media.example/b-video.m3u8"
+                          },
+                          "PER-RENDITION-URIS": {
+                            "audio-main": "https://media.example/b-audio.m3u8"
+                          }
+                        }
+                      }]
+                    }
+                    """.utf8
+                ),
+                headers: ["Content-Type": "application/json"]
+            ),
+            for: steeringURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-VERSION:9
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:1
+                #EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES
+                #EXTINF:4,
+                a-video-1.ts
+                #EXT-X-RENDITION-REPORT:URI="b-video.m3u8",LAST-MSN=1
+                """
+            ),
+            for: primaryVideoURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:1
+                #EXTINF:4,
+                a-audio-1.aac
+                """
+            ),
+            for: primaryAudioURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:2
+                #EXTINF:4,
+                b-video-2.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: fallbackVideoURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:1
+                #EXTINF:4,
+                b-audio-1.aac
+                #EXTINF:4,
+                b-audio-2.aac
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: fallbackAudioURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("fallback-video".utf8)),
+            for: fallbackVideoSegmentURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("fallback-audio".utf8)),
+            for: fallbackAudioSegmentURL
+        )
+
+        let client = HLSLivePlaylistClient(
+            session: fixture.session,
+            configuration: .advanced(
+                variantSelectionPolicy: .highestQuality,
+                contentSteering: HLSContentSteeringPack()
+            )
+        )
+        let receipt = try await HLSLiveDVRRecorder(
+            client: client,
+            configuration: .advanced(
+                limits: HLSLiveDVRLimitPack(
+                    maximumDuration: 60,
+                    maximumSegmentCount: 20,
+                    maximumMediaResourceBytes: 1_024,
+                    maximumTotalMediaBytes: 4_096
+                ),
+                startPosition: .nextCompletedSegment
+            )
+        ).record(from: masterURL, to: fixture.destinationURL)
+
+        #expect(receipt.segmentCount == 1)
+        #expect(receipt.tracks.last?.stableID == "audio-main")
+        let requests = HLSLiveURLProtocol.capturedRequests().compactMap(\.url)
+        #expect(requests.contains(primaryReloadURL))
+        #expect(requests.contains(fallbackVideoURL))
+        #expect(requests.contains(fallbackAudioURL))
+        #expect(requests.contains(fallbackVideoSegmentURL))
+        #expect(requests.contains(fallbackAudioSegmentURL))
+    }
+
+    @Test("Content Steering rejects an unreferenced stable rendition")
+    func rejectsUnreferencedStableRendition() throws {
+        let sourceURL = try url("https://media.example/source-master.m3u8")
+        let fallbackURL = try url(
+            "https://media.example/fallback-master.m3u8"
+        )
+        let mediaURL = try url("https://media.example/media.m3u8")
+        let source = try PlaylistResolver().resolve(
+            """
+            #EXTM3U
+            #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio-a",NAME="English",STABLE-RENDITION-ID="audio-main",DEFAULT=YES,URI="a.m3u8"
+            #EXT-X-STREAM-INF:BANDWIDTH=1000,AUDIO="audio-a",STABLE-VARIANT-ID="video-main",PATHWAY-ID="A"
+            a-video.m3u8
+            """,
+            relativeTo: sourceURL
+        )
+        let fallback = try PlaylistResolver().resolve(
+            """
+            #EXTM3U
+            #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio-a",NAME="Unreferenced",STABLE-RENDITION-ID="audio-main",DEFAULT=YES,URI="wrong.m3u8"
+            #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio-b",NAME="Current",STABLE-RENDITION-ID="audio-current",DEFAULT=YES,URI="current.m3u8"
+            #EXT-X-STREAM-INF:BANDWIDTH=1000,AUDIO="audio-b",STABLE-VARIANT-ID="video-main",PATHWAY-ID="B"
+            b-video.m3u8
+            """,
+            relativeTo: fallbackURL
+        )
+        let media = try PlaylistResolver().resolve(
+            """
+            #EXTM3U
+            #EXT-X-TARGETDURATION:4
+            #EXTINF:4,
+            media.ts
+            """,
+            relativeTo: mediaURL
+        )
+        let sourceSnapshot = HLSLivePlaylistSnapshot(
+            playlist: media,
+            segments: [],
+            partialSegments: [],
+            dateRanges: [],
+            selectedVariant: source.variants.first,
+            availableRenditions: source.renditions,
+            pathwayID: "A",
+            generation: 0,
+            isDeltaUpdate: false,
+            isEnded: false
+        )
+        let fallbackSnapshot = HLSLivePlaylistSnapshot(
+            playlist: media,
+            segments: [],
+            partialSegments: [],
+            dateRanges: [],
+            selectedVariant: fallback.variants.first,
+            availableRenditions: fallback.renditions,
+            pathwayID: "B",
+            generation: 1,
+            isDeltaUpdate: false,
+            isEnded: false
+        )
+        let selection = try HLSLiveDVRRenditionSelector.select(
+            from: sourceSnapshot,
+            pack: HLSLiveDVRRenditionPack()
+        )
+        let selected = try #require(selection.external.first)
+
+        #expect(
+            throws: HLSLiveDVRError.unsupportedFeature(
+                .incompleteExternalRendition
+            )
+        ) {
+            try selected.source(
+                in: fallbackSnapshot,
+                initialPathwayID: "A"
+            )
+        }
+    }
+
+    @Test("Content Steering retains only proven in-band captions")
+    func retainsOnlyProvenInBandCaptions() throws {
+        let sourceURL = try url("https://media.example/source-master.m3u8")
+        let fallbackURL = try url(
+            "https://media.example/fallback-master.m3u8"
+        )
+        let mediaURL = try url("https://media.example/media.m3u8")
+        let source = try PlaylistResolver().resolve(
+            """
+            #EXTM3U
+            #EXT-X-MEDIA:TYPE=CLOSED-CAPTIONS,GROUP-ID="captions-a",NAME="Stable",STABLE-RENDITION-ID="captions-main",INSTREAM-ID="CC1"
+            #EXT-X-MEDIA:TYPE=CLOSED-CAPTIONS,GROUP-ID="captions-a",NAME="Declared",INSTREAM-ID="CC2"
+            #EXT-X-STREAM-INF:BANDWIDTH=1000,CLOSED-CAPTIONS="captions-a",STABLE-VARIANT-ID="video-main",PATHWAY-ID="A"
+            a-video.m3u8
+            """,
+            relativeTo: sourceURL
+        )
+        let fallback = try PlaylistResolver().resolve(
+            """
+            #EXTM3U
+            #EXT-X-MEDIA:TYPE=CLOSED-CAPTIONS,GROUP-ID="captions-b",NAME="Stable fallback",STABLE-RENDITION-ID="captions-main",INSTREAM-ID="CC1"
+            #EXT-X-MEDIA:TYPE=CLOSED-CAPTIONS,GROUP-ID="captions-b",NAME="Declared",INSTREAM-ID="CC2"
+            #EXT-X-MEDIA:TYPE=CLOSED-CAPTIONS,GROUP-ID="captions-a",NAME="Unreferenced",STABLE-RENDITION-ID="captions-main",INSTREAM-ID="CC3"
+            #EXT-X-STREAM-INF:BANDWIDTH=1000,CLOSED-CAPTIONS="captions-b",STABLE-VARIANT-ID="video-main",PATHWAY-ID="B"
+            b-video.m3u8
+            """,
+            relativeTo: fallbackURL
+        )
+        let media = try PlaylistResolver().resolve(
+            """
+            #EXTM3U
+            #EXT-X-TARGETDURATION:4
+            #EXTINF:4,
+            media.ts
+            """,
+            relativeTo: mediaURL
+        )
+        let sourceSnapshot = HLSLivePlaylistSnapshot(
+            playlist: media,
+            segments: [],
+            partialSegments: [],
+            dateRanges: [],
+            selectedVariant: source.variants.first,
+            availableRenditions: source.renditions,
+            pathwayID: "A",
+            generation: 0,
+            isDeltaUpdate: false,
+            isEnded: false
+        )
+        let fallbackSnapshot = HLSLivePlaylistSnapshot(
+            playlist: media,
+            segments: [],
+            partialSegments: [],
+            dateRanges: [],
+            selectedVariant: fallback.variants.first,
+            availableRenditions: fallback.renditions,
+            pathwayID: "B",
+            generation: 1,
+            isDeltaUpdate: false,
+            isEnded: false
+        )
+        let selection = try HLSLiveDVRRenditionSelector.select(
+            from: sourceSnapshot,
+            pack: HLSLiveDVRRenditionPack()
+        )
+
+        let retained = HLSLiveDVRRenditionSelector.retainedClosedCaptions(
+            selection.inBandClosedCaptions,
+            in: fallbackSnapshot,
+            initialPathwayID: "A"
+        )
+
+        #expect(retained.count == 1)
+        #expect(retained.first?.stableID == "captions-main")
+        #expect(retained.first?.groupID == "captions-b")
+        #expect(retained.first?.instreamID == "CC1")
     }
 
     @Test("an existing destination fails before the playlist request")
@@ -1123,7 +1979,9 @@ extension HLSLivePlaylistClientTests {
 
     private func recorder(
         session: URLSession,
-        startPosition: HLSLiveDVRStartPosition
+        startPosition: HLSLiveDVRStartPosition,
+        renditions: HLSLiveDVRRenditionPack =
+            HLSLiveDVRRenditionPack()
     ) -> HLSLiveDVRRecorder {
         HLSLiveDVRRecorder(
             client: HLSLivePlaylistClient(session: session),
@@ -1134,7 +1992,8 @@ extension HLSLivePlaylistClientTests {
                     maximumMediaResourceBytes: 1_024,
                     maximumTotalMediaBytes: 4_096
                 ),
-                startPosition: startPosition
+                startPosition: startPosition,
+                renditions: renditions
             )
         )
     }

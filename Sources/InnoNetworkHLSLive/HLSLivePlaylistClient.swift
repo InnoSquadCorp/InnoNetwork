@@ -96,7 +96,27 @@ public struct HLSLivePlaylistClient: Sendable {
             generation: 0,
             selectedVariant: presentation.selectedVariant,
             availableRenditions: presentation.renditions,
-            pathwayID: presentation.pathwayID
+            pathwayID: presentation.pathwayID,
+            multivariantVariables:
+                presentation.multivariantVariables
+        )
+    }
+
+    func renditionSnapshot(
+        from sourceURL: URL,
+        multivariantVariables: [String: String],
+        generation: Int
+    ) async throws -> HLSLivePlaylistSnapshot {
+        let document = try await resolveDocument(
+            from: sourceURL,
+            purpose: .mediaPlaylist,
+            multivariantVariables: multivariantVariables
+        )
+        return try HLSLivePlaylistMerger.makeSnapshot(
+            from: document,
+            previous: nil,
+            generation: generation,
+            multivariantVariables: multivariantVariables
         )
     }
 
@@ -229,7 +249,9 @@ public struct HLSLivePlaylistClient: Sendable {
                     generation: generation,
                     selectedVariant: selectedVariant,
                     availableRenditions: availableRenditions,
-                    pathwayID: pathwayID
+                    pathwayID: pathwayID,
+                    multivariantVariables:
+                        multivariantVariables
                 )
             } catch HLSLiveError.deltaBaseUnavailable {
                 guard

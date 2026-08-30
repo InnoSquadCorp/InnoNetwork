@@ -16,6 +16,7 @@ package struct HLSLiveSegmentRecord: Equatable, Sendable {
     package let byteRange: HLSByteRange?
     package let beginsDiscontinuity: Bool
     package let isGap: Bool
+    package let programDateTime: Date?
     package let encryption: HLSLiveAES128EncryptionRecord?
 }
 
@@ -72,7 +73,8 @@ package extension PlaylistResolver {
         let selection = try await HLSMediaPlaylistResolver(
             client: client,
             selectionPolicy: selectionPolicy,
-            contentSteering: settings
+            contentSteering: settings,
+            allowsSeparateAudioRenditions: true
         ).resolve(
             from: sourceURL,
             requestTimeout: requestTimeout,
@@ -201,7 +203,14 @@ package extension PlaylistResolver {
             throw HLSDownloadError.invalidPlaylist
         }
 
+        let programDatesBySegmentIndex = Dictionary(
+            uniqueKeysWithValues: documentProgramDates(
+                in: playlist
+            )
+        )
         var segmentOffset: Int64 = 0
+        var listedSegmentIndex = 0
+        var nextProgramDate: Date?
         var segments: [HLSLiveSegmentRecord] = []
         for resource in media.resources where resource.kind == .segment {
             guard let duration = resource.duration else {
@@ -212,6 +221,14 @@ package extension PlaylistResolver {
             guard !overflow else {
                 throw HLSDownloadError.invalidPlaylist
             }
+            if let declaredProgramDate =
+                programDatesBySegmentIndex[listedSegmentIndex]
+            {
+                nextProgramDate = declaredProgramDate
+            } else if resource.beginsDiscontinuity {
+                nextProgramDate = nil
+            }
+            let programDateTime = nextProgramDate
             segments.append(
                 HLSLiveSegmentRecord(
                     sequenceNumber: sequenceNumber,
@@ -220,6 +237,7 @@ package extension PlaylistResolver {
                     byteRange: resource.byteRange,
                     beginsDiscontinuity: resource.beginsDiscontinuity,
                     isGap: resource.isGap,
+                    programDateTime: programDateTime,
                     encryption: resource.encryption.map {
                         HLSLiveAES128EncryptionRecord(
                             keyURL: $0.keyURL,
@@ -229,12 +247,23 @@ package extension PlaylistResolver {
                     }
                 )
             )
+            if let programDateTime {
+                nextProgramDate = programDateTime.addingTimeInterval(
+                    duration
+                )
+            }
             let (nextOffset, offsetOverflow) =
                 segmentOffset.addingReportingOverflow(1)
             guard !offsetOverflow else {
                 throw HLSDownloadError.invalidPlaylist
             }
             segmentOffset = nextOffset
+            let (nextIndex, indexOverflow) =
+                listedSegmentIndex.addingReportingOverflow(1)
+            guard !indexOverflow else {
+                throw HLSDownloadError.invalidPlaylist
+            }
+            listedSegmentIndex = nextIndex
         }
 
         var nextPartIndexBySegment: [Int: Int] = [:]
@@ -293,6 +322,14 @@ package extension PlaylistResolver {
             encryptionMethod: media.encryptionMethod,
             hasEndList: media.hasEndList
         )
+    }
+
+    private static func documentProgramDates(
+        in playlist: HLSPlaylist
+    ) -> [(Int, Date)] {
+        playlist.programDateTimes.map {
+            ($0.segmentIndex, $0.date)
+        }
     }
 
     private static func liveVariantsAreCompatible(

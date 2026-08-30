@@ -22,6 +22,12 @@ public enum HLSLiveDVRUnsupportedFeature: Equatable, Sendable {
 
     /// A Date Range references media or metadata outside the primary stream.
     case externalTimelineResource
+
+    /// A Date Range contains extension values unavailable after redaction.
+    case unrepresentableTimelineMetadata
+
+    /// A selected rendition could not remain complete with the primary track.
+    case incompleteExternalRendition
 }
 
 /// A bounded live DVR recording failure.
@@ -37,6 +43,9 @@ public enum HLSLiveDVRError: Error, Equatable, Sendable {
 
     /// No complete segment fit within the configured limits.
     case noSegmentsRecorded
+
+    /// Rendition selection exceeded the configured per-kind limit.
+    case renditionLimitExceeded(limit: Int)
 
     /// The live window advanced past an unrecorded complete segment.
     case liveWindowAdvanced
@@ -86,6 +95,8 @@ extension HLSLiveDVRError: LocalizedError {
             return "Another task or process is writing to the live DVR destination."
         case .noSegmentsRecorded:
             return "No complete live segment fit within the recording limits."
+        case .renditionLimitExceeded(let limit):
+            return "Live DVR rendition selection exceeded the per-kind limit of \(limit)."
         case .liveWindowAdvanced:
             return "The live window advanced before every complete segment could be recorded."
         case .unsupportedFeature(let feature):
@@ -125,6 +136,8 @@ extension HLSLiveDVRError: LocalizedError {
             return "Wait for the other writer to finish or choose another destination."
         case .noSegmentsRecorded:
             return "Increase the duration or byte limits and record again."
+        case .renditionLimitExceeded:
+            return "Select fewer rendition languages or raise the bounded rendition limit."
         case .liveWindowAdvanced:
             return "Use a faster connection or lower-bitrate variant and start a new recording."
         case .unsupportedFeature:
@@ -165,7 +178,58 @@ private extension HLSLiveDVRUnsupportedFeature {
             return "external rendition"
         case .externalTimelineResource:
             return "external timeline resource"
+        case .unrepresentableTimelineMetadata:
+            return "unrepresentable timeline metadata"
+        case .incompleteExternalRendition:
+            return "incomplete external rendition"
         }
+    }
+}
+
+/// The role of one local playlist in a live DVR package.
+public enum HLSLiveDVRTrackKind: Equatable, Hashable, Sendable {
+    /// The selected primary variant or direct media playlist.
+    case primary
+
+    /// One external audio rendition.
+    case audio
+
+    /// One external subtitle rendition.
+    case subtitles
+
+    /// One external alternate-video rendition.
+    case video
+}
+
+/// Non-sensitive metadata for one local live DVR playlist.
+public struct HLSLiveDVRTrack: Equatable, Sendable {
+    /// The local track role.
+    public let kind: HLSLiveDVRTrackKind
+
+    /// The source rendition name, or `nil` for the primary track.
+    public let name: String?
+
+    /// The source BCP 47 language tag.
+    public let language: String?
+
+    /// The source's stable rendition identifier.
+    public let stableID: String?
+
+    /// The playlist path relative to the package directory.
+    public let relativePlaylistPath: String
+
+    init(
+        kind: HLSLiveDVRTrackKind,
+        name: String?,
+        language: String?,
+        stableID: String?,
+        relativePlaylistPath: String
+    ) {
+        self.kind = kind
+        self.name = name
+        self.language = language
+        self.stableID = stableID
+        self.relativePlaylistPath = relativePlaylistPath
     }
 }
 
@@ -208,6 +272,15 @@ public struct HLSLiveDVRReceipt: Equatable, Sendable {
     /// The local VOD media playlist.
     public let playlistURL: URL
 
+    /// The local package entry point.
+    ///
+    /// This is `master.m3u8` when external renditions or in-band caption
+    /// declarations were retained, and the primary media playlist otherwise.
+    public let entryPlaylistURL: URL
+
+    /// The local playlists retained in the package.
+    public let tracks: [HLSLiveDVRTrack]
+
     /// The number of retained complete segments.
     public let segmentCount: Int
 
@@ -226,6 +299,8 @@ public struct HLSLiveDVRReceipt: Equatable, Sendable {
     init(
         directoryURL: URL,
         playlistURL: URL,
+        entryPlaylistURL: URL,
+        tracks: [HLSLiveDVRTrack],
         segmentCount: Int,
         recordedDuration: TimeInterval,
         mediaByteCount: Int64,
@@ -234,6 +309,8 @@ public struct HLSLiveDVRReceipt: Equatable, Sendable {
     ) {
         self.directoryURL = directoryURL
         self.playlistURL = playlistURL
+        self.entryPlaylistURL = entryPlaylistURL
+        self.tracks = tracks
         self.segmentCount = segmentCount
         self.recordedDuration = recordedDuration
         self.mediaByteCount = mediaByteCount

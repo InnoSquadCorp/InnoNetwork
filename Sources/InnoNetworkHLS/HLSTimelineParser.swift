@@ -260,7 +260,10 @@ enum HLSTimelineParser {
             throw HLSDownloadError.invalidPlaylist
         }
         let extensionNames = attributes.attributeNames
-            .filter { $0.hasPrefix("X-") }
+            .filter {
+                $0.hasPrefix("X-")
+                    || $0.hasPrefix("SCTE35-")
+            }
             .sorted()
         return HLSDateRange(
             id: id,
