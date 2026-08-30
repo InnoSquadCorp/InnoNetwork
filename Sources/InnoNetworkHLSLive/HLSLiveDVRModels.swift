@@ -5,7 +5,7 @@ public enum HLSLiveDVRUnsupportedFeature: Equatable, Sendable {
     /// One or more complete segments are intentionally absent.
     case gap
 
-    /// Media or an initialization map requires content-key handling.
+    /// Media uses DRM or sample encryption that cannot become plaintext.
     case encryptedMedia
 
     /// The stream has no container supported by the local playlist writer.
@@ -53,6 +53,21 @@ public enum HLSLiveDVRError: Error, Equatable, Sendable {
     /// A media request returned a non-success HTTP status.
     case invalidMediaResponseStatus(Int)
 
+    /// An AES-128 key response was not exactly 16 bytes.
+    case invalidEncryptionKey
+
+    /// An AES-128 key request returned a non-success HTTP status.
+    case invalidEncryptionKeyResponseStatus(Int)
+
+    /// AES-128 media could not be decrypted or had invalid padding.
+    case decryptionFailed
+
+    /// Available capacity could not be read under a required disk policy.
+    case diskCapacityUnavailable
+
+    /// The destination volume cannot satisfy the configured disk policy.
+    case insufficientDiskCapacity(required: Int64, available: Int64)
+
     /// A media transfer failed without exposing transport details.
     case transferFailed
 
@@ -83,6 +98,16 @@ extension HLSLiveDVRError: LocalizedError {
             return "A live DVR byte-range response did not match the requested interval."
         case .invalidMediaResponseStatus(let statusCode):
             return "A live DVR media request returned HTTP \(statusCode)."
+        case .invalidEncryptionKey:
+            return "A live DVR AES-128 key response was not exactly 16 bytes."
+        case .invalidEncryptionKeyResponseStatus(let statusCode):
+            return "A live DVR AES-128 key request returned HTTP \(statusCode)."
+        case .decryptionFailed:
+            return "A live DVR AES-128 resource could not be decrypted."
+        case .diskCapacityUnavailable:
+            return "Available capacity could not be read for the live DVR destination."
+        case .insufficientDiskCapacity(let required, let available):
+            return "The live DVR destination requires \(required) available bytes but reports \(available)."
         case .transferFailed:
             return "A live DVR media transfer failed."
         case .storageFailed:
@@ -108,8 +133,15 @@ extension HLSLiveDVRError: LocalizedError {
             return "Increase the per-resource limit only for a trusted source."
         case .invalidByteRangeResponse:
             return "Verify that the origin honors exact HLS byte-range requests."
-        case .invalidMediaResponseStatus, .transferFailed:
+        case .invalidMediaResponseStatus, .invalidEncryptionKeyResponseStatus,
+            .transferFailed:
             return "Check connectivity and source availability, then start a new recording."
+        case .invalidEncryptionKey, .decryptionFailed:
+            return "Verify the AES-128 key and media authoring, then start a new recording."
+        case .diskCapacityUnavailable:
+            return "Allow capacity inspection or choose a best-effort disk policy."
+        case .insufficientDiskCapacity:
+            return "Free destination storage or lower the recording limits, then retry."
         case .storageFailed:
             return "Check destination permissions and available storage, then retry."
         }
@@ -122,7 +154,7 @@ private extension HLSLiveDVRUnsupportedFeature {
         case .gap:
             return "timeline gap"
         case .encryptedMedia:
-            return "encrypted media"
+            return "DRM or sample-encrypted media"
         case .unknownMediaContainer:
             return "unknown media container"
         case .missingInitializationSegment:

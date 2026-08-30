@@ -159,6 +159,15 @@ public struct HLSLiveDVRRecorder: Sendable {
             configuration: configuration,
             workspace: workspace
         )
+        let resourceContext = HLSLiveDVRResourceContext(
+            keyCache: HLSAES128KeyCache(
+                client: liveClient.resourceClient
+            ),
+            diskCapacityGuard: HLSDiskCapacityGuard(
+                directoryURL: workspace.directoryURL,
+                policy: configuration.limits.diskCapacityPolicy
+            )
+        )
         do {
             recordingLoop: for try await snapshot in liveClient.snapshots(from: sourceURL) {
                 try state.validatePresentation(snapshot)
@@ -172,7 +181,8 @@ public struct HLSLiveDVRRecorder: Sendable {
                     try state.validate(segment)
                     guard
                         try await retainInitializationIfNeeded(
-                            state: &state
+                            state: &state,
+                            resourceContext: resourceContext
                         )
                     else {
                         break recordingLoop
@@ -180,7 +190,8 @@ public struct HLSLiveDVRRecorder: Sendable {
                     guard
                         try await retain(
                             segment,
-                            state: &state
+                            state: &state,
+                            resourceContext: resourceContext
                         )
                     else {
                         break recordingLoop
@@ -220,7 +231,8 @@ public struct HLSLiveDVRRecorder: Sendable {
     }
 
     private func retainInitializationIfNeeded(
-        state: inout HLSLiveDVRRecordingState
+        state: inout HLSLiveDVRRecordingState,
+        resourceContext: HLSLiveDVRResourceContext
     ) async throws -> Bool {
         guard
             state.container == .fragmentedMP4,
@@ -246,9 +258,11 @@ public struct HLSLiveDVRRecorder: Sendable {
         let result = try await load(
             sourceURL: initialization.url,
             byteRange: initialization.byteRange,
+            encryption: initialization.encryption,
             resourceIndex: state.nextResourceIndex,
             destinationURL: destinationURL,
-            state: state
+            state: state,
+            resourceContext: resourceContext
         )
         switch result {
         case .retained(let byteCount):
@@ -264,7 +278,8 @@ public struct HLSLiveDVRRecorder: Sendable {
 
     private func retain(
         _ segment: HLSLiveSegment,
-        state: inout HLSLiveDVRRecordingState
+        state: inout HLSLiveDVRRecordingState,
+        resourceContext: HLSLiveDVRResourceContext
     ) async throws -> Bool {
         let fallbackExtension: String
         switch state.container {
@@ -292,9 +307,11 @@ public struct HLSLiveDVRRecorder: Sendable {
         let result = try await load(
             sourceURL: segment.url,
             byteRange: segment.byteRange,
+            encryption: segment.encryption,
             resourceIndex: state.nextResourceIndex,
             destinationURL: destinationURL,
-            state: state
+            state: state,
+            resourceContext: resourceContext
         )
         switch result {
         case .retained(let byteCount):
@@ -312,9 +329,11 @@ public struct HLSLiveDVRRecorder: Sendable {
     private func load(
         sourceURL: URL,
         byteRange: HLSByteRange?,
+        encryption: HLSLiveAES128Encryption?,
         resourceIndex: Int,
         destinationURL: URL,
-        state: HLSLiveDVRRecordingState
+        state: HLSLiveDVRRecordingState,
+        resourceContext: HLSLiveDVRResourceContext
     ) async throws -> HLSLiveDVRLoadResult {
         let remainingBytes =
             configuration.limits.maximumTotalMediaBytes
@@ -322,21 +341,37 @@ public struct HLSLiveDVRRecorder: Sendable {
         guard remainingBytes > 0 else {
             return .totalLimitReached
         }
-        let maximumBytes64 = min(
+        let maximumRetainedBytes64 = min(
             Int64(configuration.limits.maximumMediaResourceBytes),
             remainingBytes,
             Int64(Int.max)
         )
-        guard maximumBytes64 > 0 else {
+        guard maximumRetainedBytes64 > 0 else {
             return .totalLimitReached
         }
+        let paddingAllowance: Int64 = encryption == nil ? 0 : 16
+        let (totalBoundedTransferBytes, transferOverflow) =
+            maximumRetainedBytes64.addingReportingOverflow(
+                paddingAllowance
+            )
+        let maximumBytes64 = min(
+            Int64(configuration.limits.maximumMediaResourceBytes),
+            transferOverflow ? .max : totalBoundedTransferBytes,
+            Int64(Int.max)
+        )
         do {
             return .retained(
                 try await resourceLoader.load(
                     from: sourceURL,
                     byteRange: byteRange,
+                    encryption: encryption,
                     resourceIndex: resourceIndex,
                     maximumBytes: Int(maximumBytes64),
+                    maximumRetainedBytes:
+                        Int(maximumRetainedBytes64),
+                    keyCache: resourceContext.keyCache,
+                    diskCapacityGuard:
+                        resourceContext.diskCapacityGuard,
                     destinationURL: destinationURL
                 )
             )
@@ -345,15 +380,16 @@ public struct HLSLiveDVRRecorder: Sendable {
         } catch let error as HLSLiveDVRResourceLoadError {
             switch error {
             case .bodyLimitExceeded:
-                if remainingBytes
+                if maximumBytes64
                     < Int64(
-                        configuration.limits
-                            .maximumMediaResourceBytes
+                        configuration.limits.maximumMediaResourceBytes
                     )
                 {
                     return .totalLimitReached
                 }
                 throw HLSLiveDVRError.mediaResourceTooLarge
+            case .retainedLimitExceeded:
+                return .totalLimitReached
             case .invalidByteRangeResponse:
                 throw HLSLiveDVRError.invalidByteRangeResponse
             case .invalidResponseStatus(let statusCode):
@@ -365,6 +401,26 @@ public struct HLSLiveDVRRecorder: Sendable {
             }
         } catch let error as HLSLiveDVRError {
             throw error
+        } catch let error as HLSDownloadError {
+            switch error {
+            case .invalidAES128Key:
+                throw HLSLiveDVRError.invalidEncryptionKey
+            case .invalidAES128KeyResponseStatus(let statusCode):
+                throw
+                    HLSLiveDVRError
+                    .invalidEncryptionKeyResponseStatus(statusCode)
+            case .aes128DecryptionFailed:
+                throw HLSLiveDVRError.decryptionFailed
+            case .diskCapacityUnavailable:
+                throw HLSLiveDVRError.diskCapacityUnavailable
+            case .insufficientDiskCapacity(let required, let available):
+                throw HLSLiveDVRError.insufficientDiskCapacity(
+                    required: required,
+                    available: available
+                )
+            default:
+                throw HLSLiveDVRError.transferFailed
+            }
         } catch {
             throw HLSLiveDVRError.storageFailed
         }
@@ -412,6 +468,11 @@ private struct HLSLiveDVRWorkspace: Sendable {
     let directoryURL: URL
 }
 
+private struct HLSLiveDVRResourceContext: Sendable {
+    let keyCache: HLSAES128KeyCache
+    let diskCapacityGuard: HLSDiskCapacityGuard
+}
+
 private struct HLSLiveDVRRecordingState {
     let configuration: HLSLiveDVRConfiguration
     let workspace: HLSLiveDVRWorkspace
@@ -457,6 +518,14 @@ private struct HLSLiveDVRRecordingState {
         }
         container = snapshotContainer
 
+        if let encryptionMethod = snapshot.encryptionMethod,
+            encryptionMethod != "AES-128"
+        {
+            throw HLSLiveDVRError.unsupportedFeature(
+                .encryptedMedia
+            )
+        }
+
         if let selectedVariant = snapshot.selectedVariant,
             selectedVariant.audioGroupID != nil
                 || selectedVariant.videoGroupID != nil
@@ -482,11 +551,6 @@ private struct HLSLiveDVRRecordingState {
             )
         }
         let candidate = snapshot.initializationSegments.first
-        if candidate?.isEncrypted == true {
-            throw HLSLiveDVRError.unsupportedFeature(
-                .encryptedMedia
-            )
-        }
         switch snapshotContainer {
         case .mpegTransportStream:
             guard candidate == nil else {
@@ -566,11 +630,6 @@ private struct HLSLiveDVRRecordingState {
         }
         guard !segment.isGap else {
             throw HLSLiveDVRError.unsupportedFeature(.gap)
-        }
-        guard !segment.isEncrypted else {
-            throw HLSLiveDVRError.unsupportedFeature(
-                .encryptedMedia
-            )
         }
     }
 

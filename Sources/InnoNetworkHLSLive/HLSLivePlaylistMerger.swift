@@ -54,7 +54,8 @@ enum HLSLivePlaylistMerger {
             initializationSegments:
                 document.initializationSegments.map(
                     HLSLiveInitializationSegment.init(record:)
-                )
+                ),
+            encryptionMethod: document.encryptionMethod
         )
     }
 

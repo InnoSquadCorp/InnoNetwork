@@ -7,6 +7,7 @@ import FoundationNetworking
 
 enum HLSLiveDVRResourceLoadError: Error {
     case bodyLimitExceeded
+    case retainedLimitExceeded
     case invalidByteRangeResponse
     case invalidResponseStatus(Int)
     case emptyResponse
@@ -20,10 +21,23 @@ struct HLSLiveDVRResourceLoader: Sendable {
     func load(
         from sourceURL: URL,
         byteRange: HLSByteRange?,
+        encryption: HLSLiveAES128Encryption?,
         resourceIndex: Int,
         maximumBytes: Int,
+        maximumRetainedBytes: Int,
+        keyCache: HLSAES128KeyCache,
+        diskCapacityGuard: HLSDiskCapacityGuard,
         destinationURL: URL
     ) async throws -> Int64 {
+        let decryptionKey: Data?
+        if let encryption {
+            decryptionKey = try await keyCache.key(
+                for: encryption.keyURL
+            )
+        } else {
+            decryptionKey = nil
+        }
+
         var request = URLRequest(url: sourceURL)
         request.timeoutInterval = requestTimeout
         request.setValue("*/*", forHTTPHeaderField: "Accept")
@@ -72,9 +86,30 @@ struct HLSLiveDVRResourceLoader: Sendable {
         )
 
         let fileManager = FileManager.default
+        let stagedURL =
+            encryption == nil
+            ? destinationURL
+            : destinationURL
+                .deletingLastPathComponent()
+                .appendingPathComponent(
+                    ".\(destinationURL.lastPathComponent)."
+                        + "\(UUID().uuidString).ciphertext"
+                )
+        let expectedBytes =
+            byteRange?.length
+            ?? max(0, transfer.response.expectedContentLength)
+        let capacityMultiplier: Int64 = encryption == nil ? 1 : 2
+        let (requiredCapacity, capacityOverflow) =
+            expectedBytes.multipliedReportingOverflow(
+                by: capacityMultiplier
+            )
+        try await diskCapacityGuard.validate(
+            additionalRequiredCapacity:
+                capacityOverflow ? .max : requiredCapacity
+        )
         guard
             fileManager.createFile(
-                atPath: destinationURL.path,
+                atPath: stagedURL.path,
                 contents: nil
             )
         else {
@@ -83,14 +118,17 @@ struct HLSLiveDVRResourceLoader: Sendable {
         var completed = false
         defer {
             if !completed {
-                try? fileManager.removeItem(at: destinationURL)
+                try? fileManager.removeItem(at: stagedURL)
+                if stagedURL != destinationURL {
+                    try? fileManager.removeItem(at: destinationURL)
+                }
             }
         }
 
         let fileHandle: FileHandle
         do {
             fileHandle = try FileHandle(
-                forWritingTo: destinationURL
+                forWritingTo: stagedURL
             )
         } catch {
             throw HLSLiveDVRError.storageFailed
@@ -114,11 +152,14 @@ struct HLSLiveDVRResourceLoader: Sendable {
                     throw HLSLiveDVRResourceLoadError
                         .bodyLimitExceeded
                 }
+                try await diskCapacityGuard.reserve(chunk.count)
                 do {
                     try fileHandle.write(contentsOf: chunk)
                 } catch {
+                    await diskCapacityGuard.release(chunk.count)
                     throw HLSLiveDVRError.storageFailed
                 }
+                await diskCapacityGuard.release(chunk.count)
                 byteCount = nextByteCount
             }
             do {
@@ -132,6 +173,8 @@ struct HLSLiveDVRResourceLoader: Sendable {
         } catch let error as HLSLiveDVRResourceLoadError {
             throw error
         } catch let error as HLSLiveDVRError {
+            throw error
+        } catch let error as HLSDownloadError {
             throw error
         } catch {
             if HLSHTTPClient.isCancellation(error) {
@@ -152,6 +195,35 @@ struct HLSLiveDVRResourceLoader: Sendable {
         {
             throw HLSLiveDVRResourceLoadError
                 .invalidByteRangeResponse
+        }
+        if let encryption, let decryptionKey {
+            try await HLSAES128Decryptor.decrypt(
+                inputURL: stagedURL,
+                outputURL: destinationURL,
+                key: decryptionKey,
+                initializationVector:
+                    encryption.initializationVector,
+                diskCapacityGuard: diskCapacityGuard
+            )
+            guard
+                let plaintextByteCount =
+                    try destinationURL
+                    .resourceValues(forKeys: [.fileSizeKey])
+                    .fileSize,
+                plaintextByteCount > 0
+            else {
+                throw HLSDownloadError.aes128DecryptionFailed
+            }
+            guard plaintextByteCount <= maximumRetainedBytes else {
+                throw HLSLiveDVRResourceLoadError
+                    .retainedLimitExceeded
+            }
+            do {
+                try fileManager.removeItem(at: stagedURL)
+            } catch {
+                throw HLSLiveDVRError.storageFailed
+            }
+            byteCount = Int64(plaintextByteCount)
         }
         completed = true
         return byteCount

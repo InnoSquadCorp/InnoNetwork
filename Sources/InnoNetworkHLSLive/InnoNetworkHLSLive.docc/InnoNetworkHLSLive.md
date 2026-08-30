@@ -104,17 +104,22 @@ for try await event in recorder.events(
 ```
 
 Only complete segments are retained. Duration, segment count, per-resource
-bytes, total media bytes, request timeout, and event buffering are bounded.
+bytes, total media bytes, request timeout, destination free capacity, and
+event buffering are bounded. ``HLSLiveDVRLimitPack/diskCapacityPolicy`` uses
+the same required, best-effort, or disabled capacity contract as VOD storage.
 When the duration, count, or total-byte boundary is reached, the recorder
 finishes at the last complete segment. Exact `206` and `Content-Range`
 validation localizes byte-range segments as complete files.
 
 MPEG transport streams and fragmented MP4 with one stable initialization map
-are written as a URL-free local VOD playlist. Source URLs, signed query values,
-Date Range metadata, and request errors are not persisted. Gaps, encrypted
-media, external rendition playlists, external timeline resources, and missing
-or changing initialization maps fail with ``HLSLiveDVRError`` rather than
-producing an incomplete presentation.
+are written as a URL-free local VOD playlist. Identity-format AES-128 uses
+explicit or media-sequence IVs, caches each 16-byte key only for the recording,
+supports key rotation and encrypted fMP4 maps, and persists plaintext media
+without `EXT-X-KEY` or source key URLs. Source URLs, signed query values, key
+bytes, Date Range metadata, and request errors are not persisted. Gaps,
+FairPlay or sample encryption, external rendition playlists, external timeline
+resources, and missing or changing initialization maps fail with
+``HLSLiveDVRError`` rather than producing an incomplete presentation.
 
 The destination is reserved in-process and across cooperating processes.
 Staging is a hidden sibling directory, and the complete package becomes

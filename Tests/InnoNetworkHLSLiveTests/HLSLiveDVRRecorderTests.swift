@@ -1,3 +1,4 @@
+import CommonCrypto
 import Foundation
 import InnoNetworkHLS
 import Testing
@@ -385,6 +386,76 @@ extension HLSLivePlaylistClientTests {
         )
     }
 
+    @Test("AES-128 byte ranges validate ciphertext and retain plaintext")
+    func recordsEncryptedByteRange() async throws {
+        let sourceURL = try url("https://media.example/encrypted-range.m3u8")
+        let keyURL = try url("https://media.example/range.key")
+        let segmentURL = try url("https://media.example/range.bin")
+        let key = Data(repeating: 0x51, count: 16)
+        let initializationVector =
+            Data(repeating: 0, count: 15) + Data([5])
+        let plaintext = Data("encrypted ranged media".utf8)
+        let ciphertext = try aes128Encrypt(
+            plaintext,
+            key: key,
+            initializationVector: initializationVector
+        )
+        let lowerBound: Int64 = 10
+        let upperBound = lowerBound + Int64(ciphertext.count) - 1
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-KEY:METHOD=AES-128,URI="range.key",IV=0x00000000000000000000000000000005
+                #EXTINF:4,
+                #EXT-X-BYTERANGE:\(ciphertext.count)@\(lowerBound)
+                range.bin
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(mediaResponse(key), for: keyURL)
+        HLSLiveURLProtocol.register(
+            HLSLiveURLProtocol.Response(
+                statusCode: 206,
+                data: ciphertext,
+                headers: [
+                    "Content-Length": "\(ciphertext.count)",
+                    "Content-Range":
+                        "bytes \(lowerBound)-\(upperBound)/100",
+                ]
+            ),
+            for: segmentURL
+        )
+
+        let receipt = try await recorder(
+            session: fixture.session,
+            startPosition: .currentWindow
+        ).record(from: sourceURL, to: fixture.destinationURL)
+
+        #expect(receipt.mediaByteCount == Int64(plaintext.count))
+        #expect(
+            try Data(
+                contentsOf: receipt.directoryURL
+                    .appendingPathComponent("resources/00000.bin")
+            ) == plaintext
+        )
+        let mediaRequest = try #require(
+            HLSLiveURLProtocol.capturedRequests().last
+        )
+        #expect(
+            mediaRequest.value(forHTTPHeaderField: "Range")
+                == "bytes=\(lowerBound)-\(upperBound)"
+        )
+    }
+
     @Test("total byte limit commits only complete retained segments")
     func totalByteLimitStopsAtSegmentBoundary() async throws {
         let sourceURL = try url("https://media.example/bytes.m3u8")
@@ -447,10 +518,21 @@ extension HLSLivePlaylistClientTests {
         )
     }
 
-    @Test("encrypted media fails without persisting a partial package")
-    func encryptedMediaIsRejected() async throws {
+    @Test("AES-128 media is decrypted into a key-free local package")
+    func recordsAES128Media() async throws {
         let sourceURL = try url(
             "https://media.example/encrypted.m3u8"
+        )
+        let keyURL = try url("https://media.example/key.bin")
+        let segmentURL = try url("https://media.example/1.ts")
+        let key = Data("0123456789abcdef".utf8)
+        let initializationVector =
+            Data(repeating: 0, count: 15) + Data([1])
+        let plaintext = Data("decrypted live media".utf8)
+        let ciphertext = try aes128Encrypt(
+            plaintext,
+            key: key,
+            initializationVector: initializationVector
         )
         let fixture = try makeFixture()
         defer {
@@ -471,29 +553,333 @@ extension HLSLivePlaylistClientTests {
             ),
             for: sourceURL
         )
+        HLSLiveURLProtocol.register(
+            mediaResponse(key),
+            for: keyURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(ciphertext),
+            for: segmentURL
+        )
+
+        let receipt = try await recorder(
+            session: fixture.session,
+            startPosition: .currentWindow
+        ).record(
+            from: sourceURL,
+            to: fixture.destinationURL
+        )
+
+        #expect(receipt.mediaByteCount == Int64(plaintext.count))
+        #expect(
+            try Data(
+                contentsOf: receipt.directoryURL
+                    .appendingPathComponent("resources/00000.ts")
+            ) == plaintext
+        )
+        let playlist = try String(
+            contentsOf: receipt.playlistURL,
+            encoding: .utf8
+        )
+        #expect(!playlist.contains("#EXT-X-KEY"))
+        #expect(!playlist.contains(keyURL.absoluteString))
+        #expect(
+            HLSLiveURLProtocol.capturedRequests()
+                .compactMap(\.url)
+                == [sourceURL, keyURL, segmentURL]
+        )
+        #expect(
+            try packageFileNames(receipt.directoryURL)
+                .allSatisfy { !$0.contains("ciphertext") }
+        )
+        #expect(
+            try packageFileData(receipt.directoryURL)
+                .allSatisfy { $0.range(of: key) == nil }
+        )
+    }
+
+    @Test("implicit media-sequence IVs reuse one in-memory key")
+    func recordsImplicitIVAndReusesKey() async throws {
+        let sourceURL = try url("https://media.example/implicit.m3u8")
+        let keyURL = try url("https://media.example/implicit-key.bin")
+        let firstURL = try url("https://media.example/257.ts")
+        let secondURL = try url("https://media.example/258.ts")
+        let key = Data(repeating: 0x11, count: 16)
+        let firstPlaintext = Data("first implicit segment".utf8)
+        let secondPlaintext = Data("second implicit segment".utf8)
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:257
+                #EXT-X-KEY:METHOD=AES-128,URI="implicit-key.bin"
+                #EXTINF:4,
+                257.ts
+                #EXTINF:4,
+                258.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(mediaResponse(key), for: keyURL)
+        HLSLiveURLProtocol.register(
+            mediaResponse(
+                try aes128Encrypt(
+                    firstPlaintext,
+                    key: key,
+                    initializationVector: sequenceIV(257)
+                )
+            ),
+            for: firstURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(
+                try aes128Encrypt(
+                    secondPlaintext,
+                    key: key,
+                    initializationVector: sequenceIV(258)
+                )
+            ),
+            for: secondURL
+        )
+
+        let receipt = try await recorder(
+            session: fixture.session,
+            startPosition: .currentWindow
+        ).record(from: sourceURL, to: fixture.destinationURL)
+
+        #expect(
+            try Data(
+                contentsOf: receipt.directoryURL
+                    .appendingPathComponent("resources/00000.ts")
+            ) == firstPlaintext
+        )
+        #expect(
+            try Data(
+                contentsOf: receipt.directoryURL
+                    .appendingPathComponent("resources/00001.ts")
+            ) == secondPlaintext
+        )
+        #expect(
+            HLSLiveURLProtocol.capturedRequests()
+                .compactMap(\.url)
+                .count { $0 == keyURL } == 1
+        )
+    }
+
+    @Test("AES-128 key rotation fetches each key once")
+    func recordsRotatedAES128Keys() async throws {
+        let sourceURL = try url("https://media.example/rotation.m3u8")
+        let firstKeyURL = try url("https://media.example/first.key")
+        let secondKeyURL = try url("https://media.example/second.key")
+        let firstURL = try url("https://media.example/1.ts")
+        let secondURL = try url("https://media.example/2.ts")
+        let firstKey = Data(repeating: 0x21, count: 16)
+        let secondKey = Data(repeating: 0x22, count: 16)
+        let initializationVector =
+            Data(repeating: 0, count: 15) + Data([9])
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-KEY:METHOD=AES-128,URI="first.key",IV=0x00000000000000000000000000000009
+                #EXTINF:4,
+                1.ts
+                #EXT-X-KEY:METHOD=AES-128,URI="second.key",IV=0x00000000000000000000000000000009
+                #EXTINF:4,
+                2.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(mediaResponse(firstKey), for: firstKeyURL)
+        HLSLiveURLProtocol.register(mediaResponse(secondKey), for: secondKeyURL)
+        HLSLiveURLProtocol.register(
+            mediaResponse(
+                try aes128Encrypt(
+                    Data("first rotated".utf8),
+                    key: firstKey,
+                    initializationVector: initializationVector
+                )
+            ),
+            for: firstURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(
+                try aes128Encrypt(
+                    Data("second rotated".utf8),
+                    key: secondKey,
+                    initializationVector: initializationVector
+                )
+            ),
+            for: secondURL
+        )
+
+        let receipt = try await recorder(
+            session: fixture.session,
+            startPosition: .currentWindow
+        ).record(from: sourceURL, to: fixture.destinationURL)
+
+        #expect(receipt.segmentCount == 2)
+        let requests = HLSLiveURLProtocol.capturedRequests().compactMap(\.url)
+        #expect(requests.count { $0 == firstKeyURL } == 1)
+        #expect(requests.count { $0 == secondKeyURL } == 1)
+    }
+
+    @Test("encrypted fragmented MP4 decrypts its map and media")
+    func recordsEncryptedFragmentedMP4() async throws {
+        let sourceURL = try url("https://media.example/encrypted-fmp4.m3u8")
+        let keyURL = try url("https://media.example/fmp4.key")
+        let initializationURL = try url("https://media.example/init.mp4")
+        let segmentURL = try url("https://media.example/1.m4s")
+        let key = Data(repeating: 0x31, count: 16)
+        let initializationVector =
+            Data(repeating: 0, count: 15) + Data([3])
+        let initializationPlaintext = Data("encrypted init".utf8)
+        let mediaPlaintext = Data("encrypted fragment".utf8)
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-VERSION:7
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-KEY:METHOD=AES-128,URI="fmp4.key",IV=0x00000000000000000000000000000003
+                #EXT-X-MAP:URI="init.mp4"
+                #EXTINF:4,
+                1.m4s
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(mediaResponse(key), for: keyURL)
+        HLSLiveURLProtocol.register(
+            mediaResponse(
+                try aes128Encrypt(
+                    initializationPlaintext,
+                    key: key,
+                    initializationVector: initializationVector
+                )
+            ),
+            for: initializationURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(
+                try aes128Encrypt(
+                    mediaPlaintext,
+                    key: key,
+                    initializationVector: initializationVector
+                )
+            ),
+            for: segmentURL
+        )
+
+        let receipt = try await recorder(
+            session: fixture.session,
+            startPosition: .currentWindow
+        ).record(from: sourceURL, to: fixture.destinationURL)
+
+        #expect(
+            try Data(
+                contentsOf: receipt.directoryURL.appendingPathComponent(
+                    "resources/initialization.mp4"
+                )
+            ) == initializationPlaintext
+        )
+        #expect(
+            try Data(
+                contentsOf: receipt.directoryURL
+                    .appendingPathComponent("resources/00000.m4s")
+            ) == mediaPlaintext
+        )
+    }
+
+    @Test("invalid AES-128 key length fails atomically")
+    func rejectsInvalidAES128KeyLength() async throws {
+        try await assertAES128Failure(
+            keyResponse: mediaResponse(Data(repeating: 0, count: 15)),
+            expectedError: .invalidEncryptionKey
+        )
+    }
+
+    @Test("AES-128 key status failures stay typed")
+    func rejectsAES128KeyStatus() async throws {
+        try await assertAES128Failure(
+            keyResponse: HLSLiveURLProtocol.Response(
+                statusCode: 403,
+                data: Data(),
+                headers: ["Content-Length": "0"]
+            ),
+            expectedError: .invalidEncryptionKeyResponseStatus(403)
+        )
+    }
+
+    @Test("invalid AES-128 ciphertext fails atomically")
+    func rejectsInvalidAES128Ciphertext() async throws {
+        try await assertAES128Failure(
+            keyResponse: mediaResponse(Data(repeating: 0x41, count: 16)),
+            mediaData: Data(repeating: 0x42, count: 15),
+            expectedError: .decryptionFailed
+        )
+    }
+
+    @Test("SAMPLE-AES is rejected before key or media requests")
+    func rejectsSampleAESBeforePersistence() async throws {
+        let sourceURL = try url("https://media.example/sample-aes.m3u8")
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-KEY:METHOD=SAMPLE-AES,URI="skd://asset"
+                #EXTINF:4,
+                1.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: sourceURL
+        )
 
         await #expect(
-            throws:
-                HLSLiveDVRError.unsupportedFeature(
-                    .encryptedMedia
-                )
+            throws: HLSLiveDVRError.unsupportedFeature(.encryptedMedia)
         ) {
             try await recorder(
                 session: fixture.session,
                 startPosition: .currentWindow
-            ).record(
-                from: sourceURL,
-                to: fixture.destinationURL
-            )
+            ).record(from: sourceURL, to: fixture.destinationURL)
         }
+        #expect(
+            HLSLiveURLProtocol.capturedRequests()
+                .compactMap(\.url) == [sourceURL]
+        )
         #expect(
             !FileManager.default.fileExists(
                 atPath: fixture.destinationURL.path
             )
-        )
-        #expect(
-            HLSLiveURLProtocol.capturedRequests()
-                .compactMap(\.url) == [sourceURL]
         )
     }
 
@@ -650,6 +1036,91 @@ extension HLSLivePlaylistClientTests {
         )
     }
 
+    private func assertAES128Failure(
+        keyResponse: HLSLiveURLProtocol.Response,
+        mediaData: Data = Data(repeating: 0, count: 16),
+        expectedError: HLSLiveDVRError
+    ) async throws {
+        let sourceURL = try url("https://media.example/failure.m3u8")
+        let keyURL = try url("https://media.example/failure.key")
+        let segmentURL = try url("https://media.example/failure.ts")
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-KEY:METHOD=AES-128,URI="failure.key",IV=0x00000000000000000000000000000001
+                #EXTINF:4,
+                failure.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(keyResponse, for: keyURL)
+        HLSLiveURLProtocol.register(
+            mediaResponse(mediaData),
+            for: segmentURL
+        )
+
+        await #expect(throws: expectedError) {
+            try await recorder(
+                session: fixture.session,
+                startPosition: .currentWindow
+            ).record(from: sourceURL, to: fixture.destinationURL)
+        }
+        #expect(
+            !FileManager.default.fileExists(
+                atPath: fixture.destinationURL.path
+            )
+        )
+        let requests = HLSLiveURLProtocol.capturedRequests().compactMap(\.url)
+        switch expectedError {
+        case .decryptionFailed:
+            #expect(requests == [sourceURL, keyURL, segmentURL])
+        default:
+            #expect(requests == [sourceURL, keyURL])
+        }
+    }
+
+    private func packageFileNames(
+        _ directoryURL: URL
+    ) throws -> [String] {
+        try packageFileURLs(directoryURL).map(\.lastPathComponent)
+    }
+
+    private func packageFileData(
+        _ directoryURL: URL
+    ) throws -> [Data] {
+        try packageFileURLs(directoryURL).map {
+            try Data(contentsOf: $0)
+        }
+    }
+
+    private func packageFileURLs(
+        _ directoryURL: URL
+    ) throws -> [URL] {
+        let enumerator = try #require(
+            FileManager.default.enumerator(
+                at: directoryURL,
+                includingPropertiesForKeys: [.isRegularFileKey]
+            )
+        )
+        return try enumerator.compactMap {
+            guard let url = $0 as? URL else {
+                return nil
+            }
+            return try url.resourceValues(
+                forKeys: [.isRegularFileKey]
+            ).isRegularFile == true ? url : nil
+        }
+    }
+
     private func recorder(
         session: URLSession,
         startPosition: HLSLiveDVRStartPosition
@@ -732,4 +1203,51 @@ private struct DVRFixture {
         session.invalidateAndCancel()
         try? FileManager.default.removeItem(at: rootURL)
     }
+}
+
+private func sequenceIV(_ sequenceNumber: Int64) -> Data {
+    var value = UInt64(sequenceNumber).bigEndian
+    var initializationVector = Data(repeating: 0, count: 8)
+    withUnsafeBytes(of: &value) {
+        initializationVector.append(contentsOf: $0)
+    }
+    return initializationVector
+}
+
+private func aes128Encrypt(
+    _ plaintext: Data,
+    key: Data,
+    initializationVector: Data
+) throws -> Data {
+    var ciphertext = Data(
+        count: plaintext.count + kCCBlockSizeAES128
+    )
+    let outputCapacity = ciphertext.count
+    var outputLength = 0
+    let status = ciphertext.withUnsafeMutableBytes { outputBytes in
+        plaintext.withUnsafeBytes { plaintextBytes in
+            key.withUnsafeBytes { keyBytes in
+                initializationVector.withUnsafeBytes { ivBytes in
+                    CCCrypt(
+                        CCOperation(kCCEncrypt),
+                        CCAlgorithm(kCCAlgorithmAES),
+                        CCOptions(kCCOptionPKCS7Padding),
+                        keyBytes.baseAddress,
+                        key.count,
+                        ivBytes.baseAddress,
+                        plaintextBytes.baseAddress,
+                        plaintext.count,
+                        outputBytes.baseAddress,
+                        outputCapacity,
+                        &outputLength
+                    )
+                }
+            }
+        }
+    }
+    guard status == kCCSuccess else {
+        throw HLSLiveDVRError.decryptionFailed
+    }
+    ciphertext.count = outputLength
+    return ciphertext
 }

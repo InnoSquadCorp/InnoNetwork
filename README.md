@@ -536,9 +536,14 @@ for await event in await manager.events(for: task) {
   fMP4 segments, with exact byte-range validation, URL-free local VOD
   playlists, progress events, cross-process destination leases, and atomic
   directory commit
-- typed rejection of gaps, encrypted media, external renditions or timeline
-  resources, missing/changing initialization maps, and live-window loss
-  instead of silently committing an incomplete presentation
+- recording-scoped, memory-only identity AES-128 key reuse and rotation,
+  explicit or media-sequence IV decryption, encrypted fMP4 maps, and plaintext-
+  only local packages that never persist key declarations or source key URLs
+- configurable destination-capacity enforcement plus typed key status,
+  key-length, decryption, and storage failures
+- typed rejection of gaps, DRM/sample encryption, external renditions or
+  timeline resources, missing/changing initialization maps, and live-window
+  loss instead of silently committing an incomplete presentation
 
 ### `InnoNetworkHLSAVFoundation`
 

@@ -75,7 +75,7 @@ struct HLSDiskCapacityChecker: Sendable {
     }
 }
 
-actor HLSDiskCapacityGuard {
+package actor HLSDiskCapacityGuard {
     private let checker: HLSDiskCapacityChecker
     private let directoryURL: URL
     private let policy: HLSDiskCapacityPolicy
@@ -91,7 +91,16 @@ actor HLSDiskCapacityGuard {
         self.policy = policy
     }
 
-    func validate(additionalRequiredCapacity: Int64) throws {
+    package init(
+        directoryURL: URL,
+        policy: HLSDiskCapacityPolicy
+    ) {
+        self.checker = HLSDiskCapacityChecker()
+        self.directoryURL = directoryURL
+        self.policy = policy
+    }
+
+    package func validate(additionalRequiredCapacity: Int64) throws {
         let required = combinedCapacity(
             additionalRequiredCapacity,
             reservedCapacity
@@ -103,7 +112,7 @@ actor HLSDiskCapacityGuard {
         )
     }
 
-    func reserve(_ byteCount: Int) throws {
+    package func reserve(_ byteCount: Int) throws {
         guard policy != .disabled else {
             return
         }
@@ -120,7 +129,7 @@ actor HLSDiskCapacityGuard {
         reservedCapacity = nextReservedCapacity
     }
 
-    func release(_ byteCount: Int) {
+    package func release(_ byteCount: Int) {
         guard policy != .disabled else {
             return
         }

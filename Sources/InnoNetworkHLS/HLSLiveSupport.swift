@@ -4,6 +4,11 @@ package enum HLSLiveBridgeError: Error {
     case mediaPlaylistRequired
 }
 
+package struct HLSLiveAES128EncryptionRecord: Equatable, Sendable {
+    package let keyURL: URL
+    package let initializationVector: Data
+}
+
 package struct HLSLiveSegmentRecord: Equatable, Sendable {
     package let sequenceNumber: Int64
     package let duration: TimeInterval
@@ -11,13 +16,13 @@ package struct HLSLiveSegmentRecord: Equatable, Sendable {
     package let byteRange: HLSByteRange?
     package let beginsDiscontinuity: Bool
     package let isGap: Bool
-    package let isEncrypted: Bool
+    package let encryption: HLSLiveAES128EncryptionRecord?
 }
 
 package struct HLSLiveInitializationSegmentRecord: Equatable, Sendable {
     package let url: URL
     package let byteRange: HLSByteRange?
-    package let isEncrypted: Bool
+    package let encryption: HLSLiveAES128EncryptionRecord?
 }
 
 package struct HLSLivePartialSegmentRecord: Equatable, Sendable {
@@ -36,6 +41,7 @@ package struct HLSLiveResolvedDocument: Sendable {
     package let segments: [HLSLiveSegmentRecord]
     package let initializationSegments: [HLSLiveInitializationSegmentRecord]
     package let partialSegments: [HLSLivePartialSegmentRecord]
+    package let encryptionMethod: String?
     package let hasEndList: Bool
 }
 
@@ -214,7 +220,13 @@ package extension PlaylistResolver {
                     byteRange: resource.byteRange,
                     beginsDiscontinuity: resource.beginsDiscontinuity,
                     isGap: resource.isGap,
-                    isEncrypted: resource.encryption != nil
+                    encryption: resource.encryption.map {
+                        HLSLiveAES128EncryptionRecord(
+                            keyURL: $0.keyURL,
+                            initializationVector:
+                                $0.initializationVector
+                        )
+                    }
                 )
             )
             let (nextOffset, offsetOverflow) =
@@ -268,10 +280,17 @@ package extension PlaylistResolver {
                 return HLSLiveInitializationSegmentRecord(
                     url: resource.url,
                     byteRange: resource.byteRange,
-                    isEncrypted: resource.encryption != nil
+                    encryption: resource.encryption.map {
+                        HLSLiveAES128EncryptionRecord(
+                            keyURL: $0.keyURL,
+                            initializationVector:
+                                $0.initializationVector
+                        )
+                    }
                 )
             },
             partialSegments: partialSegments,
+            encryptionMethod: media.encryptionMethod,
             hasEndList: media.hasEndList
         )
     }

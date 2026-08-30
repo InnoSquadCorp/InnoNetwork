@@ -65,6 +65,34 @@ struct HLSAES128KeyResolver: Sendable {
     }
 }
 
+/// A recording-scoped, memory-only key cache used by the live companion.
+///
+/// The package boundary keeps key material out of the public API while still
+/// sharing the VOD downloader's request policy, response validation, and
+/// secret-handling implementation.
+package actor HLSAES128KeyCache {
+    private let fetcher: HLSAES128KeyFetcher
+    private var keysByURL: [URL: Data] = [:]
+
+    package init(client: HLSHTTPClient) {
+        self.fetcher = HLSAES128KeyFetcher(
+            client: client,
+            retryPolicy: nil,
+            clock: SystemClock(),
+            networkMonitor: NetworkMonitor.shared
+        )
+    }
+
+    package func key(for keyURL: URL) async throws -> Data {
+        if let key = keysByURL[keyURL] {
+            return key
+        }
+        let key = try await fetcher.fetch(keyURL)
+        keysByURL[keyURL] = key
+        return key
+    }
+}
+
 private struct HLSAES128KeyFetcher: Sendable {
     private let client: HLSHTTPClient
     private let retryPolicy: (any RetryPolicy)?
@@ -196,10 +224,10 @@ private struct HLSAES128KeyFetcher: Sendable {
     }
 }
 
-enum HLSAES128Decryptor {
+package enum HLSAES128Decryptor {
     private static let inputChunkBytes = 64 * 1_024
 
-    static func decrypt(
+    package static func decrypt(
         inputURL: URL,
         outputURL: URL,
         key: Data,

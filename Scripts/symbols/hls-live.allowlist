@@ -3,10 +3,15 @@ InnoNetworkHLSLive	swift.enum	HLSLiveDVREvent
 InnoNetworkHLSLive	swift.enum	HLSLiveDVRStartPosition
 InnoNetworkHLSLive	swift.enum	HLSLiveDVRUnsupportedFeature
 InnoNetworkHLSLive	swift.enum	HLSLiveError
+InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRError.decryptionFailed
 InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRError.destinationAlreadyExists
 InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRError.destinationInUse
+InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRError.diskCapacityUnavailable
+InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRError.insufficientDiskCapacity(required:available:)
 InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRError.invalidByteRangeResponse
 InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRError.invalidDestination
+InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRError.invalidEncryptionKey
+InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRError.invalidEncryptionKeyResponseStatus(_:)
 InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRError.invalidMediaResponseStatus(_:)
 InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRError.liveWindowAdvanced
 InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRError.mediaResourceTooLarge
@@ -29,7 +34,7 @@ InnoNetworkHLSLive	swift.enum.case	HLSLiveError.deltaBaseUnavailable
 InnoNetworkHLSLive	swift.enum.case	HLSLiveError.invalidReloadURL
 InnoNetworkHLSLive	swift.enum.case	HLSLiveError.mediaPlaylistRequired
 InnoNetworkHLSLive	swift.enum.case	HLSLiveError.sequenceOverflow
-InnoNetworkHLSLive	swift.init	HLSLiveDVRLimitPack.init(maximumDuration:maximumSegmentCount:maximumMediaResourceBytes:maximumTotalMediaBytes:requestTimeout:)
+InnoNetworkHLSLive	swift.init	HLSLiveDVRLimitPack.init(maximumDuration:maximumSegmentCount:maximumMediaResourceBytes:maximumTotalMediaBytes:requestTimeout:diskCapacityPolicy:)
 InnoNetworkHLSLive	swift.init	HLSLiveDVRRecorder.init(client:configuration:)
 InnoNetworkHLSLive	swift.init	HLSLiveDVRRecorder.init(configuration:)
 InnoNetworkHLSLive	swift.init	HLSLivePlaylistClient.init(configuration:keyPreloader:)
@@ -42,6 +47,7 @@ InnoNetworkHLSLive	swift.method	HLSLivePlaylistClient.snapshot(from:)
 InnoNetworkHLSLive	swift.method	HLSLivePlaylistClient.snapshots(from:)
 InnoNetworkHLSLive	swift.property	HLSLiveDVRError.errorDescription
 InnoNetworkHLSLive	swift.property	HLSLiveDVRError.recoverySuggestion
+InnoNetworkHLSLive	swift.property	HLSLiveDVRLimitPack.diskCapacityPolicy
 InnoNetworkHLSLive	swift.property	HLSLiveDVRLimitPack.maximumDuration
 InnoNetworkHLSLive	swift.property	HLSLiveDVRLimitPack.maximumMediaResourceBytes
 InnoNetworkHLSLive	swift.property	HLSLiveDVRLimitPack.maximumSegmentCount

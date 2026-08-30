@@ -1,6 +1,16 @@
 import Foundation
 import InnoNetworkHLS
 
+struct HLSLiveAES128Encryption: Equatable, Sendable {
+    let keyURL: URL
+    let initializationVector: Data
+
+    init(record: HLSLiveAES128EncryptionRecord) {
+        self.keyURL = record.keyURL
+        self.initializationVector = record.initializationVector
+    }
+}
+
 /// One complete media segment in a reconstructed live window.
 public struct HLSLiveSegment: Equatable, Sendable {
     /// The absolute media-sequence number.
@@ -21,7 +31,7 @@ public struct HLSLiveSegment: Equatable, Sendable {
     /// Whether the segment is intentionally unavailable.
     public let isGap: Bool
 
-    let isEncrypted: Bool
+    let encryption: HLSLiveAES128Encryption?
 
     init(record: HLSLiveSegmentRecord) {
         self.sequenceNumber = record.sequenceNumber
@@ -30,7 +40,9 @@ public struct HLSLiveSegment: Equatable, Sendable {
         self.byteRange = record.byteRange
         self.beginsDiscontinuity = record.beginsDiscontinuity
         self.isGap = record.isGap
-        self.isEncrypted = record.isEncrypted
+        self.encryption = record.encryption.map(
+            HLSLiveAES128Encryption.init(record:)
+        )
     }
 
     init(
@@ -40,7 +52,7 @@ public struct HLSLiveSegment: Equatable, Sendable {
         byteRange: HLSByteRange?,
         beginsDiscontinuity: Bool,
         isGap: Bool,
-        isEncrypted: Bool = false
+        encryption: HLSLiveAES128Encryption? = nil
     ) {
         self.sequenceNumber = sequenceNumber
         self.duration = duration
@@ -48,19 +60,21 @@ public struct HLSLiveSegment: Equatable, Sendable {
         self.byteRange = byteRange
         self.beginsDiscontinuity = beginsDiscontinuity
         self.isGap = isGap
-        self.isEncrypted = isEncrypted
+        self.encryption = encryption
     }
 }
 
 struct HLSLiveInitializationSegment: Equatable, Sendable {
     let url: URL
     let byteRange: HLSByteRange?
-    let isEncrypted: Bool
+    let encryption: HLSLiveAES128Encryption?
 
     init(record: HLSLiveInitializationSegmentRecord) {
         self.url = record.url
         self.byteRange = record.byteRange
-        self.isEncrypted = record.isEncrypted
+        self.encryption = record.encryption.map(
+            HLSLiveAES128Encryption.init(record:)
+        )
     }
 }
 
@@ -150,6 +164,7 @@ public struct HLSLivePlaylistSnapshot: Equatable, Sendable {
     public let isEnded: Bool
 
     let initializationSegments: [HLSLiveInitializationSegment]
+    let encryptionMethod: String?
 
     init(
         playlist: HLSPlaylist,
@@ -162,7 +177,8 @@ public struct HLSLivePlaylistSnapshot: Equatable, Sendable {
         generation: Int,
         isDeltaUpdate: Bool,
         isEnded: Bool,
-        initializationSegments: [HLSLiveInitializationSegment] = []
+        initializationSegments: [HLSLiveInitializationSegment] = [],
+        encryptionMethod: String? = nil
     ) {
         self.playlist = playlist
         self.segments = segments
@@ -175,6 +191,7 @@ public struct HLSLivePlaylistSnapshot: Equatable, Sendable {
         self.isDeltaUpdate = isDeltaUpdate
         self.isEnded = isEnded
         self.initializationSegments = initializationSegments
+        self.encryptionMethod = encryptionMethod
     }
 }
 

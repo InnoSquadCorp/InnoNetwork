@@ -1,4 +1,5 @@
 import Foundation
+import InnoNetworkHLS
 
 /// Selects the first complete segment retained by a live DVR recording.
 public enum HLSLiveDVRStartPosition: Equatable, Sendable {
@@ -36,18 +37,25 @@ public struct HLSLiveDVRLimitPack: Sendable {
     /// The timeout applied to each media request.
     public let requestTimeout: TimeInterval
 
+    /// Destination-volume capacity validation applied while staging media.
+    public let diskCapacityPolicy: HLSDiskCapacityPolicy
+
     /// Creates bounded live DVR limits.
     ///
     /// Duration is clamped to `1...86,400` seconds, segment count to
     /// `1...10,000`, each resource to at most 1 GiB, total media to at most
     /// 64 GiB, and request timeout to `1...300` seconds. Non-finite duration
-    /// and timeout values use their defaults.
+    /// and timeout values use their defaults. The default disk policy keeps
+    /// 512 MiB available beyond the current operation's staged bytes.
     public init(
         maximumDuration: TimeInterval = 30 * 60,
         maximumSegmentCount: Int = 900,
         maximumMediaResourceBytes: Int = 128 * 1_024 * 1_024,
         maximumTotalMediaBytes: Int64 = 8 * 1_024 * 1_024 * 1_024,
-        requestTimeout: TimeInterval = 60
+        requestTimeout: TimeInterval = 60,
+        diskCapacityPolicy: HLSDiskCapacityPolicy = .required(
+            minimumAvailableCapacity: 512 * 1_024 * 1_024
+        )
     ) {
         self.maximumDuration = Self.normalized(
             maximumDuration,
@@ -71,6 +79,7 @@ public struct HLSLiveDVRLimitPack: Sendable {
             fallback: 60,
             maximum: Self.maximumRequestTimeout
         )
+        self.diskCapacityPolicy = diskCapacityPolicy
     }
 
     private static func normalized(
