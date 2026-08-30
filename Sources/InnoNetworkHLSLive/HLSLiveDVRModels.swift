@@ -244,14 +244,34 @@ public struct HLSLiveDVRProgress: Equatable, Sendable {
     /// Initialization and complete-segment bytes retained so far.
     public let mediaByteCount: Int64
 
+    /// Partial segments currently staged for one incomplete parent segment.
+    public let stagedPartCount: Int
+
+    /// Playback duration represented by the currently staged parts.
+    public let stagedPartDuration: TimeInterval
+
+    /// Temporary bytes currently retained for staged parts.
+    public let stagedPartByteCount: Int64
+
+    /// Parts promoted into complete retained segments so far.
+    public let promotedPartCount: Int
+
     init(
         segmentCount: Int,
         recordedDuration: TimeInterval,
-        mediaByteCount: Int64
+        mediaByteCount: Int64,
+        stagedPartCount: Int = 0,
+        stagedPartDuration: TimeInterval = 0,
+        stagedPartByteCount: Int64 = 0,
+        promotedPartCount: Int = 0
     ) {
         self.segmentCount = segmentCount
         self.recordedDuration = recordedDuration
         self.mediaByteCount = mediaByteCount
+        self.stagedPartCount = stagedPartCount
+        self.stagedPartDuration = stagedPartDuration
+        self.stagedPartByteCount = stagedPartByteCount
+        self.promotedPartCount = promotedPartCount
     }
 }
 
@@ -290,6 +310,9 @@ public struct HLSLiveDVRReceipt: Equatable, Sendable {
     /// Initialization and complete-segment bytes retained in the package.
     public let mediaByteCount: Int64
 
+    /// Partial segments promoted without refetching their complete parent.
+    public let promotedPartCount: Int
+
     /// The first retained media-sequence number.
     public let firstMediaSequence: Int64
 
@@ -304,6 +327,7 @@ public struct HLSLiveDVRReceipt: Equatable, Sendable {
         segmentCount: Int,
         recordedDuration: TimeInterval,
         mediaByteCount: Int64,
+        promotedPartCount: Int = 0,
         firstMediaSequence: Int64,
         lastMediaSequence: Int64
     ) {
@@ -314,6 +338,7 @@ public struct HLSLiveDVRReceipt: Equatable, Sendable {
         self.segmentCount = segmentCount
         self.recordedDuration = recordedDuration
         self.mediaByteCount = mediaByteCount
+        self.promotedPartCount = promotedPartCount
         self.firstMediaSequence = firstMediaSequence
         self.lastMediaSequence = lastMediaSequence
     }

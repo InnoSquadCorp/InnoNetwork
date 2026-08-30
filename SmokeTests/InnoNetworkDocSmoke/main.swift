@@ -20,6 +20,20 @@ private let smokeHLSLiveClient = HLSLivePlaylistClient(
         )
     )
 )
+private let smokeHLSLiveHealthAnalyzer = HLSLiveHealthAnalyzer(
+    configuration: .advanced(
+        thresholds: HLSLiveHealthThresholdPack(
+            degradedStagnantSnapshotCount: 3,
+            criticalStagnantSnapshotCount: 6
+        )
+    )
+)
+private let smokeHLSLiveDVRConfiguration =
+    HLSLiveDVRConfiguration.advanced(
+        parts: HLSLiveDVRPartPack(
+            policy: .independent
+        )
+    )
 private let smokeHLSAssetSessionPack = HLSAssetDownloadSessionPack(
     identifier: "com.example.innonetwork.doc-smoke.hls"
 )

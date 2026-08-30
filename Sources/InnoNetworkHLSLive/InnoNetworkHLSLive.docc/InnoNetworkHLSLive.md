@@ -67,6 +67,37 @@ are application data, not an observability surface. Purpose-aware request
 events remain value-redacted and classify subsequent requests as
 ``InnoNetworkHLS/HLSRequestPurpose/livePlaylistReload``.
 
+Every snapshot also exposes the ``HLSLivePlaylistSnapshot/reloadMode`` that
+produced it. A session-owned ``HLSLiveHealthAnalyzer`` can reduce those
+snapshots into deterministic health without performing I/O or deciding a
+recovery policy:
+
+```swift
+var healthAnalyzer = HLSLiveHealthAnalyzer(
+    configuration: .advanced(
+        thresholds: HLSLiveHealthThresholdPack(
+            degradedStagnantSnapshotCount: 3,
+            criticalStagnantSnapshotCount: 6
+        )
+    )
+)
+
+for try await snapshot in client.snapshots(from: mediaPlaylistURL) {
+    let health = healthAnalyzer.ingest(
+        snapshot,
+        observedAt: .now
+    )
+    render(health.status, issues: health.issues)
+}
+```
+
+When Program Date Time and server hold-back metadata are available, health
+includes an estimated edge time, live latency, and recommended latency. Edge
+regression, repeated equal edges, delta full-reload recovery, pathway changes,
+and retained-window risk remain useful without that timing metadata. The
+application owns the observation clock, analyzer lifetime, UI, alerting, and
+any retry or pathway decision.
+
 ## Bounded live DVR
 
 ``HLSLiveDVRRecorder`` reuses a configured live client's session, request
@@ -87,7 +118,8 @@ let recorder = HLSLiveDVRRecorder(
         renditions: HLSLiveDVRRenditionPack(
             audio: .preferredLanguages(["ko", "en"]),
             subtitles: .preferredLanguages(["ko", "en"])
-        )
+        ),
+        parts: HLSLiveDVRPartPack(policy: .independent)
     )
 )
 
@@ -115,6 +147,17 @@ best-effort, or disabled capacity contract as VOD storage. When the duration,
 count, or total-byte boundary is reached, the recorder finishes at the last
 complete segment. Exact `206` and `Content-Range` validation localizes
 byte-range segments as complete files.
+
+LL-HLS part capture is disabled by default. The `.independent` policy may
+temporarily stage one incomplete parent sequence only when part zero is
+independent. Count and byte limits apply before transfer, byte ranges receive
+the same exact response validation as complete segments, and staged progress
+is exposed through ``HLSLiveDVRProgress``. When the complete parent appears,
+the recorder promotes only a contiguous part set whose summed duration matches
+the parent; otherwise it removes the temporary parts and downloads the normal
+complete segment. The committed package contains complete VOD segments only.
+Identity-format AES-128 parts are not staged because part-level IV metadata is
+not available; their complete parent follows the existing decryption path.
 
 MPEG transport streams and fragmented MP4 with one stable initialization map
 are written as a URL-free local VOD playlist. Identity-format AES-128 uses
@@ -163,7 +206,18 @@ ephemeral staging data; recordings are not resumed after interruption.
 - ``HLSLivePlaylistSnapshot``
 - ``HLSLiveSegment``
 - ``HLSLivePartialSegment``
+- ``HLSLiveReloadMode``
 - ``HLSLiveError``
+
+### Live health
+
+- ``HLSLiveHealthAnalyzer``
+- ``HLSLiveHealthConfiguration``
+- ``HLSLiveHealthThresholdPack``
+- ``HLSLiveHealthSnapshot``
+- ``HLSLiveHealthStatus``
+- ``HLSLiveHealthIssue``
+- ``HLSLiveEdgePosition``
 
 ### Bounded live DVR
 
@@ -172,6 +226,8 @@ ephemeral staging data; recordings are not resumed after interruption.
 - ``HLSLiveDVRLimitPack``
 - ``HLSLiveDVRRenditionPack``
 - ``HLSLiveDVRRenditionSelectionPolicy``
+- ``HLSLiveDVRPartPack``
+- ``HLSLiveDVRPartCapturePolicy``
 - ``HLSLiveDVRStartPosition``
 - ``HLSLiveDVREvent``
 - ``HLSLiveDVRProgress``

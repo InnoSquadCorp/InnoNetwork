@@ -163,6 +163,18 @@ public struct HLSLiveDVRRecorder: Sendable {
         do {
             recordingLoop: for try await snapshot in liveClient.snapshots(from: sourceURL) {
                 try state.validatePresentation(snapshot)
+                let candidates = try state.candidates(
+                    in: snapshot
+                )
+                let partUpdate = state.updateStagedParts(
+                    from: snapshot
+                )
+                try await stageParts(
+                    partUpdate,
+                    state: &state,
+                    context: resourceContext,
+                    onProgress: onProgress
+                )
                 let renditionRequests = try state.renditionRequests(
                     in: snapshot
                 )
@@ -226,9 +238,6 @@ public struct HLSLiveDVRRecorder: Sendable {
                         }
                     }
                 }
-                let candidates = try state.candidates(
-                    in: snapshot
-                )
                 for segment in candidates {
                     guard state.canRetain(segment) else {
                         break recordingLoop
@@ -279,10 +288,52 @@ public struct HLSLiveDVRRecorder: Sendable {
         }
 
         try Task.checkCancellation()
+        try resourceWriter.discardAllStagedParts(state: &state)
         let receipt = try state.commit(
             to: destinationDirectoryURL
         )
         committed = true
         return receipt
+    }
+
+    private func stageParts(
+        _ update: HLSLiveDVRPartUpdate,
+        state: inout HLSLiveDVRRecordingState,
+        context: HLSLiveDVRResourceContext,
+        onProgress:
+            @escaping @Sendable (HLSLiveDVRProgress) -> Void
+    ) async throws {
+        try resourceWriter.discard(
+            update.discardedFilePaths,
+            workspace: state.workspace
+        )
+        for candidate in update.candidates {
+            do {
+                guard
+                    try await resourceWriter.stage(
+                        candidate,
+                        state: &state,
+                        context: context
+                    )
+                else {
+                    try resourceWriter.abandonStagedParts(
+                        mediaSequenceNumber:
+                            candidate.part.mediaSequenceNumber,
+                        state: &state
+                    )
+                    return
+                }
+                onProgress(state.progress)
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                try resourceWriter.abandonStagedParts(
+                    mediaSequenceNumber:
+                        candidate.part.mediaSequenceNumber,
+                    state: &state
+                )
+                return
+            }
+        }
     }
 }

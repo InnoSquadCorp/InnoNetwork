@@ -196,6 +196,7 @@ public struct HLSLivePlaylistClient: Sendable {
         var previous: HLSLivePlaylistSnapshot?
         var generation = 0
         var isFullReloadRecovery = false
+        var reloadMode = HLSLiveReloadMode.initial
 
         while true {
             try Task.checkCancellation()
@@ -239,6 +240,7 @@ public struct HLSLivePlaylistClient: Sendable {
                         recovery.candidate.multivariantVariables
                     requestURL = document.playlist.sourceURL
                     isFullReloadRecovery = false
+                    reloadMode = .contentSteeringRecovery
                 }
             }
             let snapshot: HLSLivePlaylistSnapshot
@@ -251,7 +253,8 @@ public struct HLSLivePlaylistClient: Sendable {
                     availableRenditions: availableRenditions,
                     pathwayID: pathwayID,
                     multivariantVariables:
-                        multivariantVariables
+                        multivariantVariables,
+                    reloadMode: reloadMode
                 )
             } catch HLSLiveError.deltaBaseUnavailable {
                 guard
@@ -267,6 +270,7 @@ public struct HLSLivePlaylistClient: Sendable {
                     )
                 purpose = .livePlaylistReload
                 isFullReloadRecovery = true
+                reloadMode = .fullReloadRecovery
                 continue
             }
 
@@ -301,6 +305,7 @@ public struct HLSLivePlaylistClient: Sendable {
             generation = nextGeneration
             requestURL = reloadRequest.url
             purpose = .livePlaylistReload
+            reloadMode = reloadRequest.mode
         }
     }
 

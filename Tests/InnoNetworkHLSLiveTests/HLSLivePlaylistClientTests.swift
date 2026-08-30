@@ -74,6 +74,7 @@ struct HLSLivePlaylistClientTests {
         }
 
         #expect(snapshots.count == 2)
+        #expect(snapshots.map(\.reloadMode) == [.initial, .blocking])
         #expect(snapshots[0].segments.map(\.sequenceNumber) == [10, 11])
         #expect(snapshots[0].segments[1].beginsDiscontinuity)
         #expect(snapshots[0].segments[1].isGap)
@@ -174,6 +175,7 @@ struct HLSLivePlaylistClientTests {
         )
 
         #expect(request.usesBlockingReload)
+        #expect(request.mode == .blockingPartial)
         #expect(values["_HLS_msn"] == "21")
         #expect(values["_HLS_part"] == "2")
         #expect(values["_HLS_skip"] == "v2")
@@ -258,6 +260,10 @@ struct HLSLivePlaylistClientTests {
         }
 
         #expect(snapshots.count == 2)
+        #expect(
+            snapshots.map(\.reloadMode)
+                == [.initial, .fullReloadRecovery]
+        )
         #expect(snapshots[1].segments.map(\.sequenceNumber) == [21])
         #expect(!snapshots[1].isDeltaUpdate)
         #expect(
@@ -586,6 +592,10 @@ struct HLSLivePlaylistClientTests {
         }
 
         #expect(snapshots.map(\.pathwayID) == ["A", "B"])
+        #expect(
+            snapshots.map(\.reloadMode)
+                == [.initial, .contentSteeringRecovery]
+        )
         #expect(snapshots.map(\.isEnded) == [false, true])
         #expect(
             HLSLiveURLProtocol.capturedRequests().compactMap(\.url)

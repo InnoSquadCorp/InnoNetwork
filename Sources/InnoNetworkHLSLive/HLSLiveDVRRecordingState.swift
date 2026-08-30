@@ -19,8 +19,24 @@ struct HLSLiveDVRRecordingState {
     private(set) var inBandClosedCaptions: [HLSRendition] = []
     private(set) var renditionStates: [HLSLiveDVRRenditionRecordingState] = []
     private(set) var dateRanges: [HLSDateRange] = []
+    private var partState: HLSLiveDVRPartRecordingState
     private var didConfigureRenditions = false
     private var initialPathwayID: String?
+
+    var promotedPartCount: Int {
+        partState.promotedPartCount
+    }
+
+    init(
+        configuration: HLSLiveDVRConfiguration,
+        workspace: HLSLiveDVRWorkspace
+    ) {
+        self.configuration = configuration
+        self.workspace = workspace
+        self.partState = HLSLiveDVRPartRecordingState(
+            pack: configuration.parts
+        )
+    }
 
     var reachedLimit: Bool {
         segments.count >= configuration.limits.maximumSegmentCount
@@ -34,7 +50,108 @@ struct HLSLiveDVRRecordingState {
         HLSLiveDVRProgress(
             segmentCount: segments.count,
             recordedDuration: recordedDuration,
-            mediaByteCount: mediaByteCount
+            mediaByteCount: mediaByteCount,
+            stagedPartCount: partState.stagedParts.count,
+            stagedPartDuration: partState.stagedPartDuration,
+            stagedPartByteCount: partState.stagedPartByteCount,
+            promotedPartCount: partState.promotedPartCount
+        )
+    }
+
+    mutating func updateStagedParts(
+        from snapshot: HLSLivePlaylistSnapshot
+    ) -> HLSLiveDVRPartUpdate {
+        partState.update(from: snapshot)
+    }
+
+    func availableStagedPartByteCount() -> Int64 {
+        partState.availableByteCount(
+            totalRetainedByteCount: mediaByteCount,
+            maximumTotalByteCount:
+                configuration.limits.maximumTotalMediaBytes
+        )
+    }
+
+    func availableMediaByteCount() -> Int64 {
+        let (retainedAndStaged, overflow) =
+            mediaByteCount.addingReportingOverflow(
+                partState.stagedPartByteCount
+            )
+        guard !overflow else {
+            return 0
+        }
+        return max(
+            0,
+            configuration.limits.maximumTotalMediaBytes
+                - retainedAndStaged
+        )
+    }
+
+    mutating func retainStagedPart(
+        _ candidate: HLSLiveDVRPartCandidate,
+        relativeFilePath: String,
+        byteCount: Int64
+    ) throws {
+        try partState.retain(
+            candidate,
+            relativeFilePath: relativeFilePath,
+            byteCount: byteCount,
+            totalRetainedByteCount: mediaByteCount,
+            maximumTotalByteCount:
+                configuration.limits.maximumTotalMediaBytes
+        )
+        nextResourceIndex += 1
+    }
+
+    func partPromotion(
+        for segment: HLSLiveSegment
+    ) -> HLSLiveDVRPartPromotion? {
+        partState.promotion(for: segment)
+    }
+
+    mutating func promote(
+        _ segment: HLSLiveSegment,
+        fileName: String,
+        promotion: HLSLiveDVRPartPromotion
+    ) throws {
+        let nextDuration = recordedDuration + segment.duration
+        let (nextBytes, byteOverflow) =
+            mediaByteCount.addingReportingOverflow(
+                promotion.byteCount
+            )
+        guard nextDuration.isFinite,
+            !byteOverflow,
+            nextBytes
+                <= configuration.limits.maximumTotalMediaBytes
+        else {
+            throw HLSLiveDVRError.storageFailed
+        }
+        try partState.consumePromotion(promotion)
+        mediaByteCount = nextBytes
+        append(
+            segment,
+            fileName: fileName,
+            nextDuration: nextDuration
+        )
+    }
+
+    mutating func discardStagedParts(
+        mediaSequenceNumber: Int64
+    ) -> [String] {
+        partState.discard(
+            mediaSequenceNumber: mediaSequenceNumber
+        )
+    }
+
+    mutating func discardAllStagedParts() -> [String] {
+        partState.discardAll()
+    }
+
+    mutating func abandonStagedParts(
+        mediaSequenceNumber: Int64
+    ) -> [String] {
+        partState.abandon(
+            mediaSequenceNumber: mediaSequenceNumber
         )
     }
 
@@ -239,18 +356,11 @@ struct HLSLiveDVRRecordingState {
             throw HLSLiveDVRError.storageFailed
         }
         try addMediaBytes(byteCount)
-        segments.append(
-            HLSLiveDVRStoredSegment(
-                sequenceNumber: segment.sequenceNumber,
-                duration: segment.duration,
-                beginsDiscontinuity:
-                    segment.beginsDiscontinuity,
-                programDateTime: segment.programDateTime,
-                fileName: fileName
-            )
+        append(
+            segment,
+            fileName: fileName,
+            nextDuration: nextDuration
         )
-        recordedDuration = nextDuration
-        lastObservedSequence = segment.sequenceNumber
         nextResourceIndex += 1
     }
 
@@ -360,14 +470,38 @@ struct HLSLiveDVRRecordingState {
     ) throws {
         let (nextBytes, overflow) =
             mediaByteCount.addingReportingOverflow(byteCount)
+        let (totalBytes, totalOverflow) =
+            nextBytes.addingReportingOverflow(
+                partState.stagedPartByteCount
+            )
         guard
             !overflow,
-            nextBytes
+            !totalOverflow,
+            totalBytes
                 <= configuration.limits.maximumTotalMediaBytes
         else {
             throw HLSLiveDVRError.storageFailed
         }
         mediaByteCount = nextBytes
+    }
+
+    private mutating func append(
+        _ segment: HLSLiveSegment,
+        fileName: String,
+        nextDuration: TimeInterval
+    ) {
+        segments.append(
+            HLSLiveDVRStoredSegment(
+                sequenceNumber: segment.sequenceNumber,
+                duration: segment.duration,
+                beginsDiscontinuity:
+                    segment.beginsDiscontinuity,
+                programDateTime: segment.programDateTime,
+                fileName: fileName
+            )
+        )
+        recordedDuration = nextDuration
+        lastObservedSequence = segment.sequenceNumber
     }
 
     private func validateSequence(

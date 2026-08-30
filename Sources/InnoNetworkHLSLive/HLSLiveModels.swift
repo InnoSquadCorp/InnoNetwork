@@ -161,6 +161,9 @@ public struct HLSLivePlaylistSnapshot: Equatable, Sendable {
     /// Zero-based successful reload generation.
     public let generation: Int
 
+    /// The request strategy that produced this response.
+    public let reloadMode: HLSLiveReloadMode
+
     /// Whether this response used `EXT-X-SKIP` history reconstruction.
     public let isDeltaUpdate: Bool
 
@@ -180,6 +183,7 @@ public struct HLSLivePlaylistSnapshot: Equatable, Sendable {
         availableRenditions: [HLSRendition] = [],
         pathwayID: String? = nil,
         generation: Int,
+        reloadMode: HLSLiveReloadMode = .initial,
         isDeltaUpdate: Bool,
         isEnded: Bool,
         initializationSegments: [HLSLiveInitializationSegment] = [],
@@ -194,6 +198,7 @@ public struct HLSLivePlaylistSnapshot: Equatable, Sendable {
         self.availableRenditions = availableRenditions
         self.pathwayID = pathwayID
         self.generation = generation
+        self.reloadMode = reloadMode
         self.isDeltaUpdate = isDeltaUpdate
         self.isEnded = isEnded
         self.initializationSegments = initializationSegments

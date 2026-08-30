@@ -2,7 +2,11 @@ import Foundation
 
 struct HLSLiveReloadRequest {
     let url: URL
-    let usesBlockingReload: Bool
+    let mode: HLSLiveReloadMode
+
+    var usesBlockingReload: Bool {
+        mode == .blocking || mode == .blockingPartial
+    }
 }
 
 enum HLSLiveReloadRequestBuilder {
@@ -27,11 +31,14 @@ enum HLSLiveReloadRequestBuilder {
             settings.prefersBlockingReloads
             && snapshot.playlist.lowLatency?
                 .serverControl?.canBlockReload == true
-        var usesBlockingReload = false
+        var mode = HLSLiveReloadMode.polling
         if canBlock,
             let position = try blockingPosition(after: snapshot)
         {
-            usesBlockingReload = true
+            mode =
+                position.partIndex == nil
+                ? .blocking
+                : .blockingPartial
             queryItems.append(
                 URLQueryItem(
                     name: "_HLS_msn",
@@ -69,7 +76,7 @@ enum HLSLiveReloadRequestBuilder {
         }
         return HLSLiveReloadRequest(
             url: url,
-            usesBlockingReload: usesBlockingReload
+            mode: mode
         )
     }
 

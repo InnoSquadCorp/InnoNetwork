@@ -32,6 +32,48 @@ public enum HLSLiveDVRRenditionSelectionPolicy: Equatable, Sendable {
     case all
 }
 
+/// Controls whether live DVR may stage Low-Latency HLS partial segments.
+public enum HLSLiveDVRPartCapturePolicy: Equatable, Sendable {
+    /// Waits for complete media segments and performs no part requests.
+    case disabled
+
+    /// Starts staging at an independent part zero and promotes a complete,
+    /// matching part set when its parent segment appears.
+    case independent
+}
+
+/// Groups bounded Low-Latency HLS part staging for live DVR.
+///
+/// Part capture is an opt-in transfer optimization. The committed package
+/// still contains complete VOD segments and never exposes temporary parts.
+public struct HLSLiveDVRPartPack: Sendable {
+    let policy: HLSLiveDVRPartCapturePolicy
+    let maximumStagedPartCount: Int
+    let maximumStagedPartBytes: Int64
+
+    /// Creates bounded temporary part staging.
+    ///
+    /// The staged-part count is clamped to `1...1,024` and staged bytes to
+    /// `1...1,073,741,824`. Identity-format AES-128 parts are not staged
+    /// because part-level IV metadata is unavailable; their complete parent
+    /// segments continue through the normal DVR path.
+    public init(
+        policy: HLSLiveDVRPartCapturePolicy = .disabled,
+        maximumStagedPartCount: Int = 64,
+        maximumStagedPartBytes: Int64 = 64 * 1_024 * 1_024
+    ) {
+        self.policy = policy
+        self.maximumStagedPartCount = min(
+            1_024,
+            max(1, maximumStagedPartCount)
+        )
+        self.maximumStagedPartBytes = min(
+            1 * 1_024 * 1_024 * 1_024,
+            max(1, maximumStagedPartBytes)
+        )
+    }
+}
+
 /// Groups bounded external-rendition selection for live DVR packaging.
 ///
 /// Stored values are opaque immutable input.
@@ -164,15 +206,18 @@ public struct HLSLiveDVRConfiguration: Sendable {
     let limits: HLSLiveDVRLimitPack
     let startPosition: HLSLiveDVRStartPosition
     let renditions: HLSLiveDVRRenditionPack
+    let parts: HLSLiveDVRPartPack
 
     private init(
         limits: HLSLiveDVRLimitPack,
         startPosition: HLSLiveDVRStartPosition,
-        renditions: HLSLiveDVRRenditionPack
+        renditions: HLSLiveDVRRenditionPack,
+        parts: HLSLiveDVRPartPack
     ) {
         self.limits = limits
         self.startPosition = startPosition
         self.renditions = renditions
+        self.parts = parts
     }
 
     /// Returns conservative record-from-now defaults.
@@ -186,12 +231,14 @@ public struct HLSLiveDVRConfiguration: Sendable {
         startPosition: HLSLiveDVRStartPosition =
             .nextCompletedSegment,
         renditions: HLSLiveDVRRenditionPack =
-            HLSLiveDVRRenditionPack()
+            HLSLiveDVRRenditionPack(),
+        parts: HLSLiveDVRPartPack = HLSLiveDVRPartPack()
     ) -> HLSLiveDVRConfiguration {
         HLSLiveDVRConfiguration(
             limits: limits,
             startPosition: startPosition,
-            renditions: renditions
+            renditions: renditions,
+            parts: parts
         )
     }
 }

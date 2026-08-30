@@ -21,6 +21,15 @@ extension HLSLivePlaylistClientTests {
         #expect(limits.maximumMediaResourceBytes == 1)
         #expect(limits.maximumTotalMediaBytes == 1)
         #expect(limits.requestTimeout == 60)
+
+        let parts = HLSLiveDVRPartPack(
+            policy: .independent,
+            maximumStagedPartCount: -1,
+            maximumStagedPartBytes: -1
+        )
+        #expect(parts.policy == .independent)
+        #expect(parts.maximumStagedPartCount == 1)
+        #expect(parts.maximumStagedPartBytes == 1)
     }
 
     @Test("current live window commits a URL-free local VOD playlist")
@@ -1803,6 +1812,421 @@ extension HLSLivePlaylistClientTests {
         #expect(retained.first?.instreamID == "CC1")
     }
 
+    @Test("independent LL-HLS parts promote without downloading the parent")
+    func promotesIndependentParts() async throws {
+        let sourceURL = try url("https://media.example/parts.m3u8")
+        let reloadURL = try url(
+            "https://media.example/parts.m3u8?_HLS_msn=11&_HLS_part=2"
+        )
+        let firstPartURL = try url("https://media.example/11.0.ts")
+        let secondPartURL = try url("https://media.example/11.1.ts")
+        let parentURL = try url("https://media.example/11.ts")
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(partialPlaylist()),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(completedPartialPlaylist()),
+            for: reloadURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("one".utf8)),
+            for: firstPartURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("two".utf8)),
+            for: secondPartURL
+        )
+
+        var stagedProgress: [HLSLiveDVRProgress] = []
+        var completedReceipt: HLSLiveDVRReceipt?
+        for try await event in recorder(
+            session: fixture.session,
+            startPosition: .nextCompletedSegment,
+            parts: HLSLiveDVRPartPack(policy: .independent)
+        ).events(from: sourceURL, to: fixture.destinationURL) {
+            switch event {
+            case .progress(let progress):
+                if progress.stagedPartCount > 0 {
+                    stagedProgress.append(progress)
+                }
+            case .completed(let receipt):
+                completedReceipt = receipt
+            }
+        }
+        let receipt = try #require(completedReceipt)
+
+        #expect(receipt.segmentCount == 1)
+        #expect(receipt.promotedPartCount == 2)
+        #expect(receipt.mediaByteCount == 6)
+        #expect(stagedProgress.map(\.stagedPartCount) == [1, 2])
+        #expect(stagedProgress.map(\.stagedPartByteCount) == [3, 6])
+        #expect(stagedProgress.map(\.stagedPartDuration) == [2, 4])
+        #expect(
+            try Data(
+                contentsOf: fixture.destinationURL
+                    .appendingPathComponent("resources/00000.ts")
+            ) == Data("onetwo".utf8)
+        )
+        let requests = HLSLiveURLProtocol.capturedRequests().compactMap(\.url)
+        #expect(requests.contains(firstPartURL))
+        #expect(requests.contains(secondPartURL))
+        #expect(!requests.contains(parentURL))
+        #expect(
+            !FileManager.default.fileExists(
+                atPath: fixture.destinationURL
+                    .appendingPathComponent("partial").path
+            )
+        )
+    }
+
+    @Test("LL-HLS part byte ranges remain exact before promotion")
+    func promotesExactPartByteRanges() async throws {
+        let sourceURL = try url("https://media.example/ranged-parts.m3u8")
+        let reloadURL = try url(
+            "https://media.example/ranged-parts.m3u8?_HLS_msn=11&_HLS_part=2"
+        )
+        let partURL = try url("https://media.example/parts.ts")
+        let parentURL = try url("https://media.example/11.ts")
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-VERSION:9
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:10
+                #EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES,PART-HOLD-BACK=4
+                #EXT-X-PART-INF:PART-TARGET=2
+                #EXTINF:4,
+                10.ts
+                #EXT-X-PART:DURATION=2,URI="parts.ts",BYTERANGE="3@0",INDEPENDENT=YES
+                #EXT-X-PART:DURATION=2,URI="parts.ts",BYTERANGE="3@3"
+                """
+            ),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(completedPlaylistWithoutParts()),
+            for: reloadURL
+        )
+        HLSLiveURLProtocol.register(
+            HLSLiveURLProtocol.Response(
+                statusCode: 206,
+                data: Data("one".utf8),
+                headers: [
+                    "Content-Length": "3",
+                    "Content-Range": "bytes 0-2/6",
+                ]
+            ),
+            for: partURL
+        )
+        HLSLiveURLProtocol.register(
+            HLSLiveURLProtocol.Response(
+                statusCode: 206,
+                data: Data("two".utf8),
+                headers: [
+                    "Content-Length": "3",
+                    "Content-Range": "bytes 3-5/6",
+                ]
+            ),
+            for: partURL
+        )
+
+        let receipt = try await recorder(
+            session: fixture.session,
+            startPosition: .nextCompletedSegment,
+            parts: HLSLiveDVRPartPack(policy: .independent)
+        ).record(from: sourceURL, to: fixture.destinationURL)
+
+        #expect(receipt.promotedPartCount == 2)
+        #expect(
+            try Data(
+                contentsOf: fixture.destinationURL
+                    .appendingPathComponent("resources/00000.ts")
+            ) == Data("onetwo".utf8)
+        )
+        let partRequests = HLSLiveURLProtocol.capturedRequests().filter {
+            $0.url == partURL
+        }
+        #expect(
+            partRequests.map {
+                $0.value(forHTTPHeaderField: "Range")
+            } == ["bytes=0-2", "bytes=3-5"]
+        )
+        #expect(
+            partRequests.allSatisfy {
+                $0.value(forHTTPHeaderField: "Accept-Encoding")
+                    == "identity"
+            }
+        )
+        #expect(
+            !HLSLiveURLProtocol.capturedRequests()
+                .compactMap(\.url).contains(parentURL)
+        )
+    }
+
+    @Test("LL-HLS part capture remains opt-in")
+    func leavesPartCaptureDisabledByDefault() async throws {
+        let sourceURL = try url("https://media.example/default-parts.m3u8")
+        let reloadURL = try url(
+            "https://media.example/default-parts.m3u8?_HLS_msn=11&_HLS_part=2"
+        )
+        let firstPartURL = try url("https://media.example/11.0.ts")
+        let secondPartURL = try url("https://media.example/11.1.ts")
+        let parentURL = try url("https://media.example/11.ts")
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(partialPlaylist()),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(completedPartialPlaylist()),
+            for: reloadURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("parent".utf8)),
+            for: parentURL
+        )
+
+        let receipt = try await recorder(
+            session: fixture.session,
+            startPosition: .nextCompletedSegment
+        ).record(from: sourceURL, to: fixture.destinationURL)
+
+        #expect(receipt.promotedPartCount == 0)
+        let requests = HLSLiveURLProtocol.capturedRequests().compactMap(\.url)
+        #expect(!requests.contains(firstPartURL))
+        #expect(!requests.contains(secondPartURL))
+        #expect(requests.contains(parentURL))
+    }
+
+    @Test("a mismatched part set falls back to its complete parent")
+    func fallsBackFromMismatchedParts() async throws {
+        let sourceURL = try url("https://media.example/mismatch.m3u8")
+        let reloadURL = try url(
+            "https://media.example/mismatch.m3u8?_HLS_msn=11&_HLS_part=2"
+        )
+        let firstPartURL = try url("https://media.example/11.0.ts")
+        let secondPartURL = try url("https://media.example/11.1.ts")
+        let parentURL = try url("https://media.example/11.ts")
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                partialPlaylist(firstDuration: 2, secondDuration: 1.8)
+            ),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(completedPlaylistWithoutParts()),
+            for: reloadURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("one".utf8)),
+            for: firstPartURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("two".utf8)),
+            for: secondPartURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("parent".utf8)),
+            for: parentURL
+        )
+
+        let receipt = try await recorder(
+            session: fixture.session,
+            startPosition: .nextCompletedSegment,
+            parts: HLSLiveDVRPartPack(policy: .independent)
+        ).record(from: sourceURL, to: fixture.destinationURL)
+
+        #expect(receipt.promotedPartCount == 0)
+        #expect(receipt.mediaByteCount == 6)
+        #expect(
+            try Data(
+                contentsOf: fixture.destinationURL
+                    .appendingPathComponent("resources/00000.ts")
+            ) == Data("parent".utf8)
+        )
+        let requests = HLSLiveURLProtocol.capturedRequests().compactMap(\.url)
+        #expect(requests.contains(firstPartURL))
+        #expect(requests.contains(secondPartURL))
+        #expect(requests.contains(parentURL))
+    }
+
+    @Test("a failed part is not retried for the same parent sequence")
+    func abandonsFailedPartSequence() async throws {
+        let sourceURL = try url("https://media.example/failed-part.m3u8")
+        let reloadURL = try url(
+            "https://media.example/failed-part.m3u8?_HLS_msn=11&_HLS_part=2"
+        )
+        let firstPartURL = try url("https://media.example/11.0.ts")
+        let parentURL = try url("https://media.example/11.ts")
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(partialPlaylist()),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(partialPlaylist()),
+            for: reloadURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(completedPlaylistWithoutParts()),
+            for: reloadURL
+        )
+        HLSLiveURLProtocol.register(
+            HLSLiveURLProtocol.Response(
+                statusCode: 404,
+                data: Data(),
+                headers: [:]
+            ),
+            for: firstPartURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("parent".utf8)),
+            for: parentURL
+        )
+
+        let receipt = try await recorder(
+            session: fixture.session,
+            startPosition: .nextCompletedSegment,
+            parts: HLSLiveDVRPartPack(policy: .independent)
+        ).record(from: sourceURL, to: fixture.destinationURL)
+
+        #expect(receipt.promotedPartCount == 0)
+        #expect(
+            HLSLiveURLProtocol.capturedRequests().filter {
+                $0.url == firstPartURL
+            }.count == 1
+        )
+        #expect(
+            HLSLiveURLProtocol.capturedRequests()
+                .compactMap(\.url).contains(parentURL)
+        )
+    }
+
+    @Test("part staging never starts from a dependent first part")
+    func rejectsDependentFirstPart() async throws {
+        let sourceURL = try url("https://media.example/dependent.m3u8")
+        let reloadURL = try url(
+            "https://media.example/dependent.m3u8?_HLS_msn=11&_HLS_part=2"
+        )
+        let firstPartURL = try url("https://media.example/11.0.ts")
+        let secondPartURL = try url("https://media.example/11.1.ts")
+        let parentURL = try url("https://media.example/11.ts")
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(partialPlaylist(firstIsIndependent: false)),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                completedPartialPlaylist(firstIsIndependent: false)
+            ),
+            for: reloadURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("parent".utf8)),
+            for: parentURL
+        )
+
+        let receipt = try await recorder(
+            session: fixture.session,
+            startPosition: .nextCompletedSegment,
+            parts: HLSLiveDVRPartPack(policy: .independent)
+        ).record(from: sourceURL, to: fixture.destinationURL)
+
+        #expect(receipt.promotedPartCount == 0)
+        let requests = HLSLiveURLProtocol.capturedRequests().compactMap(\.url)
+        #expect(!requests.contains(firstPartURL))
+        #expect(!requests.contains(secondPartURL))
+        #expect(requests.contains(parentURL))
+    }
+
+    @Test("AES-128 LL-HLS waits for and decrypts the complete parent")
+    func skipsEncryptedParts() async throws {
+        let sourceURL = try url("https://media.example/encrypted-parts.m3u8")
+        let reloadURL = try url(
+            "https://media.example/encrypted-parts.m3u8?_HLS_msn=11&_HLS_part=2"
+        )
+        let firstPartURL = try url("https://media.example/11.0.ts")
+        let secondPartURL = try url("https://media.example/11.1.ts")
+        let keyURL = try url("https://media.example/live.key")
+        let parentURL = try url("https://media.example/11.ts")
+        let key = Data(repeating: 0x31, count: 16)
+        let initializationVector =
+            Data(repeating: 0, count: 15) + Data([11])
+        let plaintext = Data("parent".utf8)
+        let ciphertext = try aes128Encrypt(
+            plaintext,
+            key: key,
+            initializationVector: initializationVector
+        )
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(encryptedPartialPlaylist(isEnded: false)),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(encryptedPartialPlaylist(isEnded: true)),
+            for: reloadURL
+        )
+        HLSLiveURLProtocol.register(mediaResponse(key), for: keyURL)
+        HLSLiveURLProtocol.register(
+            mediaResponse(ciphertext),
+            for: parentURL
+        )
+
+        let receipt = try await recorder(
+            session: fixture.session,
+            startPosition: .nextCompletedSegment,
+            parts: HLSLiveDVRPartPack(policy: .independent)
+        ).record(from: sourceURL, to: fixture.destinationURL)
+
+        #expect(receipt.promotedPartCount == 0)
+        #expect(
+            try Data(
+                contentsOf: fixture.destinationURL
+                    .appendingPathComponent("resources/00000.ts")
+            ) == plaintext
+        )
+        let requests = HLSLiveURLProtocol.capturedRequests().compactMap(\.url)
+        #expect(!requests.contains(firstPartURL))
+        #expect(!requests.contains(secondPartURL))
+        #expect(requests.contains(keyURL))
+        #expect(requests.contains(parentURL))
+    }
+
     @Test("an existing destination fails before the playlist request")
     func existingDestinationIsRejected() async throws {
         let sourceURL = try url(
@@ -1981,7 +2405,8 @@ extension HLSLivePlaylistClientTests {
         session: URLSession,
         startPosition: HLSLiveDVRStartPosition,
         renditions: HLSLiveDVRRenditionPack =
-            HLSLiveDVRRenditionPack()
+            HLSLiveDVRRenditionPack(),
+        parts: HLSLiveDVRPartPack = HLSLiveDVRPartPack()
     ) -> HLSLiveDVRRecorder {
         HLSLiveDVRRecorder(
             client: HLSLivePlaylistClient(session: session),
@@ -1993,9 +2418,80 @@ extension HLSLivePlaylistClientTests {
                     maximumTotalMediaBytes: 4_096
                 ),
                 startPosition: startPosition,
-                renditions: renditions
+                renditions: renditions,
+                parts: parts
             )
         )
+    }
+
+    private func partialPlaylist(
+        firstDuration: TimeInterval = 2,
+        secondDuration: TimeInterval = 2,
+        firstIsIndependent: Bool = true
+    ) -> String {
+        let independent = firstIsIndependent ? ",INDEPENDENT=YES" : ""
+        return """
+            #EXTM3U
+            #EXT-X-VERSION:9
+            #EXT-X-TARGETDURATION:4
+            #EXT-X-MEDIA-SEQUENCE:10
+            #EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES,PART-HOLD-BACK=4
+            #EXT-X-PART-INF:PART-TARGET=2
+            #EXTINF:4,
+            10.ts
+            #EXT-X-PART:DURATION=\(firstDuration),URI="11.0.ts"\(independent)
+            #EXT-X-PART:DURATION=\(secondDuration),URI="11.1.ts"
+            """
+    }
+
+    private func completedPartialPlaylist(
+        firstDuration: TimeInterval = 2,
+        secondDuration: TimeInterval = 2,
+        firstIsIndependent: Bool = true
+    ) -> String {
+        partialPlaylist(
+            firstDuration: firstDuration,
+            secondDuration: secondDuration,
+            firstIsIndependent: firstIsIndependent
+        ) + """
+
+                #EXTINF:4,
+                11.ts
+            #EXT-X-ENDLIST
+            """
+    }
+
+    private func completedPlaylistWithoutParts() -> String {
+        """
+        #EXTM3U
+        #EXT-X-VERSION:9
+        #EXT-X-TARGETDURATION:4
+        #EXT-X-MEDIA-SEQUENCE:10
+        #EXTINF:4,
+        10.ts
+        #EXTINF:4,
+        11.ts
+        #EXT-X-ENDLIST
+        """
+    }
+
+    private func encryptedPartialPlaylist(
+        isEnded: Bool
+    ) -> String {
+        partialPlaylist()
+            .replacingOccurrences(
+                of: "#EXTINF:4,\n10.ts",
+                with:
+                    "#EXT-X-KEY:METHOD=AES-128,URI=\"live.key\",IV=0x0000000000000000000000000000000B\n#EXTINF:4,\n10.ts"
+            )
+            + (isEnded
+                ? """
+
+                #EXTINF:4,
+                11.ts
+                #EXT-X-ENDLIST
+                """
+                : "")
     }
 
     private func makeFixture() throws -> DVRFixture {

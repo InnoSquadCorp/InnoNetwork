@@ -523,6 +523,10 @@ for await event in await manager.events(for: task) {
   `EXT-X-SERVER-CONTROL` capabilities
 - media-sequence reconstruction of skipped complete segments and active Date
   Ranges, with one query-clean full-reload recovery when history is missing
+- per-snapshot reload-mode attribution plus a pure, caller-clocked live-health
+  analyzer for edge regression, stagnation, hold-back latency, repeated delta
+  recovery, pathway instability, and live-window loss risk; recovery and UI
+  policy remain application-owned
 - polling fallback with finite timing bounds when blocking reload is not
   advertised
 - uncached reload transport, typed `livePlaylistReload` request purpose, and
@@ -536,6 +540,10 @@ for await event in await manager.events(for: task) {
   fMP4 segments, with exact byte-range validation, URL-free local VOD
   playlists, progress events, cross-process destination leases, and atomic
   directory commit
+- opt-in LL-HLS DVR part staging from an independent part zero, with count and
+  byte bounds, exact range validation, temporary-progress metadata, parent-
+  duration proof before promotion, and complete-segment fallback without
+  exposing partial files in the committed package
 - recording-scoped, memory-only identity AES-128 key reuse and rotation,
   explicit or media-sequence IV decryption, encrypted fMP4 maps, and plaintext-
   only local packages that never persist key declarations or source key URLs
