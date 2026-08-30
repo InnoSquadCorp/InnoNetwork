@@ -25,7 +25,8 @@ struct HLSOfflinePackageOperation: Sendable {
             variantSelectionPolicy:
                 configuration.variantSelectionPolicy,
             renditionPack: configuration.renditionPack,
-            contentSteering: configuration.contentSteering
+            contentSteering: configuration.contentSteering,
+            clock: clock
         )
         self.configuration = configuration
         self.diskCapacityChecker = diskCapacityChecker

@@ -59,7 +59,7 @@ package struct HLSLiveResolvedPresentation: Sendable {
     package let renditions: [HLSRendition]
     package let pathwayID: String?
     package let multivariantVariables: [String: String]
-    package let fallbackCandidates: [HLSLivePresentationCandidateRecord]
+    package let pathwayCandidates: [HLSLivePresentationCandidateRecord]
 }
 
 package extension PlaylistResolver {
@@ -67,6 +67,7 @@ package extension PlaylistResolver {
         from sourceURL: URL,
         selectionPolicy: HLSVariantSelectionPolicy,
         contentSteering: HLSContentSteeringPack,
+        contentSteeringSession: HLSContentSteeringSession,
         requestTimeout: TimeInterval
     ) async throws -> HLSLiveResolvedPresentation {
         let settings = contentSteering.resolvedSettings
@@ -77,14 +78,15 @@ package extension PlaylistResolver {
             allowsSeparateAudioRenditions: true
         ).resolve(
             from: sourceURL,
+            session: contentSteeringSession,
             requestTimeout: requestTimeout,
             disablesCaching: true
         )
-        let fallbackCandidates: [HLSLivePresentationCandidateRecord]
+        let pathwayCandidates: [HLSLivePresentationCandidateRecord]
         if settings.allowsTransferFailover,
             let selectedVariant = selection.selectedVariant
         {
-            fallbackCandidates = selection.fallbackCandidates.compactMap {
+            pathwayCandidates = selection.pathwayCandidates.compactMap {
                 candidate in
                 guard
                     Self.liveVariantsAreCompatible(
@@ -103,7 +105,7 @@ package extension PlaylistResolver {
                 )
             }
         } else {
-            fallbackCandidates = []
+            pathwayCandidates = []
         }
         return HLSLiveResolvedPresentation(
             document: try Self.liveDocument(from: selection.playlist),
@@ -111,58 +113,24 @@ package extension PlaylistResolver {
             renditions: selection.renditions,
             pathwayID: selection.pathwayID,
             multivariantVariables: selection.multivariantVariables,
-            fallbackCandidates: fallbackCandidates
+            pathwayCandidates: pathwayCandidates
         )
     }
 
     func resolveLiveFallback(
         _ candidate: HLSLivePresentationCandidateRecord,
         from requestURL: URL,
-        contentSteering: HLSContentSteeringPack,
         requestTimeout: TimeInterval
     ) async throws -> HLSLiveResolvedDocument {
-        let settings = contentSteering.resolvedSettings
-        await settings.emit(
-            .pathwayAttempt(
-                pathwayID: candidate.pathwayID,
-                phase: .mediaPlaylist,
-                resourceIndex: nil
-            )
+        let document = try await resolveDocument(
+            from: requestURL,
+            multivariantVariables:
+                candidate.multivariantVariables,
+            purpose: .mediaPlaylist,
+            requestTimeout: requestTimeout,
+            disablesCaching: true
         )
-        do {
-            let document = try await resolveDocument(
-                from: requestURL,
-                multivariantVariables:
-                    candidate.multivariantVariables,
-                purpose: .mediaPlaylist,
-                requestTimeout: requestTimeout,
-                disablesCaching: true
-            )
-            let liveDocument = try Self.liveDocument(
-                from: document.playlist
-            )
-            await settings.emit(
-                .pathwaySelected(
-                    pathwayID: candidate.pathwayID,
-                    phase: .mediaPlaylist,
-                    resourceIndex: nil
-                )
-            )
-            return liveDocument
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch {
-            await settings.emit(
-                .pathwayFailed(
-                    pathwayID: candidate.pathwayID,
-                    phase: .mediaPlaylist,
-                    resourceIndex: nil,
-                    errorCode: (error as? HLSDownloadError)?.code
-                        ?? .transferFailed
-                )
-            )
-            throw error
-        }
+        return try Self.liveDocument(from: document.playlist)
     }
 
     func resolveLiveDocument(
@@ -348,21 +316,5 @@ package extension PlaylistResolver {
             && primary.width == candidate.width
             && primary.height == candidate.height
             && primary.videoRange == candidate.videoRange
-    }
-}
-
-package extension HLSContentSteeringPack {
-    func emitLivePlaylistFailure(
-        pathwayID: String?,
-        errorCode: HLSDownloadErrorCode
-    ) async {
-        await resolvedSettings.emit(
-            .pathwayFailed(
-                pathwayID: pathwayID,
-                phase: .mediaPlaylist,
-                resourceIndex: nil,
-                errorCode: errorCode
-            )
-        )
     }
 }

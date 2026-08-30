@@ -1,10 +1,356 @@
 import Foundation
 import InnoNetwork
 import Testing
+import os
 
 @testable import InnoNetworkHLS
 
 extension HLSDownloaderTests {
+    @Test("pathway health penalizes and recovers on session time")
+    func contentSteeringPathwayHealthRecoversAfterCooldown() async {
+        let observationTime = OSAllocatedUnfairLock<Date>(
+            initialState: Date(timeIntervalSince1970: 1_000)
+        )
+        let recorder = HLSContentSteeringEventRecorder()
+        let settings = HLSContentSteeringPack(
+            healthPolicy: HLSContentSteeringHealthPolicy(
+                consecutiveFailureThreshold: 2,
+                recoveryCooldown: .seconds(10)
+            ),
+            eventObservers: [recorder]
+        ).resolvedSettings
+        let session = HLSContentSteeringSession(
+            settings: settings,
+            now: { observationTime.withLock { $0 } }
+        )
+
+        #expect(
+            await session.beginAttempt(
+                pathwayID: "A",
+                phase: .mediaPlaylist,
+                resourceIndex: nil
+            ) == .admitted
+        )
+        await session.recordFailure(
+            pathwayID: "A",
+            phase: .mediaPlaylist,
+            resourceIndex: nil,
+            errorCode: .transferFailed
+        )
+        #expect(
+            await session.beginAttempt(
+                pathwayID: "A",
+                phase: .mediaPlaylist,
+                resourceIndex: nil
+            ) == .admitted
+        )
+        await session.recordFailure(
+            pathwayID: "A",
+            phase: .mediaPlaylist,
+            resourceIndex: nil,
+            errorCode: .invalidResponseStatus
+        )
+        #expect(
+            await session.beginAttempt(
+                pathwayID: "A",
+                phase: .mediaPlaylist,
+                resourceIndex: nil
+            ) == .penalized
+        )
+
+        observationTime.withLock {
+            $0.addTimeInterval(10)
+        }
+        #expect(
+            await session.beginAttempt(
+                pathwayID: "A",
+                phase: .mediaPlaylist,
+                resourceIndex: nil
+            ) == .recovered
+        )
+        await session.recordSuccess(
+            pathwayID: "A",
+            phase: .mediaPlaylist,
+            resourceIndex: nil,
+            selection: HLSContentSteeringSession.Selection(
+                fromPathwayID: "B",
+                reason: .cooldownRecovery
+            )
+        )
+
+        let events = await recorder.events()
+        let health: [HLSContentSteeringPathwaySnapshot] =
+            events.compactMap { event in
+                guard case .pathwayHealthChanged(let snapshot) = event else {
+                    return nil
+                }
+                return snapshot
+            }
+        let penalized = health.first { snapshot in
+            guard case .penalized = snapshot.availability else {
+                return false
+            }
+            return true
+        }
+        #expect(penalized?.attemptCount == 2)
+        #expect(penalized?.failureCount == 2)
+        #expect(penalized?.consecutiveFailureCount == 2)
+        #expect(
+            penalized?.availability
+                == .penalized(retryAfter: .seconds(10))
+        )
+        let final = health.last
+        #expect(final?.attemptCount == 3)
+        #expect(final?.successCount == 1)
+        #expect(final?.failureCount == 2)
+        #expect(final?.successRate == 1.0 / 3.0)
+        #expect(final?.consecutiveFailureCount == 0)
+        #expect(final?.availability == .available)
+        #expect(final?.selectionCounts[.cooldownRecovery] == 1)
+        #expect(
+            events.contains(
+                .pathwaySelectionChanged(
+                    fromPathwayID: "B",
+                    toPathwayID: "A",
+                    reason: .cooldownRecovery
+                )
+            )
+        )
+        let diagnostic = String(reflecting: events)
+        #expect(!diagnostic.contains("https://"))
+        #expect(!diagnostic.contains("token="))
+    }
+
+    @Test("pathway health policy remains bounded")
+    func contentSteeringPathwayHealthPolicyIsBounded() {
+        let minimum = HLSContentSteeringHealthPolicy(
+            consecutiveFailureThreshold: .min,
+            recoveryCooldown: .seconds(-1)
+        )
+        #expect(minimum.consecutiveFailureThreshold == 1)
+        #expect(minimum.recoveryCooldown == .zero)
+
+        let maximum = HLSContentSteeringHealthPolicy(
+            consecutiveFailureThreshold: .max,
+            recoveryCooldown: .seconds(86_400)
+        )
+        #expect(maximum.consecutiveFailureThreshold == 16)
+        #expect(maximum.recoveryCooldown == .seconds(3_600))
+    }
+
+    @Test("VOD pathway can re-enter after its cooldown")
+    func vodPathwayReentersAfterCooldown() async throws {
+        let urls = try makeContentSteeringURLs()
+        let cloneFirstURL = try #require(
+            URL(string: "https://edge.example/one.ts")
+        )
+        let cloneSecondURL = try #require(
+            URL(string: "https://edge.example/two.ts")
+        )
+        let baseFirstURL = try #require(
+            URL(string: "https://media.example/one.ts")
+        )
+        let baseSecondURL = try #require(
+            URL(string: "https://media.example/two.ts")
+        )
+        let clock = HLSContentSteeringTestClock()
+        let recorder = HLSContentSteeringEventRecorder()
+        let session = makeContentSteeringSession()
+        defer {
+            session.invalidateAndCancel()
+            HLSURLProtocol.reset()
+        }
+        registerContentSteeringMaster(
+            at: urls.master,
+            steeringURL: urls.steering
+        )
+        registerContentSteeringManifest(at: urls.steering)
+        let mediaPlaylist = Data(
+            """
+            #EXTM3U
+            #EXTINF:1,
+            one.ts
+            #EXTINF:1,
+            two.ts
+            #EXT-X-ENDLIST
+
+            """.utf8
+        )
+        for url in [urls.cloneMedia, urls.baseMedia] {
+            HLSURLProtocol.register(
+                .success(
+                    statusCode: 200,
+                    data: mediaPlaylist,
+                    headers: [:]
+                ),
+                for: url
+            )
+        }
+        HLSURLProtocol.register(
+            .success(statusCode: 503, data: Data(), headers: [:]),
+            for: cloneFirstURL
+        )
+        HLSURLProtocol.register(
+            .success(
+                statusCode: 200,
+                data: Data("1".utf8),
+                headers: ["Content-Length": "1"]
+            ),
+            for: baseFirstURL
+        )
+        HLSURLProtocol.register(
+            .success(statusCode: 503, data: Data(), headers: [:]),
+            for: baseSecondURL
+        )
+        HLSURLProtocol.register(
+            .success(
+                statusCode: 200,
+                data: Data("2".utf8),
+                headers: ["Content-Length": "1"]
+            ),
+            for: cloneSecondURL
+        )
+        HLSURLProtocol.setStartLoadingHandler { url in
+            if url == baseSecondURL {
+                clock.advance(by: 2)
+            }
+        }
+        let client = HLSHTTPClient(
+            session: session,
+            requestContext: NetworkRequestContext(),
+            requestAdapter: { $0 }
+        )
+        let downloader = HLSDownloader(
+            client: client,
+            configuration: .advanced(
+                storage: HLSStoragePack(
+                    diskCapacityPolicy: .disabled,
+                    resumePolicy: .disabled
+                ),
+                contentSteering: HLSContentSteeringPack(
+                    healthPolicy: HLSContentSteeringHealthPolicy(
+                        recoveryCooldown: .seconds(1)
+                    ),
+                    eventObservers: [recorder]
+                ),
+                transfer: HLSTransferPack(
+                    maximumConcurrentResourceTransfers: 1,
+                    retryPolicy: nil
+                )
+            ),
+            clock: clock
+        )
+        let directoryURL = try makeContentSteeringTemporaryDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: directoryURL)
+        }
+        let destinationURL = directoryURL.appendingPathComponent(
+            "cooldown.ts"
+        )
+
+        _ = try await downloader.downloadReceipt(
+            sourceURL: urls.master,
+            destinationURL: destinationURL
+        )
+
+        #expect(try Data(contentsOf: destinationURL) == Data("12".utf8))
+        #expect(
+            await recorder.events().contains(
+                .pathwaySelectionChanged(
+                    fromPathwayID: "A",
+                    toPathwayID: "B",
+                    reason: .cooldownRecovery
+                )
+            )
+        )
+        #expect(
+            HLSURLProtocol.capturedRequests().compactMap(\.url)
+                == [
+                    urls.master,
+                    urls.steering,
+                    urls.cloneMedia,
+                    cloneFirstURL,
+                    urls.baseMedia,
+                    baseFirstURL,
+                    baseSecondURL,
+                    urls.cloneMedia,
+                    cloneSecondURL,
+                ]
+        )
+    }
+
+    @Test("statistics-only health does not cycle failed pathways")
+    func zeroCooldownDoesNotCycleFailedPathways() async throws {
+        let urls = try makeContentSteeringURLs()
+        let cloneSegmentURL = try #require(
+            URL(string: "https://edge.example/segment.ts")
+        )
+        let baseSegmentURL = try #require(
+            URL(string: "https://media.example/segment.ts")
+        )
+        let session = makeContentSteeringSession()
+        defer {
+            session.invalidateAndCancel()
+            HLSURLProtocol.reset()
+        }
+        registerContentSteeringMaster(
+            at: urls.master,
+            steeringURL: urls.steering
+        )
+        registerContentSteeringManifest(at: urls.steering)
+        registerContentSteeringMediaPlaylist(at: urls.cloneMedia)
+        registerContentSteeringMediaPlaylist(at: urls.baseMedia)
+        HLSURLProtocol.register(
+            .success(statusCode: 503, data: Data(), headers: [:]),
+            for: cloneSegmentURL
+        )
+        HLSURLProtocol.register(
+            .success(statusCode: 502, data: Data(), headers: [:]),
+            for: baseSegmentURL
+        )
+        let directoryURL = try makeContentSteeringTemporaryDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: directoryURL)
+        }
+
+        await #expect(
+            throws: HLSDownloadError.invalidMediaResponseStatus(502)
+        ) {
+            try await HLSDownloader(
+                session: session,
+                configuration: .advanced(
+                    storage: HLSStoragePack(
+                        diskCapacityPolicy: .disabled,
+                        resumePolicy: .disabled
+                    ),
+                    contentSteering: HLSContentSteeringPack(
+                        healthPolicy: HLSContentSteeringHealthPolicy(
+                            recoveryCooldown: .zero
+                        )
+                    ),
+                    transfer: HLSTransferPack(
+                        maximumConcurrentResourceTransfers: 1,
+                        retryPolicy: nil
+                    )
+                )
+            ).downloadReceipt(
+                sourceURL: urls.master,
+                destinationURL:
+                    directoryURL.appendingPathComponent("failed.ts")
+            )
+        }
+        #expect(
+            HLSURLProtocol.capturedRequests().count {
+                $0.url == cloneSegmentURL
+            } == 1
+        )
+        #expect(
+            HLSURLProtocol.capturedRequests().count {
+                $0.url == baseSegmentURL
+            } == 1
+        )
+    }
+
     @Test("playlist declarations expose resolved steering metadata")
     func parsesContentSteeringDeclaration() throws {
         let sourceURL = try #require(
@@ -905,5 +1251,23 @@ private actor HLSContentSteeringEventRecorder:
 
     func events() -> [HLSContentSteeringEvent] {
         recordedEvents
+    }
+}
+
+private final class HLSContentSteeringTestClock: InnoNetworkClock {
+    private let observationTime = OSAllocatedUnfairLock<Date>(
+        initialState: Date(timeIntervalSince1970: 1_000)
+    )
+
+    func sleep(for duration: Duration) async throws {}
+
+    func now() -> Date {
+        observationTime.withLock { $0 }
+    }
+
+    func advance(by seconds: TimeInterval) {
+        observationTime.withLock {
+            $0.addTimeInterval(seconds)
+        }
     }
 }

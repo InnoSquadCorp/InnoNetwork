@@ -1,4 +1,5 @@
 import Foundation
+import InnoNetwork
 
 struct HLSOfflinePackagePlan: Sendable {
     let selectedVariant: HLSVariant?
@@ -45,13 +46,16 @@ struct HLSOfflinePackagePlanner: Sendable {
     private let variantSelectionPolicy: HLSVariantSelectionPolicy
     private let renditionPack: HLSOfflineRenditionPack
     private let contentSteeringResolver: HLSContentSteeringResolver
+    private let contentSteering: HLSContentSteeringSettings
     private let isContentSteeringEnabled: Bool
+    private let clock: any InnoNetworkClock
 
     init(
         client: HLSHTTPClient,
         variantSelectionPolicy: HLSVariantSelectionPolicy,
         renditionPack: HLSOfflineRenditionPack,
-        contentSteering: HLSContentSteeringSettings
+        contentSteering: HLSContentSteeringSettings,
+        clock: any InnoNetworkClock
     ) {
         self.playlistResolver = PlaylistResolver(client: client)
         self.variantSelectionPolicy = variantSelectionPolicy
@@ -60,7 +64,9 @@ struct HLSOfflinePackagePlanner: Sendable {
             client: client,
             settings: contentSteering
         )
+        self.contentSteering = contentSteering
         self.isContentSteeringEnabled = contentSteering.isEnabled
+        self.clock = clock
     }
 
     func resolve(
@@ -94,6 +100,10 @@ struct HLSOfflinePackagePlanner: Sendable {
         let catalog = try await contentSteeringResolver.catalog(
             for: sourceDocument.playlist
         )
+        let contentSteeringSession = HLSContentSteeringSession(
+            settings: contentSteering,
+            now: { clock.now() }
+        )
         if isContentSteeringEnabled,
             sourceDocument.playlist.contentSteering != nil
         {
@@ -104,6 +114,11 @@ struct HLSOfflinePackagePlanner: Sendable {
             )
         }
         var terminalError: (any Error)?
+        var previousFailure:
+            (
+                pathwayID: String?,
+                errorCode: HLSDownloadErrorCode
+            )?
         for pathway in catalog.pathways {
             guard
                 let selectedVariant = variantSelector.select(
@@ -117,16 +132,62 @@ struct HLSOfflinePackagePlanner: Sendable {
                     )
                 continue
             }
+            let admission = await contentSteeringSession.beginAttempt(
+                pathwayID: pathway.id,
+                phase: .mediaPlaylist,
+                resourceIndex: nil
+            )
+            guard admission != .penalized else {
+                continue
+            }
             do {
-                return try await makePlan(
+                let plan = try await makePlan(
                     sourceDocument: sourceDocument,
                     pathway: pathway,
                     selectedVariant: selectedVariant
                 )
+                let reason: HLSContentSteeringSelectionReason
+                let fromPathwayID: String?
+                if admission == .recovered {
+                    reason = .cooldownRecovery
+                    fromPathwayID = previousFailure?.pathwayID
+                } else if let previousFailure {
+                    reason = .pathwayFailure(
+                        phase: .mediaPlaylist,
+                        errorCode: previousFailure.errorCode
+                    )
+                    fromPathwayID = previousFailure.pathwayID
+                } else {
+                    reason = .initial
+                    fromPathwayID = nil
+                }
+                await contentSteeringSession.recordSuccess(
+                    pathwayID: pathway.id,
+                    phase: .mediaPlaylist,
+                    resourceIndex: nil,
+                    selection: HLSContentSteeringSession.Selection(
+                        fromPathwayID: fromPathwayID,
+                        reason: reason
+                    )
+                )
+                return plan
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
                 terminalError = error
+                let errorCode =
+                    (error as? HLSDownloadError)?.code
+                    ?? .transferFailed
+                previousFailure = (
+                    pathwayID: pathway.id,
+                    errorCode: errorCode
+                )
+                await contentSteeringSession.recordFailure(
+                    pathwayID: pathway.id,
+                    phase: .mediaPlaylist,
+                    resourceIndex: nil,
+                    errorCode: errorCode
+                )
             }
         }
         if let terminalError {

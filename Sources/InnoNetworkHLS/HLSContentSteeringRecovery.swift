@@ -7,6 +7,12 @@ struct HLSPathwayResource: Sendable {
     let aes128KeySet: HLSAES128KeySet
 }
 
+struct HLSPathwayFailure: Sendable {
+    let pathwayID: String?
+    let phase: HLSContentSteeringPhase
+    let errorCode: HLSDownloadErrorCode
+}
+
 actor HLSContentSteeringRecovery {
     private let playlistResolver: PlaylistResolver
     private let keyResolver: HLSAES128KeyResolver
@@ -14,8 +20,8 @@ actor HLSContentSteeringRecovery {
     private let primaryVariant: HLSVariant
     private let primaryContainer: HLSMediaContainer
     private let primaryTransfers: [HLSResourceTransfer]
-    private let contentSteering: HLSContentSteeringSettings
-    private var remainingCandidates: [HLSMediaPlaylistCandidate]
+    private let contentSteeringSession: HLSContentSteeringSession
+    private let candidates: [HLSMediaPlaylistCandidate]
     private var activePlan: ActivePlan?
     private var activation: Activation?
 
@@ -27,8 +33,8 @@ actor HLSContentSteeringRecovery {
         primaryVariant: HLSVariant,
         primaryContainer: HLSMediaContainer,
         primaryTransfers: [HLSResourceTransfer],
-        fallbackCandidates: [HLSMediaPlaylistCandidate],
-        contentSteering: HLSContentSteeringSettings
+        candidates: [HLSMediaPlaylistCandidate],
+        contentSteeringSession: HLSContentSteeringSession
     ) {
         self.playlistResolver = PlaylistResolver(client: client)
         self.keyResolver = HLSAES128KeyResolver(
@@ -40,18 +46,25 @@ actor HLSContentSteeringRecovery {
         self.primaryVariant = primaryVariant
         self.primaryContainer = primaryContainer
         self.primaryTransfers = primaryTransfers
-        self.remainingCandidates = fallbackCandidates
-        self.contentSteering = contentSteering
+        self.candidates = candidates
+        self.contentSteeringSession = contentSteeringSession
     }
 
     func resource(
         at index: Int,
-        afterFailureOf pathwayID: String?
+        after failure: HLSPathwayFailure,
+        excludingPathwayIDs: Set<String>
     ) async throws -> HLSPathwayResource? {
-        if let activePlan, activePlan.pathwayID != pathwayID {
+        if let activePlan,
+            activePlan.pathwayID != failure.pathwayID,
+            !Self.isExcluded(
+                activePlan.pathwayID,
+                by: excludingPathwayIDs
+            )
+        {
             return activePlan.resource(at: index)
         }
-        if activePlan?.pathwayID == pathwayID {
+        if activePlan?.pathwayID == failure.pathwayID {
             activePlan = nil
         }
 
@@ -62,7 +75,10 @@ actor HLSContentSteeringRecovery {
             currentActivation = Activation(
                 id: UUID(),
                 task: Task {
-                    try await self.activateNextPlan()
+                    try await self.activateNextPlan(
+                        after: failure,
+                        excludingPathwayIDs: excludingPathwayIDs
+                    )
                 }
             )
             activation = currentActivation
@@ -73,16 +89,33 @@ actor HLSContentSteeringRecovery {
                 activation = nil
                 activePlan = plan
                 try Task.checkCancellation()
+                guard
+                    !Self.isExcluded(
+                        plan?.pathwayID,
+                        by: excludingPathwayIDs
+                    )
+                else {
+                    return nil
+                }
                 return plan?.resource(at: index)
             }
             if let activePlan {
                 try Task.checkCancellation()
+                guard
+                    !Self.isExcluded(
+                        activePlan.pathwayID,
+                        by: excludingPathwayIDs
+                    )
+                else {
+                    return nil
+                }
                 return activePlan.resource(at: index)
             }
             if activation != nil {
                 return try await resource(
                     at: index,
-                    afterFailureOf: pathwayID
+                    after: failure,
+                    excludingPathwayIDs: excludingPathwayIDs
                 )
             }
             try Task.checkCancellation()
@@ -95,19 +128,33 @@ actor HLSContentSteeringRecovery {
         }
     }
 
-    private func activateNextPlan() async throws -> ActivePlan? {
-        while !remainingCandidates.isEmpty {
-            let candidate = remainingCandidates.removeFirst()
+    private func activateNextPlan(
+        after failure: HLSPathwayFailure,
+        excludingPathwayIDs: Set<String>
+    ) async throws -> ActivePlan? {
+        for candidate in candidates {
+            guard candidate.pathwayID != failure.pathwayID else {
+                continue
+            }
+            guard
+                !Self.isExcluded(
+                    candidate.pathwayID,
+                    by: excludingPathwayIDs
+                )
+            else {
+                continue
+            }
             guard isVariantCompatible(candidate.variant) else {
                 continue
             }
-            await contentSteering.emit(
-                .pathwayAttempt(
-                    pathwayID: candidate.pathwayID,
-                    phase: .mediaPlaylist,
-                    resourceIndex: nil
-                )
+            let admission = await contentSteeringSession.beginAttempt(
+                pathwayID: candidate.pathwayID,
+                phase: .mediaPlaylist,
+                resourceIndex: nil
             )
+            guard admission != .penalized else {
+                continue
+            }
             do {
                 let document = try await playlistResolver.resolveDocument(
                     from: candidate.variant.url,
@@ -151,11 +198,19 @@ actor HLSContentSteeringRecovery {
                     transfers: transfers,
                     aes128KeySet: keySet
                 )
-                await contentSteering.emit(
-                    .pathwaySelected(
-                        pathwayID: candidate.pathwayID,
-                        phase: .mediaPlaylist,
-                        resourceIndex: nil
+                await contentSteeringSession.recordSuccess(
+                    pathwayID: candidate.pathwayID,
+                    phase: .mediaPlaylist,
+                    resourceIndex: nil,
+                    selection: HLSContentSteeringSession.Selection(
+                        fromPathwayID: failure.pathwayID,
+                        reason:
+                            admission == .recovered
+                            ? .cooldownRecovery
+                            : .pathwayFailure(
+                                phase: failure.phase,
+                                errorCode: failure.errorCode
+                            )
                     )
                 )
                 return plan
@@ -173,17 +228,22 @@ actor HLSContentSteeringRecovery {
         return nil
     }
 
+    private static func isExcluded(
+        _ pathwayID: String?,
+        by excludedPathwayIDs: Set<String>
+    ) -> Bool {
+        pathwayID.map(excludedPathwayIDs.contains) ?? false
+    }
+
     private func emitPlaylistFailure(
         for pathwayID: String?,
         code: HLSDownloadErrorCode
     ) async {
-        await contentSteering.emit(
-            .pathwayFailed(
-                pathwayID: pathwayID,
-                phase: .mediaPlaylist,
-                resourceIndex: nil,
-                errorCode: code
-            )
+        await contentSteeringSession.recordFailure(
+            pathwayID: pathwayID,
+            phase: .mediaPlaylist,
+            resourceIndex: nil,
+            errorCode: code
         )
     }
 

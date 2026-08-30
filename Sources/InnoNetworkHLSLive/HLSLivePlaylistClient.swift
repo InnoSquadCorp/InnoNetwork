@@ -18,6 +18,7 @@ public struct HLSLivePlaylistClient: Sendable {
     private let keyPreloader: (any HLSLiveEncryptionKeyPreloading)?
     private let keyPreloadSleep: @Sendable (Duration) async throws -> Void
     private let randomUnitInterval: @Sendable () -> Double
+    private let now: @Sendable () -> Date
 
     var resourceClient: HLSHTTPClient {
         resolver.client
@@ -73,7 +74,8 @@ public struct HLSLivePlaylistClient: Sendable {
         randomUnitInterval:
             @escaping @Sendable () -> Double = {
                 Double.random(in: 0...1)
-            }
+            },
+        now: @escaping @Sendable () -> Date = Date.init
     ) {
         self.resolver = resolver
         self.configuration = configuration
@@ -81,14 +83,17 @@ public struct HLSLivePlaylistClient: Sendable {
         self.sleep = sleep
         self.keyPreloadSleep = keyPreloadSleep
         self.randomUnitInterval = randomUnitInterval
+        self.now = now
     }
 
     /// Fetches one complete live-presentation snapshot.
     public func snapshot(
         from sourceURL: URL
     ) async throws -> HLSLivePlaylistSnapshot {
+        let contentSteeringSession = makeContentSteeringSession()
         let presentation = try await resolvePresentation(
-            from: sourceURL
+            from: sourceURL,
+            session: contentSteeringSession
         )
         return try HLSLivePlaylistMerger.makeSnapshot(
             from: presentation.document,
@@ -178,8 +183,10 @@ public struct HLSLivePlaylistClient: Sendable {
         keyPreloadCoordinator:
             HLSLiveKeyPreloadCoordinator?
     ) async throws {
+        let contentSteeringSession = makeContentSteeringSession()
         let initialPresentation = try await resolvePresentation(
-            from: sourceURL
+            from: sourceURL,
+            session: contentSteeringSession
         )
         var pendingDocument: HLSLiveResolvedDocument? =
             initialPresentation.document
@@ -191,8 +198,8 @@ public struct HLSLivePlaylistClient: Sendable {
         var pathwayID = initialPresentation.pathwayID
         var multivariantVariables =
             initialPresentation.multivariantVariables
-        var fallbackCandidates =
-            initialPresentation.fallbackCandidates
+        let pathwayCandidates =
+            initialPresentation.pathwayCandidates
         var previous: HLSLivePlaylistSnapshot?
         var generation = 0
         var isFullReloadRecovery = false
@@ -205,6 +212,22 @@ public struct HLSLivePlaylistClient: Sendable {
                 document = initialDocument
                 pendingDocument = nil
             } else {
+                let tracksPathwayHealth = selectedVariant != nil
+                if tracksPathwayHealth {
+                    let admission = await contentSteeringSession.beginAttempt(
+                        pathwayID: pathwayID,
+                        phase: .mediaPlaylist,
+                        resourceIndex: nil
+                    )
+                    if admission == .penalized {
+                        await contentSteeringSession
+                            .beginPenalizedFallbackAttempt(
+                                pathwayID: pathwayID,
+                                phase: .mediaPlaylist,
+                                resourceIndex: nil
+                            )
+                    }
+                }
                 do {
                     document = try await resolveDocument(
                         from: requestURL,
@@ -212,21 +235,34 @@ public struct HLSLivePlaylistClient: Sendable {
                         multivariantVariables:
                             multivariantVariables
                     )
+                    if tracksPathwayHealth {
+                        await contentSteeringSession.recordSuccess(
+                            pathwayID: pathwayID,
+                            phase: .mediaPlaylist,
+                            resourceIndex: nil
+                        )
+                    }
                 } catch is CancellationError {
                     throw CancellationError()
                 } catch {
-                    if selectedVariant != nil {
-                        await configuration.contentSteering
-                            .emitLivePlaylistFailure(
-                                pathwayID: pathwayID,
-                                errorCode: (error as? HLSDownloadError)?
-                                    .code ?? .transferFailed
-                            )
+                    let errorCode =
+                        (error as? HLSDownloadError)?.code
+                        ?? .transferFailed
+                    if tracksPathwayHealth {
+                        await contentSteeringSession.recordFailure(
+                            pathwayID: pathwayID,
+                            phase: .mediaPlaylist,
+                            resourceIndex: nil,
+                            errorCode: errorCode
+                        )
                     }
                     guard
                         let recovery = try await resolveFallback(
                             after: previous,
-                            candidates: &fallbackCandidates
+                            failedPathwayID: pathwayID,
+                            failureErrorCode: errorCode,
+                            candidates: pathwayCandidates,
+                            session: contentSteeringSession
                         )
                     else {
                         throw error
@@ -328,7 +364,8 @@ public struct HLSLivePlaylistClient: Sendable {
     }
 
     private func resolvePresentation(
-        from sourceURL: URL
+        from sourceURL: URL,
+        session: HLSContentSteeringSession
     ) async throws -> HLSLiveResolvedPresentation {
         do {
             return try await resolver.resolveLivePresentation(
@@ -336,6 +373,7 @@ public struct HLSLivePlaylistClient: Sendable {
                 selectionPolicy:
                     configuration.variantSelectionPolicy,
                 contentSteering: configuration.contentSteering,
+                contentSteeringSession: session,
                 requestTimeout:
                     configuration.reload.requestTimeout
             )
@@ -346,15 +384,27 @@ public struct HLSLivePlaylistClient: Sendable {
 
     private func resolveFallback(
         after snapshot: HLSLivePlaylistSnapshot?,
-        candidates:
-            inout [HLSLivePresentationCandidateRecord]
+        failedPathwayID: String?,
+        failureErrorCode: HLSDownloadErrorCode,
+        candidates: [HLSLivePresentationCandidateRecord],
+        session: HLSContentSteeringSession
     ) async throws -> (
         document: HLSLiveResolvedDocument,
         candidate: HLSLivePresentationCandidateRecord
     )? {
-        while !candidates.isEmpty {
+        for candidate in candidates {
             try Task.checkCancellation()
-            let candidate = candidates.removeFirst()
+            guard candidate.pathwayID != failedPathwayID else {
+                continue
+            }
+            let admission = await session.beginAttempt(
+                pathwayID: candidate.pathwayID,
+                phase: .mediaPlaylist,
+                resourceIndex: nil
+            )
+            guard admission != .penalized else {
+                continue
+            }
             let requestURL: URL
             if let snapshot {
                 requestURL =
@@ -369,18 +419,47 @@ public struct HLSLivePlaylistClient: Sendable {
                 let document = try await resolver.resolveLiveFallback(
                     candidate,
                     from: requestURL,
-                    contentSteering:
-                        configuration.contentSteering,
                     requestTimeout:
                         configuration.reload.requestTimeout
+                )
+                await session.recordSuccess(
+                    pathwayID: candidate.pathwayID,
+                    phase: .mediaPlaylist,
+                    resourceIndex: nil,
+                    selection: HLSContentSteeringSession.Selection(
+                        fromPathwayID: failedPathwayID,
+                        reason:
+                            admission == .recovered
+                            ? .cooldownRecovery
+                            : .pathwayFailure(
+                                phase: .mediaPlaylist,
+                                errorCode: failureErrorCode
+                            )
+                    )
                 )
                 return (document, candidate)
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
+                await session.recordFailure(
+                    pathwayID: candidate.pathwayID,
+                    phase: .mediaPlaylist,
+                    resourceIndex: nil,
+                    errorCode: (error as? HLSDownloadError)?.code
+                        ?? .transferFailed
+                )
                 continue
             }
         }
         return nil
+    }
+
+    private func makeContentSteeringSession()
+        -> HLSContentSteeringSession
+    {
+        HLSContentSteeringSession(
+            settings: configuration.contentSteering.resolvedSettings,
+            now: now
+        )
     }
 }

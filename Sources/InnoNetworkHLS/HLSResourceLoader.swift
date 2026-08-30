@@ -13,7 +13,7 @@ struct HLSResourceLoader: Sendable {
     private let networkMonitor: (any NetworkMonitoring)?
     private let aes128KeySet: HLSAES128KeySet
     private let pathwayID: String?
-    private let contentSteering: HLSContentSteeringSettings?
+    private let contentSteeringSession: HLSContentSteeringSession?
     private let contentSteeringRecovery: HLSContentSteeringRecovery?
 
     init(
@@ -24,7 +24,7 @@ struct HLSResourceLoader: Sendable {
         networkMonitor: (any NetworkMonitoring)? = NetworkMonitor.shared,
         aes128KeySet: HLSAES128KeySet = .empty,
         pathwayID: String? = nil,
-        contentSteering: HLSContentSteeringSettings? = nil,
+        contentSteeringSession: HLSContentSteeringSession? = nil,
         contentSteeringRecovery: HLSContentSteeringRecovery? = nil
     ) {
         self.client = client
@@ -37,7 +37,7 @@ struct HLSResourceLoader: Sendable {
         self.networkMonitor = networkMonitor
         self.aes128KeySet = aes128KeySet
         self.pathwayID = pathwayID
-        self.contentSteering = contentSteering
+        self.contentSteeringSession = contentSteeringSession
         self.contentSteeringRecovery = contentSteeringRecovery
     }
 
@@ -53,14 +53,35 @@ struct HLSResourceLoader: Sendable {
             transfer: resource,
             aes128KeySet: aes128KeySet
         )
+        var failedPathwayIDs: Set<String> = []
         while true {
-            await contentSteering?.emit(
-                .pathwayAttempt(
-                    pathwayID: pathwayResource.pathwayID,
-                    phase: .mediaResource,
-                    resourceIndex: index
-                )
+            let admission = await contentSteeringSession?.beginAttempt(
+                pathwayID: pathwayResource.pathwayID,
+                phase: .mediaResource,
+                resourceIndex: index
             )
+            if admission == .penalized {
+                if let contentSteeringRecovery,
+                    let recoveredResource = try await contentSteeringRecovery.resource(
+                        at: index,
+                        after: HLSPathwayFailure(
+                            pathwayID: pathwayResource.pathwayID,
+                            phase: .mediaResource,
+                            errorCode: .transferFailed
+                        ),
+                        excludingPathwayIDs: failedPathwayIDs
+                    )
+                {
+                    pathwayResource = recoveredResource
+                    continue
+                }
+                await contentSteeringSession?
+                    .beginPenalizedFallbackAttempt(
+                        pathwayID: pathwayResource.pathwayID,
+                        phase: .mediaResource,
+                        resourceIndex: index
+                    )
+            }
             do {
                 let staged = try await stage(
                     pathwayResource: pathwayResource,
@@ -69,24 +90,23 @@ struct HLSResourceLoader: Sendable {
                     budget: budget,
                     diskCapacityGuard: diskCapacityGuard
                 )
-                await contentSteering?.emit(
-                    .pathwaySelected(
-                        pathwayID: pathwayResource.pathwayID,
-                        phase: .mediaResource,
-                        resourceIndex: index
-                    )
+                await contentSteeringSession?.recordSuccess(
+                    pathwayID: pathwayResource.pathwayID,
+                    phase: .mediaResource,
+                    resourceIndex: index
                 )
                 return staged
             } catch is CancellationError {
                 throw CancellationError()
             } catch let error as HLSDownloadError {
-                await contentSteering?.emit(
-                    .pathwayFailed(
-                        pathwayID: pathwayResource.pathwayID,
-                        phase: .mediaResource,
-                        resourceIndex: index,
-                        errorCode: error.code
-                    )
+                if let pathwayID = pathwayResource.pathwayID {
+                    failedPathwayIDs.insert(pathwayID)
+                }
+                await contentSteeringSession?.recordFailure(
+                    pathwayID: pathwayResource.pathwayID,
+                    phase: .mediaResource,
+                    resourceIndex: index,
+                    errorCode: error.code
                 )
                 guard
                     Self.canFailOver(after: error),
@@ -94,8 +114,12 @@ struct HLSResourceLoader: Sendable {
                     let recoveredResource =
                         try await contentSteeringRecovery.resource(
                             at: index,
-                            afterFailureOf:
-                                pathwayResource.pathwayID
+                            after: HLSPathwayFailure(
+                                pathwayID: pathwayResource.pathwayID,
+                                phase: .mediaResource,
+                                errorCode: error.code
+                            ),
+                            excludingPathwayIDs: failedPathwayIDs
                         )
                 else {
                     throw error

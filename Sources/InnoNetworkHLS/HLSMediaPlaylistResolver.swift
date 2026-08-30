@@ -7,7 +7,7 @@ struct HLSResolvedMediaSelection: Sendable {
     let renditions: [HLSRendition]
     let pathwayID: String?
     let multivariantVariables: [String: String]
-    let fallbackCandidates: [HLSMediaPlaylistCandidate]
+    let pathwayCandidates: [HLSMediaPlaylistCandidate]
 }
 
 struct HLSMediaPlaylistCandidate: Sendable {
@@ -22,7 +22,6 @@ struct HLSMediaPlaylistResolver: Sendable {
     private let variantSelector: VariantSelector
     private let selectionPolicy: HLSVariantSelectionPolicy
     private let contentSteeringResolver: HLSContentSteeringResolver
-    private let contentSteering: HLSContentSteeringSettings
     private let allowsSeparateAudioRenditions: Bool
 
     init(
@@ -34,7 +33,6 @@ struct HLSMediaPlaylistResolver: Sendable {
         self.playlistResolver = PlaylistResolver(client: client)
         self.variantSelector = VariantSelector()
         self.selectionPolicy = selectionPolicy
-        self.contentSteering = contentSteering
         self.allowsSeparateAudioRenditions =
             allowsSeparateAudioRenditions
         self.contentSteeringResolver = HLSContentSteeringResolver(
@@ -45,6 +43,7 @@ struct HLSMediaPlaylistResolver: Sendable {
 
     func resolve(
         from sourceURL: URL,
+        session: HLSContentSteeringSession,
         requestTimeout: TimeInterval = 15,
         disablesCaching: Bool = false
     ) async throws -> HLSResolvedMediaSelection {
@@ -62,7 +61,7 @@ struct HLSMediaPlaylistResolver: Sendable {
                 renditions: [],
                 pathwayID: nil,
                 multivariantVariables: [:],
-                fallbackCandidates: []
+                pathwayCandidates: []
             )
         }
 
@@ -74,14 +73,20 @@ struct HLSMediaPlaylistResolver: Sendable {
             multivariantVariables: document.variables
         )
         var terminalError: (any Error)?
-        for (index, candidate) in candidates.enumerated() {
-            await contentSteering.emit(
-                .pathwayAttempt(
-                    pathwayID: candidate.pathwayID,
-                    phase: .mediaPlaylist,
-                    resourceIndex: nil
-                )
+        var previousFailure:
+            (
+                pathwayID: String?,
+                errorCode: HLSDownloadErrorCode
+            )?
+        for candidate in candidates {
+            let admission = await session.beginAttempt(
+                pathwayID: candidate.pathwayID,
+                phase: .mediaPlaylist,
+                resourceIndex: nil
             )
+            guard admission != .penalized else {
+                continue
+            }
             do {
                 let mediaDocument =
                     try await playlistResolver.resolveDocument(
@@ -95,11 +100,28 @@ struct HLSMediaPlaylistResolver: Sendable {
                 guard mediaDocument.playlist.kind == .media else {
                     throw HLSDownloadError.invalidPlaylist
                 }
-                await contentSteering.emit(
-                    .pathwaySelected(
-                        pathwayID: candidate.pathwayID,
+                let selectionReason: HLSContentSteeringSelectionReason
+                let fromPathwayID: String?
+                if admission == .recovered {
+                    selectionReason = .cooldownRecovery
+                    fromPathwayID = previousFailure?.pathwayID
+                } else if let previousFailure {
+                    selectionReason = .pathwayFailure(
                         phase: .mediaPlaylist,
-                        resourceIndex: nil
+                        errorCode: previousFailure.errorCode
+                    )
+                    fromPathwayID = previousFailure.pathwayID
+                } else {
+                    selectionReason = .initial
+                    fromPathwayID = nil
+                }
+                await session.recordSuccess(
+                    pathwayID: candidate.pathwayID,
+                    phase: .mediaPlaylist,
+                    resourceIndex: nil,
+                    selection: HLSContentSteeringSession.Selection(
+                        fromPathwayID: fromPathwayID,
+                        reason: selectionReason
                     )
                 )
                 return HLSResolvedMediaSelection(
@@ -110,21 +132,22 @@ struct HLSMediaPlaylistResolver: Sendable {
                     pathwayID: candidate.pathwayID,
                     multivariantVariables:
                         candidate.multivariantVariables,
-                    fallbackCandidates: Array(
-                        candidates.dropFirst(index + 1)
-                    )
+                    pathwayCandidates: candidates
                 )
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
                 terminalError = error
-                await contentSteering.emit(
-                    .pathwayFailed(
-                        pathwayID: candidate.pathwayID,
-                        phase: .mediaPlaylist,
-                        resourceIndex: nil,
-                        errorCode: Self.errorCode(for: error)
-                    )
+                let errorCode = Self.errorCode(for: error)
+                previousFailure = (
+                    pathwayID: candidate.pathwayID,
+                    errorCode: errorCode
+                )
+                await session.recordFailure(
+                    pathwayID: candidate.pathwayID,
+                    phase: .mediaPlaylist,
+                    resourceIndex: nil,
+                    errorCode: errorCode
                 )
             }
         }

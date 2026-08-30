@@ -1,4 +1,5 @@
 import Foundation
+import InnoNetwork
 
 struct HLSResolvedDownloadPlan: Sendable {
     let mediaPlaylistURL: URL
@@ -9,7 +10,8 @@ struct HLSResolvedDownloadPlan: Sendable {
     let media: HLSMediaPlaylist
     let resourcePlan: HLSResourcePlan
     let pathwayID: String?
-    let fallbackCandidates: [HLSMediaPlaylistCandidate]
+    let pathwayCandidates: [HLSMediaPlaylistCandidate]
+    let contentSteeringSession: HLSContentSteeringSession
 
     func preparation(
         sourceURL: URL
@@ -29,12 +31,15 @@ struct HLSResolvedDownloadPlan: Sendable {
 struct HLSDownloadPlanner: Sendable {
     private let mediaPlaylistResolver: HLSMediaPlaylistResolver
     private let maximumTransferBytes: Int
+    private let contentSteering: HLSContentSteeringSettings
+    private let clock: any InnoNetworkClock
 
     init(
         client: HLSHTTPClient,
         selectionPolicy: HLSVariantSelectionPolicy,
         contentSteering: HLSContentSteeringSettings,
-        maximumTransferBytes: Int
+        maximumTransferBytes: Int,
+        clock: any InnoNetworkClock
     ) {
         self.mediaPlaylistResolver = HLSMediaPlaylistResolver(
             client: client,
@@ -42,13 +47,20 @@ struct HLSDownloadPlanner: Sendable {
             contentSteering: contentSteering
         )
         self.maximumTransferBytes = maximumTransferBytes
+        self.contentSteering = contentSteering
+        self.clock = clock
     }
 
     func resolve(
         sourceURL: URL
     ) async throws -> HLSResolvedDownloadPlan {
+        let contentSteeringSession = HLSContentSteeringSession(
+            settings: contentSteering,
+            now: { clock.now() }
+        )
         let selection = try await mediaPlaylistResolver.resolve(
-            from: sourceURL
+            from: sourceURL,
+            session: contentSteeringSession
         )
         guard
             let media = selection.playlist.media,
@@ -69,7 +81,8 @@ struct HLSDownloadPlanner: Sendable {
                 maximumTransferBytes: maximumTransferBytes
             ),
             pathwayID: selection.pathwayID,
-            fallbackCandidates: selection.fallbackCandidates
+            pathwayCandidates: selection.pathwayCandidates,
+            contentSteeringSession: contentSteeringSession
         )
     }
 

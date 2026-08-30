@@ -422,12 +422,25 @@ otherwise the original terminal error is preserved. Disable this recovery with
 `HLSContentSteeringPack(allowsTransferFailover: false)`.
 
 Pass ``HLSContentSteeringEventObserving`` values to
-``HLSContentSteeringPack/init(maximumManifestBytes:allowsTransferFailover:eventObservers:)``
+``HLSContentSteeringPack/init(maximumManifestBytes:allowsTransferFailover:healthPolicy:eventObservers:)``
 to observe ordered playlist and resource pathway attempts, failures, and
 selections. Events expose only pathway IDs, resource indexes, and stable
 ``HLSDownloadErrorCode`` values; request URLs, headers, and query values remain
 private. Observer handling participates in operation backpressure and should
 stay bounded.
+
+Use ``HLSContentSteeringHealthPolicy`` to choose a consecutive-failure
+threshold and bounded recovery cooldown. Each prepare, download, offline-
+package operation, one-shot live snapshot, or live snapshot stream owns an
+independent health session. A penalized pathway is skipped while another
+compatible pathway is available, becomes eligible after cooldown, and remains
+the fallback when every alternative is also penalized, as required by Content
+Steering evaluation. ``HLSContentSteeringEvent/pathwayHealthChanged(_:)``
+provides per-pathway attempts, outcomes, success rate, consecutive failures,
+availability, and selection-reason counts. The paired
+``HLSContentSteeringEvent/pathwaySelectionChanged(fromPathwayID:toPathwayID:reason:)``
+reports initial, failure-driven, and cooldown-recovery selection without
+copying a media or Steering Manifest URL.
 
 Offline planning requires stable variant and external-rendition identifiers
 across every eligible pathway before any media resource is requested. When
@@ -571,6 +584,12 @@ so adding an HLS target cannot silently leave it outside release validation.
 - ``HLSPlaylistDiagnostic``
 - ``HLSContentSteering``
 - ``HLSContentSteeringPack``
+- ``HLSContentSteeringHealthPolicy``
+- ``HLSContentSteeringPathwayAvailability``
+- ``HLSContentSteeringPathwaySnapshot``
+- ``HLSContentSteeringSelectionReason``
+- ``HLSContentSteeringEvent``
+- ``HLSContentSteeringEventObserving``
 - ``HLSExternalResourceResolver``
 - ``HLSExternalResourcePack``
 - ``HLSExternalResourceError``

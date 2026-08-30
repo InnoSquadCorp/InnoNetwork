@@ -9,6 +9,12 @@ Versioning.
 
 ### Added
 
+- Content Steering now applies an app-tunable, session-scoped pathway health
+  policy to VOD, offline-package, and live resolution. Consecutive failures
+  temporarily penalize a pathway, compatible alternatives remain reusable,
+  and cooldown expiry permits deterministic re-entry. Value-redacted health
+  snapshots expose attempts, success rate, availability, and typed selection-
+  reason counts without copying request URLs, headers, or query values.
 - `HLSPlaybackConfigurator` applies an immutable, value-typed command to a
   caller-owned `AVPlayerItem`. It configures variant and expensive-network
   limits, live-edge offset, server interstitial handling, and validated media

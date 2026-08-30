@@ -62,6 +62,13 @@ private let smokeHLSConfiguration = HLSDownloadConfiguration.advanced(
         )
     ),
     variantSelectionPolicy: .maximumResolution(width: 1_920, height: 1_080),
+    contentSteering: HLSContentSteeringPack(
+        healthPolicy: HLSContentSteeringHealthPolicy(
+            consecutiveFailureThreshold: 2,
+            recoveryCooldown: .seconds(15)
+        ),
+        eventObservers: [SmokeHLSContentSteeringObserver()]
+    ),
     transfer: HLSTransferPack(
         maximumConcurrentResourceTransfers: 2,
         retryPolicy: ExponentialBackoffRetryPolicy(maxRetries: 2)
@@ -133,6 +140,30 @@ private struct SmokeHLSRequestObserver: HLSRequestEventObserving {
             case .adaptation, .urlAdmission, .transport, .cancellation:
                 _ = context.retryIndex
             }
+        }
+    }
+}
+
+private struct SmokeHLSContentSteeringObserver:
+    HLSContentSteeringEventObserving
+{
+    func contentSteeringDidEmit(
+        _ event: HLSContentSteeringEvent
+    ) async {
+        if case .pathwayHealthChanged(let snapshot) = event {
+            _ = (
+                snapshot.pathwayID,
+                snapshot.successRate,
+                snapshot.availability,
+                snapshot.selectionCounts
+            )
+        }
+        if case .pathwaySelectionChanged(
+            let fromPathwayID,
+            let toPathwayID,
+            let reason
+        ) = event {
+            _ = (fromPathwayID, toPathwayID, reason)
         }
     }
 }

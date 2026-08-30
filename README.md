@@ -438,8 +438,9 @@ for await event in await manager.events(for: task) {
 - bounded HLS Content Steering manifest resolution with TTL/reload caching,
   declared and cloned pathway priority, host/query/stable-ID URI replacement,
   deterministic playlist-resolution failover, conservative transfer-time
-  failover for stable-ID/resource-plan-equivalent pathways, value-redacted
-  pathway events, and explicit opt-outs
+  failover for stable-ID/resource-plan-equivalent pathways, session-scoped
+  failure penalty/cooldown recovery, value-redacted pathway health and typed
+  selection-reason events, and explicit opt-outs
 - relative variant URL resolution and explicit highest-quality,
   lowest-bandwidth, resolution-cap, bandwidth-cap, or declared playback-
   capability selection
@@ -535,7 +536,8 @@ for await event in await manager.events(for: task) {
   completion
 - compatible Content Steering recovery for reload failures, requiring stable
   variant identity and using matching rendition reports for low-latency
-  tune-in without exposing signed request values in pathway events
+  tune-in, retaining compatible candidates for cooldown re-entry without
+  exposing signed request values in pathway events
 - bounded record-from-now or current-window DVR capture for complete TS and
   fMP4 segments, with exact byte-range validation, URL-free local VOD
   playlists, progress events, cross-process destination leases, and atomic

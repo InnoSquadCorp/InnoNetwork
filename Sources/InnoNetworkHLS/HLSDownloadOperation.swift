@@ -25,7 +25,8 @@ struct HLSDownloadOperation: Sendable {
             selectionPolicy: configuration.variantSelectionPolicy,
             contentSteering: configuration.contentSteering,
             maximumTransferBytes:
-                configuration.maximumMediaResourceBytes
+                configuration.maximumMediaResourceBytes,
+            clock: clock
         )
         self.configuration = configuration
         self.diskCapacityChecker = diskCapacityChecker
@@ -141,7 +142,8 @@ struct HLSDownloadOperation: Sendable {
                     clock: clock,
                     aes128KeySet: aes128KeySet,
                     pathwayID: plan.pathwayID,
-                    contentSteering: configuration.contentSteering,
+                    contentSteeringSession:
+                        plan.contentSteeringSession,
                     contentSteeringRecovery: contentSteeringRecovery
                 ),
                 maximumConcurrentTransfers:
@@ -279,7 +281,7 @@ struct HLSDownloadOperation: Sendable {
             configuration.contentSteering.allowsTransferFailover,
             let primaryVariant = plan.selectedVariant,
             primaryVariant.stableID != nil,
-            !plan.fallbackCandidates.isEmpty
+            plan.pathwayCandidates.count > 1
         else {
             return nil
         }
@@ -292,8 +294,8 @@ struct HLSDownloadOperation: Sendable {
             primaryVariant: primaryVariant,
             primaryContainer: plan.mediaContainer,
             primaryTransfers: plan.resourcePlan.transfers,
-            fallbackCandidates: plan.fallbackCandidates,
-            contentSteering: configuration.contentSteering
+            candidates: plan.pathwayCandidates,
+            contentSteeringSession: plan.contentSteeringSession
         )
     }
 

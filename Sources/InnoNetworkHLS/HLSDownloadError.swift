@@ -4,7 +4,7 @@ import InnoNetwork
 /// Stable integer codes surfaced by ``HLSDownloadError`` through its
 /// `CustomNSError` bridge. Raw values are part of the public contract and must
 /// not be renumbered.
-public enum HLSDownloadErrorCode: Int, Equatable, Sendable {
+public enum HLSDownloadErrorCode: Int, Hashable, Sendable {
     case invalidPlaylist = 7_001
     case invalidResponseStatus = 7_002
     case playlistTooLarge = 7_003

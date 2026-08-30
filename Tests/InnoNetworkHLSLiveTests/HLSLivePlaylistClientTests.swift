@@ -1,6 +1,7 @@
 import Foundation
 import InnoNetworkHLS
 import Testing
+import os
 
 @testable import InnoNetworkHLSLive
 
@@ -617,6 +618,230 @@ struct HLSLivePlaylistClientTests {
                 )
             )
         )
+    }
+
+    @Test("penalized live pathway re-enters after cooldown")
+    func reentersContentSteeringPathwayAfterCooldown() async throws {
+        let observer = HLSLiveContentSteeringRecorder()
+        let observationTime = OSAllocatedUnfairLock<Date>(
+            initialState: Date(timeIntervalSince1970: 1_000)
+        )
+        let masterURL = try #require(
+            URL(string: "https://media.example/reentry/master.m3u8")
+        )
+        let steeringURL = try #require(
+            URL(string: "https://media.example/reentry/steering.json")
+        )
+        let primaryURL = try #require(
+            URL(string: "https://media.example/reentry/a.m3u8")
+        )
+        let primaryReloadURL = try #require(
+            URL(
+                string:
+                    "https://media.example/reentry/a.m3u8?_HLS_msn=2"
+            )
+        )
+        let fallbackTuneInURL = try #require(
+            URL(
+                string:
+                    "https://media.example/reentry/b.m3u8?_HLS_msn=1"
+            )
+        )
+        let fallbackReloadURL = try #require(
+            URL(string: "https://media.example/reentry/b.m3u8")
+        )
+        let session = makeSession()
+        defer {
+            session.invalidateAndCancel()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            response(
+                """
+                #EXTM3U
+                #EXT-X-CONTENT-STEERING:SERVER-URI="steering.json",PATHWAY-ID="A"
+                #EXT-X-STREAM-INF:BANDWIDTH=1000000,RESOLUTION=1280x720,CODECS="avc1.4d401f",STABLE-VARIANT-ID="main",PATHWAY-ID="A"
+                a.m3u8
+                #EXT-X-STREAM-INF:BANDWIDTH=1000000,RESOLUTION=1280x720,CODECS="avc1.4d401f",STABLE-VARIANT-ID="main",PATHWAY-ID="B"
+                b.m3u8
+                """
+            ),
+            for: masterURL
+        )
+        HLSLiveURLProtocol.register(
+            HLSLiveURLProtocol.Response(
+                statusCode: 200,
+                data: Data(
+                    """
+                    {
+                      "VERSION": 1,
+                      "TTL": 300,
+                      "PATHWAY-PRIORITY": ["A", "B"]
+                    }
+                    """.utf8
+                ),
+                headers: ["Content-Type": "application/json"]
+            ),
+            for: steeringURL
+        )
+        HLSLiveURLProtocol.register(
+            response(
+                """
+                #EXTM3U
+                #EXT-X-VERSION:9
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:1
+                #EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES
+                #EXTINF:4,
+                1.ts
+                #EXT-X-RENDITION-REPORT:URI="b.m3u8",LAST-MSN=1
+                """
+            ),
+            for: primaryURL
+        )
+        HLSLiveURLProtocol.register(
+            response(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:3
+                #EXTINF:4,
+                3.ts
+                #EXT-X-RENDITION-REPORT:URI="a.m3u8",LAST-MSN=2
+                """
+            ),
+            for: fallbackReloadURL
+        )
+        HLSLiveURLProtocol.register(
+            HLSLiveURLProtocol.Response(
+                statusCode: 503,
+                data: Data(),
+                headers: [:]
+            ),
+            for: primaryReloadURL
+        )
+        HLSLiveURLProtocol.register(
+            response(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:2
+                #EXTINF:4,
+                2.ts
+                #EXT-X-RENDITION-REPORT:URI="a.m3u8",LAST-MSN=2
+                """
+            ),
+            for: fallbackTuneInURL
+        )
+        HLSLiveURLProtocol.register(
+            HLSLiveURLProtocol.Response(
+                statusCode: 503,
+                data: Data(),
+                headers: [:]
+            ),
+            for: fallbackReloadURL
+        )
+        HLSLiveURLProtocol.register(
+            response(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:4
+                #EXTINF:4,
+                4.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: primaryReloadURL
+        )
+
+        let client = HLSLivePlaylistClient(
+            resolver: PlaylistResolver(session: session),
+            configuration: .advanced(
+                reload: HLSLiveReloadPack(
+                    minimumPollingInterval: 0.05,
+                    maximumPollingInterval: 0.05
+                ),
+                variantSelectionPolicy: .highestQuality,
+                contentSteering: HLSContentSteeringPack(
+                    healthPolicy: HLSContentSteeringHealthPolicy(
+                        recoveryCooldown: .seconds(1)
+                    ),
+                    eventObservers: [observer]
+                )
+            ),
+            sleep: { _ in
+                observationTime.withLock {
+                    $0.addTimeInterval(2)
+                }
+            },
+            now: { observationTime.withLock { $0 } }
+        )
+        var snapshots: [HLSLivePlaylistSnapshot] = []
+        for try await snapshot in client.snapshots(from: masterURL) {
+            snapshots.append(snapshot)
+        }
+
+        #expect(snapshots.map(\.pathwayID) == ["A", "B", "B", "A"])
+        #expect(
+            snapshots.map(\.reloadMode)
+                == [
+                    .initial,
+                    .contentSteeringRecovery,
+                    .polling,
+                    .contentSteeringRecovery,
+                ]
+        )
+        #expect(
+            HLSLiveURLProtocol.capturedRequests().compactMap(\.url)
+                == [
+                    masterURL,
+                    steeringURL,
+                    primaryURL,
+                    primaryReloadURL,
+                    fallbackTuneInURL,
+                    fallbackReloadURL,
+                    fallbackReloadURL,
+                    primaryReloadURL,
+                ]
+        )
+        let events = await observer.events()
+        #expect(
+            events.contains(
+                .pathwaySelectionChanged(
+                    fromPathwayID: "B",
+                    toPathwayID: "A",
+                    reason: .cooldownRecovery
+                )
+            )
+        )
+        let recoveredSnapshots: [HLSContentSteeringPathwaySnapshot] =
+            events.compactMap { event in
+                guard case .pathwayHealthChanged(let snapshot) = event,
+                    snapshot.pathwayID == "A",
+                    snapshot.selectionCounts[.cooldownRecovery] == 1
+                else {
+                    return nil
+                }
+                return snapshot
+            }
+        let recoveredHealth = recoveredSnapshots.last
+        #expect(recoveredHealth?.availability == .available)
+        #expect(recoveredHealth?.failureCount == 1)
+        #expect(recoveredHealth?.selectionCounts[.cooldownRecovery] == 1)
+        let fallbackHealth: HLSContentSteeringPathwaySnapshot? =
+            events.compactMap { event in
+                guard case .pathwayHealthChanged(let snapshot) = event,
+                    snapshot.pathwayID == "B"
+                else {
+                    return nil
+                }
+                return snapshot
+            }.last
+        #expect(fallbackHealth?.attemptCount == 3)
+        #expect(fallbackHealth?.successCount == 2)
+        #expect(fallbackHealth?.failureCount == 1)
+        #expect(fallbackHealth?.successRate == 2.0 / 3.0)
     }
 
     private func makeSession() -> URLSession {
