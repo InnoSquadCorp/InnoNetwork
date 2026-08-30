@@ -11,6 +11,7 @@ InnoNetworkHLS	swift.enum	HLSDownloadEvent
 InnoNetworkHLS	swift.enum	HLSExternalResourceError
 InnoNetworkHLS	swift.enum	HLSHDCPLevel
 InnoNetworkHLS	swift.enum	HLSInterstitialSource
+InnoNetworkHLS	swift.enum	HLSMediaCharacteristicPreference
 InnoNetworkHLS	swift.enum	HLSMediaContainer
 InnoNetworkHLS	swift.enum	HLSMediaPlaylistType
 InnoNetworkHLS	swift.enum	HLSOfflinePackageEvent
@@ -134,6 +135,9 @@ InnoNetworkHLS	swift.enum.case	HLSHDCPLevel.type0
 InnoNetworkHLS	swift.enum.case	HLSHDCPLevel.type1
 InnoNetworkHLS	swift.enum.case	HLSInterstitialSource.asset(_:)
 InnoNetworkHLS	swift.enum.case	HLSInterstitialSource.assetList(_:)
+InnoNetworkHLS	swift.enum.case	HLSMediaCharacteristicPreference.excluded
+InnoNetworkHLS	swift.enum.case	HLSMediaCharacteristicPreference.neutral
+InnoNetworkHLS	swift.enum.case	HLSMediaCharacteristicPreference.preferred
 InnoNetworkHLS	swift.enum.case	HLSMediaContainer.fragmentedMP4
 InnoNetworkHLS	swift.enum.case	HLSMediaContainer.mpegTransportStream
 InnoNetworkHLS	swift.enum.case	HLSMediaPlaylistType.event
@@ -269,6 +273,7 @@ InnoNetworkHLS	swift.init	HLSExternalResourcePack.init(maximumSessionDataBytes:m
 InnoNetworkHLS	swift.init	HLSExternalResourceResolver.init(configuration:)
 InnoNetworkHLS	swift.init	HLSExternalResourceResolver.init(session:configuration:requestContext:requestPolicy:)
 InnoNetworkHLS	swift.init	HLSInterstitial.init(source:resumeOffset:playoutLimit:)
+InnoNetworkHLS	swift.init	HLSMediaCharacteristic.init(rawValue:)
 InnoNetworkHLS	swift.init	HLSOfflinePackageDownloader.init()
 InnoNetworkHLS	swift.init	HLSOfflinePackageDownloader.init(configuration:)
 InnoNetworkHLS	swift.init	HLSOfflinePackageDownloader.init(session:configuration:requestContext:requestAdapter:)
@@ -276,6 +281,7 @@ InnoNetworkHLS	swift.init	HLSOfflinePackageDownloader.init(session:configuration
 InnoNetworkHLS	swift.init	HLSOfflinePackageStoragePack.init(maximumMediaResourceBytes:maximumTotalDownloadBytes:diskCapacityPolicy:resumePolicy:)
 InnoNetworkHLS	swift.init	HLSOfflinePackageStore.init()
 InnoNetworkHLS	swift.init	HLSOfflineRenditionPack.init(audio:video:subtitles:includesIFrameTrickPlay:maximumRenditionsPerKind:)
+InnoNetworkHLS	swift.init	HLSOfflineRenditionPack.init(audio:video:subtitles:subtitleProvenance:includesIFrameTrickPlay:maximumRenditionsPerKind:)
 InnoNetworkHLS	swift.init	HLSPlaybackCapabilities.init(maximumWidth:maximumHeight:maximumBandwidth:supportedCodecPrefixes:preferredVideoRanges:)
 InnoNetworkHLS	swift.init	HLSPlaylist.init(sourceURL:kind:variants:iFrameVariants:renditions:protocolVersion:hasIndependentSegments:contentSteering:sessionData:sessionKeys:preferredStartPosition:programDateTimes:dateRanges:lowLatency:mediaContainer:)
 InnoNetworkHLS	swift.init	HLSPreferredStartPosition.init(timeOffset:isPrecise:)
@@ -283,6 +289,7 @@ InnoNetworkHLS	swift.init	HLSProgramDateTime.init(segmentIndex:date:)
 InnoNetworkHLS	swift.init	HLSRendition.init(kind:groupID:name:language:associatedLanguage:stableID:instreamID:characteristics:channels:audioBitDepth:audioSampleRate:url:isDefault:isAutoselect:isForced:)
 InnoNetworkHLS	swift.init	HLSRequestPolicy.init(eventObservers:adapter:)
 InnoNetworkHLS	swift.init	HLSStoragePack.init(maximumMediaResourceBytes:maximumTotalDownloadBytes:diskCapacityPolicy:resumePolicy:)
+InnoNetworkHLS	swift.init	HLSSubtitleProvenancePolicy.init(machineGenerated:translation:)
 InnoNetworkHLS	swift.init	HLSTransferPack.init(maximumConcurrentResourceTransfers:retryPolicy:)
 InnoNetworkHLS	swift.init	HLSVariant.init(url:bandwidth:averageBandwidth:score:width:height:audioGroupID:subtitleGroupID:videoGroupID:closedCaptions:codecs:supplementalCodecs:frameRate:videoRange:stableID:pathwayID:)
 InnoNetworkHLS	swift.init	PlaylistResolver.init()
@@ -312,12 +319,15 @@ InnoNetworkHLS	swift.method	HLSOfflinePackageDownloader.downloadPackage(sourceUR
 InnoNetworkHLS	swift.method	HLSOfflinePackageDownloader.prepare(sourceURL:)
 InnoNetworkHLS	swift.method	HLSOfflinePackageStore.open(at:)
 InnoNetworkHLS	swift.method	HLSOfflinePackageStore.validate(at:)
+InnoNetworkHLS	swift.method	HLSOfflinePackageTrack.hasCharacteristic(_:)
+InnoNetworkHLS	swift.method	HLSRendition.hasCharacteristic(_:)
 InnoNetworkHLS	swift.method	HLSRequestEventObserving.hlsRequestDidEmit(_:)
 InnoNetworkHLS	swift.method	PlaylistResolver.inspect(_:relativeTo:)
 InnoNetworkHLS	swift.method	PlaylistResolver.inspect(_:relativeTo:using:)
 InnoNetworkHLS	swift.method	PlaylistResolver.resolve(_:relativeTo:)
 InnoNetworkHLS	swift.method	PlaylistResolver.resolve(from:)
 InnoNetworkHLS	swift.method	RenditionSelector.select(in:groupID:kind:policy:)
+InnoNetworkHLS	swift.method	RenditionSelector.select(in:groupID:kind:policy:subtitleProvenance:)
 InnoNetworkHLS	swift.method	VariantSelector.highestQuality(in:)
 InnoNetworkHLS	swift.method	VariantSelector.select(in:policy:)
 InnoNetworkHLS	swift.property	HLSAllowedContentProtectionConfiguration.keyFormat
@@ -406,6 +416,7 @@ InnoNetworkHLS	swift.property	HLSLowLatencyMetadata.partialSegments
 InnoNetworkHLS	swift.property	HLSLowLatencyMetadata.preloadHints
 InnoNetworkHLS	swift.property	HLSLowLatencyMetadata.renditionReports
 InnoNetworkHLS	swift.property	HLSLowLatencyMetadata.serverControl
+InnoNetworkHLS	swift.property	HLSMediaCharacteristic.rawValue
 InnoNetworkHLS	swift.property	HLSMediaContainer.fileExtension
 InnoNetworkHLS	swift.property	HLSMediaPresentationSelector.displayNames
 InnoNetworkHLS	swift.property	HLSMediaPresentationSelector.identifier
@@ -438,8 +449,11 @@ InnoNetworkHLS	swift.property	HLSOfflinePackageTrack.instreamID
 InnoNetworkHLS	swift.property	HLSOfflinePackageTrack.isAutoselect
 InnoNetworkHLS	swift.property	HLSOfflinePackageTrack.isDefault
 InnoNetworkHLS	swift.property	HLSOfflinePackageTrack.isForced
+InnoNetworkHLS	swift.property	HLSOfflinePackageTrack.isMachineGenerated
+InnoNetworkHLS	swift.property	HLSOfflinePackageTrack.isTranslated
 InnoNetworkHLS	swift.property	HLSOfflinePackageTrack.kind
 InnoNetworkHLS	swift.property	HLSOfflinePackageTrack.language
+InnoNetworkHLS	swift.property	HLSOfflinePackageTrack.mediaCharacteristics
 InnoNetworkHLS	swift.property	HLSOfflinePackageTrack.name
 InnoNetworkHLS	swift.property	HLSOfflinePackageTrack.relativePlaylistPath
 InnoNetworkHLS	swift.property	HLSOfflinePackageTrack.stableID
@@ -505,8 +519,11 @@ InnoNetworkHLS	swift.property	HLSRendition.instreamID
 InnoNetworkHLS	swift.property	HLSRendition.isAutoselect
 InnoNetworkHLS	swift.property	HLSRendition.isDefault
 InnoNetworkHLS	swift.property	HLSRendition.isForced
+InnoNetworkHLS	swift.property	HLSRendition.isMachineGenerated
+InnoNetworkHLS	swift.property	HLSRendition.isTranslated
 InnoNetworkHLS	swift.property	HLSRendition.kind
 InnoNetworkHLS	swift.property	HLSRendition.language
+InnoNetworkHLS	swift.property	HLSRendition.mediaCharacteristics
 InnoNetworkHLS	swift.property	HLSRendition.name
 InnoNetworkHLS	swift.property	HLSRendition.stableID
 InnoNetworkHLS	swift.property	HLSRendition.url
@@ -585,6 +602,7 @@ InnoNetworkHLS	swift.struct	HLSInterstitial
 InnoNetworkHLS	swift.struct	HLSInterstitialAsset
 InnoNetworkHLS	swift.struct	HLSLanguageDecoration
 InnoNetworkHLS	swift.struct	HLSLowLatencyMetadata
+InnoNetworkHLS	swift.struct	HLSMediaCharacteristic
 InnoNetworkHLS	swift.struct	HLSMediaPresentationSelector
 InnoNetworkHLS	swift.struct	HLSMediaPresentationSetting
 InnoNetworkHLS	swift.struct	HLSMediaPresentationType
@@ -616,6 +634,7 @@ InnoNetworkHLS	swift.struct	HLSServerControl
 InnoNetworkHLS	swift.struct	HLSSessionData
 InnoNetworkHLS	swift.struct	HLSSessionKey
 InnoNetworkHLS	swift.struct	HLSStoragePack
+InnoNetworkHLS	swift.struct	HLSSubtitleProvenancePolicy
 InnoNetworkHLS	swift.struct	HLSTransferPack
 InnoNetworkHLS	swift.struct	HLSVariant
 InnoNetworkHLS	swift.struct	PlaylistResolver
@@ -631,4 +650,6 @@ InnoNetworkHLS	swift.type.property	HLSDownloadError.errorCodeUserInfoKey
 InnoNetworkHLS	swift.type.property	HLSDownloadError.errorDomain
 InnoNetworkHLS	swift.type.property	HLSDownloadError.statusCodeUserInfoKey
 InnoNetworkHLS	swift.type.property	HLSDownloadProgress.zero
+InnoNetworkHLS	swift.type.property	HLSMediaCharacteristic.machineGenerated
+InnoNetworkHLS	swift.type.property	HLSMediaCharacteristic.translation
 InnoNetworkHLS	swift.type.property	HLSPlaylistInspectionPack.appleAuthoring

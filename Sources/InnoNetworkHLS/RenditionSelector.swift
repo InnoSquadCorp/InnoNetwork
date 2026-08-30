@@ -29,34 +29,63 @@ public struct RenditionSelector: Sendable {
         kind: HLSRenditionKind,
         policy: HLSRenditionSelectionPolicy
     ) -> HLSRendition? {
-        let renditions = playlist.renditions.filter {
-            $0.groupID == groupID && $0.kind == kind
-        }
+        select(
+            in: playlist,
+            groupID: groupID,
+            kind: kind,
+            policy: policy,
+            subtitleProvenance: HLSSubtitleProvenancePolicy()
+        )
+    }
+
+    /// Selects one rendition with explicit generated/translated subtitle
+    /// behavior.
+    public func select(
+        in playlist: HLSPlaylist,
+        groupID: String,
+        kind: HLSRenditionKind,
+        policy: HLSRenditionSelectionPolicy,
+        subtitleProvenance: HLSSubtitleProvenancePolicy
+    ) -> HLSRendition? {
+        let resolver = HLSSubtitleProvenanceResolver(
+            policy: subtitleProvenance,
+            kind: kind
+        )
+        let renditions = resolver.eligible(
+            playlist.renditions.filter {
+                $0.groupID == groupID && $0.kind == kind
+            })
         switch policy {
         case .disabled:
             return nil
         case .defaultOrFirst:
-            return defaultOrFirst(in: renditions)
+            return defaultOrFirst(in: resolver.preferred(renditions))
         case .preferredLanguages(let languages):
             for language in languages {
                 let normalized = Self.normalizedLanguage(language)
-                if let exactMatch = renditions.first(where: {
+                let exactMatches = renditions.filter {
                     Self.normalizedLanguage($0.language) == normalized
-                }) {
+                }
+                if let exactMatch = resolver.preferred(exactMatches).first {
                     return exactMatch
                 }
-                if let fallbackMatch = renditions.first(where: {
+                let fallbackMatches = renditions.filter {
                     Self.languagesMatch(
                         Self.normalizedLanguage($0.language),
                         normalized
                     )
-                }) {
+                }
+                if let fallbackMatch = resolver.preferred(fallbackMatches)
+                    .first
+                {
                     return fallbackMatch
                 }
             }
-            return defaultOrFirst(in: renditions)
+            return defaultOrFirst(in: resolver.preferred(renditions))
         case .named(let name):
-            return renditions.first { $0.name == name }
+            return resolver.preferred(
+                renditions.filter { $0.name == name }
+            ).first
         }
     }
 

@@ -566,16 +566,23 @@ struct HLSOfflinePackagePlanner: Sendable {
         guard let groupID else {
             return []
         }
-        let candidates = renditions.filter {
-            $0.groupID == groupID && $0.kind == kind
-        }
+        let provenanceResolver = HLSSubtitleProvenanceResolver(
+            policy: renditionPack.resolvedSubtitleProvenance,
+            kind: kind
+        )
+        let candidates = provenanceResolver.eligible(
+            renditions.filter {
+                $0.groupID == groupID && $0.kind == kind
+            })
         let selected: [HLSRendition]
         switch renditionPack.policy(for: kind) {
         case .disabled:
             selected = []
         case .defaultOrFirst:
             selected =
-                Self.defaultOrFirst(in: candidates).map { [$0] }
+                Self.defaultOrFirst(
+                    in: provenanceResolver.preferred(candidates)
+                ).map { [$0] }
                 ?? []
         case .preferredLanguages(let languages):
             var languageSelections: [HLSRendition] = []
@@ -584,23 +591,28 @@ struct HLSOfflinePackagePlanner: Sendable {
                 guard !normalized.isEmpty else {
                     continue
                 }
+                let exactMatches = candidates.filter {
+                    Self.normalizedLanguage($0.language)
+                        == normalized
+                }
+                let fallbackMatches = candidates.filter {
+                    Self.languagesMatch(
+                        Self.normalizedLanguage($0.language),
+                        normalized
+                    )
+                }
                 let match =
-                    candidates.first {
-                        Self.normalizedLanguage($0.language)
-                            == normalized
-                    }
-                    ?? candidates.first {
-                        Self.languagesMatch(
-                            Self.normalizedLanguage($0.language),
-                            normalized
-                        )
-                    }
+                    provenanceResolver.preferred(exactMatches).first
+                    ?? provenanceResolver.preferred(fallbackMatches)
+                    .first
                 if let match, !languageSelections.contains(match) {
                     languageSelections.append(match)
                 }
             }
             if languageSelections.isEmpty,
-                let fallback = Self.defaultOrFirst(in: candidates)
+                let fallback = Self.defaultOrFirst(
+                    in: provenanceResolver.preferred(candidates)
+                )
             {
                 languageSelections.append(fallback)
             }
@@ -608,9 +620,10 @@ struct HLSOfflinePackagePlanner: Sendable {
         case .named(let names):
             var namedSelections: [HLSRendition] = []
             for name in names {
-                if let match = candidates.first(where: {
-                    $0.name == name
-                }), !namedSelections.contains(match) {
+                let matches = candidates.filter { $0.name == name }
+                if let match = provenanceResolver.preferred(matches).first,
+                    !namedSelections.contains(match)
+                {
                     namedSelections.append(match)
                 }
             }

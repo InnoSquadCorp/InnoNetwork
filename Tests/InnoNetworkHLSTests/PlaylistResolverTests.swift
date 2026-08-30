@@ -366,6 +366,17 @@ struct PlaylistResolverTests {
                     "public.machine-generated",
                 ]
         )
+        #expect(audio.isMachineGenerated)
+        #expect(!audio.isTranslated)
+        #expect(
+            audio.mediaCharacteristics
+                == [
+                    HLSMediaCharacteristic(
+                        rawValue: "public.accessibility.describes-video"
+                    ),
+                    .machineGenerated,
+                ]
+        )
         #expect(audio.channels == "6/JOC")
         #expect(audio.audioBitDepth == 24)
         #expect(audio.audioSampleRate == 48_000)

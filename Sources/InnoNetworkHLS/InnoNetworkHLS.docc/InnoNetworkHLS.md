@@ -132,6 +132,31 @@ ordered BCP 47 language preference. The single-file downloader still chooses
 only variants with in-band audio and never silently appends separately timed
 tracks.
 
+``HLSMediaCharacteristic`` gives standard and future `CHARACTERISTICS` values
+one extensible type. ``HLSRendition/isMachineGenerated`` and
+``HLSRendition/isTranslated`` are conveniences for Apple's generated and
+translated rendition tags. Use ``HLSSubtitleProvenancePolicy`` to exclude or
+prefer those subtitle sources without replacing the explicit language or name
+policy:
+
+```swift
+let subtitle = RenditionSelector().select(
+    in: playlist,
+    groupID: "subtitles",
+    kind: .subtitles,
+    policy: .preferredLanguages(["ko", "en"]),
+    subtitleProvenance: HLSSubtitleProvenancePolicy(
+        machineGenerated: .excluded
+    )
+)
+```
+
+Exclusion runs first. An explicit language or name remains the primary
+constraint, and provenance preference breaks ties inside that match. With
+``HLSRenditionSelectionPolicy/defaultOrFirst``, provenance preference is
+applied before the playlist's default and autoselect flags. The neutral
+default preserves the existing playlist-order behavior.
+
 Use ``HLSOfflinePackageDownloader`` when external audio, video, subtitles, or
 I-frame trick-play streams must be retained without remuxing. It downloads
 each selected playlist's resources,
@@ -153,7 +178,10 @@ let packageDownloader = HLSOfflinePackageDownloader(
         renditions: HLSOfflineRenditionPack(
             audio: .preferredLanguages(["ko", "en"]),
             video: .defaultOrFirst,
-            subtitles: .all,
+            subtitles: .preferredLanguages(["ko", "en"]),
+            subtitleProvenance: HLSSubtitleProvenancePolicy(
+                translation: .excluded
+            ),
             includesIFrameTrickPlay: true
         )
     )
@@ -184,6 +212,11 @@ an accidental-corruption check, not an authenticity signature. Validation is
 synchronous and reads every package byte, so run it away from latency-sensitive
 UI work for large packages. The reopened receipt's selected variant URL is the
 local primary playlist URL.
+Generated and translated characteristics are retained exactly in the package
+manifest and remain available through
+``HLSOfflinePackageTrack/mediaCharacteristics``,
+``HLSOfflinePackageTrack/isMachineGenerated``, and
+``HLSOfflinePackageTrack/isTranslated`` after reopening.
 
 Package creation is all-or-nothing. Automatic resume retains implementation-
 private, destination-scoped resource checkpoints after failure or cancellation,
@@ -613,6 +646,9 @@ so adding an HLS target cannot silently leave it outside release validation.
 - ``HLSClosedCaptionReference``
 - ``HLSMediaContainer``
 - ``HLSPlaybackCapabilities``
+- ``HLSMediaCharacteristic``
+- ``HLSMediaCharacteristicPreference``
+- ``HLSSubtitleProvenancePolicy``
 - ``HLSRendition``
 - ``HLSRenditionKind``
 - ``HLSRenditionSelectionPolicy``

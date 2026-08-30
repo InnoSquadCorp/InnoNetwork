@@ -29,6 +29,7 @@ public struct HLSOfflineRenditionPack: Sendable {
     private let audio: HLSOfflineRenditionSelectionPolicy
     private let video: HLSOfflineRenditionSelectionPolicy
     private let subtitles: HLSOfflineRenditionSelectionPolicy
+    private let subtitleProvenance: HLSSubtitleProvenancePolicy
     private let includesIFrameTrickPlay: Bool
     private let maximumRenditionsPerKind: Int
 
@@ -40,9 +41,30 @@ public struct HLSOfflineRenditionPack: Sendable {
         includesIFrameTrickPlay: Bool = false,
         maximumRenditionsPerKind: Int = 8
     ) {
+        self.init(
+            audio: audio,
+            video: video,
+            subtitles: subtitles,
+            subtitleProvenance: HLSSubtitleProvenancePolicy(),
+            includesIFrameTrickPlay: includesIFrameTrickPlay,
+            maximumRenditionsPerKind: maximumRenditionsPerKind
+        )
+    }
+
+    /// Creates an offline selection pack with explicit generated/translated
+    /// subtitle behavior.
+    public init(
+        audio: HLSOfflineRenditionSelectionPolicy = .defaultOrFirst,
+        video: HLSOfflineRenditionSelectionPolicy = .disabled,
+        subtitles: HLSOfflineRenditionSelectionPolicy = .disabled,
+        subtitleProvenance: HLSSubtitleProvenancePolicy,
+        includesIFrameTrickPlay: Bool = false,
+        maximumRenditionsPerKind: Int = 8
+    ) {
         self.audio = audio
         self.video = video
         self.subtitles = subtitles
+        self.subtitleProvenance = subtitleProvenance
         self.includesIFrameTrickPlay = includesIFrameTrickPlay
         self.maximumRenditionsPerKind = min(
             max(1, maximumRenditionsPerKind),
@@ -67,6 +89,10 @@ public struct HLSOfflineRenditionPack: Sendable {
 
     var renditionLimit: Int {
         maximumRenditionsPerKind
+    }
+
+    var resolvedSubtitleProvenance: HLSSubtitleProvenancePolicy {
+        subtitleProvenance
     }
 
     var retainsIFrameTrickPlay: Bool {

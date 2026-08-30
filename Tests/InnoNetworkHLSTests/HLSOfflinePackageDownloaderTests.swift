@@ -176,8 +176,16 @@ extension HLSDownloaderTests {
         #expect(
             receipt.tracks[2].characteristics
                 == [
-                    "public.accessibility.transcribes-spoken-dialog"
+                    "public.accessibility.transcribes-spoken-dialog",
+                    "public.machine-generated",
+                    "public.translation",
                 ]
+        )
+        #expect(receipt.tracks[2].isMachineGenerated)
+        #expect(receipt.tracks[2].isTranslated)
+        #expect(
+            receipt.tracks[2].mediaCharacteristics.suffix(2)
+                == [.machineGenerated, .translation]
         )
         #expect(receipt.byteCount > 16)
 
@@ -278,6 +286,8 @@ extension HLSDownloaderTests {
         #expect(reopened.directoryURL == receipt.directoryURL)
         #expect(reopened.entryPlaylistURL == receipt.entryPlaylistURL)
         #expect(reopened.tracks == receipt.tracks)
+        #expect(reopened.tracks[2].isMachineGenerated)
+        #expect(reopened.tracks[2].isTranslated)
         #expect(reopened.byteCount == receipt.byteCount)
         #expect(
             reopened.selectedVariant?.stableID
@@ -335,6 +345,82 @@ extension HLSDownloaderTests {
         #expect(!requests.contains(urls.videoResource))
         #expect(!requests.contains(urls.audioResource))
         #expect(!requests.contains(urls.subtitleResource))
+    }
+
+    @Test("offline subtitle provenance filters before preference")
+    func offlineSubtitleProvenanceSelection() async throws {
+        let baseURL = try #require(
+            URL(string: "https://media.example/subtitle-provenance/")
+        )
+        let masterURL = baseURL.appendingPathComponent("master.m3u8")
+        let primaryURL = baseURL.appendingPathComponent("primary.m3u8")
+        let authoredURL = baseURL.appendingPathComponent("authored.m3u8")
+        let generatedURL = baseURL.appendingPathComponent("generated.m3u8")
+        let translatedURL = baseURL.appendingPathComponent(
+            "translated.m3u8"
+        )
+        let session = makeOfflineSession()
+        defer {
+            session.invalidateAndCancel()
+            HLSURLProtocol.reset()
+        }
+        HLSURLProtocol.register(
+            .success(
+                statusCode: 200,
+                data: Data(
+                    """
+                    #EXTM3U
+                    #EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="Authored",LANGUAGE="en",DEFAULT=YES,AUTOSELECT=YES,STABLE-RENDITION-ID="subs.authored",URI="authored.m3u8"
+                    #EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="Generated",LANGUAGE="en",AUTOSELECT=YES,STABLE-RENDITION-ID="subs.generated",CHARACTERISTICS="public.machine-generated",URI="generated.m3u8"
+                    #EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="Translated",LANGUAGE="en",AUTOSELECT=YES,STABLE-RENDITION-ID="subs.translated",CHARACTERISTICS="public.machine-generated,public.translation",URI="translated.m3u8"
+                    #EXT-X-STREAM-INF:BANDWIDTH=1000000,SUBTITLES="subs",STABLE-VARIANT-ID="main"
+                    primary.m3u8
+
+                    """.utf8
+                ),
+                headers: [:]
+            ),
+            for: masterURL
+        )
+        for playlistURL in [primaryURL, generatedURL] {
+            HLSURLProtocol.register(
+                .success(
+                    statusCode: 200,
+                    data: Data(
+                        """
+                        #EXTM3U
+                        #EXTINF:1,
+                        segment.bin
+                        #EXT-X-ENDLIST
+
+                        """.utf8
+                    ),
+                    headers: [:]
+                ),
+                for: playlistURL
+            )
+        }
+
+        let preparation = try await HLSOfflinePackageDownloader(
+            session: session,
+            configuration: .advanced(
+                renditions: HLSOfflineRenditionPack(
+                    subtitles: .defaultOrFirst,
+                    subtitleProvenance: HLSSubtitleProvenancePolicy(
+                        machineGenerated: .preferred,
+                        translation: .excluded
+                    )
+                )
+            )
+        ).prepare(sourceURL: masterURL)
+
+        #expect(preparation.tracks.map(\.name) == [nil, "Generated"])
+        #expect(preparation.tracks[1].isMachineGenerated)
+        #expect(!preparation.tracks[1].isTranslated)
+        let requests = HLSURLProtocol.capturedRequests().compactMap(\.url)
+        #expect(requests.contains(generatedURL))
+        #expect(!requests.contains(authoredURL))
+        #expect(!requests.contains(translatedURL))
     }
 
     @Test("external video and I-frame trick-play playlists stay playable offline")
@@ -1124,7 +1210,7 @@ extension HLSDownloaderTests {
                     #EXTM3U
                     #EXT-X-VERSION:13
                     #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="English",LANGUAGE="en",ASSOC-LANGUAGE="en-US",STABLE-RENDITION-ID="audio.main",INSTREAM-ID="main.audio",DEFAULT=YES,AUTOSELECT=YES,CHARACTERISTICS="public.accessibility.describes-video",CHANNELS="2",BIT-DEPTH=24,SAMPLE-RATE=48000,URI="audio.m3u8"
-                    #EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="한국어",LANGUAGE="ko",STABLE-RENDITION-ID="subs.ko",DEFAULT=YES,AUTOSELECT=YES,CHARACTERISTICS="public.accessibility.transcribes-spoken-dialog",URI="subs.m3u8"
+                    #EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="한국어",LANGUAGE="ko",STABLE-RENDITION-ID="subs.ko",DEFAULT=YES,AUTOSELECT=YES,CHARACTERISTICS="public.accessibility.transcribes-spoken-dialog,public.machine-generated,public.translation",URI="subs.m3u8"
                     #EXT-X-STREAM-INF:BANDWIDTH=2000000,SCORE=0.0000001,RESOLUTION=1920x1080,CODECS="hvc1.2.4.L153.b0,mp4a.40.2",SUPPLEMENTAL-CODECS="dvh1.08.07/db4h",HDCP-LEVEL=TYPE-1,ALLOWED-CPC="com.example.drm:HW",REQ-VIDEO-LAYOUT="CH-STEREO/PROJ-HEQU",AUDIO="audio",SUBTITLES="subs",STABLE-VARIANT-ID="variant.main"
                     video.m3u8
 

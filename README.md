@@ -448,7 +448,9 @@ for await event in await manager.events(for: task) {
   deterministic default, name, or BCP 47 language selection; HLS 2nd Edition
   stable IDs, associated languages, accessibility characteristics, audio
   format hints, author score, supplemental codecs, pathway metadata, and a
-  separate I-frame trick-play variant collection
+  separate I-frame trick-play variant collection; generated and translated
+  characteristics are typed, with an opt-in subtitle exclusion/preference
+  policy that composes with explicit language and name selection
 - bounded-parallel MPEG transport-stream or fragmented-MP4 prefetch with
   playlist-ordered assembly
 - per-resource and whole-download byte budgets, required/best-effort/disabled
@@ -505,8 +507,9 @@ for await event in await manager.events(for: task) {
   rendition IDs across every eligible pathway before media transfer; retained
   I-frame variants receive the same cloning, failover, and stable-ID checks
 - explicit plural rendition policy (`defaultOrFirst`, preferred languages,
-  names, all, or disabled) and package-level preparation, progress, and receipt
-  surfaces
+  names, all, or disabled), generated/translated subtitle filtering, typed
+  provenance retained in the manifest, and package-level preparation,
+  progress, and receipt surfaces
 - destination-scoped offline-package resume checkpoints at durable individual-
   resource boundaries; stale playlist, rendition, resource, validator, or
   AES-key plans are discarded, while partial state remains implementation-

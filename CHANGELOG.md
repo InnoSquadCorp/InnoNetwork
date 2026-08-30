@@ -9,6 +9,11 @@ Versioning.
 
 ### Added
 
+- HLS Media Characteristic tags now expose an extensible value type plus
+  generated and translated conveniences. An opt-in subtitle provenance policy
+  composes exclusion and preference with existing language, name, and default
+  selection. Offline packages apply the same policy and preserve the exact
+  typed characteristics after manifest reopening.
 - Content Steering now applies an app-tunable, session-scoped pathway health
   policy to VOD, offline-package, and live resolution. Consecutive failures
   temporarily penalize a pathway, compatible alternatives remain reusable,

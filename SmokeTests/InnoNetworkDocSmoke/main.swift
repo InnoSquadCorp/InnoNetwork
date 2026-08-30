@@ -11,6 +11,11 @@ import InnoNetworkWebSocket
 
 private let smokeHLSResolver = PlaylistResolver()
 private let smokeHLSSelector = VariantSelector()
+private let smokeHLSRenditionSelector = RenditionSelector()
+private let smokeHLSSubtitleProvenance = HLSSubtitleProvenancePolicy(
+    machineGenerated: .preferred,
+    translation: .excluded
+)
 private let smokeHLSDownloader = HLSDownloader()
 private let smokeHLSLiveClient = HLSLivePlaylistClient(
     configuration: .advanced(
@@ -104,7 +109,8 @@ private let smokeHLSOfflineConfiguration =
         renditions: HLSOfflineRenditionPack(
             audio: .preferredLanguages(["ko", "en"]),
             video: .defaultOrFirst,
-            subtitles: .all,
+            subtitles: .preferredLanguages(["ko", "en"]),
+            subtitleProvenance: smokeHLSSubtitleProvenance,
             includesIFrameTrickPlay: true
         ),
         transfer: HLSTransferPack(
@@ -340,7 +346,8 @@ private func compileHLSArticleExamples() async throws {
         """
         #EXTM3U
         #EXT-X-VERSION:12
-        #EXT-X-STREAM-INF:BANDWIDTH=1000,VIDEO-RANGE=PQ,HDCP-LEVEL=TYPE-1,ALLOWED-CPC="com.example.drm:HW",REQ-VIDEO-LAYOUT="CH-STEREO/PROJ-HEQU"
+        #EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subtitles",NAME="Generated",LANGUAGE="en",CHARACTERISTICS="public.machine-generated",URI="generated.m3u8"
+        #EXT-X-STREAM-INF:BANDWIDTH=1000,VIDEO-RANGE=PQ,HDCP-LEVEL=TYPE-1,ALLOWED-CPC="com.example.drm:HW",REQ-VIDEO-LAYOUT="CH-STEREO/PROJ-HEQU",SUBTITLES="subtitles"
         hdr.m3u8
         """,
         relativeTo: sourceURL
@@ -350,6 +357,17 @@ private func compileHLSArticleExamples() async throws {
         _ = variant.allowedContentProtectionConfigurations
         _ = variant.requiredVideoLayouts
     }
+    let generatedSubtitle = smokeHLSRenditionSelector.select(
+        in: secondEdition,
+        groupID: "subtitles",
+        kind: .subtitles,
+        policy: .defaultOrFirst,
+        subtitleProvenance: smokeHLSSubtitleProvenance
+    )
+    _ = generatedSubtitle?.hasCharacteristic(.machineGenerated)
+    _ = generatedSubtitle?.mediaCharacteristics
+    _ = generatedSubtitle?.isMachineGenerated
+    _ = generatedSubtitle?.isTranslated
     let mediaMetadata = try smokeHLSResolver.resolve(
         """
         #EXTM3U

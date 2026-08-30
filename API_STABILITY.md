@@ -405,8 +405,8 @@ types and members in addition to top-level declarations. The grouped ledger
 below keeps the high-level compatibility classification readable for the
 5.x release line.
 
-The machine-checked snapshot currently partitions all 2,397 declarations into
-305 Stable consumer declarations, 2,059 Provisionally Stable consumer
+The machine-checked snapshot currently partitions all 2,418 declarations into
+305 Stable consumer declarations, 2,080 Provisionally Stable consumer
 declarations, and 33 opt-in SPI declarations. The three sets are disjoint and
 exhaustive. `Scripts/symbols/stable-rules.tsv` maps the Stable ledger to symbol
 paths, while the compiler-authored SPI flag is snapshotted in
@@ -476,13 +476,15 @@ Stable.
   `HLSDateRange`, `HLSDateRangeCue`, `HLSDateRangePreload`,
   `HLSDateRangeResource`, `HLSDateRangeSchedule`,
   `HLSDateRangeScheduleEntry`, `HLSPreloadedDateRangeResource`,
-  `HLSInterstitial`, `HLSInterstitialSource`, `HLSMediaContainer`,
+  `HLSInterstitial`, `HLSInterstitialSource`, `HLSMediaCharacteristic`,
+  `HLSMediaCharacteristicPreference`, `HLSMediaContainer`,
   `HLSMediaPlaylistType`, `HLSPlaylist`, `HLSPlaylistDiagnostic`,
   `HLSPlaylistInspection`,
   `HLSPlaylistInspectionPack`, `HLSPreferredStartPosition`,
   `HLSProgramDateTime`, `HLSRendition`, `HLSRenditionKind`,
   `HLSRenditionSelectionPolicy`, `HLSRequiredVideoLayout`,
-  `HLSSegmentBitrate`, `HLSUnsupportedMediaFeature`, `HLSVariant`,
+  `HLSSegmentBitrate`, `HLSSubtitleProvenancePolicy`,
+  `HLSUnsupportedMediaFeature`, `HLSVariant`,
   `HLSVariantSelectionPolicy`, `HLSVideoChannelLayout`,
   `HLSVideoProjection`, `CustomMediaSelector`, `PlaylistResolver`,
   `RenditionSelector`, and `VariantSelector`.
