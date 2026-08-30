@@ -26,7 +26,12 @@ struct HLSFairPlayPersistenceRequestAdapter:
     let request: AVContentKeyRequest
 
     func requestPersistence() throws {
+        #if os(iOS)
+        try request
+            .respondByRequestingPersistableContentKeyRequestAndReturnError()
+        #else
         try request.respondByRequestingPersistableContentKeyRequest()
+        #endif
     }
 }
 
