@@ -461,6 +461,7 @@ private func compileWebSocketArticleExamples() async {
     await manager.disconnect(task, closeCode: .custom(4001))
 }
 
+@MainActor
 private func compileHLSArticleExamples() async throws {
     let sourceURL = URL(string: "https://media.example/master.m3u8")!
     let inspection = smokeHLSResolver.inspect(
@@ -600,6 +601,11 @@ private func compileHLSArticleExamples() async throws {
         case .completed(let receipt):
             _ = receipt.entryPlaylistURL
             _ = receipt.selectedIFrameVariant
+            let localAsset = try await HLSLocalPlaybackAsset(
+                source: receipt.playbackSource
+            )
+            _ = AVPlayerItem(asset: localAsset.urlAsset)
+            localAsset.close()
         case .failed(let error):
             _ = error.code
         case .cancelled:

@@ -153,6 +153,40 @@ descriptions, actionable recovery suggestions, and
 ``HLSAssetDownloadSessionError/isRetriableHint`` for the narrow task-creation
 failure that is normally worth retrying.
 
+## Application-owned local packages
+
+Raw offline and live-DVR receipts from `InnoNetworkHLS` expose an
+`HLSLocalPlaybackSource`. Open it through ``HLSLocalPlaybackAsset`` before
+creating the player item:
+
+```swift
+let localAsset = try await HLSLocalPlaybackAsset(
+    source: receipt.playbackSource
+)
+let playerItem = AVPlayerItem(asset: localAsset.urlAsset)
+let player = AVPlayer(playerItem: playerItem)
+
+// Retain localAsset for the complete player-item lifetime.
+player.play()
+
+// After playback and all asset loading finish:
+localAsset.close()
+```
+
+The main-actor owner binds a random path on IPv4 loopback only. Before the
+listener starts, it validates bounded reachable playlists, rejects remote or
+package-escaping references and symbolic links, then freezes playlist bytes so
+later file mutation cannot introduce an external request. Media files are
+admitted as regular package-contained files for each GET, HEAD, or single-byte
+range request. There is no directory listing and no non-loopback listener.
+
+Keep the owner alive for as long as AVFoundation may load or seek within the
+asset; ``HLSLocalPlaybackAsset/close()`` is idempotent and makes later resource
+loads fail. The bridge does not run as a background download service, grant
+background execution time, validate FairPlay keys, or convert arbitrary local
+HLS trees. Use ``HLSAssetDownloadSession`` for system-managed persistence and
+the application's ``HLSFairPlaySession`` policy for protected playback.
+
 ## Playback configuration
 
 Configure CMCD before creating a player item or otherwise loading the asset:
@@ -596,6 +630,11 @@ expiry, deletion, and server-side invalidation.
 - ``HLSAssetDownloadStoragePolicy``
 - ``HLSAssetDownloadEvictionPriority``
 - ``HLSAssetDownloadStorageError``
+
+### Application-owned local playback
+
+- ``HLSLocalPlaybackAsset``
+- ``HLSLocalPlaybackAssetError``
 
 ### FairPlay
 

@@ -216,7 +216,10 @@ let package = Package(
         ),
         .target(
             name: "InnoNetworkHLSAVFoundation",
-            dependencies: ["InnoNetwork"],
+            dependencies: [
+                "InnoNetwork",
+                "InnoNetworkHLS",
+            ],
             path: "Sources/InnoNetworkHLSAVFoundation",
             resources: [.process("Resources")],
             swiftSettings: strictSettings
@@ -420,6 +423,7 @@ let package = Package(
             name: "InnoNetworkHLSAVFoundationTests",
             dependencies: [
                 "InnoNetwork",
+                "InnoNetworkHLS",
                 "InnoNetworkHLSAVFoundation",
             ],
             path: "Tests/InnoNetworkHLSAVFoundationTests",

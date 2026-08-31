@@ -152,7 +152,7 @@ for try await event in recorder.events(
             duration: progress.recordedDuration
         )
     case .completed(let receipt):
-        play(receipt.entryPlaylistURL)
+        openLocalPlayback(receipt.playbackSource)
     }
 }
 ```
@@ -253,10 +253,11 @@ resources, unrepresentable timeline metadata, incomplete external renditions,
 and missing or changing initialization maps fail with ``HLSLiveDVRError``
 rather than producing an incomplete presentation.
 
-The package targets application-owned serving or resource loading. An
-arbitrary `file://` HLS directory is not advertised as directly AVFoundation
-playable; use `InnoNetworkHLSAVFoundation` for system-managed playback and
-persistence.
+An arbitrary `file://` HLS directory is not directly AVFoundation playable.
+Pass ``HLSLiveDVRReceipt/playbackSource`` to `HLSLocalPlaybackAsset` in
+`InnoNetworkHLSAVFoundation` for application-owned local playback. The bridge
+must stay alive with the player item and is separate from the companion's
+system-managed background download and persistence path.
 
 The destination is reserved in-process and across cooperating processes.
 Staging is a hidden sibling directory, and the complete package becomes

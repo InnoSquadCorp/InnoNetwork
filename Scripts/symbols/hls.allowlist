@@ -15,6 +15,7 @@ InnoNetworkHLS	swift.enum	HLSInterstitialNavigationRestriction
 InnoNetworkHLS	swift.enum	HLSInterstitialSource
 InnoNetworkHLS	swift.enum	HLSInterstitialTimelineOccupancy
 InnoNetworkHLS	swift.enum	HLSInterstitialTimelineStyle
+InnoNetworkHLS	swift.enum	HLSLocalPlaybackSourceError
 InnoNetworkHLS	swift.enum	HLSMediaCharacteristicPreference
 InnoNetworkHLS	swift.enum	HLSMediaContainer
 InnoNetworkHLS	swift.enum	HLSMediaPlaylistType
@@ -152,6 +153,9 @@ InnoNetworkHLS	swift.enum.case	HLSInterstitialTimelineOccupancy.point
 InnoNetworkHLS	swift.enum.case	HLSInterstitialTimelineOccupancy.range
 InnoNetworkHLS	swift.enum.case	HLSInterstitialTimelineStyle.highlight
 InnoNetworkHLS	swift.enum.case	HLSInterstitialTimelineStyle.primary
+InnoNetworkHLS	swift.enum.case	HLSLocalPlaybackSourceError.entryPlaylistOutsidePackage
+InnoNetworkHLS	swift.enum.case	HLSLocalPlaybackSourceError.invalidEntryPlaylistURL
+InnoNetworkHLS	swift.enum.case	HLSLocalPlaybackSourceError.invalidPackageDirectoryURL
 InnoNetworkHLS	swift.enum.case	HLSMediaCharacteristicPreference.excluded
 InnoNetworkHLS	swift.enum.case	HLSMediaCharacteristicPreference.neutral
 InnoNetworkHLS	swift.enum.case	HLSMediaCharacteristicPreference.preferred
@@ -312,6 +316,8 @@ InnoNetworkHLS	swift.init	HLSExternalResourceResolver.init(configuration:)
 InnoNetworkHLS	swift.init	HLSExternalResourceResolver.init(session:configuration:requestContext:requestPolicy:)
 InnoNetworkHLS	swift.init	HLSInterstitial.init(source:resumeOffset:playoutLimit:contentVariability:timelineOccupancy:timelineStyle:navigationRestrictions:skipControl:)
 InnoNetworkHLS	swift.init	HLSInterstitialSkipControl.init(offset:duration:labelID:)
+InnoNetworkHLS	swift.init	HLSLocalPlaybackSource.init(from:)
+InnoNetworkHLS	swift.init	HLSLocalPlaybackSource.init(packageDirectoryURL:entryPlaylistURL:)
 InnoNetworkHLS	swift.init	HLSMediaCharacteristic.init(rawValue:)
 InnoNetworkHLS	swift.init	HLSOfflinePackageDownloader.init()
 InnoNetworkHLS	swift.init	HLSOfflinePackageDownloader.init(configuration:)
@@ -462,6 +468,10 @@ InnoNetworkHLS	swift.property	HLSInterstitialSkipControl.labelID
 InnoNetworkHLS	swift.property	HLSInterstitialSkipControl.offset
 InnoNetworkHLS	swift.property	HLSLanguageDecoration.characteristic
 InnoNetworkHLS	swift.property	HLSLanguageDecoration.displayNames
+InnoNetworkHLS	swift.property	HLSLocalPlaybackSource.entryPlaylistURL
+InnoNetworkHLS	swift.property	HLSLocalPlaybackSource.packageDirectoryURL
+InnoNetworkHLS	swift.property	HLSLocalPlaybackSourceError.errorDescription
+InnoNetworkHLS	swift.property	HLSLocalPlaybackSourceError.recoverySuggestion
 InnoNetworkHLS	swift.property	HLSLowLatencyMetadata.deltaUpdate
 InnoNetworkHLS	swift.property	HLSLowLatencyMetadata.partialSegmentTargetDuration
 InnoNetworkHLS	swift.property	HLSLowLatencyMetadata.partialSegments
@@ -487,6 +497,7 @@ InnoNetworkHLS	swift.property	HLSOfflinePackagePreparation.tracks
 InnoNetworkHLS	swift.property	HLSOfflinePackageReceipt.byteCount
 InnoNetworkHLS	swift.property	HLSOfflinePackageReceipt.directoryURL
 InnoNetworkHLS	swift.property	HLSOfflinePackageReceipt.entryPlaylistURL
+InnoNetworkHLS	swift.property	HLSOfflinePackageReceipt.playbackSource
 InnoNetworkHLS	swift.property	HLSOfflinePackageReceipt.resumedResourceTransferCount
 InnoNetworkHLS	swift.property	HLSOfflinePackageReceipt.selectedIFrameVariant
 InnoNetworkHLS	swift.property	HLSOfflinePackageReceipt.selectedVariant
@@ -669,6 +680,7 @@ InnoNetworkHLS	swift.struct	HLSInterstitialAsset
 InnoNetworkHLS	swift.struct	HLSInterstitialAssetResolution
 InnoNetworkHLS	swift.struct	HLSInterstitialSkipControl
 InnoNetworkHLS	swift.struct	HLSLanguageDecoration
+InnoNetworkHLS	swift.struct	HLSLocalPlaybackSource
 InnoNetworkHLS	swift.struct	HLSLowLatencyMetadata
 InnoNetworkHLS	swift.struct	HLSMediaCharacteristic
 InnoNetworkHLS	swift.struct	HLSMediaPresentationSelector

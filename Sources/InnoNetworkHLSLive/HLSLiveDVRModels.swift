@@ -361,6 +361,14 @@ public struct HLSLiveDVRReceipt: Equatable, Sendable {
     /// declarations were retained, and the primary media playlist otherwise.
     public let entryPlaylistURL: URL
 
+    /// A structurally validated source for application-owned local playback.
+    public var playbackSource: HLSLocalPlaybackSource {
+        HLSLocalPlaybackSource(
+            validatedPackageDirectoryURL: directoryURL,
+            entryPlaylistURL: entryPlaylistURL
+        )
+    }
+
     /// The local playlists retained in the package.
     public let tracks: [HLSLiveDVRTrack]
 

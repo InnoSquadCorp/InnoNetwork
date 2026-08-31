@@ -52,6 +52,11 @@
 "HLSPresentationInspectionError.recovery.limitPlaylists" = "더 작은 프레젠테이션을 검사하거나 명시적인 플레이리스트 개수 한도를 늘리세요.";
 "HLSPresentationInspectionError.recovery.limitBytes" = "더 작은 프레젠테이션을 검사하거나 명시적인 전체 바이트 한도를 늘리세요.";
 
+"HLSLocalPlaybackSourceError.invalidPackageDirectoryURL" = "로컬 HLS 패키지 디렉터리는 길이가 제한된 로컬 파일 URL이어야 합니다.";
+"HLSLocalPlaybackSourceError.invalidEntryPlaylistURL" = "로컬 HLS 진입점은 길이가 제한된 로컬 .m3u8 파일 URL이어야 합니다.";
+"HLSLocalPlaybackSourceError.entryPlaylistOutsidePackage" = "로컬 HLS 진입 플레이리스트는 패키지 디렉터리 내부에 있어야 합니다.";
+"HLSLocalPlaybackSourceError.recovery.restorePackage" = "검증된 오프라인 패키지 또는 라이브 DVR 영수증을 복원한 뒤 playbackSource 값을 사용하세요.";
+
 "HLSDownloadError.recovery.validatePlaylist" = "원본 플레이리스트가 완결된 HLS VOD 플레이리스트인지 확인하세요.";
 "HLSDownloadError.recovery.retryTransientHTTP" = "설정한 재시도 정책과 서버의 Retry-After 안내에 따라 다시 시도하세요.";
 "HLSDownloadError.recovery.verifyCredentials" = "모든 플레이리스트, 미디어, 키 요청의 요청 어댑터와 인증 정보를 확인하세요.";

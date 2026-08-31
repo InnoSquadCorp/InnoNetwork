@@ -52,6 +52,11 @@
 "HLSPresentationInspectionError.recovery.limitPlaylists" = "Inspect a smaller presentation or raise the explicit playlist-count limit.";
 "HLSPresentationInspectionError.recovery.limitBytes" = "Inspect a smaller presentation or raise the explicit total-byte limit.";
 
+"HLSLocalPlaybackSourceError.invalidPackageDirectoryURL" = "The local HLS package directory must be a bounded local file URL.";
+"HLSLocalPlaybackSourceError.invalidEntryPlaylistURL" = "The local HLS entry point must be a bounded local .m3u8 file URL.";
+"HLSLocalPlaybackSourceError.entryPlaylistOutsidePackage" = "The local HLS entry playlist must remain inside its package directory.";
+"HLSLocalPlaybackSourceError.recovery.restorePackage" = "Restore a validated offline-package or live-DVR receipt and use its playbackSource value.";
+
 "HLSDownloadError.recovery.validatePlaylist" = "Validate the source playlist and make sure it is a complete HLS VOD playlist.";
 "HLSDownloadError.recovery.retryTransientHTTP" = "Retry according to the configured retry policy and server Retry-After guidance.";
 "HLSDownloadError.recovery.verifyCredentials" = "Verify the request adapter, credentials, and authorization for every playlist, media, and key request.";

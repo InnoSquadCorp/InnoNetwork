@@ -524,9 +524,10 @@ for await event in await manager.events(for: task) {
   resource boundaries; stale playlist, rendition, resource, validator, or
   AES-key plans are discarded, while partial state remains implementation-
   private and final directory commit stays atomic
-- local package playlists target application-owned serving/resource loading;
-  arbitrary `file://` HLS trees are not advertised as directly AVFoundation
-  playable—use `InnoNetworkHLSAVFoundation` for system-managed playback
+- local package receipts expose a typed playback source for the companion's
+  loopback-only `HLSLocalPlaybackAsset`; arbitrary `file://` HLS trees remain
+  unsupported, while system-managed downloads remain available for native
+  background persistence
 
 ### `InnoNetworkHLSLive`
 
@@ -582,12 +583,16 @@ for await event in await manager.events(for: task) {
 - typed rejection of gaps, DRM/sample encryption, unsupported timeline
   metadata, missing/changing initialization maps, incomplete renditions, and
   live-window loss instead of silently committing an incomplete presentation
-- local DVR packages target application-owned serving or resource loading;
-  arbitrary `file://` HLS trees are not advertised as directly AVFoundation
-  playable
+- local DVR receipts expose the same typed, loopback-only playback bridge as
+  offline-package receipts without claiming direct `file://` playback
 
 ### `InnoNetworkHLSAVFoundation`
 
+- a main-actor local-playback owner that serves validated raw offline and DVR
+  packages over a random, loopback-only HTTP endpoint; reachable playlists are
+  bounded and frozen before listening, remote/package-escaping references and
+  symbolic links are rejected, and GET, HEAD, and single byte ranges are
+  supported for AVPlayer
 - caller-owned `AVURLAsset` CMCD opt-in with typed availability status while
   AVFoundation retains ownership of generated request-header values; watchOS
   reports the feature as unavailable because it does not expose asset resource

@@ -489,6 +489,8 @@ validate_doc_smoke_coverage() {
   require_contains 'HLSDecodedAudioOutput' "$doc_smoke"
   require_contains 'HLSOfflinePackageConfiguration.advanced' "$doc_smoke"
   require_contains 'HLSOfflinePackageDownloader' "$doc_smoke"
+  require_contains 'HLSLocalPlaybackAsset' "$doc_smoke"
+  require_contains 'receipt.playbackSource' "$doc_smoke"
   require_contains 'HLSExternalResourceResolver' "$doc_smoke"
   require_contains 'HLSExternalResourcePack' "$doc_smoke"
   require_contains 'destinationDirectoryURL:' "$doc_smoke"

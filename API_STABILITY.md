@@ -406,8 +406,8 @@ types and members in addition to top-level declarations. The grouped ledger
 below keeps the high-level compatibility classification readable for the
 5.x release line.
 
-The machine-checked snapshot currently partitions all 2,729 declarations into
-305 Stable consumer declarations, 2,391 Provisionally Stable consumer
+The machine-checked snapshot currently partitions all 2,754 declarations into
+305 Stable consumer declarations, 2,416 Provisionally Stable consumer
 declarations, and 33 opt-in SPI declarations. The three sets are disjoint and
 exhaustive. `Scripts/symbols/stable-rules.tsv` maps the Stable ledger to symbol
 paths, while the compiler-authored SPI flag is snapshotted in
@@ -527,6 +527,7 @@ Stable.
   `HLSDownloadReceipt`, `HLSPlaybackCapabilities`, `HLSResumePolicy`,
   `HLSStoragePack`, and `HLSTransferPack`.
 - Offline packages:
+  `HLSLocalPlaybackSource`, `HLSLocalPlaybackSourceError`,
   `HLSOfflinePackageConfiguration`, `HLSOfflinePackageDownloader`,
   `HLSOfflinePackageEvent`, `HLSOfflinePackagePreparation`,
   `HLSOfflinePackageReceipt`, `HLSOfflinePackageStore`,
@@ -553,6 +554,10 @@ Stable.
   presence from AVFoundation's offline-playable cache state and exposes only
   bounded value snapshots while package bytes and FairPlay keys remain
   application-owned.
+- Application-owned local playback: `HLSLocalPlaybackAsset` and
+  `HLSLocalPlaybackAssetError`. The main-actor owner exposes a caller-owned
+  AVURLAsset backed by a bounded loopback-only package bridge and must remain
+  alive for the player-item lifetime.
 - FairPlay persistent keys: `HLSFairPlayKeyID`,
   `HLSFairPlayLicenseRequest`, `HLSFairPlayLicenseTransporting`,
   `HLSFairPlayPersistentKeyAcquisition`,

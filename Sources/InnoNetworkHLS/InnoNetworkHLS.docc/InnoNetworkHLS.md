@@ -241,9 +241,11 @@ External video and I-frame retention are opt-in so existing storage behavior
 does not change. I-frame selection first matches the selected regular variant's
 resolution when possible, then applies the configured variant policy.
 The entry playlist is a self-contained package index, not a promise that
-AVFoundation will play an arbitrary local `file://` HLS tree. Use it from an
-application-owned serving or resource-loader layer. For directly playable
-system-managed offline assets, use the `InnoNetworkHLSAVFoundation` product.
+AVFoundation will play an arbitrary local `file://` HLS tree. The committed
+receipt exposes ``HLSOfflinePackageReceipt/playbackSource`` for
+`HLSLocalPlaybackAsset` in the `InnoNetworkHLSAVFoundation` product. Choose
+that companion's system-managed download session instead when native
+background persistence and eviction policy are required.
 
 Use ``HLSDownloader/prepare(sourceURL:)`` to resolve the current selection
 without creating files or reserving a destination:
@@ -739,6 +741,8 @@ so adding an HLS target cannot silently leave it outside release validation.
 
 ### Offline packages
 
+- ``HLSLocalPlaybackSource``
+- ``HLSLocalPlaybackSourceError``
 - ``HLSOfflinePackageDownloader``
 - ``HLSOfflinePackageStore``
 - ``HLSOfflinePackageConfiguration``

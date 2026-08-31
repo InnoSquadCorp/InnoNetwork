@@ -156,6 +156,11 @@ extension HLSDownloaderTests {
 
         #expect(receipt.directoryURL == destinationURL)
         #expect(receipt.entryPlaylistURL == destinationURL.appendingPathComponent("index.m3u8"))
+        #expect(receipt.playbackSource.packageDirectoryURL == destinationURL)
+        #expect(
+            receipt.playbackSource.entryPlaylistURL
+                == receipt.entryPlaylistURL
+        )
         #expect(receipt.tracks.map(\.kind) == [.primary, .audio, .subtitles])
         #expect(receipt.tracks[1].associatedLanguage == "en-US")
         #expect(receipt.tracks[1].stableID == "audio.main")

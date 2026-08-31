@@ -126,6 +126,7 @@ InnoNetworkHLSLive	swift.property	HLSLiveDVRReceipt.entryPlaylistURL
 InnoNetworkHLSLive	swift.property	HLSLiveDVRReceipt.firstMediaSequence
 InnoNetworkHLSLive	swift.property	HLSLiveDVRReceipt.lastMediaSequence
 InnoNetworkHLSLive	swift.property	HLSLiveDVRReceipt.mediaByteCount
+InnoNetworkHLSLive	swift.property	HLSLiveDVRReceipt.playbackSource
 InnoNetworkHLSLive	swift.property	HLSLiveDVRReceipt.playlistURL
 InnoNetworkHLSLive	swift.property	HLSLiveDVRReceipt.promotedPartCount
 InnoNetworkHLSLive	swift.property	HLSLiveDVRReceipt.recordedDuration

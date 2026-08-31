@@ -81,6 +81,14 @@ extension HLSLivePlaylistClientTests {
         #expect(receipt.firstMediaSequence == 10)
         #expect(receipt.lastMediaSequence == 11)
         #expect(
+            receipt.playbackSource.packageDirectoryURL
+                == receipt.directoryURL
+        )
+        #expect(
+            receipt.playbackSource.entryPlaylistURL
+                == receipt.entryPlaylistURL
+        )
+        #expect(
             FileManager.default.fileExists(
                 atPath: receipt.playlistURL.path
             )

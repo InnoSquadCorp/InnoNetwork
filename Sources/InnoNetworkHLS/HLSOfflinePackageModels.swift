@@ -246,10 +246,18 @@ public struct HLSOfflinePackageReceipt: Equatable, Sendable {
     /// The local multivariant playlist used as the package entry point.
     ///
     /// AVFoundation does not directly play arbitrary local `file://` HLS
-    /// playlists. Use this URL for package inspection or an application-owned
-    /// serving/resource-loader layer; use `InnoNetworkHLSAVFoundation` when
-    /// native system-managed offline playback is required.
+    /// playlists. Use ``playbackSource`` with `HLSLocalPlaybackAsset` from
+    /// `InnoNetworkHLSAVFoundation`, or choose the companion's system-managed
+    /// download session when native background persistence is required.
     public let entryPlaylistURL: URL
+
+    /// A structurally validated source for application-owned local playback.
+    public var playbackSource: HLSLocalPlaybackSource {
+        HLSLocalPlaybackSource(
+            validatedPackageDirectoryURL: directoryURL,
+            entryPlaylistURL: entryPlaylistURL
+        )
+    }
 
     /// The local playlists retained in the package.
     public let tracks: [HLSOfflinePackageTrack]

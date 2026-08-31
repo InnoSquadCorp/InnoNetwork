@@ -84,3 +84,10 @@
 "HLSPlaybackConfigurationError.recovery.removeConflict" = "Keep only one command for each audio, video, or legible media group.";
 "HLSPlaybackConfigurationError.recovery.addPreference" = "Provide a BCP 47 language or one or more authored selector characteristics.";
 "HLSPlaybackConfigurationError.recovery.refreshAsset" = "Reload the asset's media-selection groups and offer only languages and settings currently advertised by AVFoundation.";
+
+"HLSLocalPlaybackAssetError.packageUnavailable" = "The local HLS package directory is missing or invalid.";
+"HLSLocalPlaybackAssetError.entryPlaylistUnavailable" = "The local HLS entry playlist is missing or invalid.";
+"HLSLocalPlaybackAssetError.unsafePackageContents" = "The local HLS package contains an unsafe or out-of-package resource path.";
+"HLSLocalPlaybackAssetError.loopbackServerUnavailable" = "A loopback-only HLS playback endpoint could not be started.";
+"HLSLocalPlaybackAssetError.recovery.restorePackage" = "Reopen and validate the offline package, or create a new live-DVR recording before playback.";
+"HLSLocalPlaybackAssetError.recovery.retryBridge" = "Close any previous local playback bridge and retry while the application is active.";
