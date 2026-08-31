@@ -122,6 +122,7 @@ extension HLSDownloaderTests {
                           "DURATION": 4,
                           "CUE": "PRE",
                           "X-ASSET-URI": "https://ads.example/ad.m3u8",
+                          "X-CONTENT-MAY-VARY": "NO",
                           "X-TIMELINE-OCCUPIES": "RANGE",
                           "X-TIMELINE-STYLE": "PRIMARY",
                           "X-RESTRICT": "SKIP,JUMP",
@@ -191,6 +192,7 @@ extension HLSDownloaderTests {
         let presentation = try #require(
             schedule.entries[0].dateRange.interstitial
         )
+        #expect(presentation.contentVariability == .sameForAllPlayers)
         #expect(presentation.timelineOccupancy == .range)
         #expect(presentation.timelineStyle == .primary)
         #expect(presentation.navigationRestrictions == [.skip, .jump])

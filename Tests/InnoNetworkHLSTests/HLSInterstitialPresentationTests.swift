@@ -5,14 +5,15 @@ import Testing
 
 @Suite("HLS interstitial presentation metadata")
 struct HLSInterstitialPresentationTests {
-    @Test("timeline, restriction, and skip-control metadata are typed")
+    @Test("coordination, timeline, restriction, and skip metadata are typed")
     func parsesPresentationMetadata() throws {
         let interstitial = try parseInterstitial(
             """
-            X-TIMELINE-OCCUPIES="RANGE",X-TIMELINE-STYLE="PRIMARY",X-RESTRICT="SKIP,JUMP,FUTURE",X-SKIP-CONTROL-OFFSET=5,X-SKIP-CONTROL-DURATION=20,X-SKIP-CONTROL-LABEL-ID="Exit_Label"
+            X-CONTENT-MAY-VARY="NO",X-TIMELINE-OCCUPIES="RANGE",X-TIMELINE-STYLE="PRIMARY",X-RESTRICT="SKIP,JUMP,FUTURE",X-SKIP-CONTROL-OFFSET=5,X-SKIP-CONTROL-DURATION=20,X-SKIP-CONTROL-LABEL-ID="Exit_Label"
             """
         )
 
+        #expect(interstitial.contentVariability == .sameForAllPlayers)
         #expect(interstitial.timelineOccupancy == .range)
         #expect(interstitial.timelineStyle == .primary)
         #expect(interstitial.navigationRestrictions == [.skip, .jump])
@@ -26,15 +27,20 @@ struct HLSInterstitialPresentationTests {
         )
     }
 
-    @Test("missing and future timeline values use specification defaults")
+    @Test("missing and future presentation values use specification defaults")
     func defaultsFuturePresentationMetadata() throws {
         let defaults = try parseInterstitial("")
+        let explicitVariation = try parseInterstitial(
+            "X-CONTENT-MAY-VARY=\"YES\""
+        )
         let future = try parseInterstitial(
             """
-            X-TIMELINE-OCCUPIES="FUTURE",X-TIMELINE-STYLE="FUTURE",X-RESTRICT="FUTURE-2,FUTURE"
+            X-CONTENT-MAY-VARY="FUTURE",X-TIMELINE-OCCUPIES="FUTURE",X-TIMELINE-STYLE="FUTURE",X-RESTRICT="FUTURE-2,FUTURE"
             """
         )
 
+        #expect(defaults.contentVariability == .mayVary)
+        #expect(explicitVariation.contentVariability == .mayVary)
         #expect(defaults.timelineOccupancy == .point)
         #expect(defaults.timelineStyle == .highlight)
         #expect(defaults.navigationRestrictions.isEmpty)
@@ -42,11 +48,13 @@ struct HLSInterstitialPresentationTests {
         #expect(future.timelineOccupancy == .point)
         #expect(future.timelineStyle == .highlight)
         #expect(future.navigationRestrictions.isEmpty)
+        #expect(future.contentVariability == .mayVary)
     }
 
     @Test(
         "invalid interstitial presentation values fail typed",
         arguments: [
+            "X-CONTENT-MAY-VARY=NO",
             "X-TIMELINE-OCCUPIES=POINT",
             "X-TIMELINE-STYLE=HIGHLIGHT",
             "X-RESTRICT=SKIP",

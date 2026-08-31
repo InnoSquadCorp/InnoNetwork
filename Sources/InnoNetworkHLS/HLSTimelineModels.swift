@@ -65,6 +65,9 @@ public struct HLSInterstitial: Equatable, Sendable {
     /// Maximum interstitial playout duration.
     public let playoutLimit: TimeInterval?
 
+    /// Whether coordinated players may receive different content.
+    public let contentVariability: HLSInterstitialContentVariability
+
     /// Effective timeline occupancy, defaulting to a single point.
     public let timelineOccupancy: HLSInterstitialTimelineOccupancy
 
@@ -84,6 +87,7 @@ public struct HLSInterstitial: Equatable, Sendable {
         source: HLSInterstitialSource,
         resumeOffset: TimeInterval? = nil,
         playoutLimit: TimeInterval? = nil,
+        contentVariability: HLSInterstitialContentVariability = .mayVary,
         timelineOccupancy: HLSInterstitialTimelineOccupancy = .point,
         timelineStyle: HLSInterstitialTimelineStyle = .highlight,
         navigationRestrictions:
@@ -93,6 +97,7 @@ public struct HLSInterstitial: Equatable, Sendable {
         self.source = source
         self.resumeOffset = resumeOffset
         self.playoutLimit = playoutLimit
+        self.contentVariability = contentVariability
         self.timelineOccupancy = timelineOccupancy
         self.timelineStyle = timelineStyle
         self.navigationRestrictions = navigationRestrictions

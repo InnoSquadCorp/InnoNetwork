@@ -9,6 +9,9 @@ Versioning.
 
 ### Added
 
+- Apple interstitial metadata now types `X-CONTENT-MAY-VARY`, preserving its
+  coordinated-playback guarantee while treating missing or future values as
+  content that may vary, as required by the current HLS draft.
 - HLS Media Characteristic tags now expose an extensible value type plus
   generated and translated conveniences. An opt-in subtitle provenance policy
   composes exclusion and preference with existing language, name, and default

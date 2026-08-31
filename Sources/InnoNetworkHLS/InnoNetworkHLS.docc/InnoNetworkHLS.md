@@ -662,6 +662,7 @@ so adding an HLS target cannot silently leave it outside release validation.
 - ``HLSPreloadedDateRangeResource``
 - ``HLSInterstitial``
 - ``HLSInterstitialSource``
+- ``HLSInterstitialContentVariability``
 - ``HLSInterstitialTimelineOccupancy``
 - ``HLSInterstitialTimelineStyle``
 - ``HLSInterstitialNavigationRestriction``

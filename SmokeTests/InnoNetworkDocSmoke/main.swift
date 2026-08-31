@@ -143,6 +143,7 @@ private let smokeHLSExternalResourceResolver =
     )
 private let smokeHLSInterstitial = HLSInterstitial(
     source: .asset(URL(string: "https://example.com/ad.m3u8")!),
+    contentVariability: .sameForAllPlayers,
     timelineOccupancy: .range,
     timelineStyle: .primary,
     navigationRestrictions: [.skip, .jump],

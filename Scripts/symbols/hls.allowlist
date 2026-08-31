@@ -10,6 +10,7 @@ InnoNetworkHLS	swift.enum	HLSDownloadErrorCode
 InnoNetworkHLS	swift.enum	HLSDownloadEvent
 InnoNetworkHLS	swift.enum	HLSExternalResourceError
 InnoNetworkHLS	swift.enum	HLSHDCPLevel
+InnoNetworkHLS	swift.enum	HLSInterstitialContentVariability
 InnoNetworkHLS	swift.enum	HLSInterstitialNavigationRestriction
 InnoNetworkHLS	swift.enum	HLSInterstitialSource
 InnoNetworkHLS	swift.enum	HLSInterstitialTimelineOccupancy
@@ -141,6 +142,8 @@ InnoNetworkHLS	swift.enum.case	HLSExternalResourceError.tooManyScheduledDateRang
 InnoNetworkHLS	swift.enum.case	HLSHDCPLevel.none
 InnoNetworkHLS	swift.enum.case	HLSHDCPLevel.type0
 InnoNetworkHLS	swift.enum.case	HLSHDCPLevel.type1
+InnoNetworkHLS	swift.enum.case	HLSInterstitialContentVariability.mayVary
+InnoNetworkHLS	swift.enum.case	HLSInterstitialContentVariability.sameForAllPlayers
 InnoNetworkHLS	swift.enum.case	HLSInterstitialNavigationRestriction.jump
 InnoNetworkHLS	swift.enum.case	HLSInterstitialNavigationRestriction.skip
 InnoNetworkHLS	swift.enum.case	HLSInterstitialSource.asset(_:)
@@ -307,7 +310,7 @@ InnoNetworkHLS	swift.init	HLSDownloader.init(session:configuration:requestContex
 InnoNetworkHLS	swift.init	HLSExternalResourcePack.init(maximumSessionDataBytes:maximumCustomMediaSelectionEntryCount:maximumInterstitialAssetListBytes:maximumInterstitialAssetCount:maximumDateRangeResourceBytes:maximumScheduledDateRangeCount:maximumDateRangeScheduleDepth:requestTimeout:)
 InnoNetworkHLS	swift.init	HLSExternalResourceResolver.init(configuration:)
 InnoNetworkHLS	swift.init	HLSExternalResourceResolver.init(session:configuration:requestContext:requestPolicy:)
-InnoNetworkHLS	swift.init	HLSInterstitial.init(source:resumeOffset:playoutLimit:timelineOccupancy:timelineStyle:navigationRestrictions:skipControl:)
+InnoNetworkHLS	swift.init	HLSInterstitial.init(source:resumeOffset:playoutLimit:contentVariability:timelineOccupancy:timelineStyle:navigationRestrictions:skipControl:)
 InnoNetworkHLS	swift.init	HLSInterstitialSkipControl.init(offset:duration:labelID:)
 InnoNetworkHLS	swift.init	HLSMediaCharacteristic.init(rawValue:)
 InnoNetworkHLS	swift.init	HLSOfflinePackageDownloader.init()
@@ -442,6 +445,7 @@ InnoNetworkHLS	swift.property	HLSEncryptionKeyPreload.keyFormat
 InnoNetworkHLS	swift.property	HLSEncryptionKeyPreload.keyFormatVersions
 InnoNetworkHLS	swift.property	HLSEncryptionKeyPreload.method
 InnoNetworkHLS	swift.property	HLSExternalResourceError.errorDescription
+InnoNetworkHLS	swift.property	HLSInterstitial.contentVariability
 InnoNetworkHLS	swift.property	HLSInterstitial.navigationRestrictions
 InnoNetworkHLS	swift.property	HLSInterstitial.playoutLimit
 InnoNetworkHLS	swift.property	HLSInterstitial.resumeOffset

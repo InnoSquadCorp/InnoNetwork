@@ -174,6 +174,7 @@ enum HLSDateRangeScheduleDecoder {
         "START-DATE",
         "X-ASSET-LIST",
         "X-ASSET-URI",
+        "X-CONTENT-MAY-VARY",
         "X-RESTRICT",
         "X-SKIP-CONTROL-LABEL-ID",
         "X-TARGET-CLASS",

@@ -1,5 +1,14 @@
 import Foundation
 
+/// Whether interstitial content is consistent across coordinated players.
+public enum HLSInterstitialContentVariability: Equatable, Sendable {
+    /// Different players may receive different interstitial content.
+    case mayVary
+
+    /// Every player receives the same interstitial content.
+    case sameForAllPlayers
+}
+
 /// How an interstitial is represented on an integrated timeline.
 public enum HLSInterstitialTimelineOccupancy: Equatable, Sendable {
     /// The interstitial appears at one point on the primary timeline.

@@ -33,11 +33,31 @@ enum HLSInterstitialParser {
                 "X-PLAYOUT-LIMIT",
                 in: attributes
             ),
+            contentVariability: try contentVariability(attributes),
             timelineOccupancy: try timelineOccupancy(attributes),
             timelineStyle: try timelineStyle(attributes),
             navigationRestrictions: try navigationRestrictions(attributes),
             skipControl: try skipControl(attributes)
         )
+    }
+
+    private static func contentVariability(
+        _ attributes: HLSAttributeList
+    ) throws -> HLSInterstitialContentVariability {
+        guard let value = attributes["X-CONTENT-MAY-VARY"] else {
+            return .mayVary
+        }
+        guard attributes.isQuoted("X-CONTENT-MAY-VARY") else {
+            throw HLSDownloadError.invalidPlaylist
+        }
+        switch value {
+        case "NO":
+            return .sameForAllPlayers
+        case "YES":
+            return .mayVary
+        default:
+            return .mayVary
+        }
     }
 
     private static func source(
