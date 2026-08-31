@@ -288,8 +288,43 @@ feature. Diagnostic payloads never retain a source line, URL, attribute value,
 or signed query value. The parsed
 ``HLSPlaylistInspection/playlist`` remains the normal playlist model and can
 contain resolved URLs. Warnings are advisory; an error blocks only its declared
-scope. Inspection is deliberately local to the supplied document, so referenced
-child playlists are validated when the planner resolves them.
+scope. Document inspection is deliberately local to the supplied text. For
+authoring and CI that must validate the complete presentation relationship,
+use bounded graph inspection:
+
+```swift
+let graph = try await resolver.inspectPresentation(
+    from: sourceURL,
+    using: .advanced(
+        limits: HLSPresentationInspectionLimitPack(
+            maximumPlaylistCount: 32,
+            maximumConcurrentRequests: 4,
+            maximumTotalPlaylistBytes: 16 * 1_024 * 1_024
+        )
+    )
+)
+
+for diagnostic in graph.diagnostics {
+    record(
+        code: diagnostic.code,
+        playlistIndex: diagnostic.playlistIndex,
+        relatedPlaylistIndex: diagnostic.relatedPlaylistIndex
+    )
+}
+```
+
+``PlaylistResolver/inspectPresentation(from:using:)`` fetches only bounded
+playlist documents and never media segments. It coalesces duplicate references,
+ignores unreferenced rendition groups, retains deterministic playlist indices,
+and applies the explicitly reported
+``HLSPresentationConformanceRevision/hlsSecondEditionDraft22`` contract. Graph
+diagnostics expose only stable codes and indices; the returned playlist models
+remain the opt-in surface for resolved URLs. Playlist-only evidence verifies
+target duration, playlist type, segment-boundary alignment where VOD or
+program-date-time provides an anchor, discontinuity sequences, program-date-time
+mapping, corresponding Date Range attributes, and server control. It does not
+replace media timestamp inspection, Apple Media Stream Validator, or playback
+testing.
 
 Authoring tools and CI can opt into Apple-oriented recommendations without
 changing download capability:
@@ -615,6 +650,14 @@ so adding an HLS target cannot silently leave it outside release validation.
 - ``HLSInterstitialSource``
 - ``HLSPlaylistInspection``
 - ``HLSPlaylistDiagnostic``
+- ``HLSPresentationGraphInspection``
+- ``HLSPresentationPlaylistInspection``
+- ``HLSPresentationDiagnostic``
+- ``HLSPresentationInspectionPack``
+- ``HLSPresentationInspectionLimitPack``
+- ``HLSPresentationInspectionError``
+- ``HLSPresentationConformanceRevision``
+- ``HLSPresentationPlaylistRole``
 - ``HLSContentSteering``
 - ``HLSContentSteeringPack``
 - ``HLSContentSteeringHealthPolicy``

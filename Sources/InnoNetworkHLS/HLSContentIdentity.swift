@@ -49,6 +49,7 @@ struct HLSResolvedPlaylistDocument: Sendable {
     let playlist: HLSPlaylist
     let identity: HLSContentIdentity
     let contents: String
+    let dateRangeFingerprints: [String: String]
     let variables: [String: String]
 }
 

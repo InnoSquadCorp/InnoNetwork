@@ -47,6 +47,11 @@
 "HLSDownloadError.selection.maximumBandwidth" = "the maximum bandwidth %@ bps";
 "HLSDownloadError.selection.compatible" = "the declared playback capabilities";
 
+"HLSPresentationInspectionError.playlistLimitExceeded" = "The HLS presentation references more than %@ bounded playlists.";
+"HLSPresentationInspectionError.totalPlaylistBytesExceeded" = "The HLS presentation playlists exceed the %@-byte inspection limit.";
+"HLSPresentationInspectionError.recovery.limitPlaylists" = "Inspect a smaller presentation or raise the explicit playlist-count limit.";
+"HLSPresentationInspectionError.recovery.limitBytes" = "Inspect a smaller presentation or raise the explicit total-byte limit.";
+
 "HLSDownloadError.recovery.validatePlaylist" = "Validate the source playlist and make sure it is a complete HLS VOD playlist.";
 "HLSDownloadError.recovery.retryTransientHTTP" = "Retry according to the configured retry policy and server Retry-After guidance.";
 "HLSDownloadError.recovery.verifyCredentials" = "Verify the request adapter, credentials, and authorization for every playlist, media, and key request.";

@@ -24,6 +24,18 @@ struct HLSAttributeList {
         Set(values.keys)
     }
 
+    var semanticFingerprint: String {
+        HLSContentFingerprint.sha256(
+            attributeNames.sorted().map { name in
+                [
+                    name,
+                    isQuoted(name) ? "quoted" : "unquoted",
+                    values[name] ?? "",
+                ].joined(separator: "\u{1f}")
+            }.joined(separator: "\u{1e}")
+        )
+    }
+
     func merging(
         _ other: HLSAttributeList
     ) throws -> HLSAttributeList {
@@ -131,5 +143,32 @@ enum HLSAttributeListParser {
             values: attributes,
             quotedNames: quotedNames
         )
+    }
+}
+
+enum HLSDateRangeFingerprintParser {
+    private static let prefix = "#EXT-X-DATERANGE:"
+
+    static func parse(_ contents: String) -> [String: String] {
+        var attributesByID: [String: HLSAttributeList] = [:]
+        for line in contents.split(whereSeparator: \.isNewline) {
+            guard line.hasPrefix(prefix),
+                let attributes = try? HLSAttributeListParser.parse(
+                    String(line.dropFirst(prefix.count))
+                ),
+                let id = attributes["ID"]
+            else {
+                continue
+            }
+            if let existing = attributesByID[id] {
+                guard let merged = try? existing.merging(attributes) else {
+                    continue
+                }
+                attributesByID[id] = merged
+            } else {
+                attributesByID[id] = attributes
+            }
+        }
+        return attributesByID.mapValues(\.semanticFingerprint)
     }
 }

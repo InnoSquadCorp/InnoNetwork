@@ -416,6 +416,10 @@ for await event in await manager.events(for: task) {
 - value-redacted structured playlist inspection with deterministic severity,
   operation scope, one-based source lines, and separate single-file/offline
   capability flags
+- bounded presentation-graph inspection that fetches referenced variants and
+  renditions with deterministic indices, then diagnoses draft-22 target,
+  playlist type, timeline, program-date-time, Date Range, discontinuity, and
+  server-control consistency without loading media segments
 - opt-in Apple-oriented authoring guidance for target duration, independent
   segments, TLS, variant ordering, codecs, average bandwidth, resolution,
   frame rate, mixed dynamic range, score consistency, caption language,

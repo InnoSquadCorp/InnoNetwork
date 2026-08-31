@@ -173,6 +173,9 @@ public struct PlaylistResolver: Sendable {
                 response: transfer.response
             ),
             contents: playlist,
+            dateRangeFingerprints: HLSDateRangeFingerprintParser.parse(
+                expansion.contents
+            ),
             variables: expansion.variables
         )
     }

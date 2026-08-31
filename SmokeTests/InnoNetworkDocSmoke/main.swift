@@ -346,6 +346,26 @@ private func compileHLSArticleExamples() async throws {
     _ = inspection.diagnostics.map {
         ($0.code, $0.severity, $0.scope, $0.lineNumber)
     }
+    let presentation =
+        try await smokeHLSConfiguredResolver
+        .inspectPresentation(
+            from: sourceURL,
+            using: .advanced(
+                limits: HLSPresentationInspectionLimitPack(
+                    maximumPlaylistCount: 16,
+                    maximumConcurrentRequests: 2
+                )
+            )
+        )
+    _ = presentation.isConformant
+    _ = presentation.diagnostics.map {
+        (
+            $0.code,
+            $0.severity,
+            $0.playlistIndex,
+            $0.relatedPlaylistIndex
+        )
+    }
     let secondEdition = try smokeHLSResolver.resolve(
         """
         #EXTM3U

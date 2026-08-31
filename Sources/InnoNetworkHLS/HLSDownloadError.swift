@@ -576,7 +576,7 @@ extension HLSVariantSelectionPolicy {
 }
 
 @inline(__always)
-private func hlsLocalized(_ key: String) -> String {
+func hlsLocalized(_ key: String) -> String {
     NSLocalizedString(
         key,
         bundle: .module,
@@ -585,7 +585,7 @@ private func hlsLocalized(_ key: String) -> String {
 }
 
 @inline(__always)
-private func hlsLocalizedFormat(
+func hlsLocalizedFormat(
     _ key: String,
     _ arguments: CVarArg...
 ) -> String {
