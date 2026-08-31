@@ -14,7 +14,9 @@ struct HLSLiveHealthAnalyzerTests {
             degradedDeltaRecoveryCount: .max,
             degradedPathwayChangeCount: .max,
             degradedLatencyDrift: .infinity,
-            criticalLatencyDrift: -.infinity
+            criticalLatencyDrift: -.infinity,
+            degradedPlaylistAgeMultiplier: .infinity,
+            criticalPlaylistAgeMultiplier: -.infinity
         )
 
         #expect(thresholds.degradedStagnantSnapshotCount == 1)
@@ -23,6 +25,8 @@ struct HLSLiveHealthAnalyzerTests {
         #expect(thresholds.degradedPathwayChangeCount == 10_000)
         #expect(thresholds.degradedLatencyDrift == 3)
         #expect(thresholds.criticalLatencyDrift == 15)
+        #expect(thresholds.degradedPlaylistAgeMultiplier == 3)
+        #expect(thresholds.criticalPlaylistAgeMultiplier == 6)
     }
 
     @Test("partial edge estimates latency from program time and hold-back")
@@ -149,6 +153,65 @@ struct HLSLiveHealthAnalyzerTests {
         #expect(health.pathwayChangeCount == 2)
     }
 
+    @Test("playlist response age degrades live but not ended media")
+    func diagnosesHTTPFreshnessOnlyWhileLive() throws {
+        let measuredAt = Date(timeIntervalSince1970: 100)
+        let freshness = try httpFreshness(
+            age: 12,
+            measuredAt: measuredAt
+        )
+        let live = try snapshot(
+            sequenceNumber: 40,
+            duration: 4,
+            httpFreshness: freshness
+        )
+        let ended = try snapshot(
+            sequenceNumber: 40,
+            duration: 4,
+            isEnded: true,
+            httpFreshness: freshness
+        )
+
+        var liveAnalyzer = HLSLiveHealthAnalyzer()
+        let liveHealth = liveAnalyzer.ingest(
+            live,
+            observedAt: measuredAt
+        )
+        var endedAnalyzer = HLSLiveHealthAnalyzer()
+        let endedHealth = endedAnalyzer.ingest(
+            ended,
+            observedAt: measuredAt
+        )
+        var tunedAnalyzer = HLSLiveHealthAnalyzer(
+            configuration: .advanced(
+                thresholds: HLSLiveHealthThresholdPack(
+                    degradedPlaylistAgeMultiplier: 4,
+                    criticalPlaylistAgeMultiplier: 8
+                )
+            )
+        )
+        let tunedHealth = tunedAnalyzer.ingest(
+            live,
+            observedAt: measuredAt
+        )
+        var delayedAnalyzer = HLSLiveHealthAnalyzer()
+        let delayedHealth = delayedAnalyzer.ingest(
+            live,
+            observedAt: measuredAt.addingTimeInterval(4)
+        )
+
+        #expect(liveHealth.status == .degraded)
+        #expect(liveHealth.issues == [.stalePlaylistResponse])
+        #expect(liveHealth.estimatedPlaylistAge == 12)
+        #expect(endedHealth.status == .healthy)
+        #expect(endedHealth.issues.isEmpty)
+        #expect(endedHealth.estimatedPlaylistAge == 12)
+        #expect(tunedHealth.status == .healthy)
+        #expect(tunedHealth.issues.isEmpty)
+        #expect(delayedHealth.status == .degraded)
+        #expect(delayedHealth.estimatedPlaylistAge == 16)
+    }
+
     @Test("a regressed live edge is immediately critical")
     func detectsLiveEdgeRegression() throws {
         let newer = try snapshot(sequenceNumber: 10, duration: 4)
@@ -225,7 +288,9 @@ struct HLSLiveHealthAnalyzerTests {
         partialDurations: [TimeInterval] = [],
         serverControl: String? = nil,
         pathwayID: String? = nil,
-        reloadMode: HLSLiveReloadMode = .initial
+        reloadMode: HLSLiveReloadMode = .initial,
+        isEnded: Bool = false,
+        httpFreshness: HLSLiveHTTPFreshness? = nil
     ) throws -> HLSLivePlaylistSnapshot {
         let sourceURL = try #require(
             URL(string: "https://media.example/health.m3u8")
@@ -283,7 +348,33 @@ struct HLSLiveHealthAnalyzerTests {
             generation: 0,
             reloadMode: reloadMode,
             isDeltaUpdate: false,
-            isEnded: false
+            isEnded: isEnded,
+            httpFreshness: httpFreshness
+        )
+    }
+
+    private func httpFreshness(
+        age: Int,
+        measuredAt: Date
+    ) throws -> HLSLiveHTTPFreshness {
+        let url = try #require(
+            URL(string: "https://media.example/health.m3u8")
+        )
+        let response = try #require(
+            HTTPURLResponse(
+                url: url,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Age": String(age)]
+            )
+        )
+        return try #require(
+            HLSLiveHTTPFreshness(
+                response: HLSHTTPResponseFreshness(
+                    response: response
+                ),
+                measuredAt: measuredAt
+            )
         )
     }
 }

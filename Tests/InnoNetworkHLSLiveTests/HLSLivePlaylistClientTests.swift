@@ -9,6 +9,112 @@ import os
 // registry, so they intentionally live under one serialization boundary.
 @Suite("HLS live networking", .serialized)
 struct HLSLivePlaylistClientTests {
+    @Test("HTTP freshness is typed and contributes to live health")
+    func exposesHTTPFreshness() async throws {
+        let sourceURL = try #require(
+            URL(string: "https://media.example/freshness.m3u8")
+        )
+        let measuredAt = Date(timeIntervalSince1970: 110)
+        let session = makeSession()
+        defer {
+            session.invalidateAndCancel()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            response(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:1
+                #EXTINF:4,
+                segment.ts
+                """,
+                headers: [
+                    "Date": "Thu, 01 Jan 1970 00:01:40 GMT",
+                    "Last-Modified": "Thu, 01 Jan 1970 00:01:00 GMT",
+                    "Age": "5",
+                ]
+            ),
+            for: sourceURL
+        )
+        let client = HLSLivePlaylistClient(
+            resolver: PlaylistResolver(session: session),
+            configuration: .safeDefaults(),
+            now: { measuredAt }
+        )
+
+        let snapshot = try await client.snapshot(from: sourceURL)
+        let freshness = try #require(snapshot.httpFreshness)
+
+        #expect(freshness.measuredAt == measuredAt)
+        #expect(freshness.responseDate == Date(timeIntervalSince1970: 100))
+        #expect(freshness.lastModified == Date(timeIntervalSince1970: 60))
+        #expect(freshness.reportedAge == 5)
+        #expect(freshness.estimatedResponseAge == 10)
+        #expect(freshness.estimatedPlaylistAge == 50)
+
+        var analyzer = HLSLiveHealthAnalyzer()
+        let health = analyzer.ingest(
+            snapshot,
+            observedAt: measuredAt
+        )
+        #expect(health.status == .critical)
+        #expect(health.issues == [.stalePlaylistResponse])
+        #expect(health.estimatedPlaylistAge == 50)
+    }
+
+    @Test("multivariant freshness follows the selected media response")
+    func usesSelectedMediaFreshness() async throws {
+        let masterURL = try #require(
+            URL(string: "https://media.example/freshness-master.m3u8")
+        )
+        let mediaURL = try #require(
+            URL(string: "https://media.example/freshness-media.m3u8")
+        )
+        let measuredAt = Date(timeIntervalSince1970: 200)
+        let session = makeSession()
+        defer {
+            session.invalidateAndCancel()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            response(
+                """
+                #EXTM3U
+                #EXT-X-STREAM-INF:BANDWIDTH=1000
+                freshness-media.m3u8
+                """,
+                headers: ["Age": "99"]
+            ),
+            for: masterURL
+        )
+        HLSLiveURLProtocol.register(
+            response(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:1
+                #EXTINF:4,
+                segment.ts
+                #EXT-X-ENDLIST
+                """,
+                headers: ["Age": "2"]
+            ),
+            for: mediaURL
+        )
+        let client = HLSLivePlaylistClient(
+            resolver: PlaylistResolver(session: session),
+            configuration: .safeDefaults(),
+            now: { measuredAt }
+        )
+
+        let snapshot = try await client.snapshot(from: masterURL)
+
+        #expect(snapshot.playlist.sourceURL == mediaURL)
+        #expect(snapshot.httpFreshness?.reportedAge == 2)
+        #expect(snapshot.httpFreshness?.estimatedPlaylistAge == 2)
+    }
+
     @Test("blocking delta reload reconstructs the complete live window")
     func reconstructsBlockingDeltaReload() async throws {
         let sourceURL = try #require(
@@ -40,7 +146,8 @@ struct HLSLivePlaylistClientTests {
                 #EXTINF:4,
                 11.ts
 
-                """
+                """,
+                headers: ["Age": "1"]
             ),
             for: sourceURL
         )
@@ -57,7 +164,8 @@ struct HLSLivePlaylistClientTests {
                 12.ts
                 #EXT-X-ENDLIST
 
-                """
+                """,
+                headers: ["Age": "2"]
             ),
             for: reloadURL
         )
@@ -83,6 +191,10 @@ struct HLSLivePlaylistClientTests {
         #expect(snapshots[1].generation == 1)
         #expect(snapshots[1].isDeltaUpdate)
         #expect(snapshots[1].isEnded)
+        #expect(
+            snapshots.map { $0.httpFreshness?.reportedAge }
+                == [1, 2]
+        )
         #expect(
             HLSLiveURLProtocol.capturedRequests().compactMap(\.url)
                 == [sourceURL, reloadURL]
@@ -851,15 +963,16 @@ struct HLSLivePlaylistClientTests {
     }
 
     private func response(
-        _ playlist: String
+        _ playlist: String,
+        headers: [String: String] = [:]
     ) -> HLSLiveURLProtocol.Response {
-        HLSLiveURLProtocol.Response(
+        var responseHeaders = headers
+        responseHeaders["Content-Type"] =
+            "application/vnd.apple.mpegurl"
+        return HLSLiveURLProtocol.Response(
             statusCode: 200,
             data: Data(playlist.utf8),
-            headers: [
-                "Content-Type":
-                    "application/vnd.apple.mpegurl"
-            ]
+            headers: responseHeaders
         )
     }
 }

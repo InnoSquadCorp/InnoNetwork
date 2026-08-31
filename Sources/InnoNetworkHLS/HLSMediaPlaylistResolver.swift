@@ -3,6 +3,7 @@ import Foundation
 struct HLSResolvedMediaSelection: Sendable {
     let playlist: HLSPlaylist
     let mediaPlaylistIdentity: HLSContentIdentity
+    let responseFreshness: HLSHTTPResponseFreshness
     let selectedVariant: HLSVariant?
     let renditions: [HLSRendition]
     let pathwayID: String?
@@ -57,6 +58,7 @@ struct HLSMediaPlaylistResolver: Sendable {
             return HLSResolvedMediaSelection(
                 playlist: playlist,
                 mediaPlaylistIdentity: document.identity,
+                responseFreshness: document.responseFreshness,
                 selectedVariant: nil,
                 renditions: [],
                 pathwayID: nil,
@@ -127,6 +129,8 @@ struct HLSMediaPlaylistResolver: Sendable {
                 return HLSResolvedMediaSelection(
                     playlist: mediaDocument.playlist,
                     mediaPlaylistIdentity: mediaDocument.identity,
+                    responseFreshness:
+                        mediaDocument.responseFreshness,
                     selectedVariant: candidate.variant,
                     renditions: candidate.renditions,
                     pathwayID: candidate.pathwayID,

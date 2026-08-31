@@ -71,6 +71,10 @@ public struct HLSLiveHealthAnalyzer: Sendable {
             in: snapshot,
             position: currentEdge
         )
+        let estimatedPlaylistAge = estimatedPlaylistAge(
+            in: snapshot,
+            observedTimestamp: newestObservedAt
+        )
         let availableWindowDuration = windowDuration(
             in: snapshot
         )
@@ -82,6 +86,13 @@ public struct HLSLiveHealthAnalyzer: Sendable {
             recommendedLatency.map { max(0, latency - $0) }
         }
         let thresholds = configuration.thresholds
+        let freshness = freshnessStatus(
+            estimatedPlaylistAge: estimatedPlaylistAge,
+            targetDuration: snapshot.playlist.targetDuration,
+            availableWindowDuration: availableWindowDuration,
+            isEnded: snapshot.isEnded,
+            thresholds: thresholds
+        )
         let isWindowAtRisk =
             stagnantDuration > 0
             && availableWindowDuration > 0
@@ -101,6 +112,9 @@ public struct HLSLiveHealthAnalyzer: Sendable {
             $0 >= thresholds.degradedLatencyDrift
         }) == true {
             issues.append(.elevatedLiveLatency)
+        }
+        if freshness.isStale {
+            issues.append(.stalePlaylistResponse)
         }
         if deltaRecoveryCount
             >= thresholds.degradedDeltaRecoveryCount
@@ -123,6 +137,7 @@ public struct HLSLiveHealthAnalyzer: Sendable {
             || latencyDrift.map({
                 $0 >= thresholds.criticalLatencyDrift
             }) == true
+            || freshness.isCritical
             || isWindowAtRisk
         let status: HLSLiveHealthStatus
         if isCritical {
@@ -143,6 +158,7 @@ public struct HLSLiveHealthAnalyzer: Sendable {
             estimatedLiveEdgeDate: edgeDate,
             estimatedLiveLatency: estimatedLatency,
             recommendedLiveLatency: recommendedLatency,
+            estimatedPlaylistAge: estimatedPlaylistAge,
             availableWindowDuration: availableWindowDuration,
             stagnantSnapshotCount: stagnantSnapshotCount,
             stagnantDuration: stagnantDuration,
@@ -353,6 +369,61 @@ public struct HLSLiveHealthAnalyzer: Sendable {
         return duration.isFinite ? max(0, duration) : 0
     }
 
+    private func freshnessStatus(
+        estimatedPlaylistAge: TimeInterval?,
+        targetDuration: Int?,
+        availableWindowDuration: TimeInterval,
+        isEnded: Bool,
+        thresholds: HLSLiveHealthThresholdPack
+    ) -> (isStale: Bool, isCritical: Bool) {
+        guard
+            !isEnded,
+            let estimatedPlaylistAge,
+            estimatedPlaylistAge.isFinite,
+            estimatedPlaylistAge >= 0,
+            let targetDuration,
+            targetDuration > 0
+        else {
+            return (false, false)
+        }
+        let target = TimeInterval(targetDuration)
+        let degradedThreshold =
+            target * thresholds.degradedPlaylistAgeMultiplier
+        let criticalThreshold = max(
+            target * thresholds.criticalPlaylistAgeMultiplier,
+            availableWindowDuration
+        )
+        return (
+            estimatedPlaylistAge >= degradedThreshold,
+            estimatedPlaylistAge >= criticalThreshold
+        )
+    }
+
+    private func estimatedPlaylistAge(
+        in snapshot: HLSLivePlaylistSnapshot,
+        observedTimestamp: TimeInterval?
+    ) -> TimeInterval? {
+        guard
+            let freshness = snapshot.httpFreshness,
+            let baseAge = freshness.estimatedPlaylistAge,
+            baseAge.isFinite,
+            baseAge >= 0
+        else {
+            return nil
+        }
+        guard
+            let observedTimestamp,
+            let measuredTimestamp = finiteTimestamp(
+                freshness.measuredAt
+            )
+        else {
+            return baseAge
+        }
+        let elapsed = max(0, observedTimestamp - measuredTimestamp)
+        let age = baseAge + elapsed
+        return age.isFinite ? age : nil
+    }
+
     private func compare(
         _ lhs: HLSLiveEdgePosition,
         _ rhs: HLSLiveEdgePosition
@@ -407,6 +478,7 @@ public struct HLSLiveHealthAnalyzer: Sendable {
         estimatedLiveEdgeDate: nil,
         estimatedLiveLatency: nil,
         recommendedLiveLatency: nil,
+        estimatedPlaylistAge: nil,
         availableWindowDuration: 0,
         stagnantSnapshotCount: 0,
         stagnantDuration: 0,

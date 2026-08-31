@@ -405,8 +405,8 @@ types and members in addition to top-level declarations. The grouped ledger
 below keeps the high-level compatibility classification readable for the
 5.x release line.
 
-The machine-checked snapshot currently partitions all 2,559 declarations into
-305 Stable consumer declarations, 2,221 Provisionally Stable consumer
+The machine-checked snapshot currently partitions all 2,571 declarations into
+305 Stable consumer declarations, 2,233 Provisionally Stable consumer
 declarations, and 33 opt-in SPI declarations. The three sets are disjoint and
 exhaustive. `Scripts/symbols/stable-rules.tsv` maps the Stable ledger to symbol
 paths, while the compiler-authored SPI flag is snapshotted in
@@ -588,7 +588,8 @@ Stable.
 ### InnoNetworkHLSLive
 
 - `HLSLiveConfiguration`, `HLSLiveEncryptionKeyPreloading`, `HLSLiveError`,
-  `HLSLivePartialSegment`, `HLSLiveReloadMode`, `HLSLiveEdgePosition`,
+  `HLSLiveHTTPFreshness`, `HLSLivePartialSegment`, `HLSLiveReloadMode`,
+  `HLSLiveEdgePosition`,
   `HLSLiveHealthAnalyzer`, `HLSLiveHealthConfiguration`,
   `HLSLiveHealthIssue`, `HLSLiveHealthSnapshot`, `HLSLiveHealthStatus`,
   `HLSLiveHealthThresholdPack`, `HLSLiveDVRConfiguration`, `HLSLiveDVRError`,

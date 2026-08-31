@@ -103,7 +103,8 @@ public struct HLSLivePlaylistClient: Sendable {
             availableRenditions: presentation.renditions,
             pathwayID: presentation.pathwayID,
             multivariantVariables:
-                presentation.multivariantVariables
+                presentation.multivariantVariables,
+            measuredAt: now()
         )
     }
 
@@ -121,7 +122,8 @@ public struct HLSLivePlaylistClient: Sendable {
             from: document,
             previous: nil,
             generation: generation,
-            multivariantVariables: multivariantVariables
+            multivariantVariables: multivariantVariables,
+            measuredAt: now()
         )
     }
 
@@ -290,7 +292,8 @@ public struct HLSLivePlaylistClient: Sendable {
                     pathwayID: pathwayID,
                     multivariantVariables:
                         multivariantVariables,
-                    reloadMode: reloadMode
+                    reloadMode: reloadMode,
+                    measuredAt: now()
                 )
             } catch HLSLiveError.deltaBaseUnavailable {
                 guard

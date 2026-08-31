@@ -29,10 +29,15 @@ private let smokeHLSLiveHealthAnalyzer = HLSLiveHealthAnalyzer(
     configuration: .advanced(
         thresholds: HLSLiveHealthThresholdPack(
             degradedStagnantSnapshotCount: 3,
-            criticalStagnantSnapshotCount: 6
+            criticalStagnantSnapshotCount: 6,
+            degradedPlaylistAgeMultiplier: 3,
+            criticalPlaylistAgeMultiplier: 6
         )
     )
 )
+private let smokeHLSLiveHTTPFreshnessType = HLSLiveHTTPFreshness.self
+private let smokeHLSLiveFreshnessIssue =
+    HLSLiveHealthIssue.stalePlaylistResponse
 private let smokeHLSLiveDVRConfiguration =
     HLSLiveDVRConfiguration.advanced(
         parts: HLSLiveDVRPartPack(

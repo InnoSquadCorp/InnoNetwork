@@ -77,7 +77,9 @@ var healthAnalyzer = HLSLiveHealthAnalyzer(
     configuration: .advanced(
         thresholds: HLSLiveHealthThresholdPack(
             degradedStagnantSnapshotCount: 3,
-            criticalStagnantSnapshotCount: 6
+            criticalStagnantSnapshotCount: 6,
+            degradedPlaylistAgeMultiplier: 3,
+            criticalPlaylistAgeMultiplier: 6
         )
     )
 )
@@ -97,6 +99,17 @@ regression, repeated equal edges, delta full-reload recovery, pathway changes,
 and retained-window risk remain useful without that timing metadata. The
 application owns the observation clock, analyzer lifetime, UI, alerting, and
 any retry or pathway decision.
+
+Valid HTTP `Date`, `Age`, and `Last-Modified` values become
+``HLSLiveHTTPFreshness`` on each snapshot. Raw header strings are not retained
+or exposed. Response age uses the greater of valid `Age` and apparent `Date`
+age; playlist age also incorporates valid modification time. Malformed values
+remain unavailable. The analyzer advances that estimate to the caller's
+`observedAt` time. For a live response, it reports
+``HLSLiveHealthIssue/stalePlaylistResponse`` at the configured target-duration
+multipliers and treats it as critical only after the critical multiplier and
+retained-window boundary. An ended playlist keeps the evidence without a stale
+health issue.
 
 ## Bounded live DVR
 
@@ -276,6 +289,7 @@ instead of resuming it.
 ### Snapshots
 
 - ``HLSLivePlaylistSnapshot``
+- ``HLSLiveHTTPFreshness``
 - ``HLSLiveSegment``
 - ``HLSLivePartialSegment``
 - ``HLSLiveReloadMode``

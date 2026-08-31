@@ -38,6 +38,7 @@ package struct HLSLivePartialSegmentRecord: Equatable, Sendable {
 
 package struct HLSLiveResolvedDocument: Sendable {
     package let playlist: HLSPlaylist
+    package let responseFreshness: HLSHTTPResponseFreshness
     package let declaredMediaSequence: Int64
     package let segments: [HLSLiveSegmentRecord]
     package let initializationSegments: [HLSLiveInitializationSegmentRecord]
@@ -108,7 +109,10 @@ package extension PlaylistResolver {
             pathwayCandidates = []
         }
         return HLSLiveResolvedPresentation(
-            document: try Self.liveDocument(from: selection.playlist),
+            document: try Self.liveDocument(
+                from: selection.playlist,
+                responseFreshness: selection.responseFreshness
+            ),
             selectedVariant: selection.selectedVariant,
             renditions: selection.renditions,
             pathwayID: selection.pathwayID,
@@ -130,7 +134,10 @@ package extension PlaylistResolver {
             requestTimeout: requestTimeout,
             disablesCaching: true
         )
-        return try Self.liveDocument(from: document.playlist)
+        return try Self.liveDocument(
+            from: document.playlist,
+            responseFreshness: document.responseFreshness
+        )
     }
 
     func resolveLiveDocument(
@@ -146,11 +153,15 @@ package extension PlaylistResolver {
             requestTimeout: requestTimeout,
             disablesCaching: true
         )
-        return try Self.liveDocument(from: document.playlist)
+        return try Self.liveDocument(
+            from: document.playlist,
+            responseFreshness: document.responseFreshness
+        )
     }
 
     private static func liveDocument(
-        from playlist: HLSPlaylist
+        from playlist: HLSPlaylist,
+        responseFreshness: HLSHTTPResponseFreshness
     ) throws -> HLSLiveResolvedDocument {
         guard
             playlist.kind == .media,
@@ -267,6 +278,7 @@ package extension PlaylistResolver {
 
         return HLSLiveResolvedDocument(
             playlist: playlist,
+            responseFreshness: responseFreshness,
             declaredMediaSequence: media.mediaSequence,
             segments: segments,
             initializationSegments: media.resources.compactMap {

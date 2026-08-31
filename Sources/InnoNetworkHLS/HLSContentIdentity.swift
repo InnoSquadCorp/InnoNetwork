@@ -48,6 +48,7 @@ struct HLSContentIdentity: Codable, Equatable, Sendable {
 struct HLSResolvedPlaylistDocument: Sendable {
     let playlist: HLSPlaylist
     let identity: HLSContentIdentity
+    let responseFreshness: HLSHTTPResponseFreshness
     let contents: String
     let dateRangeFingerprints: [String: String]
     let variables: [String: String]

@@ -172,6 +172,9 @@ public struct PlaylistResolver: Sendable {
                 playlistData: data,
                 response: transfer.response
             ),
+            responseFreshness: HLSHTTPResponseFreshness(
+                response: transfer.response
+            ),
             contents: playlist,
             dateRangeFingerprints: HLSDateRangeFingerprintParser.parse(
                 expansion.contents

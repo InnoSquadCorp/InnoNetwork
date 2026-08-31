@@ -536,8 +536,9 @@ for await event in await manager.events(for: task) {
   Ranges, with one query-clean full-reload recovery when history is missing
 - per-snapshot reload-mode attribution plus a pure, caller-clocked live-health
   analyzer for edge regression, stagnation, hold-back latency, repeated delta
-  recovery, pathway instability, and live-window loss risk; recovery and UI
-  policy remain application-owned
+  recovery, pathway instability, typed HTTP freshness, and live-window loss
+  risk; raw header strings stay private and recovery/UI policy remain
+  application-owned
 - polling fallback with finite timing bounds when blocking reload is not
   advertised
 - uncached reload transport, typed `livePlaylistReload` request purpose, and

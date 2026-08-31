@@ -49,6 +49,10 @@ Versioning.
   segments and Date Ranges by media sequence, falls back once to a query-clean
   full reload when history is unavailable, disables HTTP caching for every
   reload, and closes its bounded-memory snapshot stream at `EXT-X-ENDLIST`.
+  Valid HTTP `Date`, `Age`, and `Last-Modified` metadata now becomes typed,
+  value-only freshness evidence on each snapshot. The pure health analyzer
+  reports tunable stale-response degradation and risk without exposing raw
+  header strings or changing reload policy.
   Reload requests retain the shared typed request-policy, URL-admission,
   redirect, body-boundary, and value-redacted pathway-observation behavior.
 - `HLSLiveDVRRecorder` captures complete live TS or fMP4 segments into a

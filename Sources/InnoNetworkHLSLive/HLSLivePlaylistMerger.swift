@@ -10,7 +10,8 @@ enum HLSLivePlaylistMerger {
         availableRenditions: [HLSRendition] = [],
         pathwayID: String? = nil,
         multivariantVariables: [String: String] = [:],
-        reloadMode: HLSLiveReloadMode = .initial
+        reloadMode: HLSLiveReloadMode = .initial,
+        measuredAt: Date
     ) throws -> HLSLivePlaylistSnapshot {
         guard document.playlist.kind == .media else {
             throw HLSLiveError.mediaPlaylistRequired
@@ -54,6 +55,10 @@ enum HLSLivePlaylistMerger {
             reloadMode: reloadMode,
             isDeltaUpdate: deltaUpdate != nil,
             isEnded: document.hasEndList,
+            httpFreshness: HLSLiveHTTPFreshness(
+                response: document.responseFreshness,
+                measuredAt: measuredAt
+            ),
             initializationSegments:
                 document.initializationSegments.map(
                     HLSLiveInitializationSegment.init(record:)

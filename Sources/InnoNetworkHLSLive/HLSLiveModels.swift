@@ -170,6 +170,9 @@ public struct HLSLivePlaylistSnapshot: Equatable, Sendable {
     /// Whether the media playlist declared `EXT-X-ENDLIST`.
     public let isEnded: Bool
 
+    /// Parsed and estimated HTTP freshness, without raw header values.
+    public let httpFreshness: HLSLiveHTTPFreshness?
+
     let initializationSegments: [HLSLiveInitializationSegment]
     let encryptionMethod: String?
     let multivariantVariables: [String: String]
@@ -186,6 +189,7 @@ public struct HLSLivePlaylistSnapshot: Equatable, Sendable {
         reloadMode: HLSLiveReloadMode = .initial,
         isDeltaUpdate: Bool,
         isEnded: Bool,
+        httpFreshness: HLSLiveHTTPFreshness? = nil,
         initializationSegments: [HLSLiveInitializationSegment] = [],
         encryptionMethod: String? = nil,
         multivariantVariables: [String: String] = [:]
@@ -201,6 +205,7 @@ public struct HLSLivePlaylistSnapshot: Equatable, Sendable {
         self.reloadMode = reloadMode
         self.isDeltaUpdate = isDeltaUpdate
         self.isEnded = isEnded
+        self.httpFreshness = httpFreshness
         self.initializationSegments = initializationSegments
         self.encryptionMethod = encryptionMethod
         self.multivariantVariables = multivariantVariables
