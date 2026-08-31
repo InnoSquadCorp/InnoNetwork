@@ -109,6 +109,23 @@ failure that is normally worth retrying.
 
 ## Playback configuration
 
+Configure CMCD before creating a player item or otherwise loading the asset:
+
+```swift
+let asset = AVURLAsset(url: sourceURL)
+let cmcdStatus = HLSPlaybackAssetConfigurator().apply(
+    .enabled,
+    to: asset
+)
+let playerItem = AVPlayerItem(asset: asset)
+```
+
+AVFoundation owns every generated CMCD header name and value. The typed result
+reports when the operating system cannot enable the feature, and the caller
+continues to own the asset and player lifecycle. watchOS reports
+``HLSCommonMediaClientDataStatus/unavailable`` because it does not expose the
+asset resource loader needed to configure this behavior.
+
 ``HLSPlaybackConfigurator`` applies a value-typed command to a caller-owned
 `AVPlayerItem` without taking over the player lifecycle:
 
@@ -478,6 +495,9 @@ expiry, deletion, and server-side invalidation.
 
 ### Playback configuration
 
+- ``HLSPlaybackAssetConfigurator``
+- ``HLSCommonMediaClientDataPolicy``
+- ``HLSCommonMediaClientDataStatus``
 - ``HLSPlaybackConfigurator``
 - ``HLSPlaybackConfiguration``
 - ``HLSPlaybackConfigurationResult``

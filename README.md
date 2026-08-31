@@ -584,6 +584,10 @@ for await event in await manager.events(for: task) {
 
 ### `InnoNetworkHLSAVFoundation`
 
+- caller-owned `AVURLAsset` CMCD opt-in with typed availability status while
+  AVFoundation retains ownership of generated request-header values; watchOS
+  reports the feature as unavailable because it does not expose asset resource
+  loaders
 - typed, value-based `AVPlayerItem` configuration for variant/network-cost
   limits, live-edge offset, server interstitial policy, automatic/disabled
   media groups, and Custom Media Selection preferences. The caller keeps

@@ -155,6 +155,12 @@ private let smokeHLSInterstitial = HLSInterstitial(
 )
 private let smokeHLSInterstitialAssetResolutionType =
     HLSInterstitialAssetResolution.self
+private let smokeHLSPlaybackAssetConfiguratorType =
+    HLSPlaybackAssetConfigurator.self
+private let smokeHLSCommonMediaClientDataPolicy =
+    HLSCommonMediaClientDataPolicy.enabled
+private let smokeHLSCommonMediaClientDataStatusType =
+    HLSCommonMediaClientDataStatus.self
 
 private struct SmokeHLSRequestObserver: HLSRequestEventObserving {
     func hlsRequestDidEmit(_ event: HLSRequestEvent) async {

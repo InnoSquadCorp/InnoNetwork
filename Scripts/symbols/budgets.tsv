@@ -5,9 +5,9 @@ core.allowlist	786
 download.allowlist	94
 hls.allowlist	730
 hls-live.allowlist	219
-hls-avfoundation.allowlist	392
+hls-avfoundation.allowlist	402
 openapi.allowlist	36
 testsupport.allowlist	84
 trust.allowlist	17
 websocket.allowlist	130
-TOTAL	2549
+TOTAL	2559

@@ -9,6 +9,10 @@ Versioning.
 
 ### Added
 
+- `HLSPlaybackAssetConfigurator` enables AVFoundation-managed CMCD request
+  headers on caller-owned URL assets and reports unsupported operating systems
+  (including watchOS, which has no asset resource-loader API) without exposing
+  or generating transport header values itself.
 - Apple interstitial metadata now types `X-CONTENT-MAY-VARY`, preserving its
   coordinated-playback guarantee while treating missing or future values as
   content that may vary, as required by the current HLS draft.
