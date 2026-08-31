@@ -64,10 +64,12 @@ The `CI` workflow must pass all of the following:
    The canonical coverage lane also repeats the deterministic fixture,
    mutation, scaling, and race subset through
    `bash Scripts/run_hls_quality_gates.sh --skip-build`. That command also runs
-   Apple's Media Stream Validator and HLS Report when their separate developer
-   download is installed; otherwise it prints `NOT RUN`. The full local release
-   preflight passes `--require-apple-tools` and fails closed when either binary
-   is unavailable.
+   the AVPlayer decoded-audio runtime smoke through an ephemeral loopback HTTP
+   fixture on macOS 27 or newer, and Apple's Media Stream Validator plus HLS
+   Report when their separate developer download is installed. Unsupported
+   hosts or missing Apple tools print `NOT RUN`. The full local release
+   preflight passes `--require-runtime-smoke` and `--require-apple-tools`, then
+   fails closed when the runtime or either binary is unavailable.
 6. `rg -n "@unchecked Sendable"` across production targets, including
    `Sources/InnoNetworkMacros`, returns no matches.
 7. `bash Scripts/check_shared_coders_mutation.sh` confirms the shared default
@@ -223,7 +225,8 @@ xcrun swift build
 bash Scripts/run_bounded_parallel_tests.sh
 xcrun swift test --no-parallel --enable-code-coverage
 bash Scripts/run_hls_quality_gates.sh --skip-build
-bash Scripts/run_hls_quality_gates.sh --skip-build --require-apple-tools
+bash Scripts/run_hls_quality_gates.sh --skip-build \
+  --require-runtime-smoke --require-apple-tools
 rg -n "@unchecked Sendable" \
   Sources/InnoNetwork \
   Sources/InnoNetworkMacros \

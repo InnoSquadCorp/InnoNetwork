@@ -106,12 +106,14 @@ APPLE_HLS_REPORT="$work_dir/reporter-ok" \
     --require-tools \
     --report-root "$report_root" >"$work_dir/success.log"
 
-grep -Fq 'apple-hls-conformance: OK (2 playlists)' "$work_dir/success.log"
+grep -Fq 'apple-hls-conformance: OK (3 playlists)' "$work_dir/success.log"
 retained_directory="$(find "$report_root" -mindepth 1 -maxdepth 1 -type d)"
 test -s "$retained_directory/transport-stream.json"
 test -s "$retained_directory/transport-stream.html"
 test -s "$retained_directory/fragmented-mp4.json"
 test -s "$retained_directory/fragmented-mp4.html"
+test -s "$retained_directory/audio-fmp4.json"
+test -s "$retained_directory/audio-fmp4.html"
 
 cat >"$work_dir/validator-error-output" <<'EOF'
 #!/usr/bin/env bash
@@ -182,6 +184,8 @@ grep -Fq 'apple-hls-conformance: NOT RUN' "$work_dir/skipped.log"
 
 bash "$repo_root/Scripts/run_hls_quality_gates.sh" --help \
   | grep -Fq -- '--require-apple-tools'
+bash "$repo_root/Scripts/run_hls_quality_gates.sh" --help \
+  | grep -Fq -- '--require-runtime-smoke'
 if bash "$repo_root/Scripts/run_hls_quality_gates.sh" --unknown \
   >/dev/null 2>&1; then
   echo "Expected an unknown HLS quality-gate argument to fail." >&2

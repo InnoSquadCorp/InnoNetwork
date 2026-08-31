@@ -169,9 +169,10 @@ run_bounded_tests() {
   bash Scripts/run_bounded_parallel_tests.sh
 }
 
-run_apple_hls_conformance() {
+run_hls_conformance() {
   bash Scripts/run_hls_quality_gates.sh \
     --skip-build \
+    --require-runtime-smoke \
     --require-apple-tools \
     --apple-report-root "$artifacts_dir"
 }
@@ -262,7 +263,7 @@ run_gate() {
     consumer-examples) run_consumer_examples ;;
     openapi-generator) run_openapi_generator ;;
     bounded-tests) run_bounded_tests ;;
-    apple-hls-conformance) run_apple_hls_conformance ;;
+    apple-hls-conformance) run_hls_conformance ;;
     runtime-coverage) run_runtime_coverage ;;
     macro-coverage) run_macro_coverage ;;
     guarded-benchmarks) run_guarded_benchmarks ;;

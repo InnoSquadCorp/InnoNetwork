@@ -59,9 +59,10 @@
    examples, symbol links, and docs-contract wording stay in sync.
 8. Run `bash Scripts/run_local_release_preflight.sh --full` before changing the
    release status to ready. It reproduces the pre-tag validation, coverage,
-   benchmark, SBOM, DocC, five-platform build, and official Apple HLS
-   conformance gates locally. Install Apple's separate HTTP Live Streaming
-   Tools download first; the full preflight requires both
+   benchmark, SBOM, DocC, five-platform build, actual AVPlayer decoded-audio,
+   and official Apple HLS conformance gates locally. Run it on macOS 27 or
+   newer and install Apple's separate HTTP Live Streaming Tools download first;
+   the full preflight requires both
    `mediastreamvalidator` and `hlsreport` and retains their reports below
    `.build/local-release-preflight/`. Tag identity, signing, and publication
    remain GitHub-only responsibilities.

@@ -92,11 +92,13 @@ Versioning.
   container structure, runs deterministic parser mutations, rejects
   quadratic large-playlist scaling, and repeats live-stream plus
   AVFoundation event-delivery races. The bounded release shard inventory now
-  includes all three HLS test products. A fail-closed full-release gate
-  materializes the same pinned MPEG-TS and fragmented-MP4 fixtures for Apple's
-  separately installed Media Stream Validator and HLS Report, rejects
-  validator errors and report `Must Fix` findings, and retains diagnostic
-  artifacts.
+  includes all four HLS test products. A checked-in audio fragmented-MP4
+  fixture and ephemeral loopback server now prove real `AVPlayer` playback and
+  decoded PCM delivery on supported hosts. A fail-closed full-release gate
+  validates the pinned MPEG-TS, video fragmented-MP4, and audio fragmented-MP4
+  fixtures with Apple's separately installed Media Stream Validator and HLS
+  Report, rejects validator errors and report `Must Fix` findings, and retains
+  diagnostic artifacts.
 
 - `InnoNetworkHLSAVFoundation` adds an optional native companion for
   system-managed HLS persistence. It owns a reconnectable

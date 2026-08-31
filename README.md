@@ -489,14 +489,16 @@ for await event in await manager.events(for: task) {
   by SHA-256 and container/packet structure checks
 - deterministic parser mutations, sub-quadratic large-playlist scaling,
   concurrent live-stream isolation, and AVFoundation event terminal-race
-  gates; run them independently with
-  `bash Scripts/run_hls_quality_gates.sh`
+  gates, plus an actual loopback HTTP `AVPlayer` decoded-PCM smoke on macOS 27
+  or newer; run them independently with
+  `bash Scripts/run_hls_quality_gates.sh`. Older hosts report the runtime smoke
+  as `NOT RUN`
 - opt-in Apple Media Stream Validator and HLS Report validation for the pinned
-  MPEG-TS and fragmented-MP4 fixtures. Install Apple's separate HTTP Live
-  Streaming Tools download, then run
+  MPEG-TS, video fragmented-MP4, and audio fragmented-MP4 fixtures. Install
+  Apple's separate HTTP Live Streaming Tools download, then run
   `bash Scripts/run_hls_quality_gates.sh --require-apple-tools`; ordinary runs
   print `NOT RUN` when the tools are absent, while the full local release
-  preflight fails closed
+  preflight requires both Apple conformance and the supported runtime smoke
 - stable `HLSDownloadErrorCode`/`CustomNSError` telemetry and preserved
   `SendableUnderlyingError` transport context
 - advisory `prepare` metadata before destination selection, event-stream

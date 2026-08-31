@@ -1152,6 +1152,12 @@ validate_release_quality_gates() {
     "$repo_root/.github/workflows/ci.yml"
   require_contains 'bash Scripts/run_hls_quality_gates.sh --skip-build' \
     "$repo_root/docs/CI_DoC.md"
+  require_contains 'bash Scripts/run_hls_runtime_smoke.sh' \
+    "$repo_root/Scripts/run_hls_quality_gates.sh"
+  require_contains '--require-runtime-smoke' \
+    "$repo_root/Scripts/run_local_release_preflight.sh"
+  require_contains 'AVPlayer decoded-audio runtime smoke' \
+    "$repo_root/docs/CI_DoC.md"
   require_contains 'InnoNetworkHLSTests' \
     "$repo_root/Scripts/run_bounded_parallel_tests.sh"
   require_contains 'InnoNetworkHLSLiveTests' \

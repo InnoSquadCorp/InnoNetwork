@@ -137,6 +137,31 @@ struct HLSDecodedAudioTests {
         }
     }
 
+    @Test("Cancellation before a read reaches AVFoundation is preserved")
+    @available(macOS 27, iOS 27, tvOS 27, watchOS 27, visionOS 27, *)
+    @MainActor
+    func cancelledRead() async throws {
+        let sourceURL = try #require(
+            URL(string: "https://example.com/live.m3u8")
+        )
+        let playerItem = AVPlayerItem(url: sourceURL)
+        let output = HLSDecodedAudioOutput(
+            playerItem: playerItem,
+            configuration: try .float32()
+        )
+        defer { output.detach() }
+
+        let read = Task {
+            await Task.yield()
+            return try await output.nextSample()
+        }
+        read.cancel()
+
+        await #expect(throws: CancellationError.self) {
+            try await read.value
+        }
+    }
+
     @Test("Output removal follows wrapper lifetime")
     @available(macOS 27, iOS 27, tvOS 27, watchOS 27, visionOS 27, *)
     @MainActor

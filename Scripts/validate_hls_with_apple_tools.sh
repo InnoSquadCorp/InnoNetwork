@@ -12,8 +12,8 @@ usage() {
   cat <<'USAGE'
 Usage: bash Scripts/validate_hls_with_apple_tools.sh [options]
 
-Validate the embedded MPEG-TS and fragmented-MP4 HLS fixtures with Apple's
-Media Stream Validator and HLS Report tools.
+Validate the checked-in video and decoded-audio runtime HLS fixtures with
+Apple's Media Stream Validator and HLS Report tools.
 
   --require-tools       Fail when either official Apple tool is unavailable.
   --report-root <path>  Retain JSON, HTML, and command logs below this path.
@@ -110,8 +110,12 @@ else
 fi
 
 validated_count=0
-for fixture_name in transport-stream fragmented-mp4; do
-  playlist="$fixture_root/$fixture_name/index.m3u8"
+for fixture_name in transport-stream fragmented-mp4 audio-fmp4; do
+  if [[ "$fixture_name" == "audio-fmp4" ]]; then
+    playlist="$repo_root/Tests/Fixtures/HLSRuntime/audio-fmp4/index.m3u8"
+  else
+    playlist="$fixture_root/$fixture_name/index.m3u8"
+  fi
   validation_json="$report_directory/$fixture_name.json"
   validator_log="$report_directory/$fixture_name-validator.log"
 
