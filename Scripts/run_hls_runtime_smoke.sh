@@ -113,21 +113,45 @@ fi
 
 base_url="$(tr -d '\r\n' <"$ready_file")"
 playlist_url="$base_url/audio-fmp4/index.m3u8"
+live_preload_url="$base_url/live-preload/index.m3u8"
 curl --fail --silent --show-error "$playlist_url" \
   | grep -Fxq '#EXT-X-ENDLIST'
 
 test_command=(
   xcrun swift test
-  --filter 'HLS(DecodedAudio|IntegratedTimeline|LocalPlayback|OfflineAsset)RuntimeTests'
+  --filter 'HLS(DecodedAudio|IntegratedTimeline|LocalPlayback|OfflineAsset|LiveDVRPreload)RuntimeTests'
 )
 if [[ "$skip_build" == true ]]; then
   test_command+=(--skip-build)
 fi
 
 if ! INNONETWORK_HLS_RUNTIME_PLAYLIST_URL="$playlist_url" \
+  INNONETWORK_HLS_LIVE_PRELOAD_RUNTIME_URL="$live_preload_url" \
   "${test_command[@]}"; then
   cat "$server_log" >&2
   exit 1
 fi
 
-echo "hls-runtime-smoke: OK (macOS AVPlayer timeline/local bridge, paced decoded PCM, and offline movpkg)"
+preload_state="$(curl --fail --silent --show-error \
+  "$base_url/live-preload/state")"
+python3 - "$preload_state" <<'PY'
+import json
+import sys
+
+state = json.loads(sys.argv[1])
+expected = {
+    "initialization_map": 1,
+    "first_part": 1,
+    "second_part": 1,
+    "complete_parent": 0,
+    "first_reload_saw_preloads": True,
+    "second_reload_saw_preload": True,
+}
+for key, value in expected.items():
+    if state.get(key) != value:
+        raise SystemExit(
+            f"hls-runtime-smoke: unexpected live preload state: {state}"
+        )
+PY
+
+echo "hls-runtime-smoke: OK (AVPlayer timeline/local bridge, paced decoded PCM, offline movpkg, and LL-HLS DVR preloading)"

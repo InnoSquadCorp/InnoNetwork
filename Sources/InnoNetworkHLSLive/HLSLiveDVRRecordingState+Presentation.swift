@@ -64,6 +64,14 @@ extension HLSLiveDVRRecordingState {
             }
         case .fragmentedMP4:
             guard let candidate else {
+                if snapshot.segments.isEmpty,
+                    snapshot.playlist.lowLatency?.preloadHints
+                        .contains(where: {
+                            $0.type == .initializationMap
+                        }) == true
+                {
+                    return
+                }
                 throw HLSLiveDVRError.unsupportedFeature(
                     .missingInitializationSegment
                 )

@@ -5,6 +5,19 @@ final class HLSLiveURLProtocol: URLProtocol, @unchecked Sendable {
         let statusCode: Int
         let data: Data
         let headers: [String: String]
+        let delay: TimeInterval
+
+        init(
+            statusCode: Int,
+            data: Data,
+            headers: [String: String],
+            delay: TimeInterval = 0
+        ) {
+            self.statusCode = statusCode
+            self.data = data
+            self.headers = headers
+            self.delay = max(0, delay)
+        }
     }
 
     nonisolated(unsafe) private static var responses: [String: [Response]] = [:]
@@ -75,6 +88,9 @@ final class HLSLiveURLProtocol: URLProtocol, @unchecked Sendable {
                 didFailWithError: URLError(.resourceUnavailable)
             )
             return
+        }
+        if response.delay > 0 {
+            Thread.sleep(forTimeInterval: response.delay)
         }
         client?.urlProtocol(
             self,

@@ -32,9 +32,28 @@ struct HLSLiveDVRResourceWriter: Sendable {
         )
     }
 
+    func makePreloadCoordinator(
+        workspace: HLSLiveDVRWorkspace,
+        context: HLSLiveDVRResourceContext
+    ) -> HLSLiveDVRPreloadCoordinator? {
+        guard configuration.preloading.policy != .disabled else {
+            return nil
+        }
+        return HLSLiveDVRPreloadCoordinator(
+            pack: configuration.preloading,
+            parts: configuration.parts,
+            resourceLoader: resourceLoader,
+            context: context,
+            workspace: workspace,
+            maximumMediaResourceBytes:
+                configuration.limits.maximumMediaResourceBytes
+        )
+    }
+
     func retainInitializationIfNeeded(
         state: inout HLSLiveDVRRecordingState,
-        context: HLSLiveDVRResourceContext
+        context: HLSLiveDVRResourceContext,
+        preloadCoordinator: HLSLiveDVRPreloadCoordinator?
     ) async throws -> Bool {
         guard
             state.container == .fragmentedMP4,
@@ -55,6 +74,25 @@ struct HLSLiveDVRResourceWriter: Sendable {
             )
         let destinationURL = state.workspace.directoryURL
             .appendingPathComponent(path)
+        let availableBytes = min(
+            state.availableMediaByteCount(),
+            Int64(configuration.limits.maximumMediaResourceBytes)
+        )
+        if let byteCount = await preloadCoordinator?.consume(
+            initialization,
+            to: destinationURL,
+            maximumRetainedBytes: availableBytes
+        ) {
+            let contentSHA256 = try HLSContentFingerprint.sha256(
+                contentsOf: destinationURL
+            )
+            try state.retainInitialization(
+                fileName: path,
+                byteCount: byteCount,
+                contentSHA256: contentSHA256
+            )
+            return true
+        }
         let result = try await load(
             sourceURL: initialization.url,
             byteRange: initialization.byteRange,
@@ -163,7 +201,8 @@ struct HLSLiveDVRResourceWriter: Sendable {
     func stage(
         _ candidate: HLSLiveDVRPartCandidate,
         state: inout HLSLiveDVRRecordingState,
-        context: HLSLiveDVRResourceContext
+        context: HLSLiveDVRResourceContext,
+        preloadCoordinator: HLSLiveDVRPreloadCoordinator?
     ) async throws -> Bool {
         let availableBytes = state.availableStagedPartByteCount()
         guard availableBytes > 0 else {
@@ -183,6 +222,26 @@ struct HLSLiveDVRResourceWriter: Sendable {
             )
         } catch {
             throw HLSLiveDVRError.storageFailed
+        }
+        if let byteCount = await preloadCoordinator?.consume(
+            candidate.part,
+            to: destinationURL,
+            maximumRetainedBytes: min(
+                availableBytes,
+                Int64(configuration.limits.maximumMediaResourceBytes)
+            )
+        ) {
+            do {
+                try state.retainStagedPart(
+                    candidate,
+                    relativeFilePath: relativePath,
+                    byteCount: byteCount
+                )
+            } catch {
+                try? FileManager.default.removeItem(at: destinationURL)
+                throw error
+            }
+            return true
         }
         let result = try await load(
             sourceURL: candidate.part.url,

@@ -6,12 +6,71 @@ from __future__ import annotations
 import argparse
 import functools
 import http.server
+import json
 import os
 from pathlib import Path
 import sys
+import threading
+from urllib.parse import urlsplit
+
+
+class LivePreloadState:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._playlist_requests = 0
+        self._resource_requests = {
+            "initialization_map": 0,
+            "first_part": 0,
+            "second_part": 0,
+            "complete_parent": 0,
+        }
+        self._resource_started = {
+            "initialization_map": threading.Event(),
+            "first_part": threading.Event(),
+            "second_part": threading.Event(),
+        }
+        self._first_reload_saw_preloads = False
+        self._second_reload_saw_preload = False
+
+    def next_playlist_generation(self) -> int:
+        with self._lock:
+            generation = self._playlist_requests
+            self._playlist_requests += 1
+            return generation
+
+    def mark_resource(self, name: str) -> None:
+        with self._lock:
+            self._resource_requests[name] += 1
+        event = self._resource_started.get(name)
+        if event is not None:
+            event.set()
+
+    def await_first_preloads(self) -> None:
+        saw_map = self._resource_started["initialization_map"].wait(
+            timeout=5
+        )
+        saw_part = self._resource_started["first_part"].wait(timeout=5)
+        with self._lock:
+            self._first_reload_saw_preloads = saw_map and saw_part
+
+    def await_second_part_preload(self) -> None:
+        saw_part = self._resource_started["second_part"].wait(timeout=5)
+        with self._lock:
+            self._second_reload_saw_preload = saw_part
+
+    def snapshot(self) -> dict[str, object]:
+        with self._lock:
+            return {
+                "playlist_requests": self._playlist_requests,
+                **self._resource_requests,
+                "first_reload_saw_preloads": self._first_reload_saw_preloads,
+                "second_reload_saw_preload": self._second_reload_saw_preload,
+            }
 
 
 class FixtureRequestHandler(http.server.SimpleHTTPRequestHandler):
+    preload_state: LivePreloadState
+
     extensions_map = {
         **http.server.SimpleHTTPRequestHandler.extensions_map,
         ".m3u8": "application/vnd.apple.mpegurl",
@@ -21,6 +80,100 @@ class FixtureRequestHandler(http.server.SimpleHTTPRequestHandler):
 
     def log_message(self, format: str, *args: object) -> None:
         print(f"hls-runtime-server: {format % args}", file=sys.stderr)
+
+    def do_GET(self) -> None:
+        path = urlsplit(self.path).path
+        if path == "/live-preload/index.m3u8":
+            self._serve_live_preload_playlist()
+            return
+        if path == "/live-preload/state":
+            self._send_json(self.preload_state.snapshot())
+            return
+        resources = {
+            "/live-preload/init.mp4": (
+                "initialization_map",
+                b"runtime-init",
+                "audio/mp4",
+            ),
+            "/live-preload/11.0.m4s": (
+                "first_part",
+                b"runtime-one",
+                "audio/iso.segment",
+            ),
+            "/live-preload/11.1.m4s": (
+                "second_part",
+                b"runtime-two",
+                "audio/iso.segment",
+            ),
+            "/live-preload/11.m4s": (
+                "complete_parent",
+                b"runtime-parent",
+                "audio/iso.segment",
+            ),
+        }
+        resource = resources.get(path)
+        if resource is not None:
+            name, body, content_type = resource
+            self.preload_state.mark_resource(name)
+            self._send_bytes(body, content_type)
+            return
+        super().do_GET()
+
+    def _serve_live_preload_playlist(self) -> None:
+        generation = self.preload_state.next_playlist_generation()
+        if generation == 0:
+            playlist = """#EXTM3U
+#EXT-X-VERSION:10
+#EXT-X-TARGETDURATION:2
+#EXT-X-MEDIA-SEQUENCE:11
+#EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES,PART-HOLD-BACK=2
+#EXT-X-PART-INF:PART-TARGET=1
+#EXT-X-PRELOAD-HINT:TYPE=MAP,URI="init.mp4"
+#EXT-X-PRELOAD-HINT:TYPE=PART,URI="11.0.m4s"
+"""
+        elif generation == 1:
+            self.preload_state.await_first_preloads()
+            playlist = """#EXTM3U
+#EXT-X-VERSION:10
+#EXT-X-TARGETDURATION:2
+#EXT-X-MEDIA-SEQUENCE:11
+#EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES,PART-HOLD-BACK=2
+#EXT-X-PART-INF:PART-TARGET=1
+#EXT-X-MAP:URI="init.mp4"
+#EXT-X-PART:DURATION=1,URI="11.0.m4s",INDEPENDENT=YES
+#EXT-X-PRELOAD-HINT:TYPE=PART,URI="11.1.m4s"
+"""
+        else:
+            self.preload_state.await_second_part_preload()
+            playlist = """#EXTM3U
+#EXT-X-VERSION:10
+#EXT-X-TARGETDURATION:2
+#EXT-X-MEDIA-SEQUENCE:11
+#EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES,PART-HOLD-BACK=2
+#EXT-X-PART-INF:PART-TARGET=1
+#EXT-X-MAP:URI="init.mp4"
+#EXT-X-PART:DURATION=1,URI="11.0.m4s",INDEPENDENT=YES
+#EXT-X-PART:DURATION=1,URI="11.1.m4s"
+#EXTINF:2,
+11.m4s
+#EXT-X-ENDLIST
+"""
+        self._send_bytes(
+            playlist.encode("utf-8"),
+            "application/vnd.apple.mpegurl",
+        )
+
+    def _send_json(self, value: dict[str, object]) -> None:
+        body = (json.dumps(value, sort_keys=True) + "\n").encode("utf-8")
+        self._send_bytes(body, "application/json")
+
+    def _send_bytes(self, body: bytes, content_type: str) -> None:
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
 
 
 def write_ready_file(path: Path, base_url: str) -> None:
@@ -46,6 +199,7 @@ def main() -> None:
             f"{arguments.ready_file}"
         )
 
+    FixtureRequestHandler.preload_state = LivePreloadState()
     handler = functools.partial(
         FixtureRequestHandler,
         directory=str(fixture_root),

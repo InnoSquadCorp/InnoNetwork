@@ -105,6 +105,21 @@ public struct HLSLivePartialSegment: Equatable, Sendable {
     /// Whether the part is intentionally unavailable.
     public let isGap: Bool
 
+    let resourceContext: HLSLowLatencyResourceContext?
+
+    public static func == (
+        lhs: HLSLivePartialSegment,
+        rhs: HLSLivePartialSegment
+    ) -> Bool {
+        lhs.mediaSequenceNumber == rhs.mediaSequenceNumber
+            && lhs.partIndex == rhs.partIndex
+            && lhs.duration == rhs.duration
+            && lhs.url == rhs.url
+            && lhs.byteRange == rhs.byteRange
+            && lhs.isIndependent == rhs.isIndependent
+            && lhs.isGap == rhs.isGap
+    }
+
     init(record: HLSLivePartialSegmentRecord) {
         self.mediaSequenceNumber = record.mediaSequenceNumber
         self.partIndex = record.partIndex
@@ -113,6 +128,7 @@ public struct HLSLivePartialSegment: Equatable, Sendable {
         self.byteRange = record.byteRange
         self.isIndependent = record.isIndependent
         self.isGap = record.isGap
+        self.resourceContext = record.resourceContext
     }
 
     init(
@@ -122,7 +138,8 @@ public struct HLSLivePartialSegment: Equatable, Sendable {
         url: URL,
         byteRange: HLSByteRange?,
         isIndependent: Bool,
-        isGap: Bool
+        isGap: Bool,
+        resourceContext: HLSLowLatencyResourceContext? = nil
     ) {
         self.mediaSequenceNumber = mediaSequenceNumber
         self.partIndex = partIndex
@@ -131,6 +148,7 @@ public struct HLSLivePartialSegment: Equatable, Sendable {
         self.byteRange = byteRange
         self.isIndependent = isIndependent
         self.isGap = isGap
+        self.resourceContext = resourceContext
     }
 }
 

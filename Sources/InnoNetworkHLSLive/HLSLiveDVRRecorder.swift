@@ -326,6 +326,10 @@ public struct HLSLiveDVRRecorder: Sendable {
         let resourceContext = resourceWriter.makeContext(
             workspace: workspace
         )
+        let preloadCoordinator = resourceWriter.makePreloadCoordinator(
+            workspace: workspace,
+            context: resourceContext
+        )
         let snapshots:
             AsyncThrowingStream<
                 HLSLivePlaylistSnapshot,
@@ -376,6 +380,7 @@ public struct HLSLiveDVRRecorder: Sendable {
                     pendingCheckpoint = nil
                 }
                 try state.validatePresentation(snapshot)
+                await preloadCoordinator?.update(from: snapshot)
                 let candidates = try state.candidates(
                     in: snapshot
                 )
@@ -386,6 +391,7 @@ public struct HLSLiveDVRRecorder: Sendable {
                     partUpdate,
                     state: &state,
                     context: resourceContext,
+                    preloadCoordinator: preloadCoordinator,
                     onProgress: onProgress
                 )
                 let renditionRequests = try state.renditionRequests(
@@ -460,7 +466,9 @@ public struct HLSLiveDVRRecorder: Sendable {
                         try await resourceWriter
                             .retainInitializationIfNeeded(
                                 state: &state,
-                                context: resourceContext
+                                context: resourceContext,
+                                preloadCoordinator:
+                                    preloadCoordinator
                             )
                     else {
                         break recordingLoop
@@ -510,6 +518,7 @@ public struct HLSLiveDVRRecorder: Sendable {
                 }
             }
         } catch is CancellationError {
+            await preloadCoordinator?.cancelAll()
             if let control,
                 await control.shouldCancelAndDiscard
             {
@@ -517,8 +526,10 @@ public struct HLSLiveDVRRecorder: Sendable {
             }
             throw CancellationError()
         } catch let error as HLSLiveDVRError {
+            await preloadCoordinator?.cancelAll()
             throw error
         } catch let error as HLSDownloadError {
+            await preloadCoordinator?.cancelAll()
             switch error {
             case .separateAudioRenditionUnsupported:
                 throw HLSLiveDVRError.unsupportedFeature(
@@ -528,9 +539,11 @@ public struct HLSLiveDVRRecorder: Sendable {
                 throw HLSLiveDVRError.transferFailed
             }
         } catch {
+            await preloadCoordinator?.cancelAll()
             throw HLSLiveDVRError.transferFailed
         }
 
+        await preloadCoordinator?.cancelAll()
         if let control,
             await control.shouldCancelAndDiscard
         {
@@ -551,6 +564,7 @@ public struct HLSLiveDVRRecorder: Sendable {
         _ update: HLSLiveDVRPartUpdate,
         state: inout HLSLiveDVRRecordingState,
         context: HLSLiveDVRResourceContext,
+        preloadCoordinator: HLSLiveDVRPreloadCoordinator?,
         onProgress:
             @escaping @Sendable (HLSLiveDVRProgress) -> Void
     ) async throws {
@@ -564,7 +578,8 @@ public struct HLSLiveDVRRecorder: Sendable {
                     try await resourceWriter.stage(
                         candidate,
                         state: &state,
-                        context: context
+                        context: context,
+                        preloadCoordinator: preloadCoordinator
                     )
                 else {
                     try resourceWriter.abandonStagedParts(

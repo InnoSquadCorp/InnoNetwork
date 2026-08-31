@@ -30,6 +30,15 @@ extension HLSLivePlaylistClientTests {
         #expect(parts.policy == .independent)
         #expect(parts.maximumStagedPartCount == 1)
         #expect(parts.maximumStagedPartBytes == 1)
+
+        let preloading = HLSLiveDVRPreloadPack(
+            policy: .unencryptedMedia,
+            maximumResourceBytes: -1,
+            maximumTotalBytes: .max
+        )
+        #expect(preloading.policy == .unencryptedMedia)
+        #expect(preloading.maximumResourceBytes == 1)
+        #expect(preloading.maximumTotalBytes == 256 * 1_024 * 1_024)
     }
 
     @Test("current live window commits a URL-free local VOD playlist")
@@ -2983,6 +2992,615 @@ extension HLSLivePlaylistClientTests {
         )
     }
 
+    @Test("a confirmed PART preload is reused without a second request")
+    func reusesConfirmedPartPreload() async throws {
+        let sourceURL = try url("https://media.example/preload-part.m3u8")
+        let firstReloadURL = try url(
+            "https://media.example/preload-part.m3u8?_HLS_msn=11&_HLS_part=1"
+        )
+        let secondReloadURL = try url(
+            "https://media.example/preload-part.m3u8?_HLS_msn=11&_HLS_part=2"
+        )
+        let firstPartURL = try url("https://media.example/11.0.ts")
+        let secondPartURL = try url("https://media.example/11.1.ts")
+        let parentURL = try url("https://media.example/11.ts")
+        let fixture = try makeFixture()
+        let requestRecorder = HLSLiveDVRRequestRecorder()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-VERSION:10
+                #EXT-X-TARGETDURATION:2
+                #EXT-X-MEDIA-SEQUENCE:11
+                #EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES,PART-HOLD-BACK=2
+                #EXT-X-PART-INF:PART-TARGET=1
+                #EXT-X-PART:DURATION=1,URI="11.0.ts",INDEPENDENT=YES
+                #EXT-X-PRELOAD-HINT:TYPE=PART,URI="11.1.ts"
+                """
+            ),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-VERSION:10
+                #EXT-X-TARGETDURATION:2
+                #EXT-X-MEDIA-SEQUENCE:11
+                #EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES,PART-HOLD-BACK=2
+                #EXT-X-PART-INF:PART-TARGET=1
+                #EXT-X-PART:DURATION=1,URI="11.0.ts",INDEPENDENT=YES
+                #EXT-X-PART:DURATION=1,URI="11.1.ts"
+                """,
+                delay: 0.05
+            ),
+            for: firstReloadURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-VERSION:10
+                #EXT-X-TARGETDURATION:2
+                #EXT-X-MEDIA-SEQUENCE:11
+                #EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES,PART-HOLD-BACK=2
+                #EXT-X-PART-INF:PART-TARGET=1
+                #EXT-X-PART:DURATION=1,URI="11.0.ts",INDEPENDENT=YES
+                #EXT-X-PART:DURATION=1,URI="11.1.ts"
+                #EXTINF:2,
+                11.ts
+                #EXT-X-ENDLIST
+                """,
+                delay: 0.05
+            ),
+            for: secondReloadURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("one".utf8)),
+            for: firstPartURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("two".utf8)),
+            for: secondPartURL
+        )
+        let receipt = try await recorder(
+            session: fixture.session,
+            startPosition: .nextCompletedSegment,
+            parts: HLSLiveDVRPartPack(policy: .independent),
+            preloading: HLSLiveDVRPreloadPack(
+                policy: .unencryptedMedia
+            ),
+            requestPolicy: HLSRequestPolicy(
+                eventObservers: [requestRecorder]
+            )
+        ).record(from: sourceURL, to: fixture.destinationURL)
+
+        #expect(receipt.promotedPartCount == 2)
+        #expect(
+            HLSLiveURLProtocol.capturedRequests().filter {
+                $0.url == secondPartURL
+            }.count == 1
+        )
+        #expect(
+            !HLSLiveURLProtocol.capturedRequests()
+                .compactMap(\.url).contains(parentURL)
+        )
+        #expect(
+            await requestRecorder.purposes().filter {
+                $0 == .mediaPreloadHint
+            }.count == 1
+        )
+    }
+
+    @Test("a failed PART preload falls back to the ordinary request")
+    func fallsBackAfterPartPreloadFailure() async throws {
+        let sourceURL = try url(
+            "https://media.example/preload-fallback.m3u8"
+        )
+        let firstReloadURL = try url(
+            "https://media.example/preload-fallback.m3u8?_HLS_msn=11&_HLS_part=1"
+        )
+        let secondReloadURL = try url(
+            "https://media.example/preload-fallback.m3u8?_HLS_msn=11&_HLS_part=2"
+        )
+        let firstPartURL = try url("https://media.example/11.0.ts")
+        let secondPartURL = try url("https://media.example/11.1.ts")
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-VERSION:10
+                #EXT-X-TARGETDURATION:2
+                #EXT-X-MEDIA-SEQUENCE:11
+                #EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES,PART-HOLD-BACK=2
+                #EXT-X-PART-INF:PART-TARGET=1
+                #EXT-X-PART:DURATION=1,URI="11.0.ts",INDEPENDENT=YES
+                #EXT-X-PRELOAD-HINT:TYPE=PART,URI="11.1.ts"
+                """
+            ),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-VERSION:10
+                #EXT-X-TARGETDURATION:2
+                #EXT-X-MEDIA-SEQUENCE:11
+                #EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES,PART-HOLD-BACK=2
+                #EXT-X-PART-INF:PART-TARGET=1
+                #EXT-X-PART:DURATION=1,URI="11.0.ts",INDEPENDENT=YES
+                #EXT-X-PART:DURATION=1,URI="11.1.ts"
+                """,
+                delay: 0.05
+            ),
+            for: firstReloadURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-VERSION:10
+                #EXT-X-TARGETDURATION:2
+                #EXT-X-MEDIA-SEQUENCE:11
+                #EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES,PART-HOLD-BACK=2
+                #EXT-X-PART-INF:PART-TARGET=1
+                #EXT-X-PART:DURATION=1,URI="11.0.ts",INDEPENDENT=YES
+                #EXT-X-PART:DURATION=1,URI="11.1.ts"
+                #EXTINF:2,
+                11.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: secondReloadURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("one".utf8)),
+            for: firstPartURL
+        )
+        HLSLiveURLProtocol.register(
+            HLSLiveURLProtocol.Response(
+                statusCode: 503,
+                data: Data(),
+                headers: ["Content-Type": "application/octet-stream"]
+            ),
+            for: secondPartURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("two".utf8)),
+            for: secondPartURL
+        )
+
+        let receipt = try await recorder(
+            session: fixture.session,
+            startPosition: .nextCompletedSegment,
+            parts: HLSLiveDVRPartPack(policy: .independent),
+            preloading: HLSLiveDVRPreloadPack(
+                policy: .unencryptedMedia
+            )
+        ).record(from: sourceURL, to: fixture.destinationURL)
+
+        #expect(receipt.promotedPartCount == 2)
+        #expect(
+            HLSLiveURLProtocol.capturedRequests().filter {
+                $0.url == secondPartURL
+            }.count == 2
+        )
+    }
+
+    @Test("a changed discontinuity rejects a hinted PART")
+    func rejectsPreloadAcrossDiscontinuity() async throws {
+        let hintPlaylistURL = try url(
+            "https://media.example/preload-hint.m3u8"
+        )
+        let actualPlaylistURL = try url(
+            "https://media.example/preload-actual.m3u8"
+        )
+        let partURL = try url("https://media.example/11.0.ts")
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-VERSION:10
+                #EXT-X-TARGETDURATION:1
+                #EXT-X-MEDIA-SEQUENCE:11
+                #EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES,PART-HOLD-BACK=2
+                #EXT-X-PART-INF:PART-TARGET=1
+                #EXT-X-PRELOAD-HINT:TYPE=PART,URI="11.0.ts"
+                """
+            ),
+            for: hintPlaylistURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-VERSION:10
+                #EXT-X-TARGETDURATION:1
+                #EXT-X-MEDIA-SEQUENCE:11
+                #EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES,PART-HOLD-BACK=2
+                #EXT-X-PART-INF:PART-TARGET=1
+                #EXT-X-DISCONTINUITY
+                #EXT-X-PART:DURATION=1,URI="11.0.ts",INDEPENDENT=YES
+                """
+            ),
+            for: actualPlaylistURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("hinted".utf8)),
+            for: partURL
+        )
+        let configuration = HLSLiveDVRConfiguration.advanced(
+            parts: HLSLiveDVRPartPack(policy: .independent),
+            preloading: HLSLiveDVRPreloadPack(
+                policy: .unencryptedMedia
+            )
+        )
+        let client = HLSLivePlaylistClient(session: fixture.session)
+        let writer = HLSLiveDVRResourceWriter(
+            client: client.resourceClient,
+            configuration: configuration
+        )
+        let workspace = try HLSLiveDVRWorkspace.make(
+            for: fixture.destinationURL
+        )
+        let resourceContext = writer.makeContext(workspace: workspace)
+        let coordinator = try #require(
+            writer.makePreloadCoordinator(
+                workspace: workspace,
+                context: resourceContext
+            )
+        )
+        let hintSnapshot = try await client.snapshot(
+            from: hintPlaylistURL
+        )
+        await coordinator.update(from: hintSnapshot)
+        for _ in 0..<100
+        where !HLSLiveURLProtocol.capturedRequests().contains(where: {
+            $0.url == partURL
+        }) {
+            await Task.yield()
+        }
+        let actualSnapshot = try await client.snapshot(
+            from: actualPlaylistURL
+        )
+        await coordinator.update(from: actualSnapshot)
+        let actualPart = try #require(
+            actualSnapshot.partialSegments.first
+        )
+        let destinationURL = workspace.directoryURL
+            .appendingPathComponent("actual.part")
+
+        #expect(
+            await coordinator.consume(
+                actualPart,
+                to: destinationURL,
+                maximumRetainedBytes: 1_024
+            ) == nil
+        )
+        #expect(
+            !FileManager.default.fileExists(
+                atPath: destinationURL.path
+            )
+        )
+        await coordinator.cancelAll()
+    }
+
+    @Test("an open MAP hint may confirm an exact PART context")
+    func reusesPartAfterOpenMapRangeConfirmation() async throws {
+        let hintPlaylistURL = try url(
+            "https://media.example/open-map-hint.m3u8"
+        )
+        let actualPlaylistURL = try url(
+            "https://media.example/open-map-actual.m3u8"
+        )
+        let partURL = try url("https://media.example/11.0.m4s")
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-VERSION:10
+                #EXT-X-TARGETDURATION:1
+                #EXT-X-MEDIA-SEQUENCE:11
+                #EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES,PART-HOLD-BACK=2
+                #EXT-X-PART-INF:PART-TARGET=1
+                #EXT-X-PRELOAD-HINT:TYPE=MAP,URI="init.mp4",BYTERANGE-START=512
+                #EXT-X-PRELOAD-HINT:TYPE=PART,URI="11.0.m4s"
+                """
+            ),
+            for: hintPlaylistURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-VERSION:10
+                #EXT-X-TARGETDURATION:1
+                #EXT-X-MEDIA-SEQUENCE:11
+                #EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES,PART-HOLD-BACK=2
+                #EXT-X-PART-INF:PART-TARGET=1
+                #EXT-X-MAP:URI="init.mp4",BYTERANGE="4@512"
+                #EXT-X-PART:DURATION=1,URI="11.0.m4s",INDEPENDENT=YES
+                """
+            ),
+            for: actualPlaylistURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("hinted".utf8)),
+            for: partURL
+        )
+        let configuration = HLSLiveDVRConfiguration.advanced(
+            parts: HLSLiveDVRPartPack(policy: .independent),
+            preloading: HLSLiveDVRPreloadPack(
+                policy: .unencryptedMedia
+            )
+        )
+        let client = HLSLivePlaylistClient(session: fixture.session)
+        let writer = HLSLiveDVRResourceWriter(
+            client: client.resourceClient,
+            configuration: configuration
+        )
+        let workspace = try HLSLiveDVRWorkspace.make(
+            for: fixture.destinationURL
+        )
+        let resourceContext = writer.makeContext(workspace: workspace)
+        let coordinator = try #require(
+            writer.makePreloadCoordinator(
+                workspace: workspace,
+                context: resourceContext
+            )
+        )
+        let hintSnapshot = try await client.snapshot(
+            from: hintPlaylistURL
+        )
+        await coordinator.update(from: hintSnapshot)
+        let actualSnapshot = try await client.snapshot(
+            from: actualPlaylistURL
+        )
+        await coordinator.update(from: actualSnapshot)
+        let part = try #require(actualSnapshot.partialSegments.first)
+        let destinationURL = workspace.directoryURL
+            .appendingPathComponent("confirmed.part")
+
+        #expect(
+            await coordinator.consume(
+                part,
+                to: destinationURL,
+                maximumRetainedBytes: 1_024
+            ) == 6
+        )
+        #expect(
+            try Data(contentsOf: destinationURL)
+                == Data("hinted".utf8)
+        )
+        await coordinator.cancelAll()
+    }
+
+    @Test("cancelling preloads removes recording-scoped temporary files")
+    func cancellationRemovesPreloadFiles() async throws {
+        let playlistURL = try url(
+            "https://media.example/preload-cancellation.m3u8"
+        )
+        let partURL = try url("https://media.example/11.0.ts")
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-VERSION:10
+                #EXT-X-TARGETDURATION:1
+                #EXT-X-MEDIA-SEQUENCE:11
+                #EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES,PART-HOLD-BACK=2
+                #EXT-X-PART-INF:PART-TARGET=1
+                #EXT-X-PRELOAD-HINT:TYPE=PART,URI="11.0.ts"
+                """
+            ),
+            for: playlistURL
+        )
+        HLSLiveURLProtocol.register(
+            HLSLiveURLProtocol.Response(
+                statusCode: 200,
+                data: Data("pending".utf8),
+                headers: ["Content-Type": "application/octet-stream"],
+                delay: 0.1
+            ),
+            for: partURL
+        )
+        let configuration = HLSLiveDVRConfiguration.advanced(
+            parts: HLSLiveDVRPartPack(policy: .independent),
+            preloading: HLSLiveDVRPreloadPack(
+                policy: .unencryptedMedia
+            )
+        )
+        let client = HLSLivePlaylistClient(session: fixture.session)
+        let writer = HLSLiveDVRResourceWriter(
+            client: client.resourceClient,
+            configuration: configuration
+        )
+        let workspace = try HLSLiveDVRWorkspace.make(
+            for: fixture.destinationURL
+        )
+        let coordinator = try #require(
+            writer.makePreloadCoordinator(
+                workspace: workspace,
+                context: writer.makeContext(workspace: workspace)
+            )
+        )
+        let snapshot = try await client.snapshot(from: playlistURL)
+        await coordinator.update(from: snapshot)
+        for _ in 0..<100
+        where !HLSLiveURLProtocol.capturedRequests().contains(where: {
+            $0.url == partURL
+        }) {
+            await Task.yield()
+        }
+
+        await coordinator.cancelAll()
+
+        #expect(
+            !FileManager.default.fileExists(
+                atPath: workspace.directoryURL
+                    .appendingPathComponent("preload").path
+            )
+        )
+    }
+
+    @Test("encrypted edge MAP metadata is not treated as clear media")
+    func doesNotExposeEncryptedEdgeMapAsClearMedia() async throws {
+        let sourceURL = try url(
+            "https://media.example/encrypted-edge-map.m3u8"
+        )
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-VERSION:10
+                #EXT-X-TARGETDURATION:2
+                #EXT-X-PART-INF:PART-TARGET=1
+                #EXT-X-SERVER-CONTROL:PART-HOLD-BACK=2
+                #EXT-X-KEY:METHOD=AES-128,URI="key",IV=0x00000000000000000000000000000001
+                #EXT-X-MAP:URI="init.mp4"
+                #EXT-X-PART:DURATION=1,URI="10.0.m4s",INDEPENDENT=YES
+                """
+            ),
+            for: sourceURL
+        )
+
+        let snapshot = try await HLSLivePlaylistClient(
+            session: fixture.session
+        ).snapshot(from: sourceURL)
+
+        #expect(snapshot.initializationSegments.isEmpty)
+    }
+
+    @Test("confirmed MAP and PART preloads seed fragmented MP4 DVR")
+    func reusesInitialMapAndPartPreloads() async throws {
+        let sourceURL = try url("https://media.example/preload-map.m3u8")
+        let secondReloadURL = try url(
+            "https://media.example/preload-map.m3u8?_HLS_msn=11&_HLS_part=1"
+        )
+        let mapURL = try url("https://media.example/init.mp4")
+        let firstPartURL = try url("https://media.example/11.0.m4s")
+        let secondPartURL = try url("https://media.example/11.1.m4s")
+        let parentURL = try url("https://media.example/11.m4s")
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-VERSION:10
+                #EXT-X-TARGETDURATION:2
+                #EXT-X-MEDIA-SEQUENCE:11
+                #EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES,PART-HOLD-BACK=2
+                #EXT-X-PART-INF:PART-TARGET=1
+                #EXT-X-PRELOAD-HINT:TYPE=MAP,URI="init.mp4"
+                #EXT-X-PRELOAD-HINT:TYPE=PART,URI="11.0.m4s"
+                """
+            ),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-VERSION:10
+                #EXT-X-TARGETDURATION:2
+                #EXT-X-MEDIA-SEQUENCE:11
+                #EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES,PART-HOLD-BACK=2
+                #EXT-X-PART-INF:PART-TARGET=1
+                #EXT-X-MAP:URI="init.mp4"
+                #EXT-X-PART:DURATION=1,URI="11.0.m4s",INDEPENDENT=YES
+                """
+            ),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-VERSION:10
+                #EXT-X-TARGETDURATION:2
+                #EXT-X-MEDIA-SEQUENCE:11
+                #EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES,PART-HOLD-BACK=2
+                #EXT-X-PART-INF:PART-TARGET=1
+                #EXT-X-MAP:URI="init.mp4"
+                #EXT-X-PART:DURATION=1,URI="11.0.m4s",INDEPENDENT=YES
+                #EXT-X-PART:DURATION=1,URI="11.1.m4s"
+                #EXTINF:2,
+                11.m4s
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: secondReloadURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("init".utf8)),
+            for: mapURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("one".utf8)),
+            for: firstPartURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("two".utf8)),
+            for: secondPartURL
+        )
+
+        let receipt = try await recorder(
+            session: fixture.session,
+            startPosition: .nextCompletedSegment,
+            parts: HLSLiveDVRPartPack(policy: .independent),
+            preloading: HLSLiveDVRPreloadPack(
+                policy: .unencryptedMedia
+            )
+        ).record(from: sourceURL, to: fixture.destinationURL)
+
+        #expect(receipt.promotedPartCount == 2)
+        let requests = HLSLiveURLProtocol.capturedRequests()
+        #expect(requests.filter { $0.url == mapURL }.count == 1)
+        #expect(requests.filter { $0.url == firstPartURL }.count == 1)
+        #expect(!requests.compactMap(\.url).contains(parentURL))
+        #expect(
+            try Data(
+                contentsOf: fixture.destinationURL
+                    .appendingPathComponent("resources/initialization.mp4")
+            ) == Data("init".utf8)
+        )
+    }
+
     @Test("LL-HLS part capture remains opt-in")
     func leavesPartCaptureDisabledByDefault() async throws {
         let sourceURL = try url("https://media.example/default-parts.m3u8")
@@ -2991,6 +3609,7 @@ extension HLSLivePlaylistClientTests {
         )
         let firstPartURL = try url("https://media.example/11.0.ts")
         let secondPartURL = try url("https://media.example/11.1.ts")
+        let preloadPartURL = try url("https://media.example/11.2.ts")
         let parentURL = try url("https://media.example/11.ts")
         let fixture = try makeFixture()
         defer {
@@ -2998,7 +3617,10 @@ extension HLSLivePlaylistClientTests {
             HLSLiveURLProtocol.reset()
         }
         HLSLiveURLProtocol.register(
-            playlistResponse(partialPlaylist()),
+            playlistResponse(
+                partialPlaylist()
+                    + "\n#EXT-X-PRELOAD-HINT:TYPE=PART,URI=\"11.2.ts\""
+            ),
             for: sourceURL
         )
         HLSLiveURLProtocol.register(
@@ -3019,6 +3641,7 @@ extension HLSLivePlaylistClientTests {
         let requests = HLSLiveURLProtocol.capturedRequests().compactMap(\.url)
         #expect(!requests.contains(firstPartURL))
         #expect(!requests.contains(secondPartURL))
+        #expect(!requests.contains(preloadPartURL))
         #expect(requests.contains(parentURL))
     }
 
@@ -3415,10 +4038,15 @@ extension HLSLivePlaylistClientTests {
         renditions: HLSLiveDVRRenditionPack =
             HLSLiveDVRRenditionPack(),
         parts: HLSLiveDVRPartPack = HLSLiveDVRPartPack(),
-        recovery: HLSLiveDVRRecoveryPack = HLSLiveDVRRecoveryPack()
+        preloading: HLSLiveDVRPreloadPack = HLSLiveDVRPreloadPack(),
+        recovery: HLSLiveDVRRecoveryPack = HLSLiveDVRRecoveryPack(),
+        requestPolicy: HLSRequestPolicy = HLSRequestPolicy()
     ) -> HLSLiveDVRRecorder {
         HLSLiveDVRRecorder(
-            client: HLSLivePlaylistClient(session: session),
+            client: HLSLivePlaylistClient(
+                session: session,
+                requestPolicy: requestPolicy
+            ),
             configuration: .advanced(
                 limits: HLSLiveDVRLimitPack(
                     maximumDuration: 60,
@@ -3429,6 +4057,7 @@ extension HLSLivePlaylistClientTests {
                 startPosition: startPosition,
                 renditions: renditions,
                 parts: parts,
+                preloading: preloading,
                 recovery: recovery
             )
         )
@@ -3584,7 +4213,8 @@ extension HLSLivePlaylistClientTests {
     }
 
     private func playlistResponse(
-        _ playlist: String
+        _ playlist: String,
+        delay: TimeInterval = 0
     ) -> HLSLiveURLProtocol.Response {
         HLSLiveURLProtocol.Response(
             statusCode: 200,
@@ -3592,7 +4222,8 @@ extension HLSLivePlaylistClientTests {
             headers: [
                 "Content-Type":
                     "application/vnd.apple.mpegurl"
-            ]
+            ],
+            delay: delay
         )
     }
 
@@ -3622,6 +4253,21 @@ private struct DVRFixture {
     func cleanup() {
         session.invalidateAndCancel()
         try? FileManager.default.removeItem(at: rootURL)
+    }
+}
+
+private actor HLSLiveDVRRequestRecorder: HLSRequestEventObserving {
+    private var recordedPurposes: [HLSRequestPurpose] = []
+
+    func hlsRequestDidEmit(_ event: HLSRequestEvent) {
+        guard case .requestStarted(let context) = event else {
+            return
+        }
+        recordedPurposes.append(context.purpose)
+    }
+
+    func purposes() -> [HLSRequestPurpose] {
+        recordedPurposes
     }
 }
 

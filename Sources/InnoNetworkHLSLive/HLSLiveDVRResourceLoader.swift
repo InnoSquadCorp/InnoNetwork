@@ -21,14 +21,22 @@ struct HLSLiveDVRResourceLoader: Sendable {
     func load(
         from sourceURL: URL,
         byteRange: HLSByteRange?,
+        openEndedByteRangeStart: Int64? = nil,
         encryption: HLSLiveAES128Encryption?,
-        resourceIndex: Int,
+        purpose: HLSRequestPurpose = .mediaResource,
+        resourceIndex: Int?,
         maximumBytes: Int,
         maximumRetainedBytes: Int,
         keyCache: HLSAES128KeyCache,
         diskCapacityGuard: HLSDiskCapacityGuard,
         destinationURL: URL
     ) async throws -> Int64 {
+        guard byteRange == nil || openEndedByteRangeStart == nil,
+            openEndedByteRangeStart.map({ $0 >= 0 }) ?? true
+        else {
+            throw HLSLiveDVRResourceLoadError
+                .invalidByteRangeResponse
+        }
         let decryptionKey: Data?
         if let encryption {
             decryptionKey = try await keyCache.key(
@@ -58,13 +66,22 @@ struct HLSLiveDVRResourceLoader: Sendable {
                 "identity",
                 forHTTPHeaderField: "Accept-Encoding"
             )
+        } else if let openEndedByteRangeStart {
+            request.setValue(
+                "bytes=\(openEndedByteRangeStart)-",
+                forHTTPHeaderField: "Range"
+            )
+            request.setValue(
+                "identity",
+                forHTTPHeaderField: "Accept-Encoding"
+            )
         }
 
         let transfer: HLSHTTPTransfer
         do {
             transfer = try await client.transfer(
                 request,
-                purpose: .mediaResource,
+                purpose: purpose,
                 resourceIndex: resourceIndex,
                 maximumBytes: maximumBytes
             )
@@ -82,7 +99,8 @@ struct HLSLiveDVRResourceLoader: Sendable {
         }
         try validate(
             transfer.response,
-            byteRange: byteRange
+            byteRange: byteRange,
+            openEndedByteRangeStart: openEndedByteRangeStart
         )
 
         let fileManager = FileManager.default
@@ -231,7 +249,8 @@ struct HLSLiveDVRResourceLoader: Sendable {
 
     private func validate(
         _ response: URLResponse,
-        byteRange: HLSByteRange?
+        byteRange: HLSByteRange?,
+        openEndedByteRangeStart: Int64?
     ) throws {
         guard let httpResponse = response as? HTTPURLResponse else {
             return
@@ -254,6 +273,23 @@ struct HLSLiveDVRResourceLoader: Sendable {
                 httpResponse.expectedContentLength < 0
                     || httpResponse.expectedContentLength
                         == byteRange.length
+            else {
+                throw HLSLiveDVRResourceLoadError
+                    .invalidByteRangeResponse
+            }
+        } else if let openEndedByteRangeStart {
+            guard
+                httpResponse.statusCode == 206,
+                let contentRange = httpResponse.value(
+                    forHTTPHeaderField: "Content-Range"
+                ),
+                Self.matches(
+                    contentRange: contentRange,
+                    openEndedByteRangeStart:
+                        openEndedByteRangeStart,
+                    expectedContentLength:
+                        httpResponse.expectedContentLength
+                )
             else {
                 throw HLSLiveDVRResourceLoadError
                     .invalidByteRangeResponse
@@ -301,5 +337,47 @@ struct HLSLiveDVRResourceLoader: Sendable {
         return !overflow
             && lower == byteRange.offset
             && upper == expectedUpper
+    }
+
+    static func matches(
+        contentRange: String,
+        openEndedByteRangeStart: Int64,
+        expectedContentLength: Int64
+    ) -> Bool {
+        let components = contentRange.split(
+            separator: " ",
+            maxSplits: 1
+        )
+        guard
+            components.count == 2,
+            components[0].lowercased() == "bytes"
+        else {
+            return false
+        }
+        let interval = components[1].split(
+            separator: "/",
+            maxSplits: 1
+        ).first
+        let bounds = interval?.split(
+            separator: "-",
+            maxSplits: 1
+        )
+        guard let bounds,
+            bounds.count == 2,
+            let lower = Int64(bounds[0]),
+            let upper = Int64(bounds[1]),
+            lower == openEndedByteRangeStart,
+            upper >= lower
+        else {
+            return false
+        }
+        let (distance, subtractionOverflow) =
+            upper.subtractingReportingOverflow(lower)
+        let (length, additionOverflow) =
+            distance.addingReportingOverflow(1)
+        return !subtractionOverflow
+            && !additionOverflow
+            && (expectedContentLength < 0
+                || expectedContentLength == length)
     }
 }

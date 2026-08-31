@@ -42,6 +42,15 @@ public enum HLSLiveDVRPartCapturePolicy: Equatable, Sendable {
     case independent
 }
 
+/// Controls speculative loading of Low-Latency HLS media hints.
+public enum HLSLiveDVRPreloadPolicy: Equatable, Sendable {
+    /// Performs no speculative media transfers.
+    case disabled
+
+    /// Preloads clear `PART` and `MAP` hints and reuses only exact matches.
+    case unencryptedMedia
+}
+
 /// Controls whether a recording may persist URL-free recovery checkpoints.
 public enum HLSLiveDVRRecoveryPolicy: Equatable, Sendable {
     /// Removes staging after ordinary interruption and does not allow resume.
@@ -94,6 +103,38 @@ public struct HLSLiveDVRPartPack: Sendable {
         self.maximumStagedPartBytes = min(
             1 * 1_024 * 1_024 * 1_024,
             max(1, maximumStagedPartBytes)
+        )
+    }
+}
+
+/// Groups bounded speculative `PART` and `MAP` loading for live DVR.
+///
+/// Preloading is an opt-in latency optimization. Hinted bytes remain in
+/// temporary storage and are reused only after a later playlist confirms the
+/// resource identity and clear-media presentation context.
+public struct HLSLiveDVRPreloadPack: Sendable {
+    let policy: HLSLiveDVRPreloadPolicy
+    let maximumResourceBytes: Int
+    let maximumTotalBytes: Int64
+
+    /// Creates bounded media-hint preloading.
+    ///
+    /// Each resource is clamped to `1...134,217,728` bytes and all pending
+    /// preloads to `1...268,435,456` bytes. Transfer failures fall back to the
+    /// ordinary DVR request path. Encrypted media is never preloaded here.
+    public init(
+        policy: HLSLiveDVRPreloadPolicy = .disabled,
+        maximumResourceBytes: Int = 8 * 1_024 * 1_024,
+        maximumTotalBytes: Int64 = 16 * 1_024 * 1_024
+    ) {
+        self.policy = policy
+        self.maximumResourceBytes = min(
+            128 * 1_024 * 1_024,
+            max(1, maximumResourceBytes)
+        )
+        self.maximumTotalBytes = min(
+            256 * 1_024 * 1_024,
+            max(1, maximumTotalBytes)
         )
     }
 }
@@ -255,6 +296,7 @@ public struct HLSLiveDVRConfiguration: Sendable {
     let startPosition: HLSLiveDVRStartPosition
     let renditions: HLSLiveDVRRenditionPack
     let parts: HLSLiveDVRPartPack
+    let preloading: HLSLiveDVRPreloadPack
     let recovery: HLSLiveDVRRecoveryPack
 
     private init(
@@ -262,12 +304,14 @@ public struct HLSLiveDVRConfiguration: Sendable {
         startPosition: HLSLiveDVRStartPosition,
         renditions: HLSLiveDVRRenditionPack,
         parts: HLSLiveDVRPartPack,
+        preloading: HLSLiveDVRPreloadPack,
         recovery: HLSLiveDVRRecoveryPack
     ) {
         self.limits = limits
         self.startPosition = startPosition
         self.renditions = renditions
         self.parts = parts
+        self.preloading = preloading
         self.recovery = recovery
     }
 
@@ -290,6 +334,27 @@ public struct HLSLiveDVRConfiguration: Sendable {
             startPosition: startPosition,
             renditions: renditions,
             parts: parts,
+            preloading: HLSLiveDVRPreloadPack(),
+            recovery: HLSLiveDVRRecoveryPack()
+        )
+    }
+
+    /// Returns explicitly tuned live DVR behavior with media preloading.
+    public static func advanced(
+        limits: HLSLiveDVRLimitPack = HLSLiveDVRLimitPack(),
+        startPosition: HLSLiveDVRStartPosition =
+            .nextCompletedSegment,
+        renditions: HLSLiveDVRRenditionPack =
+            HLSLiveDVRRenditionPack(),
+        parts: HLSLiveDVRPartPack = HLSLiveDVRPartPack(),
+        preloading: HLSLiveDVRPreloadPack
+    ) -> HLSLiveDVRConfiguration {
+        advanced(
+            limits: limits,
+            startPosition: startPosition,
+            renditions: renditions,
+            parts: parts,
+            preloading: preloading,
             recovery: HLSLiveDVRRecoveryPack()
         )
     }
@@ -304,11 +369,34 @@ public struct HLSLiveDVRConfiguration: Sendable {
         parts: HLSLiveDVRPartPack = HLSLiveDVRPartPack(),
         recovery: HLSLiveDVRRecoveryPack
     ) -> HLSLiveDVRConfiguration {
+        advanced(
+            limits: limits,
+            startPosition: startPosition,
+            renditions: renditions,
+            parts: parts,
+            preloading: HLSLiveDVRPreloadPack(),
+            recovery: recovery
+        )
+    }
+
+    /// Returns explicitly tuned live DVR behavior with preloading and
+    /// interruption recovery.
+    public static func advanced(
+        limits: HLSLiveDVRLimitPack = HLSLiveDVRLimitPack(),
+        startPosition: HLSLiveDVRStartPosition =
+            .nextCompletedSegment,
+        renditions: HLSLiveDVRRenditionPack =
+            HLSLiveDVRRenditionPack(),
+        parts: HLSLiveDVRPartPack = HLSLiveDVRPartPack(),
+        preloading: HLSLiveDVRPreloadPack,
+        recovery: HLSLiveDVRRecoveryPack
+    ) -> HLSLiveDVRConfiguration {
         HLSLiveDVRConfiguration(
             limits: limits,
             startPosition: startPosition,
             renditions: renditions,
             parts: parts,
+            preloading: preloading,
             recovery: recovery
         )
     }

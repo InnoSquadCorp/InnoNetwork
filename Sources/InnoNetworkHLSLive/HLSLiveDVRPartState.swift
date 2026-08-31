@@ -69,22 +69,22 @@ struct HLSLiveDVRPartRecordingState {
         let completedSequences = Set(
             snapshot.segments.map(\.sequenceNumber)
         )
-        if let stagedSequence = stagedParts.first?.key.mediaSequenceNumber,
-            completedSequences.contains(stagedSequence)
-        {
+        if snapshot.isEnded, stagedParts.isEmpty {
             return HLSLiveDVRPartUpdate(
                 candidates: [],
                 discardedFilePaths: []
             )
         }
-        guard !snapshot.isEnded else {
-            return HLSLiveDVRPartUpdate(
-                candidates: [],
-                discardedFilePaths: discardAll()
-            )
-        }
 
-        let targetSequence = nextIncompleteSequence(in: snapshot)
+        let stagedSequence = stagedParts.first?.key.mediaSequenceNumber
+        let isStagedSequenceCompleted =
+            stagedSequence.map { sequence in
+                completedSequences.contains(sequence)
+            } ?? false
+        let targetSequence =
+            isStagedSequenceCompleted
+            ? stagedSequence
+            : nextIncompleteSequence(in: snapshot)
         var discardedFilePaths: [String] = []
         if let stagedSequence = stagedParts.first?.key.mediaSequenceNumber,
             let targetSequence,
@@ -113,6 +113,12 @@ struct HLSLiveDVRPartRecordingState {
                 $0.mediaSequenceNumber == targetSequence
             }
             .sorted { $0.partIndex < $1.partIndex }
+        if advertised.isEmpty, isStagedSequenceCompleted {
+            return HLSLiveDVRPartUpdate(
+                candidates: [],
+                discardedFilePaths: discardedFilePaths
+            )
+        }
         guard !advertised.isEmpty,
             advertised.allSatisfy({ !$0.isGap })
         else {
