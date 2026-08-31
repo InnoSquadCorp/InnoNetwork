@@ -472,6 +472,9 @@ for await event in await manager.events(for: task) {
 - opt-in `HLSExternalResourceResolver` for inline or bounded JSON/raw Session
   Data and ordered Apple interstitial asset lists, with explicit byte,
   asset-count, timeout, schema, and HTTP-status failures
+- typed interstitial timeline occupancy/style, navigation restrictions, and
+  skip-control presentation metadata, including bounded asset-list overrides
+  for custom player UI
 - in-process and OS-backed cross-process destination admission, with atomic
   final-file or offline-package commit
 - strict byte-range/CMAF response validation and contiguous-range coalescing

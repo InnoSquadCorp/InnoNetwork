@@ -141,6 +141,19 @@ private let smokeHLSExternalResourceResolver =
             maximumInterstitialAssetCount: 100
         )
     )
+private let smokeHLSInterstitial = HLSInterstitial(
+    source: .asset(URL(string: "https://example.com/ad.m3u8")!),
+    timelineOccupancy: .range,
+    timelineStyle: .primary,
+    navigationRestrictions: [.skip, .jump],
+    skipControl: HLSInterstitialSkipControl(
+        offset: 5,
+        duration: 20,
+        labelID: "Skip_Ad"
+    )
+)
+private let smokeHLSInterstitialAssetResolutionType =
+    HLSInterstitialAssetResolution.self
 
 private struct SmokeHLSRequestObserver: HLSRequestEventObserving {
     func hlsRequestDidEmit(_ event: HLSRequestEvent) async {

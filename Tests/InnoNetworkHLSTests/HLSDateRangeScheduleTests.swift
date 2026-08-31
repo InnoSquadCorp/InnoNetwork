@@ -121,7 +121,12 @@ extension HLSDownloaderTests {
                           "X-SCHEDULE-OFFSET": 5,
                           "DURATION": 4,
                           "CUE": "PRE",
-                          "X-ASSET-URI": "https://ads.example/ad.m3u8"
+                          "X-ASSET-URI": "https://ads.example/ad.m3u8",
+                          "X-TIMELINE-OCCUPIES": "RANGE",
+                          "X-TIMELINE-STYLE": "PRIMARY",
+                          "X-RESTRICT": "SKIP,JUMP",
+                          "X-SKIP-CONTROL-OFFSET": 3,
+                          "X-SKIP-CONTROL-LABEL-ID": "Exit_Label"
                         },
                         {
                           "ID": "nested",
@@ -183,6 +188,14 @@ extension HLSDownloaderTests {
             schedule.entries[0].dateRange.startDate
                 .timeIntervalSince(schedule.source.startDate) == 5
         )
+        let presentation = try #require(
+            schedule.entries[0].dateRange.interstitial
+        )
+        #expect(presentation.timelineOccupancy == .range)
+        #expect(presentation.timelineStyle == .primary)
+        #expect(presentation.navigationRestrictions == [.skip, .jump])
+        #expect(presentation.skipControl?.offset == 3)
+        #expect(presentation.skipControl?.labelID == "Exit_Label")
         let nested = try #require(
             schedule.entries[1].nestedSchedule
         )

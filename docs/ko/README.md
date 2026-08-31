@@ -14,7 +14,7 @@ InnoNetwork 는 Apple 플랫폼을 위한 타입 안전한 Swift 네트워킹 �
 - `InnoNetwork` — 요청/응답 API
 - `InnoNetworkAuthAWS` — body-aware AWS SigV4 reference signer
 - `InnoNetworkDownload` — 다운로드 생명주기 관리
-- `InnoNetworkHLS` — 값 노출 없는 Apple 저작 진단과 bounded presentation-graph 교차 검사, 요청 관측, 목적별 요청 정책, HLS 2nd Edition draft-22 선택·보호·비디오 레이아웃·세션·LL-HLS 메타데이터와 I-frame trick-play 해석, AES-128 비 DRM VOD 조립, 외부 오디오·비디오·자막을 보존하는 로컬 오프라인 패키지
+- `InnoNetworkHLS` — 값 노출 없는 Apple 저작 진단과 bounded presentation-graph 교차 검사, 타입화된 인터스티셜 타임라인·이동 제한·건너뛰기 표시 메타데이터, 요청 관측, 목적별 요청 정책, HLS 2nd Edition draft-22 선택·보호·비디오 레이아웃·세션·LL-HLS 메타데이터와 I-frame trick-play 해석, AES-128 비 DRM VOD 조립, 외부 오디오·비디오·자막을 보존하는 로컬 오프라인 패키지
 - `InnoNetworkHLSLive` — blocking reload와 delta window 복구, AES-128 평문 로컬 패키지, 선택형 URL-free 체크포인트 재개 및 원자적 bounded DVR을 제공하는 async media-playlist snapshot stream
 - `InnoNetworkHLSAVFoundation` — AVFoundation 기반 백그라운드 HLS 저장,
   커스텀 자막 UI용 값 기반 미디어 카탈로그, 버전형 오프라인 에셋

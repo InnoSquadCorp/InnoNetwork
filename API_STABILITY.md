@@ -405,8 +405,8 @@ types and members in addition to top-level declarations. The grouped ledger
 below keeps the high-level compatibility classification readable for the
 5.x release line.
 
-The machine-checked snapshot currently partitions all 2,523 declarations into
-305 Stable consumer declarations, 2,185 Provisionally Stable consumer
+The machine-checked snapshot currently partitions all 2,545 declarations into
+305 Stable consumer declarations, 2,207 Provisionally Stable consumer
 declarations, and 33 opt-in SPI declarations. The three sets are disjoint and
 exhaustive. `Scripts/symbols/stable-rules.tsv` maps the Stable ledger to symbol
 paths, while the compiler-authored SPI flag is snapshotted in
@@ -476,7 +476,10 @@ Stable.
   `HLSDateRange`, `HLSDateRangeCue`, `HLSDateRangePreload`,
   `HLSDateRangeResource`, `HLSDateRangeSchedule`,
   `HLSDateRangeScheduleEntry`, `HLSPreloadedDateRangeResource`,
-  `HLSInterstitial`, `HLSInterstitialSource`, `HLSMediaCharacteristic`,
+  `HLSInterstitial`, `HLSInterstitialNavigationRestriction`,
+  `HLSInterstitialSkipControl`, `HLSInterstitialSource`,
+  `HLSInterstitialTimelineOccupancy`, `HLSInterstitialTimelineStyle`,
+  `HLSMediaCharacteristic`,
   `HLSMediaCharacteristicPreference`, `HLSMediaContainer`,
   `HLSMediaPlaylistType`, `HLSPlaylist`, `HLSPlaylistDiagnostic`,
   `HLSPlaylistInspection`,
@@ -509,7 +512,8 @@ Stable.
   `HLSSessionKey`.
 - External resources: `HLSExternalResourceError`,
   `HLSExternalResourcePack`, `HLSExternalResourceResolver`, and
-  `HLSInterstitialAsset`. The resolver's public Date Range operations load
+  `HLSInterstitialAsset`, `HLSInterstitialAssetResolution`. The resolver's
+  public Date Range operations load
   bounded preload bytes and resolve nested schedules with explicit collision,
   depth, and entry-count boundaries.
 - Request policy and observation: `HLSRequestContext`, `HLSRequestEvent`,

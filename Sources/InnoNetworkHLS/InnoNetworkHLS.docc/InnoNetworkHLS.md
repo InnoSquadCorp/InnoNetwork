@@ -403,7 +403,7 @@ let value = try await resources.resolveSessionData(sessionData)
 let customScheme = try await resources.resolveCustomMediaSelection(
     in: playlist
 )
-let assets = try await resources.resolveInterstitialAssets(interstitial)
+let resolvedInterstitial = try await resources.resolveInterstitial(interstitial)
 let preloaded = try await resources.preloadDateRangeResource(preloadRange)
 let schedule = try await resources.resolveDateRangeSchedule(
     scheduleRange,
@@ -414,8 +414,22 @@ let schedule = try await resources.resolveDateRangeSchedule(
 
 JSON Session Data is validated while preserving its original bytes. Apple
 asset-list JSON requires the case-sensitive `ASSETS`, `URI`, and `DURATION`
-members; entries remain in declaration order. Direct `X-ASSET-URI` sources
-return one asset without a network request.
+members; entries remain in declaration order. ``HLSInterstitial`` also exposes
+typed timeline occupancy/style, navigation restrictions, and skip-control
+metadata for custom player UI. Missing or future timeline values use the HLS
+defaults of point occupancy and highlighted style; unsupported restriction
+tokens are ignored. A positive resume offset does not implicitly change point
+occupancy because clients may apply that presentation policy differently.
+
+``HLSInterstitialAssetResolution`` returns the ordered assets together with the
+effective skip control after applying any asset-list `SKIP-CONTROL` fields over
+their playlist-level counterparts. A missing skip offset does not make the
+interstitial eligible to skip, and label IDs remain application localization
+keys. Navigation enforcement, scheduling, localization, and UI remain with the
+application or AVFoundation. Direct `X-ASSET-URI` sources return one asset
+without a network request. The source-compatible
+``HLSExternalResourceResolver/resolveInterstitialAssets(_:)`` operation remains
+available when only the asset sequence is needed.
 
 The reserved `_hls.media-presentation-settings` declaration resolves into
 ``HLSCustomMediaSelectionScheme``. Its presentation selectors remain in
@@ -648,6 +662,11 @@ so adding an HLS target cannot silently leave it outside release validation.
 - ``HLSPreloadedDateRangeResource``
 - ``HLSInterstitial``
 - ``HLSInterstitialSource``
+- ``HLSInterstitialTimelineOccupancy``
+- ``HLSInterstitialTimelineStyle``
+- ``HLSInterstitialNavigationRestriction``
+- ``HLSInterstitialSkipControl``
+- ``HLSInterstitialAssetResolution``
 - ``HLSPlaylistInspection``
 - ``HLSPlaylistDiagnostic``
 - ``HLSPresentationGraphInspection``

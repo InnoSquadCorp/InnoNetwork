@@ -124,6 +124,23 @@ public struct HLSInterstitialAsset: Equatable, Sendable {
     }
 }
 
+/// Bounded interstitial assets and their effective skip-control metadata.
+public struct HLSInterstitialAssetResolution: Equatable, Sendable {
+    /// Assets in playback order.
+    public let assets: [HLSInterstitialAsset]
+
+    /// Playlist metadata after applying an asset-list `SKIP-CONTROL` override.
+    public let skipControl: HLSInterstitialSkipControl?
+
+    init(
+        assets: [HLSInterstitialAsset],
+        skipControl: HLSInterstitialSkipControl?
+    ) {
+        self.assets = assets
+        self.skipControl = skipControl
+    }
+}
+
 /// Failures produced while loading or validating an external HLS resource.
 public enum HLSExternalResourceError: Error, Equatable, Sendable {
     /// The HTTP response was not successful.

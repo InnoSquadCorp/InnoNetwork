@@ -235,7 +235,7 @@ enum HLSTimelineParser {
             endsOnNext = false
         }
 
-        let interstitial = try parseInterstitial(
+        let interstitial = try HLSInterstitialParser.parse(
             attributes,
             className: className,
             relativeTo: sourceURL
@@ -359,60 +359,6 @@ enum HLSTimelineParser {
             throw HLSDownloadError.invalidPlaylist
         }
         return cues
-    }
-
-    private static func parseInterstitial(
-        _ attributes: HLSAttributeList,
-        className: String?,
-        relativeTo sourceURL: URL
-    ) throws -> HLSInterstitial? {
-        let assetValue = attributes["X-ASSET-URI"]
-        let assetListValue = attributes["X-ASSET-LIST"]
-        guard className == interstitialClass else {
-            guard assetValue == nil, assetListValue == nil else {
-                throw HLSDownloadError.invalidPlaylist
-            }
-            return nil
-        }
-        guard (assetValue == nil) != (assetListValue == nil) else {
-            throw HLSDownloadError.invalidPlaylist
-        }
-
-        let source: HLSInterstitialSource
-        if let assetValue {
-            guard attributes.isQuoted("X-ASSET-URI"),
-                let url = URL(string: assetValue),
-                url.scheme != nil
-            else {
-                throw HLSDownloadError.invalidPlaylist
-            }
-            source = .asset(url)
-        } else if let assetListValue {
-            guard attributes.isQuoted("X-ASSET-LIST"),
-                let url = URL(
-                    string: assetListValue,
-                    relativeTo: sourceURL
-                )?.absoluteURL
-            else {
-                throw HLSDownloadError.invalidPlaylist
-            }
-            source = .assetList(url)
-        } else {
-            throw HLSDownloadError.invalidPlaylist
-        }
-        let resumeOffset = try parseOptionalFiniteDouble(
-            "X-RESUME-OFFSET",
-            in: attributes
-        )
-        let playoutLimit = try parseOptionalNonnegativeDouble(
-            "X-PLAYOUT-LIMIT",
-            in: attributes
-        )
-        return HLSInterstitial(
-            source: source,
-            resumeOffset: resumeOffset,
-            playoutLimit: playoutLimit
-        )
     }
 
     private static func parseExternalResource(

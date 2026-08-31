@@ -112,7 +112,11 @@ extension HLSDownloaderTests {
                       "ASSETS": [
                         {"URI":"https://ads.example/first.m3u8","DURATION":6},
                         {"URI":"https://ads.example/second.m3u8","DURATION":4.5}
-                      ]
+                      ],
+                      "SKIP-CONTROL": {
+                        "OFFSET": 5,
+                        "DURATION": 20
+                      }
                     }
                     """.utf8
                 ),
@@ -128,15 +132,30 @@ extension HLSDownloaderTests {
             )
         )
 
-        let assets = try await resolver.resolveInterstitialAssets(
-            HLSInterstitial(source: .assetList(listURL))
+        let resolution = try await resolver.resolveInterstitial(
+            HLSInterstitial(
+                source: .assetList(listURL),
+                skipControl: HLSInterstitialSkipControl(
+                    offset: 2,
+                    duration: 5,
+                    labelID: "Exit_Label"
+                )
+            )
         )
 
         #expect(
-            assets == [
+            resolution.assets == [
                 HLSInterstitialAsset(url: firstURL, duration: 6),
                 HLSInterstitialAsset(url: secondURL, duration: 4.5),
             ]
+        )
+        #expect(
+            resolution.skipControl
+                == HLSInterstitialSkipControl(
+                    offset: 5,
+                    duration: 20,
+                    labelID: "Exit_Label"
+                )
         )
         #expect(
             await observer.purposes() == [.interstitialAssetList]

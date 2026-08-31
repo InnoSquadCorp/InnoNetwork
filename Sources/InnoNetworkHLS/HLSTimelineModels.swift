@@ -65,15 +65,38 @@ public struct HLSInterstitial: Equatable, Sendable {
     /// Maximum interstitial playout duration.
     public let playoutLimit: TimeInterval?
 
+    /// Effective timeline occupancy, defaulting to a single point.
+    public let timelineOccupancy: HLSInterstitialTimelineOccupancy
+
+    /// Effective timeline style, defaulting to a highlighted presentation.
+    public let timelineStyle: HLSInterstitialTimelineStyle
+
+    /// Navigation restrictions that application or system UI should enforce.
+    public let navigationRestrictions: Set<HLSInterstitialNavigationRestriction>
+
+    /// Optional server-authored skip-control presentation metadata.
+    ///
+    /// Asset-list JSON may override individual values after resolution.
+    public let skipControl: HLSInterstitialSkipControl?
+
     /// Creates typed interstitial metadata.
     public init(
         source: HLSInterstitialSource,
         resumeOffset: TimeInterval? = nil,
-        playoutLimit: TimeInterval? = nil
+        playoutLimit: TimeInterval? = nil,
+        timelineOccupancy: HLSInterstitialTimelineOccupancy = .point,
+        timelineStyle: HLSInterstitialTimelineStyle = .highlight,
+        navigationRestrictions:
+            Set<HLSInterstitialNavigationRestriction> = [],
+        skipControl: HLSInterstitialSkipControl? = nil
     ) {
         self.source = source
         self.resumeOffset = resumeOffset
         self.playoutLimit = playoutLimit
+        self.timelineOccupancy = timelineOccupancy
+        self.timelineStyle = timelineStyle
+        self.navigationRestrictions = navigationRestrictions
+        self.skipControl = skipControl
     }
 }
 

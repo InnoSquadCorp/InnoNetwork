@@ -174,8 +174,12 @@ enum HLSDateRangeScheduleDecoder {
         "START-DATE",
         "X-ASSET-LIST",
         "X-ASSET-URI",
+        "X-RESTRICT",
+        "X-SKIP-CONTROL-LABEL-ID",
         "X-TARGET-CLASS",
         "X-TARGET-ID",
+        "X-TIMELINE-OCCUPIES",
+        "X-TIMELINE-STYLE",
         "X-URI",
     ]
 
@@ -187,6 +191,8 @@ enum HLSDateRangeScheduleDecoder {
         "X-PLAYOUT-LIMIT",
         "X-RESUME-OFFSET",
         "X-SCHEDULE-OFFSET",
+        "X-SKIP-CONTROL-DURATION",
+        "X-SKIP-CONTROL-OFFSET",
     ]
 
     private enum AttributeRepresentation {

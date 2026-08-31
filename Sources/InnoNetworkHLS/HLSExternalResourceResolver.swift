@@ -138,14 +138,28 @@ public struct HLSExternalResourceResolver: Sendable {
     public func resolveInterstitialAssets(
         _ interstitial: HLSInterstitial
     ) async throws -> [HLSInterstitialAsset] {
+        try await resolveInterstitial(interstitial).assets
+    }
+
+    /// Resolves assets and the effective skip control for custom presentation.
+    ///
+    /// An asset-list `SKIP-CONTROL` object overrides matching playlist-level
+    /// values. Scheduling, localization, and UI enforcement remain with the
+    /// application or AVFoundation.
+    public func resolveInterstitial(
+        _ interstitial: HLSInterstitial
+    ) async throws -> HLSInterstitialAssetResolution {
         switch interstitial.source {
         case .asset(let url):
-            return [
-                HLSInterstitialAsset(
-                    url: url,
-                    duration: nil
-                )
-            ]
+            return HLSInterstitialAssetResolution(
+                assets: [
+                    HLSInterstitialAsset(
+                        url: url,
+                        duration: nil
+                    )
+                ],
+                skipControl: interstitial.skipControl
+            )
         case .assetList(let url):
             let data = try await loader.load(
                 from: url,
@@ -154,10 +168,22 @@ public struct HLSExternalResourceResolver: Sendable {
                 maximumBytes:
                     settings.maximumInterstitialAssetListBytes
             )
-            return try HLSInterstitialAssetListDecoder.decode(
+            let decoded = try HLSInterstitialAssetListDecoder.decode(
                 data,
                 maximumAssetCount:
                     settings.maximumInterstitialAssetCount
+            )
+            let skipControl: HLSInterstitialSkipControl?
+            if let playlistControl = interstitial.skipControl {
+                skipControl = playlistControl.applying(
+                    decoded.skipControlOverride
+                )
+            } else {
+                skipControl = decoded.skipControlOverride
+            }
+            return HLSInterstitialAssetResolution(
+                assets: decoded.assets,
+                skipControl: skipControl
             )
         }
     }
