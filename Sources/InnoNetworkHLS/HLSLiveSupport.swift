@@ -34,6 +34,7 @@ package struct HLSLivePartialSegmentRecord: Equatable, Sendable {
     package let byteRange: HLSByteRange?
     package let isIndependent: Bool
     package let isGap: Bool
+    package let resourceContext: HLSLowLatencyResourceContext?
 }
 
 package struct HLSLiveResolvedDocument: Sendable {
@@ -272,16 +273,14 @@ package extension PlaylistResolver {
                     url: partialSegment.url,
                     byteRange: partialSegment.byteRange,
                     isIndependent: partialSegment.isIndependent,
-                    isGap: partialSegment.isGap
+                    isGap: partialSegment.isGap,
+                    resourceContext:
+                        partialSegment.resourceContext
                 )
             }
 
-        return HLSLiveResolvedDocument(
-            playlist: playlist,
-            responseFreshness: responseFreshness,
-            declaredMediaSequence: media.mediaSequence,
-            segments: segments,
-            initializationSegments: media.resources.compactMap {
+        var initializationSegments: [HLSLiveInitializationSegmentRecord] =
+            media.resources.compactMap {
                 resource in
                 guard resource.kind == .initialization else {
                     return nil
@@ -297,7 +296,30 @@ package extension PlaylistResolver {
                         )
                     }
                 )
-            },
+            }
+        for initializationMap in playlist.lowLatency?.initializationMaps ?? []
+        where initializationMap.context.encryption == nil
+            && !initializationSegments.contains(where: {
+                $0.url == initializationMap.resource.url
+                    && $0.byteRange
+                        == initializationMap.resource.byteRange
+            })
+        {
+            initializationSegments.append(
+                HLSLiveInitializationSegmentRecord(
+                    url: initializationMap.resource.url,
+                    byteRange: initializationMap.resource.byteRange,
+                    encryption: nil
+                )
+            )
+        }
+
+        return HLSLiveResolvedDocument(
+            playlist: playlist,
+            responseFreshness: responseFreshness,
+            declaredMediaSequence: media.mediaSequence,
+            segments: segments,
+            initializationSegments: initializationSegments,
             partialSegments: partialSegments,
             encryptionMethod: media.encryptionMethod,
             hasEndList: media.hasEndList

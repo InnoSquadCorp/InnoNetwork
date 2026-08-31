@@ -37,6 +37,20 @@ public struct HLSPartialSegment: Equatable, Sendable {
 
     /// The resolved byte range, when declared.
     public let byteRange: HLSByteRange?
+
+    package let resourceContext: HLSLowLatencyResourceContext?
+
+    public static func == (
+        lhs: HLSPartialSegment,
+        rhs: HLSPartialSegment
+    ) -> Bool {
+        lhs.url == rhs.url
+            && lhs.duration == rhs.duration
+            && lhs.segmentIndex == rhs.segmentIndex
+            && lhs.isIndependent == rhs.isIndependent
+            && lhs.isGap == rhs.isGap
+            && lhs.byteRange == rhs.byteRange
+    }
 }
 
 /// The resource kind advertised by `EXT-X-PRELOAD-HINT`.
@@ -89,6 +103,20 @@ public struct HLSPreloadHint: Equatable, Sendable {
 
     /// Key metadata when ``type`` is ``HLSPreloadHintType/encryptionKey``.
     public let encryptionKey: HLSEncryptionKeyPreload?
+
+    package let resourceContext: HLSLowLatencyResourceContext?
+
+    public static func == (
+        lhs: HLSPreloadHint,
+        rhs: HLSPreloadHint
+    ) -> Bool {
+        lhs.type == rhs.type
+            && lhs.url == rhs.url
+            && lhs.byteRangeStart == rhs.byteRangeStart
+            && lhs.byteRangeLength == rhs.byteRangeLength
+            && lhs.estimatedFirstUseDate == rhs.estimatedFirstUseDate
+            && lhs.encryptionKey == rhs.encryptionKey
+    }
 }
 
 /// The latest position advertised for another rendition playlist.
@@ -131,4 +159,44 @@ public struct HLSLowLatencyMetadata: Equatable, Sendable {
 
     /// Delta-update history omission, when declared.
     public let deltaUpdate: HLSDeltaUpdate?
+
+    package let initializationMaps: [HLSLowLatencyInitializationMap]
+
+    public static func == (
+        lhs: HLSLowLatencyMetadata,
+        rhs: HLSLowLatencyMetadata
+    ) -> Bool {
+        lhs.serverControl == rhs.serverControl
+            && lhs.partialSegmentTargetDuration
+                == rhs.partialSegmentTargetDuration
+            && lhs.partialSegments == rhs.partialSegments
+            && lhs.preloadHints == rhs.preloadHints
+            && lhs.renditionReports == rhs.renditionReports
+            && lhs.deltaUpdate == rhs.deltaUpdate
+    }
+}
+
+package struct HLSLowLatencyResourceIdentity: Equatable, Sendable {
+    package let url: URL
+    package let byteRange: HLSByteRange?
+    package let openEndedByteRangeStart: Int64?
+}
+
+package struct HLSLowLatencyEncryptionIdentity: Equatable, Sendable {
+    package let method: String
+    package let keyURL: URL?
+    package let keyFormat: String
+    package let keyFormatVersions: [Int]
+    package let initializationVector: Data?
+}
+
+package struct HLSLowLatencyResourceContext: Equatable, Sendable {
+    package let discontinuitySequence: Int64
+    package let initializationMap: HLSLowLatencyResourceIdentity?
+    package let encryption: HLSLowLatencyEncryptionIdentity?
+}
+
+package struct HLSLowLatencyInitializationMap: Equatable, Sendable {
+    package let resource: HLSLowLatencyResourceIdentity
+    package let context: HLSLowLatencyResourceContext
 }

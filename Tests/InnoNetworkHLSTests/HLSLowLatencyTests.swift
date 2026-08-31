@@ -267,6 +267,125 @@ struct HLSLowLatencyTests {
         #expect(hint.estimatedFirstUseDate != nil)
     }
 
+    @Test("PART and MAP resources retain their presentation context")
+    func retainsResourcePresentationContext() throws {
+        let sourceURL = try #require(
+            URL(string: "https://media.example/live/main.m3u8")
+        )
+
+        let playlist = try PlaylistResolver().resolve(
+            """
+            #EXTM3U
+            #EXT-X-VERSION:10
+            #EXT-X-TARGETDURATION:2
+            #EXT-X-MEDIA-SEQUENCE:10
+            #EXT-X-DISCONTINUITY-SEQUENCE:7
+            #EXT-X-PART-INF:PART-TARGET=1
+            #EXT-X-SERVER-CONTROL:PART-HOLD-BACK=2
+            #EXT-X-MAP:URI="init.mp4"
+            #EXT-X-PART:DURATION=1,URI="10.0.m4s",INDEPENDENT=YES
+            #EXT-X-DISCONTINUITY
+            #EXT-X-PART:DURATION=1,URI="11.0.m4s",INDEPENDENT=YES
+            #EXT-X-PRELOAD-HINT:TYPE=MAP,URI="next-init.mp4",BYTERANGE-START=512
+            #EXT-X-PRELOAD-HINT:TYPE=PART,URI="11.1.m4s"
+            """,
+            relativeTo: sourceURL
+        )
+        let lowLatency = try #require(playlist.lowLatency)
+        let firstPart = try #require(
+            lowLatency.partialSegments.first?.resourceContext
+        )
+        let secondPart = try #require(
+            lowLatency.partialSegments.last?.resourceContext
+        )
+        let partHint = try #require(
+            lowLatency.preloadHints.first(where: {
+                $0.type == .partialSegment
+            })?.resourceContext
+        )
+
+        #expect(firstPart.discontinuitySequence == 7)
+        #expect(
+            firstPart.initializationMap?.url.absoluteString
+                == "https://media.example/live/init.mp4"
+        )
+        #expect(secondPart.discontinuitySequence == 8)
+        #expect(
+            partHint.initializationMap?.url.absoluteString
+                == "https://media.example/live/next-init.mp4"
+        )
+        #expect(
+            partHint.initializationMap?
+                .openEndedByteRangeStart == 512
+        )
+    }
+
+    @Test("MAP context resolves an implicit range like the media parser")
+    func resolvesImplicitMapRangeFromPreviousSegment() throws {
+        let sourceURL = try #require(
+            URL(string: "https://media.example/live/main.m3u8")
+        )
+
+        let playlist = try PlaylistResolver().resolve(
+            """
+            #EXTM3U
+            #EXT-X-VERSION:10
+            #EXT-X-TARGETDURATION:1
+            #EXT-X-PART-INF:PART-TARGET=1
+            #EXT-X-SERVER-CONTROL:PART-HOLD-BACK=2
+            #EXT-X-BYTERANGE:4@0
+            #EXTINF:1,
+            shared.bin
+            #EXT-X-MAP:URI="shared.bin",BYTERANGE="4"
+            #EXT-X-PART:DURATION=1,URI="1.0.m4s",INDEPENDENT=YES
+            """,
+            relativeTo: sourceURL
+        )
+        let map = try #require(
+            playlist.lowLatency?.initializationMaps.first
+        )
+
+        #expect(map.resource.byteRange?.offset == 4)
+        #expect(map.resource.byteRange?.length == 4)
+    }
+
+    @Test("a discontinuity must precede an edge PART to remain pending")
+    func validatesPendingPartDiscontinuity() throws {
+        let sourceURL = try #require(
+            URL(string: "https://media.example/live/main.m3u8")
+        )
+
+        #expect(throws: HLSDownloadError.invalidPlaylist) {
+            try PlaylistResolver().resolve(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:2
+                #EXT-X-PART-INF:PART-TARGET=1
+                #EXT-X-SERVER-CONTROL:PART-HOLD-BACK=2
+                #EXT-X-PART:DURATION=1,URI="10.0.ts",INDEPENDENT=YES
+                #EXT-X-DISCONTINUITY
+                """,
+                relativeTo: sourceURL
+            )
+        }
+        let playlist = try PlaylistResolver().resolve(
+            """
+            #EXTM3U
+            #EXT-X-TARGETDURATION:2
+            #EXT-X-PART-INF:PART-TARGET=1
+            #EXT-X-SERVER-CONTROL:PART-HOLD-BACK=2
+            #EXT-X-DISCONTINUITY
+            #EXT-X-PART:DURATION=1,URI="10.0.ts",INDEPENDENT=YES
+            """,
+            relativeTo: sourceURL
+        )
+
+        #expect(
+            playlist.lowLatency?.partialSegments.first?
+                .resourceContext?.discontinuitySequence == 1
+        )
+    }
+
     @Test("unknown preload-hint types are ignored")
     func ignoresUnknownPreloadHintTypes() throws {
         let sourceURL = try #require(

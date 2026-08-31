@@ -56,17 +56,49 @@ enum HLSLowLatencyParser {
         {
             throw HLSDownloadError.invalidPlaylist
         }
-        let partialSegments = try parsePartialSegments(
+        let parsedPartialSegments = try parsePartialSegments(
             lines,
             partialTargetDuration: partialTargetDuration,
             relativeTo: sourceURL
         )
-        let preloadHints = try parsePreloadHints(
+        let parsedPreloadHints = try parsePreloadHints(
             lines,
             protocolVersion: protocolVersion,
             partialTargetDuration: partialTargetDuration,
             relativeTo: sourceURL
         )
+        let resourceContexts = try parseResourceContexts(
+            lines,
+            partialSegments: parsedPartialSegments,
+            preloadHints: parsedPreloadHints,
+            relativeTo: sourceURL
+        )
+        let partialSegments = zip(
+            parsedPartialSegments,
+            resourceContexts.partialSegments
+        ).map { partialSegment, context in
+            HLSPartialSegment(
+                url: partialSegment.url,
+                duration: partialSegment.duration,
+                segmentIndex: partialSegment.segmentIndex,
+                isIndependent: partialSegment.isIndependent,
+                isGap: partialSegment.isGap,
+                byteRange: partialSegment.byteRange,
+                resourceContext: context
+            )
+        }
+        let preloadHints = parsedPreloadHints.map { hint in
+            HLSPreloadHint(
+                type: hint.type,
+                url: hint.url,
+                byteRangeStart: hint.byteRangeStart,
+                byteRangeLength: hint.byteRangeLength,
+                estimatedFirstUseDate: hint.estimatedFirstUseDate,
+                encryptionKey: hint.encryptionKey,
+                resourceContext:
+                    resourceContexts.preloadHints[hint.type]
+            )
+        }
         let renditionReports = try parseRenditionReports(
             lines,
             relativeTo: sourceURL
@@ -98,7 +130,9 @@ enum HLSLowLatencyParser {
                 partialSegments: partialSegments,
                 preloadHints: preloadHints,
                 renditionReports: renditionReports,
-                deltaUpdate: deltaUpdate
+                deltaUpdate: deltaUpdate,
+                initializationMaps:
+                    resourceContexts.initializationMaps
             ),
             unsupportedMediaFeatures: unsupportedFeatures
         )

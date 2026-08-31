@@ -22,6 +22,7 @@ enum HLSMediaPlaylistParser {
         var segmentBitrates: [HLSSegmentBitrate] = []
         var pendingSegmentDuration: TimeInterval?
         var pendingDiscontinuity = false
+        var pendingDiscontinuityHasPartialSegment = false
         var pendingGap = false
 
         func recordUnsupportedFeature(
@@ -91,6 +92,11 @@ enum HLSMediaPlaylistParser {
             } else if line == "#EXT-X-DISCONTINUITY" {
                 recordUnsupportedFeature(.discontinuity)
                 pendingDiscontinuity = true
+                pendingDiscontinuityHasPartialSegment = false
+            } else if line.hasPrefix("#EXT-X-PART:") {
+                if pendingDiscontinuity {
+                    pendingDiscontinuityHasPartialSegment = true
+                }
             } else if line == "#EXT-X-GAP" {
                 recordUnsupportedFeature(.gap)
                 pendingGap = true
@@ -312,6 +318,7 @@ enum HLSMediaPlaylistParser {
                 pendingSegmentByteRange = nil
                 pendingSegmentDuration = nil
                 pendingDiscontinuity = false
+                pendingDiscontinuityHasPartialSegment = false
                 pendingGap = false
                 expectsSegmentURI = false
             } else if !line.isEmpty, !line.hasPrefix("#") {
@@ -322,9 +329,13 @@ enum HLSMediaPlaylistParser {
             !expectsSegmentURI,
             pendingSegmentByteRange == nil,
             pendingSegmentDuration == nil,
-            !pendingDiscontinuity,
             !pendingGap
         else {
+            throw HLSDownloadError.invalidPlaylist
+        }
+        if pendingDiscontinuity,
+            !pendingDiscontinuityHasPartialSegment
+        {
             throw HLSDownloadError.invalidPlaylist
         }
 
@@ -342,7 +353,8 @@ enum HLSMediaPlaylistParser {
     }
 
     static func mediaContainer(
-        for media: HLSMediaPlaylist
+        for media: HLSMediaPlaylist,
+        lowLatency: HLSLowLatencyMetadata? = nil
     ) -> HLSMediaContainer {
         if media.resources.contains(where: { resource in
             switch resource.kind {
@@ -351,7 +363,12 @@ enum HLSMediaPlaylistParser {
             case .segment:
                 return isFragmentedMP4Resource(resource.url)
             }
-        }) {
+        })
+            || lowLatency?.preloadHints.contains(where: {
+                $0.type == .initializationMap
+            }) == true
+            || lowLatency?.initializationMaps.isEmpty == false
+        {
             return .fragmentedMP4
         }
         return .mpegTransportStream

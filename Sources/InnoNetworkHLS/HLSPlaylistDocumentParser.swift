@@ -152,7 +152,12 @@ enum HLSPlaylistDocumentParser {
         if contentSteering != nil, !hasStreamInformation {
             throw HLSDownloadError.invalidPlaylist
         }
-        let mediaContainer = media.map(HLSMediaPlaylistParser.mediaContainer(for:))
+        let mediaContainer = media.map {
+            HLSMediaPlaylistParser.mediaContainer(
+                for: $0,
+                lowLatency: lowLatency.metadata
+            )
+        }
         let separateAudioGroupIDs = Set(
             Dictionary(grouping: renditions.filter { $0.kind == .audio }) {
                 $0.groupID

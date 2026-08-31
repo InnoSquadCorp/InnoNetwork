@@ -180,7 +180,8 @@ extension HLSLowLatencyParser {
                         attributes,
                         name: "GAP"
                     ),
-                    byteRange: byteRange
+                    byteRange: byteRange,
+                    resourceContext: nil
                 )
             )
             previousPartURL = url

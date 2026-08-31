@@ -658,7 +658,7 @@ public struct HLSByteRange: Equatable, Sendable {
     /// The positive byte length.
     public let length: Int64
 
-    init?(offset: Int64, length: Int64) {
+    package init?(offset: Int64, length: Int64) {
         guard offset >= 0, length > 0 else {
             return nil
         }
@@ -670,7 +670,7 @@ public struct HLSByteRange: Equatable, Sendable {
         self.length = length
     }
 
-    var endOffset: Int64 {
+    package var endOffset: Int64 {
         offset + length
     }
 }

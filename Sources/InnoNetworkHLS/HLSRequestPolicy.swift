@@ -21,6 +21,9 @@ public enum HLSRequestPurpose: Equatable, Sendable {
     /// A media segment, initialization map, or other media payload.
     case mediaResource
 
+    /// A speculative media resource announced by `EXT-X-PRELOAD-HINT`.
+    case mediaPreloadHint
+
     /// An identity-format AES-128 key.
     case encryptionKey
 

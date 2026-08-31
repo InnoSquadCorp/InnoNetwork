@@ -102,7 +102,8 @@ extension HLSLowLatencyParser {
                     byteRangeLength: length,
                     estimatedFirstUseDate:
                         estimatedFirstUseDate,
-                    encryptionKey: encryptionKey
+                    encryptionKey: encryptionKey,
+                    resourceContext: nil
                 )
             )
         }
