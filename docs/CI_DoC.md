@@ -59,7 +59,8 @@ The `CI` workflow must pass all of the following:
    one shard.
    The extensions shard includes `InnoNetworkHLSTests`,
    `InnoNetworkHLSLiveTests`, and
-   `InnoNetworkHLSAVFoundationTests`.
+   `InnoNetworkHLSAVFoundationTests`, plus the version 27-only
+   `InnoNetworkHLSAudioTests` surface.
    The canonical coverage lane also repeats the deterministic fixture,
    mutation, scaling, and race subset through
    `bash Scripts/run_hls_quality_gates.sh --skip-build`. That command also runs

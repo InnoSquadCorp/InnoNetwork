@@ -61,6 +61,7 @@ required_feature_docs=(
   "$repo_root/Sources/InnoNetworkHLS/InnoNetworkHLS.docc/InnoNetworkHLS.md"
   "$repo_root/Sources/InnoNetworkHLSLive/InnoNetworkHLSLive.docc/InnoNetworkHLSLive.md"
   "$repo_root/Sources/InnoNetworkHLSAVFoundation/InnoNetworkHLSAVFoundation.docc/InnoNetworkHLSAVFoundation.md"
+  "$repo_root/Sources/InnoNetworkHLSAudio/InnoNetworkHLSAudio.docc/InnoNetworkHLSAudio.md"
   "$repo_root/Sources/InnoNetworkWebSocket/InnoNetworkWebSocket.docc/Articles/FeatureScopedManagers.md"
   "$repo_root/Sources/InnoNetworkWebSocket/InnoNetworkWebSocket.docc/Articles/CloseCodes.md"
   "$repo_root/Sources/InnoNetworkWebSocket/InnoNetworkWebSocket.docc/Articles/Reconnect.md"
@@ -189,6 +190,7 @@ expected_provisionally=(
 '`InnoNetworkHLS` companion product and its public playlist, variant selection, single-file download, offline package, event, and error symbols'
 '`InnoNetworkHLSLive` companion product and its public live reload, bounded DVR recording, snapshot, configuration, and error symbols'
 '`InnoNetworkHLSAVFoundation` companion product and its public download, playback configuration, playback metrics, playback health, interstitial observation, and FairPlay symbols'
+'`InnoNetworkHLSAudio` companion product and its public decoded PCM configuration, output lifecycle, sample, and error symbols'
 '`@APIDefinition(method:path:auth:)` and the default-enabled `Macros` package trait'
 '`PersistentResponseCache` statistics and telemetry surfaces'
 '`WebSocketError.unsupportedProtocolFeature`'
@@ -478,10 +480,13 @@ validate_doc_smoke_coverage() {
   require_contains 'import InnoNetworkHLS' "$doc_smoke"
   require_contains 'import InnoNetworkHLSLive' "$doc_smoke"
   require_contains 'import InnoNetworkHLSAVFoundation' "$doc_smoke"
+  require_contains 'import InnoNetworkHLSAudio' "$doc_smoke"
   require_contains 'HLSLivePlaylistClient' "$doc_smoke"
   require_contains 'HLSLiveReloadPack' "$doc_smoke"
   require_contains 'HLSAssetDownloadSessionPack' "$doc_smoke"
   require_contains 'HLSAssetDownloadSession.self' "$doc_smoke"
+  require_contains 'HLSDecodedAudioConfiguration.float32' "$doc_smoke"
+  require_contains 'HLSDecodedAudioOutput' "$doc_smoke"
   require_contains 'HLSOfflinePackageConfiguration.advanced' "$doc_smoke"
   require_contains 'HLSOfflinePackageDownloader' "$doc_smoke"
   require_contains 'HLSExternalResourceResolver' "$doc_smoke"
@@ -491,6 +496,7 @@ validate_doc_smoke_coverage() {
   require_contains '"InnoNetworkPersistentCache"' "$repo_root/Package.swift"
   require_contains '"InnoNetworkOpenAPI"' "$repo_root/Package.swift"
   require_contains '"InnoNetworkHLSAVFoundation"' "$repo_root/Package.swift"
+  require_contains '"InnoNetworkHLSAudio"' "$repo_root/Package.swift"
   require_contains '"InnoNetworkHLSLive"' "$repo_root/Package.swift"
   require_contains 'compileBackgroundDownloadArticleExamples' "$doc_smoke"
   require_contains 'waitForRestoration()' "$doc_smoke"
@@ -984,6 +990,7 @@ validate_public_surface_snapshot() {
     'hls.allowlist|`InnoNetworkHLS`'
     'hls-live.allowlist|`InnoNetworkHLSLive`'
     'hls-avfoundation.allowlist|`InnoNetworkHLSAVFoundation`'
+    'hls-audio.allowlist|`InnoNetworkHLSAudio`'
     'testsupport.allowlist|`InnoNetworkTestSupport`'
     'cache.allowlist|`InnoNetworkPersistentCache`'
     'openapi.allowlist|`InnoNetworkOpenAPI`'
@@ -1150,6 +1157,8 @@ validate_release_quality_gates() {
   require_contains 'InnoNetworkHLSLiveTests' \
     "$repo_root/Scripts/run_bounded_parallel_tests.sh"
   require_contains 'InnoNetworkHLSAVFoundationTests' \
+    "$repo_root/Scripts/run_bounded_parallel_tests.sh"
+  require_contains 'InnoNetworkHLSAudioTests' \
     "$repo_root/Scripts/run_bounded_parallel_tests.sh"
   require_contains 'bash Scripts/tests/test_run_local_release_preflight.sh' \
     "$repo_root/.github/workflows/ci.yml"
@@ -1738,6 +1747,21 @@ for symbol in "${expected_provisionally[@]}"; do
         "$repo_root/Sources/InnoNetworkHLSAVFoundation/HLSPlaybackHealthModels.swift"
       require_contains '## Playback health analysis' \
         "$repo_root/Sources/InnoNetworkHLSAVFoundation/InnoNetworkHLSAVFoundation.docc/InnoNetworkHLSAVFoundation.md"
+      continue
+      ;;
+    '`InnoNetworkHLSAudio` companion product and its public decoded PCM configuration, output lifecycle, sample, and error symbols')
+      require_contains 'name: "InnoNetworkHLSAudio"' "$repo_root/Package.swift"
+      require_contains 'targets: ["InnoNetworkHLSAudio"]' "$repo_root/Package.swift"
+      require_contains 'public struct HLSDecodedAudioConfiguration: Sendable' \
+        "$repo_root/Sources/InnoNetworkHLSAudio/HLSDecodedAudioConfiguration.swift"
+      require_contains 'public final class HLSDecodedAudioOutput' \
+        "$repo_root/Sources/InnoNetworkHLSAudio/HLSDecodedAudioOutput.swift"
+      require_contains 'public struct HLSDecodedAudioSample: Sendable' \
+        "$repo_root/Sources/InnoNetworkHLSAudio/HLSDecodedAudioSample.swift"
+      require_contains 'AVPlayerItemSampleBufferOutput(' \
+        "$repo_root/Sources/InnoNetworkHLSAudio/HLSDecodedAudioOutput.swift"
+      require_contains '## Overview' \
+        "$repo_root/Sources/InnoNetworkHLSAudio/InnoNetworkHLSAudio.docc/InnoNetworkHLSAudio.md"
       continue
       ;;
     '`@APIDefinition(method:path:auth:)` and the default-enabled `Macros` package trait')

@@ -28,6 +28,7 @@ def main() -> None:
         "InnoNetworkHLS",
         "InnoNetworkHLSLive",
         "InnoNetworkHLSAVFoundation",
+        "InnoNetworkHLSAudio",
         "InnoNetworkOpenAPI",
         "InnoNetworkPersistentCache",
         "InnoNetworkTrust",

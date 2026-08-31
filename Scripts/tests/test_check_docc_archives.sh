@@ -13,6 +13,7 @@ products=(
   InnoNetworkHLS
   InnoNetworkHLSLive
   InnoNetworkHLSAVFoundation
+  InnoNetworkHLSAudio
   InnoNetworkWebSocket
   InnoNetworkPersistentCache
   InnoNetworkOpenAPI

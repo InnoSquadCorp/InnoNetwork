@@ -9,7 +9,7 @@
 > 우선합니다.
 
 InnoNetwork 는 Apple 플랫폼을 위한 타입 안전한 Swift 네트워킹 패키지입니다. root runtime package 는
-열한 개의 공개 product 로 구성되어 있습니다.
+열두 개의 공개 product 로 구성되어 있습니다.
 
 - `InnoNetwork` — 요청/응답 API
 - `InnoNetworkAuthAWS` — body-aware AWS SigV4 reference signer
@@ -21,6 +21,9 @@ InnoNetwork 는 Apple 플랫폼을 위한 타입 안전한 Swift 네트워킹 �
   커스텀 자막 UI용 값 기반 미디어 카탈로그, 버전형 오프라인 에셋
   라이브러리, 값이 제거된 재생 상태 분석, 앱 소유 라이선스 통신·보안
   저장소를 유지하는 FairPlay 영구 키 흐름
+- `InnoNetworkHLSAudio` — version 27 플랫폼에서 HLS player item의 decoded
+  PCM을 한 번에 하나씩 요청하고 marker 및 sequence restart를 보존하는
+  선택형 오디오 처리 companion
 - `InnoNetworkWebSocket` — 연결 지향 실시간 흐름
 - `InnoNetworkPersistentCache` — 보수적인 디스크 응답 캐시
 - `InnoNetworkTrust` — 선택형 공개키 pinning 평가

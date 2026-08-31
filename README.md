@@ -37,6 +37,7 @@ optional product selected only when that capability is required.
 | `InnoNetworkHLS` | You need bounded HLS playlist resolution, deterministic variant selection, browser-free non-DRM VOD assembly, or typed retry and recovery diagnostics. |
 | `InnoNetworkHLSLive` | You need blocking reloads, delta-window reconstruction, bounded snapshots, or atomic live DVR capture. |
 | `InnoNetworkHLSAVFoundation` | You need AVFoundation-managed background HLS persistence, media selections, value-redacted playback health, an app-owned FairPlay content-key setup, or system-download lifecycle diagnostics. |
+| `InnoNetworkHLSAudio` | You need demand-driven decoded PCM from an HLS player item on version 27 platforms for waveform, level, speech, or navigation-assistance processing. |
 | `InnoNetworkWebSocket` | You need long-lived bidirectional connections with heartbeat, reconnect, close taxonomy, and event delivery. |
 | `InnoNetworkPersistentCache` | You want `ResponseCache` backed by disk with conservative RFC-aware storage guards and data protection. |
 | `InnoNetworkOpenAPI` | Use `OpenAPIRequest` when generated or hand-written operations should run through the full `DefaultNetworkClient` pipeline. Use `InnoNetworkClientTransport` when an OpenAPI Runtime client needs a thin URLSession-backed transport and the full pipeline is not required. |
@@ -630,6 +631,20 @@ for await event in await manager.events(for: task) {
   for media requests, redirects, trust, content keys, and the asset location
 - available on iOS, macOS, watchOS, and visionOS where
   `AVAssetDownloadURLSession` is supported; unavailable on tvOS
+
+### `InnoNetworkHLSAudio`
+
+- a version 27-only decoded-audio companion isolated from the core network,
+  raw HLS, live reload, and broader AVFoundation playback products
+- validated custom linear PCM formats plus a concise Float32 convenience
+  configuration for common waveform, level, speech, and assistance pipelines
+- one demand-driven async read at a time, with typed rejection of competing
+  consumers instead of an automatically drained, unbounded stream
+- typed `Sendable` Core Media buffers that preserve marker-only samples,
+  output presentation time, duration, sample count, and sequence restarts
+- explicit, idempotent detachment while the application retains its player,
+  timebase pacing, conversion, processing, storage, and UI responsibilities
+- no DRM bypass or promise that protected audio will yield decoded samples
 
 ### `InnoNetworkWebSocket`
 

@@ -1,9 +1,11 @@
+import AVFoundation
 import Foundation
 import InnoNetwork
 import InnoNetworkAuthAWS
 import InnoNetworkDownload
 import InnoNetworkHLS
 import InnoNetworkHLSAVFoundation
+import InnoNetworkHLSAudio
 import InnoNetworkHLSLive
 import InnoNetworkOpenAPI
 import InnoNetworkPersistentCache
@@ -166,6 +168,24 @@ private let smokeHLSCommonMediaClientDataPolicy =
     HLSCommonMediaClientDataPolicy.enabled
 private let smokeHLSCommonMediaClientDataStatusType =
     HLSCommonMediaClientDataStatus.self
+
+@available(macOS 27, iOS 27, tvOS 27, watchOS 27, visionOS 27, *)
+@MainActor
+private func smokeHLSDecodedAudioSurface(
+    playerItem: AVPlayerItem
+) throws {
+    let configuration = try HLSDecodedAudioConfiguration.float32()
+    let output = HLSDecodedAudioOutput(
+        playerItem: playerItem,
+        configuration: configuration
+    )
+    _ = (
+        HLSDecodedAudioSample.self,
+        output.isAttached,
+        try output.nextAvailableSample()
+    )
+    output.detach()
+}
 
 private struct SmokeHLSRequestObserver: HLSRequestEventObserving {
     func hlsRequestDidEmit(_ event: HLSRequestEvent) async {

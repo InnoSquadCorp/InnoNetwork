@@ -59,6 +59,10 @@ let package = Package(
             targets: ["InnoNetworkHLSAVFoundation"]
         ),
         .library(
+            name: "InnoNetworkHLSAudio",
+            targets: ["InnoNetworkHLSAudio"]
+        ),
+        .library(
             name: "InnoNetworkWebSocket",
             targets: ["InnoNetworkWebSocket"]
         ),
@@ -218,6 +222,11 @@ let package = Package(
             swiftSettings: strictSettings
         ),
         .target(
+            name: "InnoNetworkHLSAudio",
+            path: "Sources/InnoNetworkHLSAudio",
+            swiftSettings: strictSettings
+        ),
+        .target(
             name: "InnoNetworkWebSocket",
             dependencies: ["InnoNetwork"],
             path: "Sources/InnoNetworkWebSocket",
@@ -291,6 +300,7 @@ let package = Package(
                 "InnoNetworkHLS",
                 "InnoNetworkHLSLive",
                 "InnoNetworkHLSAVFoundation",
+                "InnoNetworkHLSAudio",
                 "InnoNetworkOpenAPI",
                 "InnoNetworkPersistentCache",
                 "InnoNetworkWebSocket",
@@ -413,6 +423,12 @@ let package = Package(
                 "InnoNetworkHLSAVFoundation",
             ],
             path: "Tests/InnoNetworkHLSAVFoundationTests",
+            swiftSettings: strictSettings
+        ),
+        .testTarget(
+            name: "InnoNetworkHLSAudioTests",
+            dependencies: ["InnoNetworkHLSAudio"],
+            path: "Tests/InnoNetworkHLSAudioTests",
             swiftSettings: strictSettings
         ),
         .testTarget(

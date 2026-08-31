@@ -38,6 +38,7 @@ production_paths=(
     "Sources/InnoNetworkHLS"
     "Sources/InnoNetworkHLSLive"
     "Sources/InnoNetworkHLSAVFoundation"
+    "Sources/InnoNetworkHLSAudio"
     "Sources/InnoNetworkPersistentCache"
     "Sources/InnoNetworkWebSocket"
     "Sources/InnoNetworkOpenAPI"
