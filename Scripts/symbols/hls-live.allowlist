@@ -1,3 +1,4 @@
+InnoNetworkHLSLive	swift.class	HLSLiveDVRRecording
 InnoNetworkHLSLive	swift.enum	HLSLiveDVRError
 InnoNetworkHLSLive	swift.enum	HLSLiveDVREvent
 InnoNetworkHLSLive	swift.enum	HLSLiveDVRPartCapturePolicy
@@ -83,6 +84,9 @@ InnoNetworkHLSLive	swift.init	HLSLivePlaylistClient.init(session:configuration:r
 InnoNetworkHLSLive	swift.init	HLSLiveReloadPack.init(prefersBlockingReloads:allowsDeltaUpdates:minimumPollingInterval:maximumPollingInterval:requestTimeout:)
 InnoNetworkHLSLive	swift.method	HLSLiveDVRRecorder.events(from:to:)
 InnoNetworkHLSLive	swift.method	HLSLiveDVRRecorder.record(from:to:)
+InnoNetworkHLSLive	swift.method	HLSLiveDVRRecorder.startRecording(from:to:)
+InnoNetworkHLSLive	swift.method	HLSLiveDVRRecording.cancelAndDiscard()
+InnoNetworkHLSLive	swift.method	HLSLiveDVRRecording.stopAndCommit()
 InnoNetworkHLSLive	swift.method	HLSLiveDVRTrack.hasCharacteristic(_:)
 InnoNetworkHLSLive	swift.method	HLSLiveEncryptionKeyPreloading.preloadEncryptionKey(for:)
 InnoNetworkHLSLive	swift.method	HLSLiveHealthAnalyzer.ingest(_:observedAt:)
@@ -104,6 +108,7 @@ InnoNetworkHLSLive	swift.property	HLSLiveDVRProgress.segmentCount
 InnoNetworkHLSLive	swift.property	HLSLiveDVRProgress.stagedPartByteCount
 InnoNetworkHLSLive	swift.property	HLSLiveDVRProgress.stagedPartCount
 InnoNetworkHLSLive	swift.property	HLSLiveDVRProgress.stagedPartDuration
+InnoNetworkHLSLive	swift.property	HLSLiveDVRRecording.events
 InnoNetworkHLSLive	swift.property	HLSLiveDVRReceipt.directoryURL
 InnoNetworkHLSLive	swift.property	HLSLiveDVRReceipt.entryPlaylistURL
 InnoNetworkHLSLive	swift.property	HLSLiveDVRReceipt.firstMediaSequence

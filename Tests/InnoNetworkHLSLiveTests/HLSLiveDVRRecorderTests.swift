@@ -102,6 +102,101 @@ extension HLSLivePlaylistClientTests {
         )
     }
 
+    @Test("recording handle stops and commits idempotently")
+    func stopsAndCommitsRecordingHandle() async throws {
+        let sourceURL = try url("https://media.example/controlled.m3u8")
+        let segmentURL = try url("https://media.example/controlled.ts")
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:10
+                #EXTINF:4,
+                controlled.ts
+                """
+            ),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("segment".utf8)),
+            for: segmentURL
+        )
+
+        let recording = recorder(
+            session: fixture.session,
+            startPosition: .currentWindow
+        ).startRecording(
+            from: sourceURL,
+            to: fixture.destinationURL
+        )
+        var events = recording.events.makeAsyncIterator()
+        guard case .progress(let progress) = try await events.next() else {
+            Issue.record("Expected retained-segment progress")
+            return
+        }
+        #expect(progress.segmentCount == 1)
+
+        let receipt = try await recording.stopAndCommit()
+        let repeatedReceipt = try await recording.stopAndCommit()
+        #expect(receipt == repeatedReceipt)
+        #expect(receipt.segmentCount == 1)
+        #expect(receipt.firstMediaSequence == 10)
+        #expect(receipt.lastMediaSequence == 10)
+        #expect(
+            FileManager.default.fileExists(
+                atPath: fixture.destinationURL.path
+            )
+        )
+        #expect(try await events.next() == .completed(receipt))
+        #expect(try await events.next() == nil)
+    }
+
+    @Test("recording handle cancels and discards idempotently")
+    func cancelsAndDiscardsRecordingHandle() async throws {
+        let sourceURL = try url("https://media.example/discard.m3u8")
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                """
+            ),
+            for: sourceURL
+        )
+
+        let recording = recorder(
+            session: fixture.session,
+            startPosition: .currentWindow
+        ).startRecording(
+            from: sourceURL,
+            to: fixture.destinationURL
+        )
+        await recording.cancelAndDiscard()
+        await recording.cancelAndDiscard()
+
+        await #expect(throws: CancellationError.self) {
+            try await recording.stopAndCommit()
+        }
+        #expect(
+            !FileManager.default.fileExists(
+                atPath: fixture.destinationURL.path
+            )
+        )
+        var events = recording.events.makeAsyncIterator()
+        #expect(try await events.next() == nil)
+    }
+
     @Test("record-from-now skips the initial live window")
     func recordsNextCompletedSegment() async throws {
         let sourceURL = try url("https://media.example/next.m3u8")

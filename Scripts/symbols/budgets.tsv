@@ -4,10 +4,10 @@ cache.allowlist	51
 core.allowlist	786
 download.allowlist	94
 hls.allowlist	655
-hls-live.allowlist	200
+hls-live.allowlist	205
 hls-avfoundation.allowlist	361
 openapi.allowlist	36
 testsupport.allowlist	84
 trust.allowlist	17
 websocket.allowlist	130
-TOTAL	2424
+TOTAL	2429

@@ -143,6 +143,34 @@ for try await event in recorder.events(
 }
 ```
 
+For user-controlled recording, retain a session handle and choose its terminal
+operation explicitly:
+
+```swift
+let recording = recorder.startRecording(
+    from: masterOrMediaPlaylistURL,
+    to: packageDirectoryURL
+)
+
+async let observeEvents: Void = {
+    for try await event in recording.events {
+        updateUI(event)
+    }
+}()
+
+// Later, in response to application state or a user action:
+let receipt = try await recording.stopAndCommit()
+try await observeEvents
+// Or discard uncommitted work:
+// await recording.cancelAndDiscard()
+```
+
+The first terminal operation wins and repeated calls observe the same result.
+`stopAndCommit()` stops after the current complete primary segment and commits
+only when every selected rendition covers the retained primary timeline.
+`cancelAndDiscard()` waits for staging cleanup. Dropping the retained handle
+also cancels unfinished work; stopping event iteration alone does not.
+
 Only complete segments are retained. Duration, segment count, per-resource
 bytes, total media bytes, external renditions per kind, request timeout,
 destination free capacity, and event buffering are bounded.
@@ -234,6 +262,7 @@ ephemeral staging data; recordings are not resumed after interruption.
 ### Bounded live DVR
 
 - ``HLSLiveDVRRecorder``
+- ``HLSLiveDVRRecording``
 - ``HLSLiveDVRConfiguration``
 - ``HLSLiveDVRLimitPack``
 - ``HLSLiveDVRRenditionPack``

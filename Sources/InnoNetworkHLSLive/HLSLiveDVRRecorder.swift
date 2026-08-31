@@ -47,6 +47,52 @@ public struct HLSLiveDVRRecorder: Sendable {
         )
     }
 
+    /// Starts a bounded recording with explicit stop, commit, and discard
+    /// control.
+    ///
+    /// Retain the returned handle for the recording lifetime. Progress and
+    /// the terminal receipt are available from ``HLSLiveDVRRecording/events``.
+    public func startRecording(
+        from sourceURL: URL,
+        to destinationDirectoryURL: URL
+    ) -> HLSLiveDVRRecording {
+        let (stream, continuation) =
+            AsyncThrowingStream<
+                HLSLiveDVREvent,
+                Error
+            >.makeStream(
+                bufferingPolicy: .bufferingNewest(64)
+            )
+        let control = HLSLiveDVRRecordingControl()
+        let recorder = self
+        let task = Task<HLSLiveDVRReceipt, Error> {
+            do {
+                let receipt = try await recorder.execute(
+                    sourceURL: sourceURL,
+                    destinationDirectoryURL:
+                        destinationDirectoryURL,
+                    control: control
+                ) {
+                    continuation.yield(.progress($0))
+                }
+                continuation.yield(.completed(receipt))
+                continuation.finish()
+                return receipt
+            } catch is CancellationError {
+                continuation.finish()
+                throw CancellationError()
+            } catch {
+                continuation.finish(throwing: error)
+                throw error
+            }
+        }
+        return HLSLiveDVRRecording(
+            events: stream,
+            control: control,
+            task: task
+        )
+    }
+
     /// Starts a bounded, independently cancellable recording event stream.
     ///
     /// A slow consumer may miss older progress snapshots, but the newest
@@ -89,6 +135,7 @@ public struct HLSLiveDVRRecorder: Sendable {
     private func execute(
         sourceURL: URL,
         destinationDirectoryURL: URL,
+        control: HLSLiveDVRRecordingControl? = nil,
         onProgress:
             @escaping @Sendable (HLSLiveDVRProgress) -> Void
     ) async throws -> HLSLiveDVRReceipt {
@@ -116,6 +163,7 @@ public struct HLSLiveDVRRecorder: Sendable {
             let receipt = try await performRecording(
                 from: sourceURL,
                 to: destinationDirectoryURL,
+                control: control,
                 onProgress: onProgress
             )
             await lease.release()
@@ -129,6 +177,7 @@ public struct HLSLiveDVRRecorder: Sendable {
     private func performRecording(
         from sourceURL: URL,
         to destinationDirectoryURL: URL,
+        control: HLSLiveDVRRecordingControl?,
         onProgress:
             @escaping @Sendable (HLSLiveDVRProgress) -> Void
     ) async throws -> HLSLiveDVRReceipt {
@@ -160,8 +209,51 @@ public struct HLSLiveDVRRecorder: Sendable {
         let resourceContext = resourceWriter.makeContext(
             workspace: workspace
         )
+        let snapshots:
+            AsyncThrowingStream<
+                HLSLivePlaylistSnapshot,
+                Error
+            >
+        var snapshotRelayTask: Task<Void, Never>?
+        if let control {
+            let (stream, continuation) =
+                AsyncThrowingStream<
+                    HLSLivePlaylistSnapshot,
+                    Error
+                >.makeStream(
+                    bufferingPolicy: .bufferingNewest(1)
+                )
+            let client = liveClient
+            let task = Task {
+                do {
+                    for try await snapshot in client.snapshots(
+                        from: sourceURL
+                    ) {
+                        continuation.yield(snapshot)
+                    }
+                    continuation.finish()
+                } catch is CancellationError {
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            await control.installSnapshotRelayTask(task)
+            snapshots = stream
+            snapshotRelayTask = task
+        } else {
+            snapshots = liveClient.snapshots(from: sourceURL)
+        }
+        defer {
+            snapshotRelayTask?.cancel()
+        }
         do {
-            recordingLoop: for try await snapshot in liveClient.snapshots(from: sourceURL) {
+            recordingLoop: for try await snapshot in snapshots {
+                if let control,
+                    await control.shouldStopAndCommit
+                {
+                    break recordingLoop
+                }
                 try state.validatePresentation(snapshot)
                 let candidates = try state.candidates(
                     in: snapshot
@@ -262,6 +354,11 @@ public struct HLSLiveDVRRecorder: Sendable {
                         break recordingLoop
                     }
                     onProgress(state.progress)
+                    if let control,
+                        await control.shouldStopAndCommit
+                    {
+                        break recordingLoop
+                    }
                     if state.reachedLimit {
                         break recordingLoop
                     }
