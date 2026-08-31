@@ -84,6 +84,51 @@ protection and cross-process coordination. The library keeps application
 display order stable, replaces an existing identifier in place, rejects
 duplicate package locations, and never moves or deletes asset bytes.
 
+Directory presence does not prove that AVFoundation retained a complete
+offline rendition. Inspect the stored reference again after relaunch and
+before presenting an offline playback action:
+
+```swift
+let readiness = try await HLSOfflineAssetInspector().inspect(storedAsset)
+
+switch readiness.state {
+case .ready:
+    presentOfflinePlayback(
+        choices: readiness.mediaSelectionGroups
+    )
+case .incomplete:
+    offerDownloadRepair()
+case .missing, .invalidPackage, .unrecognizedPackage:
+    removeStaleReference()
+@unknown default:
+    removeStaleReference()
+}
+```
+
+``HLSOfflineAssetInspector`` opens only the stored file URL and uses
+`AVAssetCache.isPlayableOffline` to distinguish a complete offline rendition
+from an existing but incomplete package. Its value-only snapshot contains the
+standard audio, video, subtitle, and caption choices that AVFoundation reports
+as available offline. Each group retains at most 256 native choices. Language
+tags containing control characters or exceeding 128 UTF-8 bytes are omitted;
+Custom Media Selection languages are unique, ordered, and capped at 256.
+
+On version 26 and newer systems, the snapshot compares cached Custom Media
+Selection languages and selector settings with the authored scheme. Coverage
+is reported as none, partial, complete, or indeterminate when bounded
+inspection cannot prove completeness. Older systems report the coverage API
+as unavailable, and groups without a scheme report it as not authored.
+Cancellation is preserved as `CancellationError`; unrelated AVFoundation
+media-group load failures produce a partial group list with
+`didCompleteMediaSelectionInspection == false` instead of exposing an
+underlying error.
+
+`isPlayableOffline` does not promise that every authored media choice is
+cached, which is why choices and Custom Media Selection coverage are reported
+separately. It also does not validate an application-managed FairPlay
+persistent content key. Attach and validate protected-content policy through
+the application's ``HLSFairPlaySession`` workflow before playback.
+
 On macOS, iOS, and visionOS,
 ``HLSAssetDownloadStorage`` checks whether the package is still present,
 configures the system's best-effort expiration/eviction policy, and removes

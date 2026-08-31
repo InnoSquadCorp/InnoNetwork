@@ -186,11 +186,17 @@ public actor HLSAssetDownloadStorage {
     public func availability(
         of asset: HLSStoredAsset
     ) throws -> HLSStoredAssetAvailability {
-        guard fileManager.fileExists(atPath: asset.location.path) else {
+        switch HLSAssetPackageInspector.state(
+            at: asset.location,
+            fileManager: fileManager
+        ) {
+        case .missing:
             return .missing
+        case .invalid:
+            throw HLSAssetDownloadStorageError.invalidAssetPackage
+        case .available:
+            return .available
         }
-        try validatePackage(at: asset.location)
-        return .available
     }
 
     /// Returns the current automatic-purge policy, when one was set.
@@ -247,10 +253,17 @@ public actor HLSAssetDownloadStorage {
     public func remove(
         _ asset: HLSStoredAsset
     ) throws -> Bool {
-        guard fileManager.fileExists(atPath: asset.location.path) else {
+        switch HLSAssetPackageInspector.state(
+            at: asset.location,
+            fileManager: fileManager
+        ) {
+        case .missing:
             return false
+        case .invalid:
+            throw HLSAssetDownloadStorageError.invalidAssetPackage
+        case .available:
+            break
         }
-        try validatePackage(at: asset.location)
         do {
             try fileManager.removeItem(at: asset.location)
             return true
@@ -258,25 +271,6 @@ public actor HLSAssetDownloadStorage {
             throw HLSAssetDownloadStorageError.removalFailed(
                 SendableUnderlyingError(error)
             )
-        }
-    }
-
-    private func validatePackage(
-        at location: URL
-    ) throws {
-        let values: URLResourceValues
-        do {
-            values = try location.resourceValues(
-                forKeys: [.isDirectoryKey, .isSymbolicLinkKey]
-            )
-        } catch {
-            throw HLSAssetDownloadStorageError.invalidAssetPackage
-        }
-        guard
-            values.isDirectory == true,
-            values.isSymbolicLink != true
-        else {
-            throw HLSAssetDownloadStorageError.invalidAssetPackage
         }
     }
 

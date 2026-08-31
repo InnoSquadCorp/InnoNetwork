@@ -9,6 +9,13 @@ Versioning.
 
 ### Added
 
+- `HLSOfflineAssetInspector` distinguishes missing, invalid, unrecognized,
+  incomplete, and offline-playable AVFoundation `.movpkg` references. Its
+  bounded `Sendable` snapshot includes the media choices and safe language
+  tags that `AVAssetCache` reports as cached, plus typed Custom Media Selection
+  coverage on version 26 systems. Inspection preserves task cancellation,
+  opens only the stored file URL, and leaves package bytes and FairPlay key
+  validity application-owned.
 - `HLSIntegratedTimelineMonitor` adds a read-only bridge for AVFoundation's
   primary and interstitial playback timeline on macOS 15, iOS and tvOS 18,
   watchOS 11, and visionOS 2. Bounded `Sendable` snapshots preserve source and

@@ -118,7 +118,7 @@ curl --fail --silent --show-error "$playlist_url" \
 
 test_command=(
   xcrun swift test
-  --filter 'HLS(DecodedAudio|IntegratedTimeline)RuntimeTests'
+  --filter 'HLS(DecodedAudio|IntegratedTimeline|OfflineAsset)RuntimeTests'
 )
 if [[ "$skip_build" == true ]]; then
   test_command+=(--skip-build)
@@ -130,4 +130,4 @@ if ! INNONETWORK_HLS_RUNTIME_PLAYLIST_URL="$playlist_url" \
   exit 1
 fi
 
-echo "hls-runtime-smoke: OK (macOS AVPlayer timeline and decoded PCM)"
+echo "hls-runtime-smoke: OK (macOS AVPlayer timeline, decoded PCM, and offline movpkg)"

@@ -617,9 +617,13 @@ for await event in await manager.events(for: task) {
   retain UI, alerting, and policy ownership
 - reconnectable AVFoundation background HLS downloads with typed content
   selection, interstitial retention, and bounded event replay
-- persistable validated `.movpkg` references plus availability checks,
-  best-effort system eviction policy, and symlink-safe idempotent removal on
-  supported platforms
+- persistable validated `.movpkg` references plus a cancellation-safe
+  `AVAssetCache` readiness inspector that distinguishes missing, invalid,
+  unrecognized, incomplete, and offline-playable packages; bounded snapshots
+  report cached standard media choices, safe language tags, and Custom Media
+  Selection coverage without retaining native objects
+- best-effort system eviction policy and symlink-safe idempotent package
+  removal on supported platforms
 - a bounded, versioned, Codable offline-asset library with stable ordering,
   duplicate ID/location rejection, availability inspection, and missing-entry
   pruning while applications retain metadata-persistence ownership

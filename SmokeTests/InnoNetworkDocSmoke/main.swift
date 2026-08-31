@@ -55,6 +55,11 @@ private let smokeHLSAssetSessionPack = HLSAssetDownloadSessionPack(
 )
 private let smokeHLSAssetSessionType = HLSAssetDownloadSession.self
 private let smokeHLSAssetLibraryType = HLSAssetDownloadLibrary.self
+private let smokeHLSOfflineAssetInspector = HLSOfflineAssetInspector()
+private let smokeHLSOfflineAssetReadinessState =
+    HLSOfflineAssetReadinessState.ready
+private let smokeHLSOfflineCustomCoverage =
+    HLSOfflineCustomMediaSelectionCoverage.complete
 private let smokeHLSFairPlaySessionType = HLSFairPlaySession.self
 private let smokeHLSFairPlayPersistentKeyWorkflowType =
     HLSFairPlayPersistentKeyWorkflow.self
@@ -168,6 +173,32 @@ private let smokeHLSCommonMediaClientDataPolicy =
     HLSCommonMediaClientDataPolicy.enabled
 private let smokeHLSCommonMediaClientDataStatusType =
     HLSCommonMediaClientDataStatus.self
+
+private func smokeHLSOfflineAssetSurface(
+    storedAsset: HLSStoredAsset
+) async throws {
+    let snapshot = try await smokeHLSOfflineAssetInspector.inspect(
+        storedAsset
+    )
+    _ = (
+        HLSOfflineAssetReadinessSnapshot.self,
+        HLSOfflineMediaSelectionGroupSnapshot.self,
+        HLSOfflineMediaSelectionOptionSnapshot.self,
+        snapshot.state,
+        snapshot.isPlayableOffline,
+        snapshot.didCompleteMediaSelectionInspection,
+        snapshot.mediaSelectionGroups.map {
+            (
+                $0.kind,
+                $0.options,
+                $0.cachedCustomLanguageTags,
+                $0.customMediaSelectionCoverage
+            )
+        },
+        smokeHLSOfflineAssetReadinessState,
+        smokeHLSOfflineCustomCoverage
+    )
+}
 
 @available(
     macOS 15,

@@ -189,7 +189,7 @@ expected_provisionally=(
 '`InnoNetworkOpenAPI` companion product'
 '`InnoNetworkHLS` companion product and its public playlist, variant selection, single-file download, offline package, event, and error symbols'
 '`InnoNetworkHLSLive` companion product and its public live reload, bounded DVR recording, snapshot, configuration, and error symbols'
-'`InnoNetworkHLSAVFoundation` companion product and its public download, playback configuration, timed metadata, playback metrics, playback health, interstitial and integrated-timeline observation, and FairPlay symbols'
+'`InnoNetworkHLSAVFoundation` companion product and its public download, offline readiness, playback configuration, timed metadata, playback metrics, playback health, interstitial and integrated-timeline observation, and FairPlay symbols'
 '`InnoNetworkHLSAudio` companion product and its public decoded PCM configuration, output lifecycle, sample, and error symbols'
 '`@APIDefinition(method:path:auth:)` and the default-enabled `Macros` package trait'
 '`PersistentResponseCache` statistics and telemetry surfaces'
@@ -1718,13 +1718,19 @@ for symbol in "${expected_provisionally[@]}"; do
         "$repo_root/Sources/InnoNetworkHLSLive/InnoNetworkHLSLive.docc/InnoNetworkHLSLive.md"
       continue
       ;;
-    '`InnoNetworkHLSAVFoundation` companion product and its public download, playback configuration, timed metadata, playback metrics, playback health, interstitial and integrated-timeline observation, and FairPlay symbols')
+    '`InnoNetworkHLSAVFoundation` companion product and its public download, offline readiness, playback configuration, timed metadata, playback metrics, playback health, interstitial and integrated-timeline observation, and FairPlay symbols')
       require_contains 'name: "InnoNetworkHLSAVFoundation"' "$repo_root/Package.swift"
       require_contains 'targets: ["InnoNetworkHLSAVFoundation"]' "$repo_root/Package.swift"
       require_contains 'public final class HLSAssetDownloadSession: Sendable' \
         "$repo_root/Sources/InnoNetworkHLSAVFoundation/HLSAssetDownloadSession.swift"
       require_contains 'public struct HLSAssetDownloadSessionPack: Sendable' \
         "$repo_root/Sources/InnoNetworkHLSAVFoundation/HLSAssetDownloadModels.swift"
+      require_contains 'public struct HLSOfflineAssetInspector: Sendable' \
+        "$repo_root/Sources/InnoNetworkHLSAVFoundation/HLSOfflineAssetInspector.swift"
+      require_contains 'AVAssetCache.isPlayableOffline' \
+        "$repo_root/Sources/InnoNetworkHLSAVFoundation/InnoNetworkHLSAVFoundation.docc/InnoNetworkHLSAVFoundation.md"
+      require_contains 'smokeHLSOfflineAssetSurface' \
+        "$repo_root/SmokeTests/InnoNetworkDocSmoke/main.swift"
       require_contains 'AVAssetDownloadURLSession(' \
         "$repo_root/Sources/InnoNetworkHLSAVFoundation/HLSAssetDownloadSession.swift"
       require_contains 'AVAssetDownloadConfiguration(' \
