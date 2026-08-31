@@ -405,8 +405,8 @@ types and members in addition to top-level declarations. The grouped ledger
 below keeps the high-level compatibility classification readable for the
 5.x release line.
 
-The machine-checked snapshot currently partitions all 2,492 declarations into
-305 Stable consumer declarations, 2,154 Provisionally Stable consumer
+The machine-checked snapshot currently partitions all 2,523 declarations into
+305 Stable consumer declarations, 2,185 Provisionally Stable consumer
 declarations, and 33 opt-in SPI declarations. The three sets are disjoint and
 exhaustive. `Scripts/symbols/stable-rules.tsv` maps the Stable ledger to symbol
 paths, while the compiler-authored SPI flag is snapshotted in
@@ -555,6 +555,11 @@ Stable.
   `HLSPlaybackMediaKind`, `HLSPlaybackMediaPreference`,
   `HLSPlaybackMediaSelection`, `HLSPlaybackMediaSelectionResolution`, and
   `HLSPlaybackVariantPack`.
+- Legible media: `HLSLegibleMediaCatalog`, `HLSLegibleMediaFeature`,
+  `HLSLegibleMediaKind`, `HLSLegibleMediaOption`,
+  `HLSLegibleMediaOptionID`, `HLSLegibleMediaProvenance`, and
+  `HLSLegibleMediaSelection`. Catalogs expose value-only custom-player state;
+  opaque option identifiers remain asset-scoped and nonpersistent.
 - Playback metrics: `HLSPlaybackMetricContext`, `HLSPlaybackMetricEvent`,
   `HLSPlaybackMetricMediaType`, `HLSPlaybackMetrics`,
   `HLSPlaybackMetricsError`, `HLSPlaybackMetricSummary`, `HLSPlaybackMode`,

@@ -586,6 +586,10 @@ for await event in await manager.events(for: task) {
   media groups, and Custom Media Selection preferences. The caller keeps
   player ownership; version 26 systems use the native authored scheme while
   earlier systems select a compatible media option
+- a `Sendable` legible-media catalog for custom subtitle and caption UI, with
+  localized display names, BCP 47 languages, current/default state,
+  generated/translated provenance, accessibility features, and opaque exact
+  selection IDs that never expose AVFoundation objects
 - a main-actor, read-only interstitial monitor that emits bounded,
   cancellation-safe lifecycle streams as value-redacted `Sendable` events;
   AVFoundation retains schedule and system skip-control ownership

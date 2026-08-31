@@ -151,6 +151,46 @@ resolves every requested group, so a validation failure does not partially
 mutate the item. The result reports only media kind and application mechanism,
 never option names, languages, or URLs.
 
+### Custom legible media UI
+
+Build custom subtitle and caption controls from a point-in-time value snapshot:
+
+```swift
+let configurator = HLSPlaybackConfigurator()
+let catalog = try await configurator.legibleMediaCatalog(
+    for: playerItem,
+    displayLocale: Locale(identifier: "ko")
+)
+
+for option in catalog.options {
+    renderSubtitle(
+        name: option.displayName,
+        language: option.languageTag,
+        selected: option.isSelected
+    )
+}
+
+if let korean = catalog.options.first(where: { $0.languageTag == "ko" }) {
+    try await configurator.selectLegibleMedia(
+        .option(korean.id),
+        on: playerItem
+    )
+}
+```
+
+An asset without legible media returns an empty catalog. The catalog retains
+no player item, asset, media group, or media option, so its `Sendable` values
+can back application-owned UI state. Each option identifier is an opaque
+fingerprint of AVFoundation's property-list identity; the property-list values
+are never exposed. Use an identifier only with the same current asset, refresh
+after asset or media-selection changes, and do not persist it as a content ID.
+Exact selection resolves the current option before mutating the item, while
+disabled selection respects the group's empty-selection policy.
+
+Applications that prefer AVKit's system-owned menu can use
+`AVLegibleMediaOptionsMenuController` directly instead of building custom UI.
+InnoNetwork does not retain or own that controller.
+
 ## Interstitial playback
 
 ``HLSInterstitialPlaybackMonitor`` converts the caller-owned player's
@@ -450,3 +490,13 @@ expiry, deletion, and server-side invalidation.
 - ``HLSPlaybackMediaKind``
 - ``HLSPlaybackAppliedMediaSelection``
 - ``HLSPlaybackMediaSelectionResolution``
+
+### Legible media
+
+- ``HLSLegibleMediaCatalog``
+- ``HLSLegibleMediaOption``
+- ``HLSLegibleMediaOptionID``
+- ``HLSLegibleMediaSelection``
+- ``HLSLegibleMediaKind``
+- ``HLSLegibleMediaProvenance``
+- ``HLSLegibleMediaFeature``

@@ -63,6 +63,10 @@ private let smokeHLSPlaybackHealthConfiguration =
             observationWindow: 60
         )
     )
+private let smokeHLSLegibleMediaCatalogType =
+    HLSLegibleMediaCatalog.self
+private let smokeHLSLegibleMediaSelection =
+    HLSLegibleMediaSelection.automatic
 private let smokeHLSConfiguration = HLSDownloadConfiguration.advanced(
     storage: HLSStoragePack(
         maximumTotalDownloadBytes: 4 * 1_024 * 1_024 * 1_024,
