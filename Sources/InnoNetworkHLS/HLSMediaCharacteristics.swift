@@ -109,11 +109,11 @@ public extension HLSOfflinePackageTrack {
     }
 }
 
-struct HLSSubtitleProvenanceResolver: Sendable {
+package struct HLSSubtitleProvenanceResolver: Sendable {
     private let policy: HLSSubtitleProvenancePolicy
     private let kind: HLSRenditionKind
 
-    init(
+    package init(
         policy: HLSSubtitleProvenancePolicy,
         kind: HLSRenditionKind
     ) {
@@ -121,7 +121,7 @@ struct HLSSubtitleProvenanceResolver: Sendable {
         self.kind = kind
     }
 
-    func eligible(
+    package func eligible(
         _ renditions: [HLSRendition]
     ) -> [HLSRendition] {
         guard kind == .subtitles else {
@@ -139,7 +139,7 @@ struct HLSSubtitleProvenanceResolver: Sendable {
         }
     }
 
-    func preferred(
+    package func preferred(
         _ renditions: [HLSRendition]
     ) -> [HLSRendition] {
         guard kind == .subtitles,

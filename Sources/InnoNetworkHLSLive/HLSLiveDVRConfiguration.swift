@@ -83,6 +83,7 @@ public struct HLSLiveDVRRenditionPack: Sendable {
     let audio: HLSLiveDVRRenditionSelectionPolicy
     let video: HLSLiveDVRRenditionSelectionPolicy
     let subtitles: HLSLiveDVRRenditionSelectionPolicy
+    private let subtitleProvenance: HLSSubtitleProvenancePolicy
     let maximumRenditionsPerKind: Int
 
     /// Creates bounded live DVR rendition selection.
@@ -94,9 +95,28 @@ public struct HLSLiveDVRRenditionPack: Sendable {
         subtitles: HLSLiveDVRRenditionSelectionPolicy = .disabled,
         maximumRenditionsPerKind: Int = 8
     ) {
+        self.init(
+            audio: audio,
+            video: video,
+            subtitles: subtitles,
+            subtitleProvenance: HLSSubtitleProvenancePolicy(),
+            maximumRenditionsPerKind: maximumRenditionsPerKind
+        )
+    }
+
+    /// Creates live DVR selection with explicit generated/translated
+    /// subtitle behavior.
+    public init(
+        audio: HLSLiveDVRRenditionSelectionPolicy = .defaultOrFirst,
+        video: HLSLiveDVRRenditionSelectionPolicy = .disabled,
+        subtitles: HLSLiveDVRRenditionSelectionPolicy = .disabled,
+        subtitleProvenance: HLSSubtitleProvenancePolicy,
+        maximumRenditionsPerKind: Int = 8
+    ) {
         self.audio = audio
         self.video = video
         self.subtitles = subtitles
+        self.subtitleProvenance = subtitleProvenance
         self.maximumRenditionsPerKind = min(
             max(1, maximumRenditionsPerKind),
             32
@@ -116,6 +136,10 @@ public struct HLSLiveDVRRenditionPack: Sendable {
         case .closedCaptions:
             return .disabled
         }
+    }
+
+    var resolvedSubtitleProvenance: HLSSubtitleProvenancePolicy {
+        subtitleProvenance
     }
 }
 

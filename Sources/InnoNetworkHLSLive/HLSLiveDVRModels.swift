@@ -1,4 +1,5 @@
 import Foundation
+import InnoNetworkHLS
 
 /// A live feature that the bounded DVR writer cannot preserve safely.
 public enum HLSLiveDVRUnsupportedFeature: Equatable, Sendable {
@@ -215,6 +216,31 @@ public struct HLSLiveDVRTrack: Equatable, Sendable {
     /// The source's stable rendition identifier.
     public let stableID: String?
 
+    /// Media characteristic tags retained in playlist order.
+    public let characteristics: [String]
+
+    /// Typed media characteristics retained from the source rendition.
+    public var mediaCharacteristics: [HLSMediaCharacteristic] {
+        characteristics.map(HLSMediaCharacteristic.init(rawValue:))
+    }
+
+    /// Returns whether this track retains the exact characteristic.
+    public func hasCharacteristic(
+        _ characteristic: HLSMediaCharacteristic
+    ) -> Bool {
+        characteristics.contains(characteristic.rawValue)
+    }
+
+    /// Whether this track was authored or translated programmatically.
+    public var isMachineGenerated: Bool {
+        hasCharacteristic(.machineGenerated)
+    }
+
+    /// Whether this track is marked as a translation.
+    public var isTranslated: Bool {
+        hasCharacteristic(.translation)
+    }
+
     /// The playlist path relative to the package directory.
     public let relativePlaylistPath: String
 
@@ -223,12 +249,14 @@ public struct HLSLiveDVRTrack: Equatable, Sendable {
         name: String?,
         language: String?,
         stableID: String?,
+        characteristics: [String] = [],
         relativePlaylistPath: String
     ) {
         self.kind = kind
         self.name = name
         self.language = language
         self.stableID = stableID
+        self.characteristics = characteristics
         self.relativePlaylistPath = relativePlaylistPath
     }
 }

@@ -75,6 +75,7 @@ InnoNetworkHLSLive	swift.init	HLSLiveDVRPartPack.init(policy:maximumStagedPartCo
 InnoNetworkHLSLive	swift.init	HLSLiveDVRRecorder.init(client:configuration:)
 InnoNetworkHLSLive	swift.init	HLSLiveDVRRecorder.init(configuration:)
 InnoNetworkHLSLive	swift.init	HLSLiveDVRRenditionPack.init(audio:video:subtitles:maximumRenditionsPerKind:)
+InnoNetworkHLSLive	swift.init	HLSLiveDVRRenditionPack.init(audio:video:subtitles:subtitleProvenance:maximumRenditionsPerKind:)
 InnoNetworkHLSLive	swift.init	HLSLiveHealthAnalyzer.init(configuration:)
 InnoNetworkHLSLive	swift.init	HLSLiveHealthThresholdPack.init(degradedStagnantSnapshotCount:criticalStagnantSnapshotCount:degradedDeltaRecoveryCount:degradedPathwayChangeCount:degradedLatencyDrift:criticalLatencyDrift:)
 InnoNetworkHLSLive	swift.init	HLSLivePlaylistClient.init(configuration:keyPreloader:)
@@ -82,6 +83,7 @@ InnoNetworkHLSLive	swift.init	HLSLivePlaylistClient.init(session:configuration:r
 InnoNetworkHLSLive	swift.init	HLSLiveReloadPack.init(prefersBlockingReloads:allowsDeltaUpdates:minimumPollingInterval:maximumPollingInterval:requestTimeout:)
 InnoNetworkHLSLive	swift.method	HLSLiveDVRRecorder.events(from:to:)
 InnoNetworkHLSLive	swift.method	HLSLiveDVRRecorder.record(from:to:)
+InnoNetworkHLSLive	swift.method	HLSLiveDVRTrack.hasCharacteristic(_:)
 InnoNetworkHLSLive	swift.method	HLSLiveEncryptionKeyPreloading.preloadEncryptionKey(for:)
 InnoNetworkHLSLive	swift.method	HLSLiveHealthAnalyzer.ingest(_:observedAt:)
 InnoNetworkHLSLive	swift.method	HLSLiveHealthAnalyzer.reset()
@@ -112,8 +114,12 @@ InnoNetworkHLSLive	swift.property	HLSLiveDVRReceipt.promotedPartCount
 InnoNetworkHLSLive	swift.property	HLSLiveDVRReceipt.recordedDuration
 InnoNetworkHLSLive	swift.property	HLSLiveDVRReceipt.segmentCount
 InnoNetworkHLSLive	swift.property	HLSLiveDVRReceipt.tracks
+InnoNetworkHLSLive	swift.property	HLSLiveDVRTrack.characteristics
+InnoNetworkHLSLive	swift.property	HLSLiveDVRTrack.isMachineGenerated
+InnoNetworkHLSLive	swift.property	HLSLiveDVRTrack.isTranslated
 InnoNetworkHLSLive	swift.property	HLSLiveDVRTrack.kind
 InnoNetworkHLSLive	swift.property	HLSLiveDVRTrack.language
+InnoNetworkHLSLive	swift.property	HLSLiveDVRTrack.mediaCharacteristics
 InnoNetworkHLSLive	swift.property	HLSLiveDVRTrack.name
 InnoNetworkHLSLive	swift.property	HLSLiveDVRTrack.relativePlaylistPath
 InnoNetworkHLSLive	swift.property	HLSLiveDVRTrack.stableID

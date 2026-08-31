@@ -116,9 +116,14 @@ enum HLSLiveDVRRenditionSelector {
                 variant: variant,
                 renditions: snapshot.availableRenditions
             )
+            let provenanceResolver = HLSSubtitleProvenanceResolver(
+                policy: pack.resolvedSubtitleProvenance,
+                kind: kind
+            )
             let selected = select(
-                candidates,
-                policy: pack.policy(for: kind)
+                provenanceResolver.eligible(candidates),
+                policy: pack.policy(for: kind),
+                provenanceResolver: provenanceResolver
             ).filter { $0.url != nil }
             guard selected.count <= pack.maximumRenditionsPerKind else {
                 throw HLSLiveDVRError.renditionLimitExceeded(
@@ -211,13 +216,16 @@ enum HLSLiveDVRRenditionSelector {
 
     private static func select(
         _ candidates: [HLSRendition],
-        policy: HLSLiveDVRRenditionSelectionPolicy
+        policy: HLSLiveDVRRenditionSelectionPolicy,
+        provenanceResolver: HLSSubtitleProvenanceResolver
     ) -> [HLSRendition] {
         switch policy {
         case .disabled:
             return []
         case .defaultOrFirst:
-            return defaultOrFirst(in: candidates).map { [$0] } ?? []
+            return defaultOrFirst(
+                in: provenanceResolver.preferred(candidates)
+            ).map { [$0] } ?? []
         case .preferredLanguages(let languages):
             var result: [HLSRendition] = []
             for language in languages {
@@ -225,22 +233,26 @@ enum HLSLiveDVRRenditionSelector {
                 guard !preferred.isEmpty else {
                     continue
                 }
+                let exactMatches = candidates.filter {
+                    normalizedLanguage($0.language) == preferred
+                }
+                let fallbackMatches = candidates.filter {
+                    languagesMatch(
+                        normalizedLanguage($0.language),
+                        preferred
+                    )
+                }
                 let candidate =
-                    candidates.first {
-                        normalizedLanguage($0.language) == preferred
-                    }
-                    ?? candidates.first {
-                        languagesMatch(
-                            normalizedLanguage($0.language),
-                            preferred
-                        )
-                    }
+                    provenanceResolver.preferred(exactMatches).first
+                    ?? provenanceResolver.preferred(fallbackMatches).first
                 if let candidate, !result.contains(candidate) {
                     result.append(candidate)
                 }
             }
             if result.isEmpty,
-                let fallback = defaultOrFirst(in: candidates)
+                let fallback = defaultOrFirst(
+                    in: provenanceResolver.preferred(candidates)
+                )
             {
                 result.append(fallback)
             }
@@ -248,7 +260,8 @@ enum HLSLiveDVRRenditionSelector {
         case .named(let names):
             var result: [HLSRendition] = []
             for name in names {
-                if let candidate = candidates.first(where: { $0.name == name }),
+                let matches = candidates.filter { $0.name == name }
+                if let candidate = provenanceResolver.preferred(matches).first,
                     !result.contains(candidate)
                 {
                     result.append(candidate)
@@ -300,6 +313,7 @@ enum HLSLiveDVRRenditionSelector {
                 name: rendition.name,
                 language: rendition.language,
                 stableID: rendition.stableID,
+                characteristics: rendition.characteristics,
                 relativePlaylistPath: directoryPath + "/index.m3u8"
             ),
             relativeDirectoryPath: directoryPath

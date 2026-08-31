@@ -1499,6 +1499,86 @@ extension HLSLivePlaylistClientTests {
         #expect(!master.contains("media.example"))
     }
 
+    @Test("subtitle provenance is consistent with offline selection")
+    func selectsSubtitleProvenance() throws {
+        let masterURL = try url(
+            "https://media.example/provenance-master.m3u8"
+        )
+        let mediaURL = try url(
+            "https://media.example/provenance-video.m3u8"
+        )
+        let master = try PlaylistResolver().resolve(
+            """
+            #EXTM3U
+            #EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="Authored",LANGUAGE="en",DEFAULT=YES,AUTOSELECT=YES,URI="authored.m3u8"
+            #EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="Generated",LANGUAGE="en",AUTOSELECT=YES,CHARACTERISTICS="public.machine-generated",URI="generated.m3u8"
+            #EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="Translated",LANGUAGE="en",AUTOSELECT=YES,CHARACTERISTICS="public.machine-generated,public.translation,example.custom",URI="translated.m3u8"
+            #EXT-X-STREAM-INF:BANDWIDTH=1000,SUBTITLES="subs"
+            provenance-video.m3u8
+            """,
+            relativeTo: masterURL
+        )
+        let media = try PlaylistResolver().resolve(
+            """
+            #EXTM3U
+            #EXT-X-TARGETDURATION:4
+            #EXTINF:4,
+            media.ts
+            """,
+            relativeTo: mediaURL
+        )
+        let snapshot = HLSLivePlaylistSnapshot(
+            playlist: media,
+            segments: [],
+            partialSegments: [],
+            dateRanges: [],
+            selectedVariant: master.variants.first,
+            availableRenditions: master.renditions,
+            pathwayID: nil,
+            generation: 0,
+            isDeltaUpdate: false,
+            isEnded: false
+        )
+
+        let preferred = try HLSLiveDVRRenditionSelector.select(
+            from: snapshot,
+            pack: HLSLiveDVRRenditionPack(
+                audio: .disabled,
+                subtitles: .preferredLanguages(["en"]),
+                subtitleProvenance: HLSSubtitleProvenancePolicy(
+                    translation: .preferred
+                )
+            )
+        )
+        let preferredTrack = try #require(preferred.external.first?.track)
+        #expect(preferredTrack.name == "Translated")
+        #expect(preferredTrack.isMachineGenerated)
+        #expect(preferredTrack.isTranslated)
+        #expect(
+            preferredTrack.mediaCharacteristics
+                == [
+                    .machineGenerated,
+                    .translation,
+                    HLSMediaCharacteristic(rawValue: "example.custom"),
+                ]
+        )
+
+        let excluded = try HLSLiveDVRRenditionSelector.select(
+            from: snapshot,
+            pack: HLSLiveDVRRenditionPack(
+                audio: .disabled,
+                subtitles: .all,
+                subtitleProvenance: HLSSubtitleProvenancePolicy(
+                    translation: .excluded
+                )
+            )
+        )
+        #expect(
+            excluded.external.map(\.track.name)
+                == ["Authored", "Generated"]
+        )
+    }
+
     @Test("stable rendition identity survives Content Steering failover")
     func retainsRenditionAcrossContentSteeringFailover() async throws {
         let masterURL = try url("https://media.example/dvr-steered.m3u8")

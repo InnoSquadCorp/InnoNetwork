@@ -117,7 +117,11 @@ let recorder = HLSLiveDVRRecorder(
         startPosition: .nextCompletedSegment,
         renditions: HLSLiveDVRRenditionPack(
             audio: .preferredLanguages(["ko", "en"]),
-            subtitles: .preferredLanguages(["ko", "en"])
+            subtitles: .preferredLanguages(["ko", "en"]),
+            subtitleProvenance: HLSSubtitleProvenancePolicy(
+                machineGenerated: .neutral,
+                translation: .preferred
+            )
         ),
         parts: HLSLiveDVRPartPack(policy: .independent)
     )
@@ -173,6 +177,14 @@ master becomes ``HLSLiveDVRReceipt/entryPlaylistURL`` and
 Steering may move a rendition only when its stable rendition ID remains the
 same; every selected rendition must cover the retained primary timeline or the
 whole recording fails atomically.
+
+Generated and translated subtitle selection uses the same
+``InnoNetworkHLS/HLSSubtitleProvenancePolicy`` contract as offline packages.
+Exclusion is applied before language or name matching, and preference only
+breaks otherwise-equal matches while retaining source order. Audio and video
+selection are unchanged. ``HLSLiveDVRTrack/characteristics``,
+``HLSLiveDVRTrack/isMachineGenerated``, and
+``HLSLiveDVRTrack/isTranslated`` preserve provenance in the committed receipt.
 
 Program Date Time and self-contained, standard Date Range attributes are
 preserved for the recorded interval. Source URLs, signed query values, key
