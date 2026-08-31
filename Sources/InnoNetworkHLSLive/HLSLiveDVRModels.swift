@@ -42,6 +42,21 @@ public enum HLSLiveDVRError: Error, Equatable, Sendable {
     /// Another task or process owns the destination lease.
     case destinationInUse
 
+    /// A recoverable checkpoint already owns this destination.
+    case recoveryAlreadyExists
+
+    /// Resumable recording is disabled by configuration.
+    case recoveryDisabled
+
+    /// No valid checkpoint exists for the requested destination.
+    case recoveryUnavailable
+
+    /// The checkpoint belongs to another source or selection contract.
+    case recoveryMismatch
+
+    /// Checkpoint metadata or retained media failed integrity validation.
+    case recoveryCorrupted
+
     /// No complete segment fit within the configured limits.
     case noSegmentsRecorded
 
@@ -94,6 +109,16 @@ extension HLSLiveDVRError: LocalizedError {
             return "An item already exists at the live DVR destination."
         case .destinationInUse:
             return "Another task or process is writing to the live DVR destination."
+        case .recoveryAlreadyExists:
+            return "A recoverable live DVR checkpoint already owns this destination."
+        case .recoveryDisabled:
+            return "Live DVR recovery is disabled by the current configuration."
+        case .recoveryUnavailable:
+            return "No recoverable live DVR checkpoint exists for this destination."
+        case .recoveryMismatch:
+            return "The live DVR checkpoint does not match the requested source or rendition selection."
+        case .recoveryCorrupted:
+            return "The live DVR checkpoint or retained media failed integrity validation."
         case .noSegmentsRecorded:
             return "No complete live segment fit within the recording limits."
         case .renditionLimitExceeded(let limit):
@@ -135,6 +160,16 @@ extension HLSLiveDVRError: LocalizedError {
             return "Choose a destination that does not already exist."
         case .destinationInUse:
             return "Wait for the other writer to finish or choose another destination."
+        case .recoveryAlreadyExists:
+            return "Resume or explicitly discard the existing recording before starting again."
+        case .recoveryDisabled:
+            return "Enable the resumable recovery policy before requesting resume."
+        case .recoveryUnavailable:
+            return "Start a new resumable recording for this destination."
+        case .recoveryMismatch:
+            return "Resume with the original source and rendition configuration, or discard the checkpoint."
+        case .recoveryCorrupted:
+            return "Discard the checkpoint and start a new recording."
         case .noSegmentsRecorded:
             return "Increase the duration or byte limits and record again."
         case .renditionLimitExceeded:

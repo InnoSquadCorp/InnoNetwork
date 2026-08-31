@@ -66,9 +66,13 @@ struct HLSLiveDVRResourceWriter: Sendable {
         )
         switch result {
         case .retained(let byteCount):
+            let contentSHA256 = try HLSContentFingerprint.sha256(
+                contentsOf: destinationURL
+            )
             try state.retainInitialization(
                 fileName: path,
-                byteCount: byteCount
+                byteCount: byteCount,
+                contentSHA256: contentSHA256
             )
             return true
         case .totalLimitReached:
@@ -109,10 +113,14 @@ struct HLSLiveDVRResourceWriter: Sendable {
                 workspace: state.workspace,
                 diskCapacityGuard: context.diskCapacityGuard
             )
+            let contentSHA256 = try HLSContentFingerprint.sha256(
+                contentsOf: destinationURL
+            )
             try state.promote(
                 segment,
                 fileName: path,
-                promotion: promotion
+                promotion: promotion,
+                contentSHA256: contentSHA256
             )
             try discard(
                 promotion.parts.map(\.relativeFilePath),
@@ -137,10 +145,14 @@ struct HLSLiveDVRResourceWriter: Sendable {
         )
         switch result {
         case .retained(let byteCount):
+            let contentSHA256 = try HLSContentFingerprint.sha256(
+                contentsOf: destinationURL
+            )
             try state.retain(
                 segment,
                 fileName: path,
-                byteCount: byteCount
+                byteCount: byteCount,
+                contentSHA256: contentSHA256
             )
             return true
         case .totalLimitReached:
@@ -296,10 +308,14 @@ struct HLSLiveDVRResourceWriter: Sendable {
         )
         switch result {
         case .retained(let byteCount):
+            let contentSHA256 = try HLSContentFingerprint.sha256(
+                contentsOf: destinationURL
+            )
             try state.retainRenditionInitialization(
                 at: index,
                 fileName: fileName,
-                byteCount: byteCount
+                byteCount: byteCount,
+                contentSHA256: contentSHA256
             )
             return true
         case .totalLimitReached:
@@ -345,11 +361,15 @@ struct HLSLiveDVRResourceWriter: Sendable {
         )
         switch result {
         case .retained(let byteCount):
+            let contentSHA256 = try HLSContentFingerprint.sha256(
+                contentsOf: destinationURL
+            )
             try state.retainRendition(
                 segment,
                 at: index,
                 fileName: fileName,
-                byteCount: byteCount
+                byteCount: byteCount,
+                contentSHA256: contentSHA256
             )
             return true
         case .totalLimitReached:

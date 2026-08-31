@@ -38,8 +38,12 @@ struct HLSLiveDVRPartRecordingState {
     private(set) var promotedPartCount = 0
     private var abandonedSequence: Int64?
 
-    init(pack: HLSLiveDVRPartPack) {
+    init(
+        pack: HLSLiveDVRPartPack,
+        promotedPartCount: Int = 0
+    ) {
         self.pack = pack
+        self.promotedPartCount = promotedPartCount
     }
 
     var stagedPartDuration: TimeInterval {

@@ -37,8 +37,12 @@ private let smokeHLSLiveDVRConfiguration =
     HLSLiveDVRConfiguration.advanced(
         parts: HLSLiveDVRPartPack(
             policy: .independent
-        )
+        ),
+        recovery: HLSLiveDVRRecoveryPack(policy: .resumable)
     )
+private let smokeHLSLiveDVRRecorder = HLSLiveDVRRecorder(
+    configuration: smokeHLSLiveDVRConfiguration
+)
 private let smokeHLSAssetSessionPack = HLSAssetDownloadSessionPack(
     identifier: "com.example.innonetwork.doc-smoke.hls"
 )

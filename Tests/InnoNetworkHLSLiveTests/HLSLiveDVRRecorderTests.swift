@@ -197,6 +197,831 @@ extension HLSLivePlaylistClientTests {
         #expect(try await events.next() == nil)
     }
 
+    @Test("recovery discard respects the active destination lease")
+    func recoveryDiscardRespectsDestinationLease() async throws {
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        let recorder = recorder(
+            session: fixture.session,
+            startPosition: .currentWindow
+        )
+        let lease = try await HLSDestinationLease.acquire(
+            for: fixture.destinationURL
+        )
+
+        await #expect(throws: HLSLiveDVRError.destinationInUse) {
+            try await recorder.discardRecovery(
+                for: fixture.destinationURL
+            )
+        }
+
+        await lease.release()
+    }
+
+    @Test("resumable DVR rotates signed URLs without redownloading media")
+    func resumesWithFreshSignedURL() async throws {
+        let sourceURL = try url(
+            "https://media.example/recovery.m3u8?token=expired"
+        )
+        let resumedSourceURL = try url(
+            "https://media.example/recovery.m3u8?token=fresh"
+        )
+        let firstSegmentURL = try url(
+            "https://media.example/recovery-10.ts"
+        )
+        let secondSegmentURL = try url(
+            "https://media.example/recovery-11.ts"
+        )
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        let recorder = try await interruptedRecoveryRecorder(
+            sourceURL: sourceURL,
+            segmentURL: firstSegmentURL,
+            fixture: fixture
+        )
+        let recoveryRoot = HLSLiveDVRCheckpointStore(
+            destinationURL: fixture.destinationURL
+        ).rootURL
+        let checkpointData = try Data(
+            contentsOf: recoveryRoot.appendingPathComponent(
+                "checkpoint.json"
+            )
+        )
+        let checkpointText = try #require(
+            String(data: checkpointData, encoding: .utf8)
+        )
+        #expect(checkpointText.contains("sourceURLSHA256"))
+        #expect(checkpointText.contains("contentSHA256"))
+        #expect(!checkpointText.contains("https://"))
+        #expect(!checkpointText.contains("media.example"))
+        #expect(!checkpointText.contains("token"))
+
+        let staleDirectory =
+            recoveryRoot
+            .appendingPathComponent("package", isDirectory: true)
+            .appendingPathComponent("partial", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: staleDirectory,
+            withIntermediateDirectories: true
+        )
+        try Data("stale".utf8).write(
+            to: staleDirectory.appendingPathComponent("stale.part")
+        )
+
+        await #expect(throws: HLSLiveDVRError.recoveryAlreadyExists) {
+            try await recorder.record(
+                from: sourceURL,
+                to: fixture.destinationURL
+            )
+        }
+
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:60
+                #EXT-X-MEDIA-SEQUENCE:10
+                #EXTINF:4,
+                recovery-10.ts
+                #EXTINF:4,
+                recovery-11.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: resumedSourceURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("second".utf8)),
+            for: secondSegmentURL
+        )
+
+        let receipt = try await recorder.resume(
+            from: resumedSourceURL,
+            to: fixture.destinationURL
+        )
+
+        #expect(receipt.segmentCount == 2)
+        #expect(receipt.firstMediaSequence == 10)
+        #expect(receipt.lastMediaSequence == 11)
+        #expect(
+            HLSLiveURLProtocol.capturedRequests().compactMap(\.url)
+                .count { $0 == firstSegmentURL } == 1
+        )
+        #expect(
+            HLSLiveURLProtocol.capturedRequests().compactMap(\.url)
+                .count { $0 == secondSegmentURL } == 1
+        )
+        #expect(
+            !FileManager.default.fileExists(atPath: recoveryRoot.path)
+        )
+        #expect(
+            !FileManager.default.fileExists(
+                atPath: receipt.directoryURL
+                    .appendingPathComponent("partial").path
+            )
+        )
+    }
+
+    @Test("recovery rejects source mismatch and tampered media")
+    func rejectsMismatchedOrTamperedRecovery() async throws {
+        let sourceURL = try url(
+            "https://media.example/integrity.m3u8?token=one"
+        )
+        let mismatchedURL = try url(
+            "https://media.example/other.m3u8?token=two"
+        )
+        let segmentURL = try url(
+            "https://media.example/integrity-10.ts"
+        )
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        let recorder = try await interruptedRecoveryRecorder(
+            sourceURL: sourceURL,
+            segmentURL: segmentURL,
+            fixture: fixture
+        )
+        let store = HLSLiveDVRCheckpointStore(
+            destinationURL: fixture.destinationURL
+        )
+
+        await #expect(throws: HLSLiveDVRError.recoveryMismatch) {
+            try await recorder.resume(
+                from: mismatchedURL,
+                to: fixture.destinationURL
+            )
+        }
+
+        try Data("tampered".utf8).write(
+            to: store.workspace.directoryURL.appendingPathComponent(
+                "resources/00000.ts"
+            )
+        )
+        await #expect(throws: HLSLiveDVRError.recoveryCorrupted) {
+            try await recorder.resume(
+                from: sourceURL,
+                to: fixture.destinationURL
+            )
+        }
+        #expect(
+            HLSLiveURLProtocol.capturedRequests().compactMap(\.url)
+                == [sourceURL, segmentURL]
+        )
+
+        try await recorder.discardRecovery(for: fixture.destinationURL)
+        try await recorder.discardRecovery(for: fixture.destinationURL)
+        #expect(
+            !FileManager.default.fileExists(atPath: store.rootURL.path)
+        )
+    }
+
+    @Test("recovery rejects a symlinked media directory")
+    func rejectsSymlinkedRecoveryPath() async throws {
+        let sourceURL = try url(
+            "https://media.example/symlink-recovery.m3u8"
+        )
+        let segmentURL = try url(
+            "https://media.example/symlink-recovery-10.ts"
+        )
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        let recorder = try await interruptedRecoveryRecorder(
+            sourceURL: sourceURL,
+            segmentURL: segmentURL,
+            fixture: fixture
+        )
+        let store = HLSLiveDVRCheckpointStore(
+            destinationURL: fixture.destinationURL
+        )
+        let resourcesURL = store.workspace.directoryURL
+            .appendingPathComponent("resources", isDirectory: true)
+        let externalURL = fixture.rootURL.appendingPathComponent(
+            "external-resources",
+            isDirectory: true
+        )
+        try FileManager.default.moveItem(
+            at: resourcesURL,
+            to: externalURL
+        )
+        try FileManager.default.createSymbolicLink(
+            at: resourcesURL,
+            withDestinationURL: externalURL
+        )
+
+        await #expect(throws: HLSLiveDVRError.recoveryCorrupted) {
+            try await recorder.resume(
+                from: sourceURL,
+                to: fixture.destinationURL
+            )
+        }
+        #expect(
+            HLSLiveURLProtocol.capturedRequests().compactMap(\.url)
+                == [sourceURL, segmentURL]
+        )
+    }
+
+    @Test("discard refuses a recovery directory copied from another destination")
+    func discardRequiresDestinationBoundOwnership() async throws {
+        let sourceURL = try url(
+            "https://media.example/owned-recovery.m3u8"
+        )
+        let segmentURL = try url(
+            "https://media.example/owned-recovery-10.ts"
+        )
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        let recorder = try await interruptedRecoveryRecorder(
+            sourceURL: sourceURL,
+            segmentURL: segmentURL,
+            fixture: fixture
+        )
+        let sourceStore = HLSLiveDVRCheckpointStore(
+            destinationURL: fixture.destinationURL
+        )
+        let otherDestination = fixture.rootURL.appendingPathComponent(
+            "other-recording",
+            isDirectory: true
+        )
+        let otherStore = HLSLiveDVRCheckpointStore(
+            destinationURL: otherDestination
+        )
+        try FileManager.default.copyItem(
+            at: sourceStore.rootURL,
+            to: otherStore.rootURL
+        )
+
+        await #expect(throws: HLSLiveDVRError.recoveryCorrupted) {
+            try await recorder.discardRecovery(for: otherDestination)
+        }
+        #expect(
+            FileManager.default.fileExists(atPath: otherStore.rootURL.path)
+        )
+    }
+
+    @Test("recovery reports when the live window moved past its checkpoint")
+    func resumedLiveWindowAdvanceIsTyped() async throws {
+        let sourceURL = try url(
+            "https://media.example/window-recovery.m3u8?token=one"
+        )
+        let resumedSourceURL = try url(
+            "https://media.example/window-recovery.m3u8?token=two"
+        )
+        let segmentURL = try url(
+            "https://media.example/window-recovery-10.ts"
+        )
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        let recorder = try await interruptedRecoveryRecorder(
+            sourceURL: sourceURL,
+            segmentURL: segmentURL,
+            fixture: fixture
+        )
+        let recoveryRoot = HLSLiveDVRCheckpointStore(
+            destinationURL: fixture.destinationURL
+        ).rootURL
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:12
+                #EXTINF:4,
+                window-recovery-12.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: resumedSourceURL
+        )
+
+        await #expect(throws: HLSLiveDVRError.liveWindowAdvanced) {
+            try await recorder.resume(
+                from: resumedSourceURL,
+                to: fixture.destinationURL
+            )
+        }
+        #expect(FileManager.default.fileExists(atPath: recoveryRoot.path))
+    }
+
+    @Test("explicit cancellation removes a durable recovery checkpoint")
+    func explicitCancellationDiscardsRecovery() async throws {
+        let sourceURL = try url(
+            "https://media.example/cancel-recovery.m3u8"
+        )
+        let segmentURL = try url(
+            "https://media.example/cancel-recovery-10.ts"
+        )
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                uninterruptedRecoveryPlaylist(
+                    segmentName: "cancel-recovery-10.ts"
+                )
+            ),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("first".utf8)),
+            for: segmentURL
+        )
+        let recorder = recoveryRecorder(session: fixture.session)
+        let recording = recorder.startRecording(
+            from: sourceURL,
+            to: fixture.destinationURL
+        )
+        var events = recording.events.makeAsyncIterator()
+        guard case .progress(let progress) = try await events.next() else {
+            Issue.record("Expected checkpointed progress")
+            return
+        }
+        #expect(progress.segmentCount == 1)
+
+        await recording.cancelAndDiscard()
+
+        let recoveryRoot = HLSLiveDVRCheckpointStore(
+            destinationURL: fixture.destinationURL
+        ).rootURL
+        #expect(
+            !FileManager.default.fileExists(atPath: recoveryRoot.path)
+        )
+        #expect(
+            !FileManager.default.fileExists(
+                atPath: fixture.destinationURL.path
+            )
+        )
+    }
+
+    @Test("rendition checkpoint paths remain package-relative and distinct")
+    func renditionCheckpointStoragePathIsDistinct() {
+        let stored = HLSLiveDVRStoredSegment(
+            sequenceNumber: 10,
+            duration: 4,
+            beginsDiscontinuity: false,
+            programDateTime: nil,
+            fileName: "resources/00000.aac",
+            byteCount: 5,
+            contentSHA256: String(repeating: "a", count: 64)
+        )
+
+        let checkpoint = HLSLiveDVRCheckpoint.Segment(
+            stored,
+            storagePrefix: "audio/00"
+        )
+
+        #expect(
+            checkpoint.file.relativePath
+                == "audio/00/resources/00000.aac"
+        )
+        #expect(
+            checkpoint.storedSegment.fileName
+                == "resources/00000.aac"
+        )
+    }
+
+    @Test("variant recovery identity covers local master attributes")
+    func variantRecoveryIdentityCoversMasterAttributes() throws {
+        let mediaURL = try url("https://media.example/video.m3u8")
+        let baseline = HLSVariant(
+            url: mediaURL,
+            bandwidth: 1_000,
+            closedCaptions: .group("captions"),
+            frameRate: 30,
+            stableID: "video-main"
+        )
+        let changedFrameRate = HLSVariant(
+            url: mediaURL,
+            bandwidth: 1_000,
+            closedCaptions: .group("captions"),
+            frameRate: 60,
+            stableID: "video-main"
+        )
+        let changedCaptions = HLSVariant(
+            url: mediaURL,
+            bandwidth: 1_000,
+            closedCaptions: .explicitlyNone,
+            frameRate: 30,
+            stableID: "video-main"
+        )
+
+        #expect(
+            baseline.liveDVRCheckpointIdentity
+                != changedFrameRate.liveDVRCheckpointIdentity
+        )
+        #expect(
+            baseline.liveDVRCheckpointIdentity
+                != changedCaptions.liveDVRCheckpointIdentity
+        )
+
+        let firstUnsignedIdentity = HLSVariant(
+            url: try url(
+                "https://media.example/unsigned.m3u8?token=one"
+            ),
+            bandwidth: 1_000
+        ).liveDVRCheckpointIdentity
+        let rotatedUnsignedIdentity = HLSVariant(
+            url: try url(
+                "https://media.example/unsigned.m3u8?token=two"
+            ),
+            bandwidth: 1_000
+        ).liveDVRCheckpointIdentity
+        let otherUnsignedIdentity = HLSVariant(
+            url: try url(
+                "https://media.example/other.m3u8?token=two"
+            ),
+            bandwidth: 1_000
+        ).liveDVRCheckpointIdentity
+
+        #expect(firstUnsignedIdentity == rotatedUnsignedIdentity)
+        #expect(firstUnsignedIdentity != otherUnsignedIdentity)
+    }
+
+    @Test("rendition recovery identity uses URL when stable ID is absent")
+    func renditionRecoveryIdentityUsesURLFallback() throws {
+        let rendition: (String) throws -> HLSRendition = { value in
+            HLSRendition(
+                kind: .audio,
+                groupID: "audio",
+                name: "Stereo",
+                url: try url(value)
+            )
+        }
+        let first = try rendition(
+            "https://media.example/audio.m3u8?token=one"
+        )
+        let rotated = try rendition(
+            "https://media.example/audio.m3u8?token=two"
+        )
+        let other = try rendition(
+            "https://media.example/other-audio.m3u8?token=two"
+        )
+
+        #expect(
+            first.liveDVRCheckpointIdentity
+                == rotated.liveDVRCheckpointIdentity
+        )
+        #expect(
+            first.liveDVRCheckpointIdentity
+                != other.liveDVRCheckpointIdentity
+        )
+    }
+
+    @Test("resuming retains external rendition files without collisions")
+    func resumesExternalAudioRendition() async throws {
+        let masterURL = try url(
+            "https://media.example/rendition-recovery.m3u8?token=old"
+        )
+        let resumedMasterURL = try url(
+            "https://media.example/rendition-recovery.m3u8?token=new"
+        )
+        let oldVideoPlaylistURL = try url(
+            "https://media.example/video-recovery.m3u8?token=old"
+        )
+        let newVideoPlaylistURL = try url(
+            "https://media.example/video-recovery.m3u8?token=new"
+        )
+        let oldAudioPlaylistURL = try url(
+            "https://media.example/audio-recovery.m3u8?token=old"
+        )
+        let newAudioPlaylistURL = try url(
+            "https://media.example/audio-recovery.m3u8?token=new"
+        )
+        let oldVideoURL = try url(
+            "https://media.example/video-10.ts?token=old"
+        )
+        let oldAudioURL = try url(
+            "https://media.example/audio-10.aac?token=old"
+        )
+        let newVideoURL = try url(
+            "https://media.example/video-11.ts?token=new"
+        )
+        let newAudioURL = try url(
+            "https://media.example/audio-11.aac?token=new"
+        )
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        let master: (String) -> String = { token in
+            """
+            #EXTM3U
+            #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="Stereo",STABLE-RENDITION-ID="audio-main",DEFAULT=YES,URI="audio-recovery.m3u8?token=\(token)"
+            #EXT-X-STREAM-INF:BANDWIDTH=1000,STABLE-VARIANT-ID="video-main",AUDIO="audio"
+            video-recovery.m3u8?token=\(token)
+            """
+        }
+        let firstPlaylist: (String) -> String = { resource in
+            """
+            #EXTM3U
+            #EXT-X-TARGETDURATION:60
+            #EXT-X-MEDIA-SEQUENCE:10
+            #EXTINF:4,
+            \(resource)
+            """
+        }
+        let resumedPlaylist: (String, String) -> String = { first, second in
+            """
+            #EXTM3U
+            #EXT-X-TARGETDURATION:4
+            #EXT-X-MEDIA-SEQUENCE:10
+            #EXTINF:4,
+            \(first)
+            #EXTINF:4,
+            \(second)
+            #EXT-X-ENDLIST
+            """
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(master("old")),
+            for: masterURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(firstPlaylist("video-10.ts?token=old")),
+            for: oldVideoPlaylistURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(firstPlaylist("audio-10.aac?token=old")),
+            for: oldAudioPlaylistURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("old video".utf8)),
+            for: oldVideoURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("old audio".utf8)),
+            for: oldAudioURL
+        )
+        let recorder = recoveryRecorder(session: fixture.session)
+        let recording = recorder.startRecording(
+            from: masterURL,
+            to: fixture.destinationURL
+        )
+        var events = recording.events.makeAsyncIterator()
+        guard case .progress = try await events.next() else {
+            Issue.record("Expected checkpointed rendition media")
+            return
+        }
+        await recording.interrupt()
+
+        HLSLiveURLProtocol.register(
+            playlistResponse(master("new")),
+            for: resumedMasterURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                resumedPlaylist(
+                    "video-10.ts?token=new",
+                    "video-11.ts?token=new"
+                )
+            ),
+            for: newVideoPlaylistURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                resumedPlaylist(
+                    "audio-10.aac?token=new",
+                    "audio-11.aac?token=new"
+                )
+            ),
+            for: newAudioPlaylistURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("new video".utf8)),
+            for: newVideoURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("new audio".utf8)),
+            for: newAudioURL
+        )
+
+        let receipt = try await recorder.resume(
+            from: resumedMasterURL,
+            to: fixture.destinationURL
+        )
+
+        #expect(receipt.segmentCount == 2)
+        #expect(receipt.tracks.map(\.kind) == [.primary, .audio])
+        let requests = HLSLiveURLProtocol.capturedRequests().compactMap(\.url)
+        #expect(requests.count { $0 == oldVideoURL } == 1)
+        #expect(requests.count { $0 == oldAudioURL } == 1)
+        #expect(requests.count { $0 == newVideoURL } == 1)
+        #expect(requests.count { $0 == newAudioURL } == 1)
+    }
+
+    @Test("resuming AES-128 media refetches rather than persists keys")
+    func resumedAES128RefetchesKey() async throws {
+        let sourceURL = try url(
+            "https://media.example/encrypted-recovery.m3u8?token=old"
+        )
+        let resumedSourceURL = try url(
+            "https://media.example/encrypted-recovery.m3u8?token=new"
+        )
+        let oldKeyURL = try url(
+            "https://media.example/recovery.key?token=old"
+        )
+        let newKeyURL = try url(
+            "https://media.example/recovery.key?token=new"
+        )
+        let firstSegmentURL = try url(
+            "https://media.example/encrypted-recovery-10.ts"
+        )
+        let secondSegmentURL = try url(
+            "https://media.example/encrypted-recovery-11.ts"
+        )
+        let key = Data(repeating: 0x44, count: 16)
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:60
+                #EXT-X-MEDIA-SEQUENCE:10
+                #EXT-X-KEY:METHOD=AES-128,URI="recovery.key?token=old"
+                #EXTINF:4,
+                encrypted-recovery-10.ts
+                """
+            ),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(mediaResponse(key), for: oldKeyURL)
+        HLSLiveURLProtocol.register(
+            mediaResponse(
+                try aes128Encrypt(
+                    Data("first secret".utf8),
+                    key: key,
+                    initializationVector: sequenceIV(10)
+                )
+            ),
+            for: firstSegmentURL
+        )
+        let recorder = recoveryRecorder(session: fixture.session)
+        let recording = recorder.startRecording(
+            from: sourceURL,
+            to: fixture.destinationURL
+        )
+        var events = recording.events.makeAsyncIterator()
+        guard case .progress = try await events.next() else {
+            Issue.record("Expected checkpointed encrypted media")
+            return
+        }
+        await recording.interrupt()
+
+        let checkpointURL = HLSLiveDVRCheckpointStore(
+            destinationURL: fixture.destinationURL
+        ).rootURL.appendingPathComponent("checkpoint.json")
+        let checkpoint = try String(
+            contentsOf: checkpointURL,
+            encoding: .utf8
+        )
+        #expect(!checkpoint.contains("recovery.key"))
+        #expect(!checkpoint.contains(key.base64EncodedString()))
+
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:60
+                #EXT-X-MEDIA-SEQUENCE:10
+                #EXT-X-KEY:METHOD=AES-128,URI="recovery.key?token=new"
+                #EXTINF:4,
+                encrypted-recovery-10.ts
+                #EXTINF:4,
+                encrypted-recovery-11.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: resumedSourceURL
+        )
+        HLSLiveURLProtocol.register(mediaResponse(key), for: newKeyURL)
+        HLSLiveURLProtocol.register(
+            mediaResponse(
+                try aes128Encrypt(
+                    Data("second secret".utf8),
+                    key: key,
+                    initializationVector: sequenceIV(11)
+                )
+            ),
+            for: secondSegmentURL
+        )
+
+        let receipt = try await recorder.resume(
+            from: resumedSourceURL,
+            to: fixture.destinationURL
+        )
+
+        #expect(receipt.segmentCount == 2)
+        let requests = HLSLiveURLProtocol.capturedRequests().compactMap(\.url)
+        #expect(requests.count { $0 == oldKeyURL } == 1)
+        #expect(requests.count { $0 == newKeyURL } == 1)
+        #expect(requests.count { $0 == firstSegmentURL } == 1)
+        #expect(requests.count { $0 == secondSegmentURL } == 1)
+    }
+
+    @Test("recovery rejects a changed fragmented MP4 initialization map")
+    func rejectsChangedInitializationMapOnResume() async throws {
+        let sourceURL = try url(
+            "https://media.example/map-recovery.m3u8?token=old"
+        )
+        let resumedSourceURL = try url(
+            "https://media.example/map-recovery.m3u8?token=new"
+        )
+        let initializationURL = try url(
+            "https://media.example/original-init.mp4?token=old"
+        )
+        let segmentURL = try url(
+            "https://media.example/map-recovery-10.m4s"
+        )
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-VERSION:7
+                #EXT-X-TARGETDURATION:60
+                #EXT-X-MEDIA-SEQUENCE:10
+                #EXT-X-MAP:URI="original-init.mp4?token=old"
+                #EXTINF:4,
+                map-recovery-10.m4s
+                """
+            ),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("initialization".utf8)),
+            for: initializationURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("first".utf8)),
+            for: segmentURL
+        )
+        let recorder = recoveryRecorder(session: fixture.session)
+        let recording = recorder.startRecording(
+            from: sourceURL,
+            to: fixture.destinationURL
+        )
+        var events = recording.events.makeAsyncIterator()
+        guard case .progress = try await events.next() else {
+            Issue.record("Expected checkpointed fragmented MP4 media")
+            return
+        }
+        await recording.interrupt()
+
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-VERSION:7
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:10
+                #EXT-X-MAP:URI="replacement-init.mp4?token=new"
+                #EXTINF:4,
+                map-recovery-10.m4s
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: resumedSourceURL
+        )
+
+        await #expect(throws: HLSLiveDVRError.recoveryMismatch) {
+            try await recorder.resume(
+                from: resumedSourceURL,
+                to: fixture.destinationURL
+            )
+        }
+        #expect(
+            HLSLiveURLProtocol.capturedRequests().compactMap(\.url)
+                .count == 4
+        )
+    }
+
     @Test("record-from-now skips the initial live window")
     func recordsNextCompletedSegment() async throws {
         let sourceURL = try url("https://media.example/next.m3u8")
@@ -2581,7 +3406,8 @@ extension HLSLivePlaylistClientTests {
         startPosition: HLSLiveDVRStartPosition,
         renditions: HLSLiveDVRRenditionPack =
             HLSLiveDVRRenditionPack(),
-        parts: HLSLiveDVRPartPack = HLSLiveDVRPartPack()
+        parts: HLSLiveDVRPartPack = HLSLiveDVRPartPack(),
+        recovery: HLSLiveDVRRecoveryPack = HLSLiveDVRRecoveryPack()
     ) -> HLSLiveDVRRecorder {
         HLSLiveDVRRecorder(
             client: HLSLivePlaylistClient(session: session),
@@ -2594,9 +3420,65 @@ extension HLSLivePlaylistClientTests {
                 ),
                 startPosition: startPosition,
                 renditions: renditions,
-                parts: parts
+                parts: parts,
+                recovery: recovery
             )
         )
+    }
+
+    private func recoveryRecorder(
+        session: URLSession
+    ) -> HLSLiveDVRRecorder {
+        recorder(
+            session: session,
+            startPosition: .currentWindow,
+            recovery: HLSLiveDVRRecoveryPack(policy: .resumable)
+        )
+    }
+
+    private func interruptedRecoveryRecorder(
+        sourceURL: URL,
+        segmentURL: URL,
+        fixture: DVRFixture
+    ) async throws -> HLSLiveDVRRecorder {
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                uninterruptedRecoveryPlaylist(
+                    segmentName: segmentURL.lastPathComponent
+                )
+            ),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("first".utf8)),
+            for: segmentURL
+        )
+        let recorder = recoveryRecorder(session: fixture.session)
+        let recording = recorder.startRecording(
+            from: sourceURL,
+            to: fixture.destinationURL
+        )
+        var events = recording.events.makeAsyncIterator()
+        guard case .progress(let progress) = try await events.next() else {
+            throw HLSLiveDVRError.recoveryUnavailable
+        }
+        guard progress.segmentCount == 1 else {
+            throw HLSLiveDVRError.recoveryCorrupted
+        }
+        await recording.interrupt()
+        return recorder
+    }
+
+    private func uninterruptedRecoveryPlaylist(
+        segmentName: String
+    ) -> String {
+        """
+        #EXTM3U
+        #EXT-X-TARGETDURATION:60
+        #EXT-X-MEDIA-SEQUENCE:10
+        #EXTINF:4,
+        \(segmentName)
+        """
     }
 
     private func partialPlaylist(

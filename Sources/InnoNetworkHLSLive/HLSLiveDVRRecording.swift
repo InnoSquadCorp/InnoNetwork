@@ -32,14 +32,19 @@ actor HLSLiveDVRRecordingControl {
     var shouldStopAndCommit: Bool {
         intent == .stopAndCommit
     }
+
+    var shouldCancelAndDiscard: Bool {
+        intent == .cancelAndDiscard
+    }
 }
 
 /// Owns one bounded live DVR recording and its terminal operation.
 ///
 /// Retain this handle for the recording lifetime. The first call to
 /// ``stopAndCommit()`` or ``cancelAndDiscard()`` wins; repeated calls observe
-/// the same terminal result. Releasing the handle cancels unfinished work and
-/// removes its staging directory.
+/// the same terminal result. Releasing the handle cancels unfinished work.
+/// Legacy recordings remove staging; a resumable recording preserves its last
+/// complete-segment checkpoint when one exists.
 public final class HLSLiveDVRRecording: Sendable {
     /// Bounded progress and completion events for this recording.
     ///
@@ -85,6 +90,11 @@ public final class HLSLiveDVRRecording: Sendable {
         if intent == .cancelAndDiscard {
             task.cancel()
         }
+        _ = try? await task.value
+    }
+
+    func interrupt() async {
+        task.cancel()
         _ = try? await task.value
     }
 }

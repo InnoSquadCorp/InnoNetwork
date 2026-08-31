@@ -1,6 +1,11 @@
 import Foundation
 import InnoNetworkHLS
 
+private enum HLSLiveDVRRecordingMode: Sendable {
+    case fresh
+    case resume
+}
+
 /// Records complete live segments into one bounded local HLS package.
 public struct HLSLiveDVRRecorder: Sendable {
     private let liveClient: HLSLivePlaylistClient
@@ -34,8 +39,9 @@ public struct HLSLiveDVRRecorder: Sendable {
     /// Records until a duration, segment-count, or byte limit is reached.
     ///
     /// Only the atomically committed package becomes visible at
-    /// `destinationDirectoryURL`. Cancellation and failures remove ephemeral
-    /// staging files.
+    /// `destinationDirectoryURL`. The default removes staging after
+    /// interruption; opt-in recovery preserves only its last durable complete-
+    /// segment checkpoint.
     public func record(
         from sourceURL: URL,
         to destinationDirectoryURL: URL
@@ -56,6 +62,78 @@ public struct HLSLiveDVRRecorder: Sendable {
         from sourceURL: URL,
         to destinationDirectoryURL: URL
     ) -> HLSLiveDVRRecording {
+        makeRecording(
+            from: sourceURL,
+            to: destinationDirectoryURL,
+            mode: .fresh
+        )
+    }
+
+    /// Resumes an opt-in recording from its last complete-segment checkpoint.
+    ///
+    /// The caller supplies a fresh source URL. Query and fragment values are
+    /// excluded from source identity so an expired signed URL can be replaced.
+    public func resumeRecording(
+        from sourceURL: URL,
+        to destinationDirectoryURL: URL
+    ) -> HLSLiveDVRRecording {
+        makeRecording(
+            from: sourceURL,
+            to: destinationDirectoryURL,
+            mode: .resume
+        )
+    }
+
+    /// Resumes an opt-in recording and waits for its atomic commit.
+    ///
+    /// The caller supplies a fresh source URL. Query and fragment values are
+    /// excluded from source identity so an expired signed URL can be replaced.
+    public func resume(
+        from sourceURL: URL,
+        to destinationDirectoryURL: URL
+    ) async throws -> HLSLiveDVRReceipt {
+        try await execute(
+            sourceURL: sourceURL,
+            destinationDirectoryURL: destinationDirectoryURL,
+            mode: .resume,
+            onProgress: { _ in }
+        )
+    }
+
+    /// Removes an owned recovery checkpoint without touching a committed
+    /// destination.
+    public func discardRecovery(
+        for destinationDirectoryURL: URL
+    ) async throws {
+        guard destinationDirectoryURL.isFileURL else {
+            throw HLSLiveDVRError.invalidDestination
+        }
+        let lease: HLSDestinationLease
+        do {
+            lease = try await HLSDestinationLease.acquire(
+                for: destinationDirectoryURL
+            )
+        } catch HLSDownloadError.destinationInUse {
+            throw HLSLiveDVRError.destinationInUse
+        } catch {
+            throw HLSLiveDVRError.storageFailed
+        }
+        do {
+            try HLSLiveDVRCheckpointStore(
+                destinationURL: destinationDirectoryURL
+            ).cleanup()
+            await lease.release()
+        } catch {
+            await lease.release()
+            throw error
+        }
+    }
+
+    private func makeRecording(
+        from sourceURL: URL,
+        to destinationDirectoryURL: URL,
+        mode: HLSLiveDVRRecordingMode
+    ) -> HLSLiveDVRRecording {
         let (stream, continuation) =
             AsyncThrowingStream<
                 HLSLiveDVREvent,
@@ -71,7 +149,8 @@ public struct HLSLiveDVRRecorder: Sendable {
                     sourceURL: sourceURL,
                     destinationDirectoryURL:
                         destinationDirectoryURL,
-                    control: control
+                    control: control,
+                    mode: mode
                 ) {
                     continuation.yield(.progress($0))
                 }
@@ -136,6 +215,7 @@ public struct HLSLiveDVRRecorder: Sendable {
         sourceURL: URL,
         destinationDirectoryURL: URL,
         control: HLSLiveDVRRecordingControl? = nil,
+        mode: HLSLiveDVRRecordingMode = .fresh,
         onProgress:
             @escaping @Sendable (HLSLiveDVRProgress) -> Void
     ) async throws -> HLSLiveDVRReceipt {
@@ -164,6 +244,7 @@ public struct HLSLiveDVRRecorder: Sendable {
                 from: sourceURL,
                 to: destinationDirectoryURL,
                 control: control,
+                mode: mode,
                 onProgress: onProgress
             )
             await lease.release()
@@ -178,6 +259,7 @@ public struct HLSLiveDVRRecorder: Sendable {
         from sourceURL: URL,
         to destinationDirectoryURL: URL,
         control: HLSLiveDVRRecordingControl?,
+        mode: HLSLiveDVRRecordingMode,
         onProgress:
             @escaping @Sendable (HLSLiveDVRProgress) -> Void
     ) async throws -> HLSLiveDVRReceipt {
@@ -190,15 +272,50 @@ public struct HLSLiveDVRRecorder: Sendable {
             throw HLSLiveDVRError.destinationAlreadyExists
         }
 
-        let workspace = try HLSLiveDVRWorkspace.make(
-            for: destinationDirectoryURL
-        )
+        let checkpointStore: HLSLiveDVRCheckpointStore?
+        var pendingCheckpoint: HLSLiveDVRCheckpoint?
+        let workspace: HLSLiveDVRWorkspace
+        switch (configuration.recovery.policy, mode) {
+        case (.disabled, .fresh):
+            checkpointStore = nil
+            pendingCheckpoint = nil
+            workspace = try HLSLiveDVRWorkspace.make(
+                for: destinationDirectoryURL
+            )
+        case (.disabled, .resume):
+            throw HLSLiveDVRError.recoveryDisabled
+        case (.resumable, .fresh):
+            let store = HLSLiveDVRCheckpointStore(
+                destinationURL: destinationDirectoryURL
+            )
+            checkpointStore = store
+            pendingCheckpoint = nil
+            workspace = try store.prepareFresh()
+        case (.resumable, .resume):
+            let store = HLSLiveDVRCheckpointStore(
+                destinationURL: destinationDirectoryURL
+            )
+            let recovery = try store.resume(sourceURL: sourceURL)
+            checkpointStore = store
+            pendingCheckpoint = recovery.1
+            workspace = recovery.0
+        }
         var committed = false
+        var preservesRecovery = pendingCheckpoint != nil
+        var checkpointedFilePaths = Set(
+            pendingCheckpoint?.files.map(\.relativePath) ?? []
+        )
         defer {
             if !committed {
-                try? fileManager.removeItem(
-                    at: workspace.directoryURL
-                )
+                if let checkpointStore {
+                    if !preservesRecovery {
+                        try? checkpointStore.cleanup()
+                    }
+                } else {
+                    try? fileManager.removeItem(
+                        at: workspace.directoryURL
+                    )
+                }
             }
         }
 
@@ -253,6 +370,10 @@ public struct HLSLiveDVRRecorder: Sendable {
                     await control.shouldStopAndCommit
                 {
                     break recordingLoop
+                }
+                if let checkpoint = pendingCheckpoint {
+                    try state.restore(checkpoint, in: snapshot)
+                    pendingCheckpoint = nil
                 }
                 try state.validatePresentation(snapshot)
                 let candidates = try state.candidates(
@@ -353,6 +474,27 @@ public struct HLSLiveDVRRecorder: Sendable {
                     else {
                         break recordingLoop
                     }
+                    if let checkpointStore {
+                        try resourceWriter.discardAllStagedParts(
+                            state: &state
+                        )
+                        let checkpoint = try state.checkpoint(
+                            sourceURL: sourceURL
+                        )
+                        let newFiles = checkpoint.files.filter {
+                            !checkpointedFilePaths.contains(
+                                $0.relativePath
+                            )
+                        }
+                        try checkpointStore.save(
+                            checkpoint,
+                            synchronizing: newFiles
+                        )
+                        checkpointedFilePaths.formUnion(
+                            newFiles.map(\.relativePath)
+                        )
+                        preservesRecovery = true
+                    }
                     onProgress(state.progress)
                     if let control,
                         await control.shouldStopAndCommit
@@ -368,6 +510,11 @@ public struct HLSLiveDVRRecorder: Sendable {
                 }
             }
         } catch is CancellationError {
+            if let control,
+                await control.shouldCancelAndDiscard
+            {
+                preservesRecovery = false
+            }
             throw CancellationError()
         } catch let error as HLSLiveDVRError {
             throw error
@@ -384,12 +531,19 @@ public struct HLSLiveDVRRecorder: Sendable {
             throw HLSLiveDVRError.transferFailed
         }
 
+        if let control,
+            await control.shouldCancelAndDiscard
+        {
+            preservesRecovery = false
+            throw CancellationError()
+        }
         try Task.checkCancellation()
         try resourceWriter.discardAllStagedParts(state: &state)
         let receipt = try state.commit(
             to: destinationDirectoryURL
         )
         committed = true
+        try? checkpointStore?.cleanup()
         return receipt
     }
 

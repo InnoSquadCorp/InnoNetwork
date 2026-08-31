@@ -42,6 +42,30 @@ public enum HLSLiveDVRPartCapturePolicy: Equatable, Sendable {
     case independent
 }
 
+/// Controls whether a recording may persist URL-free recovery checkpoints.
+public enum HLSLiveDVRRecoveryPolicy: Equatable, Sendable {
+    /// Removes staging after ordinary interruption and does not allow resume.
+    case disabled
+
+    /// Persists an owned checkpoint after each complete primary segment.
+    case resumable
+}
+
+/// Groups live DVR interruption-recovery behavior.
+///
+/// Recovery remains opt-in because checkpoints intentionally retain media
+/// files between process lifetimes.
+public struct HLSLiveDVRRecoveryPack: Sendable {
+    let policy: HLSLiveDVRRecoveryPolicy
+
+    /// Creates a recovery pack. The default preserves legacy cleanup behavior.
+    public init(
+        policy: HLSLiveDVRRecoveryPolicy = .disabled
+    ) {
+        self.policy = policy
+    }
+}
+
 /// Groups bounded Low-Latency HLS part staging for live DVR.
 ///
 /// Part capture is an opt-in transfer optimization. The committed package
@@ -231,17 +255,20 @@ public struct HLSLiveDVRConfiguration: Sendable {
     let startPosition: HLSLiveDVRStartPosition
     let renditions: HLSLiveDVRRenditionPack
     let parts: HLSLiveDVRPartPack
+    let recovery: HLSLiveDVRRecoveryPack
 
     private init(
         limits: HLSLiveDVRLimitPack,
         startPosition: HLSLiveDVRStartPosition,
         renditions: HLSLiveDVRRenditionPack,
-        parts: HLSLiveDVRPartPack
+        parts: HLSLiveDVRPartPack,
+        recovery: HLSLiveDVRRecoveryPack
     ) {
         self.limits = limits
         self.startPosition = startPosition
         self.renditions = renditions
         self.parts = parts
+        self.recovery = recovery
     }
 
     /// Returns conservative record-from-now defaults.
@@ -258,11 +285,31 @@ public struct HLSLiveDVRConfiguration: Sendable {
             HLSLiveDVRRenditionPack(),
         parts: HLSLiveDVRPartPack = HLSLiveDVRPartPack()
     ) -> HLSLiveDVRConfiguration {
+        advanced(
+            limits: limits,
+            startPosition: startPosition,
+            renditions: renditions,
+            parts: parts,
+            recovery: HLSLiveDVRRecoveryPack()
+        )
+    }
+
+    /// Returns explicitly tuned live DVR behavior with interruption recovery.
+    public static func advanced(
+        limits: HLSLiveDVRLimitPack = HLSLiveDVRLimitPack(),
+        startPosition: HLSLiveDVRStartPosition =
+            .nextCompletedSegment,
+        renditions: HLSLiveDVRRenditionPack =
+            HLSLiveDVRRenditionPack(),
+        parts: HLSLiveDVRPartPack = HLSLiveDVRPartPack(),
+        recovery: HLSLiveDVRRecoveryPack
+    ) -> HLSLiveDVRConfiguration {
         HLSLiveDVRConfiguration(
             limits: limits,
             startPosition: startPosition,
             renditions: renditions,
-            parts: parts
+            parts: parts,
+            recovery: recovery
         )
     }
 }

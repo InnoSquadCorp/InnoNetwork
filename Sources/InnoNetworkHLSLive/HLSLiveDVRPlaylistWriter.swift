@@ -7,6 +7,8 @@ struct HLSLiveDVRStoredSegment: Equatable, Sendable {
     let beginsDiscontinuity: Bool
     let programDateTime: Date?
     let fileName: String
+    let byteCount: Int64
+    let contentSHA256: String
 }
 
 enum HLSLiveDVRPlaylistWriter {

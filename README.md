@@ -561,6 +561,13 @@ for await event in await manager.events(for: task) {
   external timeline resources, or an incomplete rendition cannot be preserved
 - configurable destination-capacity enforcement plus typed key status,
   key-length, decryption, and storage failures
+- opt-in, URL-free recovery checkpoints at complete primary-segment
+  boundaries; signed query values may rotate while source path, selected
+  variant, renditions, initialization map, file sizes, and SHA-256 digests are
+  revalidated before resume, and AES-128 keys are always fetched again
+- one-shot or controllable resume with a caller-supplied current source URL,
+  plus explicit checkpoint discard; a moved live window fails with the typed
+  `liveWindowAdvanced` result and final publication remains one atomic move
 - typed rejection of gaps, DRM/sample encryption, unsupported timeline
   metadata, missing/changing initialization maps, incomplete renditions, and
   live-window loss instead of silently committing an incomplete presentation

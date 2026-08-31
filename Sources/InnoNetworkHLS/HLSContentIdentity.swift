@@ -52,14 +52,34 @@ struct HLSResolvedPlaylistDocument: Sendable {
     let variables: [String: String]
 }
 
-enum HLSContentFingerprint {
-    static func sha256(_ value: String) -> String {
+package enum HLSContentFingerprint {
+    package static func sha256(_ value: String) -> String {
         sha256(Data(value.utf8))
     }
 
-    static func sha256(_ data: Data) -> String {
-        SHA256.hash(data: data)
-            .map { String(format: "%02x", $0) }
-            .joined()
+    package static func sha256(_ data: Data) -> String {
+        hex(SHA256.hash(data: data))
+    }
+
+    package static func sha256(
+        contentsOf url: URL
+    ) throws -> String {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer {
+            try? handle.close()
+        }
+        var hasher = SHA256()
+        while let data = try handle.read(upToCount: 64 * 1_024),
+            !data.isEmpty
+        {
+            hasher.update(data: data)
+        }
+        return hex(hasher.finalize())
+    }
+
+    private static func hex<Digest: Sequence>(
+        _ digest: Digest
+    ) -> String where Digest.Element == UInt8 {
+        digest.map { String(format: "%02x", $0) }.joined()
     }
 }

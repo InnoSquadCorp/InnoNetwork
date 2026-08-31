@@ -123,7 +123,8 @@ let recorder = HLSLiveDVRRecorder(
                 translation: .preferred
             )
         ),
-        parts: HLSLiveDVRPartPack(policy: .independent)
+        parts: HLSLiveDVRPartPack(policy: .independent),
+        recovery: HLSLiveDVRRecoveryPack(policy: .resumable)
     )
 )
 
@@ -169,7 +170,24 @@ The first terminal operation wins and repeated calls observe the same result.
 `stopAndCommit()` stops after the current complete primary segment and commits
 only when every selected rendition covers the retained primary timeline.
 `cancelAndDiscard()` waits for staging cleanup. Dropping the retained handle
-also cancels unfinished work; stopping event iteration alone does not.
+also cancels unfinished work; when resumable recovery is enabled, its last
+complete-segment checkpoint remains available. Stopping event iteration alone
+does not stop a retained recording.
+
+Resume with a current source URL after replacing an expired signature:
+
+```swift
+let receipt = try await recorder.resume(
+    from: refreshedMasterOrMediaPlaylistURL,
+    to: packageDirectoryURL
+)
+```
+
+Use ``HLSLiveDVRRecorder/resumeRecording(from:to:)`` for the controllable
+handle form, or ``HLSLiveDVRRecorder/discardRecovery(for:)`` when the
+application intentionally abandons a preserved checkpoint. Starting a fresh
+resumable recording at a destination that already has a checkpoint fails
+instead of silently overwriting it.
 
 Only complete segments are retained. Duration, segment count, per-resource
 bytes, total media bytes, external renditions per kind, request timeout,
@@ -229,8 +247,22 @@ persistence.
 
 The destination is reserved in-process and across cooperating processes.
 Staging is a hidden sibling directory, and the complete package becomes
-visible through one atomic directory move. Cancellation and failures remove
-ephemeral staging data; recordings are not resumed after interruption.
+visible through one atomic directory move. Recovery is disabled by default,
+which preserves legacy cleanup. The resumable policy atomically replaces a
+bounded URL-free checkpoint after each retained complete primary segment and
+keeps the owned hidden directory after ordinary interruption. Resume verifies
+the query-free source identity, selected variant and renditions, initialization
+map identity, exact file sizes, SHA-256 content digests, path confinement, and
+configured limits before reuse. AES-128 key bytes and source key URLs are never
+checkpointed and are fetched again. If the live window has moved beyond the
+last recorded sequence, resume reports ``HLSLiveDVRError/liveWindowAdvanced``
+without publishing a partial destination. Explicit cancellation and checkpoint
+discard remove the owned recovery directory.
+
+Query rotation is intended only for a refreshed authorization signature that
+still identifies the same presentation. If query parameters select different
+content, use a different destination or explicitly discard the old checkpoint
+instead of resuming it.
 
 ## Topics
 
@@ -269,6 +301,8 @@ ephemeral staging data; recordings are not resumed after interruption.
 - ``HLSLiveDVRRenditionSelectionPolicy``
 - ``HLSLiveDVRPartPack``
 - ``HLSLiveDVRPartCapturePolicy``
+- ``HLSLiveDVRRecoveryPack``
+- ``HLSLiveDVRRecoveryPolicy``
 - ``HLSLiveDVRStartPosition``
 - ``HLSLiveDVREvent``
 - ``HLSLiveDVRProgress``
