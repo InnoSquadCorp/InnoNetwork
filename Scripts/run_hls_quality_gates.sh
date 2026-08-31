@@ -70,9 +70,14 @@ fi
 if [[ "$require_runtime_smoke" == true ]]; then
   runtime_arguments+=(--require-supported-runtime)
 fi
-runtime_output="$(
-  bash Scripts/run_hls_runtime_smoke.sh "${runtime_arguments[@]}"
-)"
+if [[ ${#runtime_arguments[@]} -gt 0 ]]; then
+  runtime_output="$(
+    bash Scripts/run_hls_runtime_smoke.sh "${runtime_arguments[@]}"
+  )"
+else
+  # macOS Bash 3.2 treats an empty array expansion as unbound under `set -u`.
+  runtime_output="$(bash Scripts/run_hls_runtime_smoke.sh)"
+fi
 printf '%s\n' "$runtime_output"
 
 if [[ "$require_apple_tools" == true && -n "$apple_report_root" ]]; then

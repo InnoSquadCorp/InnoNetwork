@@ -3,9 +3,9 @@ import AVFoundation
 /// Demand-driven decoded PCM access for one caller-owned HLS player item.
 ///
 /// The output allows only one outstanding read. It does not buffer samples,
-/// create a player, or advance playback. The caller remains responsible for
-/// comparing output timestamps with the player item's timebase and pausing
-/// reads that run too far ahead of presentation.
+/// create a player, or advance playback. Callers can read directly or use
+/// ``pacedSamples(configuration:)`` to prevent reads from running too far
+/// ahead of presentation.
 @available(macOS 27, iOS 27, tvOS 27, watchOS 27, visionOS 27, *)
 @MainActor
 public final class HLSDecodedAudioOutput {
@@ -83,6 +83,20 @@ public final class HLSDecodedAudioOutput {
         return output.nextAvailableSampleBuffer().map(HLSDecodedAudioSample.init)
     }
 
+    /// Creates a non-prefetching sequence paced against the player-item time.
+    ///
+    /// The sequence does not detach this output and does not permit another
+    /// iterator or direct read to consume concurrently. Cancellation while
+    /// waiting for the pacing window is propagated immediately.
+    public func pacedSamples(
+        configuration: HLSDecodedAudioPacingConfiguration = .init()
+    ) -> HLSDecodedAudioPacedSequence {
+        HLSDecodedAudioPacedSequence(
+            output: self,
+            configuration: configuration
+        )
+    }
+
     /// Detaches the system output from the player item.
     ///
     /// Detachment is idempotent and terminal. Create a new output to resume
@@ -91,5 +105,12 @@ public final class HLSDecodedAudioOutput {
         guard isAttached else { return }
         playerItem.remove(output)
         isAttached = false
+    }
+
+    package func pacingItemTime() throws(HLSDecodedAudioError) -> CMTime {
+        guard isAttached else {
+            throw .outputDetached
+        }
+        return playerItem.currentTime()
     }
 }

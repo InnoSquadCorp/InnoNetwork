@@ -35,6 +35,13 @@ struct HLSDecodedAudioRuntimeTests {
             )
         )
         let player = AVPlayer(playerItem: playerItem)
+        let maximumLeadTime: TimeInterval = 0.1
+        let samples = output.pacedSamples(
+            configuration: HLSDecodedAudioPacingConfiguration(
+                maximumLeadTime: maximumLeadTime,
+                pollingInterval: 0.005
+            )
+        )
         defer {
             player.pause()
             output.detach()
@@ -42,9 +49,24 @@ struct HLSDecodedAudioRuntimeTests {
         }
 
         player.play()
-        let sample = try #require(await output.nextSample())
+        var decodedSamples: [HLSDecodedAudioSample] = []
+        for try await sample in samples {
+            guard !sample.isMarkerOnly else {
+                continue
+            }
+            let sampleTime = sample.outputPresentationTime.seconds
+            let playerTime = playerItem.currentTime().seconds
+            #expect(sampleTime.isFinite)
+            #expect(playerTime.isFinite)
+            #expect(sampleTime - playerTime <= maximumLeadTime + 0.05)
+            decodedSamples.append(sample)
+            if decodedSamples.count == 8 {
+                break
+            }
+        }
+        let sample = try #require(decodedSamples.first)
 
-        #expect(!sample.isMarkerOnly)
+        #expect(decodedSamples.count == 8)
         #expect(sample.sampleCount > 0)
         #expect(sample.presentationTime.isNumeric)
         #expect(sample.outputPresentationTime.isNumeric)

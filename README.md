@@ -657,12 +657,15 @@ for await event in await manager.events(for: task) {
   raw HLS, live reload, and broader AVFoundation playback products
 - validated custom linear PCM formats plus a concise Float32 convenience
   configuration for common waveform, level, speech, and assistance pipelines
-- one demand-driven async read at a time, with typed rejection of competing
-  consumers instead of an automatically drained, unbounded stream
+- one demand-driven async read at a time, with typed rejection of overlapping
+  reads instead of an automatically drained, unbounded stream
+- an optional non-prefetching paced sequence that admits the next read only
+  when the previous sample is within a bounded lead of the player-item clock;
+  pause, backward seek, cancellation, and terminal detachment remain explicit
 - typed `Sendable` Core Media buffers that preserve marker-only samples,
   output presentation time, duration, sample count, and sequence restarts
 - explicit, idempotent detachment while the application retains its player,
-  timebase pacing, conversion, processing, storage, and UI responsibilities
+  conversion, processing, storage, and UI responsibilities
 - no DRM bypass or promise that protected audio will yield decoded samples
 
 ### `InnoNetworkWebSocket`

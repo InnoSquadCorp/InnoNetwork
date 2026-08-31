@@ -52,6 +52,72 @@ struct HLSDecodedAudioTests {
         }
     }
 
+    @Test("Pacing configuration normalizes unsafe timing values")
+    @available(macOS 27, iOS 27, tvOS 27, watchOS 27, visionOS 27, *)
+    func pacingConfigurationBounds() {
+        #expect(
+            HLSDecodedAudioPacingConfiguration(
+                maximumLeadTime: -.infinity,
+                pollingInterval: .nan
+            )
+                == HLSDecodedAudioPacingConfiguration(
+                    maximumLeadTime: 0.25,
+                    pollingInterval: 0.01
+                )
+        )
+
+        let minimum = HLSDecodedAudioPacingConfiguration(
+            maximumLeadTime: -1,
+            pollingInterval: 0
+        )
+        #expect(minimum.maximumLeadTime == 0)
+        #expect(minimum.pollingInterval == 0.001)
+
+        let maximum = HLSDecodedAudioPacingConfiguration(
+            maximumLeadTime: 60,
+            pollingInterval: 1
+        )
+        #expect(maximum.maximumLeadTime == 10)
+        #expect(maximum.pollingInterval == 0.25)
+    }
+
+    @Test("Pacing admits one read window and resets after a backward seek")
+    @available(macOS 27, iOS 27, tvOS 27, watchOS 27, visionOS 27, *)
+    func pacingState() {
+        var state = HLSDecodedAudioPacingState()
+        let initiallyAdmitted = state.admitsRead(
+            itemTime: CMTime(seconds: 0.7, preferredTimescale: 1_000),
+            maximumLeadTime: 0.25
+        )
+        #expect(initiallyAdmitted)
+        state.record(
+            start: CMTime(seconds: 1, preferredTimescale: 1_000),
+            duration: CMTime(seconds: 0.1, preferredTimescale: 1_000)
+        )
+
+        let heldAhead = state.admitsRead(
+            itemTime: CMTime(seconds: 0.7, preferredTimescale: 1_000),
+            maximumLeadTime: 0.25
+        )
+        #expect(!heldAhead)
+        let admittedAtBoundary = state.admitsRead(
+            itemTime: CMTime(seconds: 0.85, preferredTimescale: 1_000),
+            maximumLeadTime: 0.25
+        )
+        #expect(admittedAtBoundary)
+
+        let heldBeforeSeek = state.admitsRead(
+            itemTime: CMTime(seconds: 0.9, preferredTimescale: 1_000),
+            maximumLeadTime: 0
+        )
+        #expect(!heldBeforeSeek)
+        let admittedAfterSeek = state.admitsRead(
+            itemTime: CMTime(seconds: 0.2, preferredTimescale: 1_000),
+            maximumLeadTime: 0
+        )
+        #expect(admittedAfterSeek)
+    }
+
     @Test("Marker buffers preserve timeline and restart metadata")
     @available(macOS 27, iOS 27, tvOS 27, watchOS 27, visionOS 27, *)
     func markerBufferMapping() {
@@ -134,6 +200,65 @@ struct HLSDecodedAudioTests {
         #expect(playerItem.outputs.count == originalOutputCount)
         #expect(throws: HLSDecodedAudioError.outputDetached) {
             try output.nextAvailableSample()
+        }
+    }
+
+    @Test("A paced iterator observes terminal output detachment")
+    @available(macOS 27, iOS 27, tvOS 27, watchOS 27, visionOS 27, *)
+    @MainActor
+    func pacedOutputLifecycle() async throws {
+        let sourceURL = try #require(
+            URL(string: "https://example.com/live.m3u8")
+        )
+        let playerItem = AVPlayerItem(url: sourceURL)
+        let output = HLSDecodedAudioOutput(
+            playerItem: playerItem,
+            configuration: try .float32()
+        )
+        var iterator = output.pacedSamples().makeAsyncIterator()
+
+        output.detach()
+
+        await #expect(throws: HLSDecodedAudioError.outputDetached) {
+            _ = try await iterator.next()
+        }
+    }
+
+    @Test("Cancellation interrupts a paced wait before another read")
+    @available(macOS 27, iOS 27, tvOS 27, watchOS 27, visionOS 27, *)
+    @MainActor
+    func cancelledPacedWait() async throws {
+        let sourceURL = try #require(
+            URL(string: "https://example.com/live.m3u8")
+        )
+        let playerItem = AVPlayerItem(url: sourceURL)
+        let output = HLSDecodedAudioOutput(
+            playerItem: playerItem,
+            configuration: try .float32()
+        )
+        defer { output.detach() }
+
+        let read = Task { @MainActor in
+            var pacingState = HLSDecodedAudioPacingState()
+            pacingState.record(
+                start: CMTime(seconds: 1, preferredTimescale: 1_000),
+                duration: CMTime(seconds: 0.1, preferredTimescale: 1_000)
+            )
+            var iterator = HLSDecodedAudioPacedSequence.Iterator(
+                output: output,
+                configuration: HLSDecodedAudioPacingConfiguration(
+                    maximumLeadTime: 0,
+                    pollingInterval: 0.25
+                ),
+                pacingState: pacingState
+            )
+            return try await iterator.next()
+        }
+        await Task.yield()
+        read.cancel()
+
+        await #expect(throws: CancellationError.self) {
+            _ = try await read.value
         }
     }
 

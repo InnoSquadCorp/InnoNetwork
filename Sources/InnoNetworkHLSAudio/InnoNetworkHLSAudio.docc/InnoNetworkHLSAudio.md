@@ -20,7 +20,11 @@ let decodedAudio = HLSDecodedAudioOutput(
     configuration: configuration
 )
 
-while let sample = try await decodedAudio.nextSample() {
+for try await sample in decodedAudio.pacedSamples(
+    configuration: HLSDecodedAudioPacingConfiguration(
+        maximumLeadTime: 0.25
+    )
+) {
     if sample.isMarkerOnly {
         continue
     }
@@ -29,9 +33,6 @@ while let sample = try await decodedAudio.nextSample() {
         sample.sampleBuffer,
         sequenceWasRestarted: sample.sequenceWasRestarted
     )
-
-    // Stop requesting more buffers when output is sufficiently ahead of the
-    // player item's timebase. The appropriate lead is application-specific.
 }
 
 decodedAudio.detach()
@@ -45,12 +46,21 @@ still vary the delivered numeric representation, sample size, or interleaving,
 so processors must inspect the format description on each sample buffer and
 perform any required conversion with `AudioConverter` or `AVAudioEngine`.
 
-The output is deliberately demand-driven rather than an automatically drained
-`AsyncStream`. AVFoundation can decode far ahead of presentation; applications
-must compare ``HLSDecodedAudioSample/outputPresentationTime`` with the player
-item's timebase and pause reads after preparing enough near-future audio.
-``HLSDecodedAudioError/readAlreadyInProgress`` rejects competing consumers so
-sample order has one owner.
+The output remains demand-driven rather than an automatically drained
+`AsyncStream`. Direct consumers can continue to call
+``HLSDecodedAudioOutput/nextSample()`` and own their pacing policy. The optional
+``HLSDecodedAudioPacedSequence`` never prefetches: before starting another
+AVFoundation read, it waits until the previously delivered sample boundary is
+within ``HLSDecodedAudioPacingConfiguration/maximumLeadTime`` of the player
+item's current time. A paused item therefore stops new reads once the lead is
+filled. A backward time jump clears the previous boundary so a seek can deliver
+the sequence-restart marker. The bounded polling interval is cancellation-safe.
+
+The paced sequence retains but does not detach its output. Only one iterator or
+direct read should consume at a time;
+``HLSDecodedAudioError/readAlreadyInProgress`` rejects overlapping reads.
+Pacing limits library read admission, not how many buffers the application
+retains after delivery.
 
 Marker-only buffers are retained with a zero ``HLSDecodedAudioSample/sampleCount``.
 Skip their PCM processing while using
@@ -74,3 +84,5 @@ AVFoundation on macOS 27, iOS 27, tvOS 27, watchOS 27, and visionOS 27.
 
 - ``HLSDecodedAudioOutput``
 - ``HLSDecodedAudioSample``
+- ``HLSDecodedAudioPacingConfiguration``
+- ``HLSDecodedAudioPacedSequence``

@@ -130,4 +130,4 @@ if ! INNONETWORK_HLS_RUNTIME_PLAYLIST_URL="$playlist_url" \
   exit 1
 fi
 
-echo "hls-runtime-smoke: OK (macOS AVPlayer timeline/local bridge, decoded PCM, and offline movpkg)"
+echo "hls-runtime-smoke: OK (macOS AVPlayer timeline/local bridge, paced decoded PCM, and offline movpkg)"

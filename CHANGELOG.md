@@ -34,9 +34,10 @@ Versioning.
   companion around `AVPlayerItemSampleBufferOutput`. It validates linear PCM
   requests, offers a concise Float32 configuration, preserves marker and
   sequence-restart metadata in typed `Sendable` samples, allows only one
-  demand-driven read, and leaves player ownership, timebase pacing, audio
-  conversion, processing, storage, UI, and protected-content policy with the
-  application.
+  demand-driven read, and offers an optional non-prefetching sequence that
+  paces read admission against the player-item clock with a bounded lead.
+  Player ownership, audio conversion, processing, storage, UI, and protected-
+  content policy remain with the application.
 - `HLSPlaybackAssetConfigurator` enables AVFoundation-managed CMCD request
   headers on caller-owned URL assets and reports unsupported operating systems
   (including watchOS, which has no asset resource-loader API) without exposing

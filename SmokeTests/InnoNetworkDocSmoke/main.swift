@@ -260,8 +260,15 @@ private func smokeHLSDecodedAudioSurface(
         playerItem: playerItem,
         configuration: configuration
     )
+    let pacedSamples = output.pacedSamples(
+        configuration: HLSDecodedAudioPacingConfiguration(
+            maximumLeadTime: 0.25
+        )
+    )
     _ = (
         HLSDecodedAudioSample.self,
+        HLSDecodedAudioPacedSequence.self,
+        pacedSamples,
         output.isAttached,
         try output.nextAvailableSample()
     )
