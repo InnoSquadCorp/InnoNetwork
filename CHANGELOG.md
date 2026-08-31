@@ -9,6 +9,14 @@ Versioning.
 
 ### Added
 
+- `HLSIntegratedTimelineMonitor` adds a read-only bridge for AVFoundation's
+  primary and interstitial playback timeline on macOS 15, iOS and tvOS 18,
+  watchOS 11, and visionOS 2. Bounded `Sendable` snapshots preserve source and
+  integrated ranges, loaded ranges, current-segment identity, and typed change
+  reasons without exposing player items, assets, URLs, attributes, or response
+  bodies. Each subscriber receives sampled playhead changes plus native
+  schedule invalidations through an independently cancellable newest-value
+  buffer.
 - `HLSTimedMetadataMonitor` adds an allowlist-first
   `AVPlayerItemMetadataOutput` bridge. Identifier-only safe defaults load no
   values; explicit text, number, and date fields map into bounded `Sendable`

@@ -169,6 +169,34 @@ private let smokeHLSCommonMediaClientDataPolicy =
 private let smokeHLSCommonMediaClientDataStatusType =
     HLSCommonMediaClientDataStatus.self
 
+@available(
+    macOS 15,
+    iOS 18,
+    tvOS 18,
+    watchOS 11,
+    visionOS 2,
+    *
+)
+@MainActor
+private func smokeHLSIntegratedTimelineSurface(
+    playerItem: AVPlayerItem
+) {
+    let monitor = HLSIntegratedTimelineMonitor(
+        playerItem: playerItem,
+        updateInterval: 0.5,
+        maximumBufferedUpdateCount: 64
+    )
+    _ = (
+        HLSIntegratedTimelineSegmentKind.self,
+        HLSIntegratedTimelineSegmentSnapshot.self,
+        HLSIntegratedTimelineSnapshot.self,
+        HLSIntegratedTimelineUpdate.self,
+        HLSIntegratedTimelineUpdateReason.self,
+        monitor.currentSnapshot,
+        monitor.updates()
+    )
+}
+
 @MainActor
 private func smokeHLSTimedMetadataSurface(
     playerItem: AVPlayerItem

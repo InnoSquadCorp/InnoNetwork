@@ -158,7 +158,7 @@ acquiring a 5.x compatibility promise.
 - `InnoNetworkOpenAPI` companion product
 - `InnoNetworkHLS` companion product and its public playlist, variant selection, single-file download, offline package, event, and error symbols
 - `InnoNetworkHLSLive` companion product and its public live reload, bounded DVR recording, snapshot, configuration, and error symbols
-- `InnoNetworkHLSAVFoundation` companion product and its public download, playback configuration, timed metadata, playback metrics, playback health, interstitial observation, and FairPlay symbols
+- `InnoNetworkHLSAVFoundation` companion product and its public download, playback configuration, timed metadata, playback metrics, playback health, interstitial and integrated-timeline observation, and FairPlay symbols
 - `InnoNetworkHLSAudio` companion product and its public decoded PCM configuration, output lifecycle, sample, and error symbols
 - `@APIDefinition(method:path:auth:)` and the default-enabled `Macros` package trait
 - `PersistentResponseCache` statistics and telemetry surfaces
@@ -406,8 +406,8 @@ types and members in addition to top-level declarations. The grouped ledger
 below keeps the high-level compatibility classification readable for the
 5.x release line.
 
-The machine-checked snapshot currently partitions all 2,663 declarations into
-305 Stable consumer declarations, 2,325 Provisionally Stable consumer
+The machine-checked snapshot currently partitions all 2,697 declarations into
+305 Stable consumer declarations, 2,359 Provisionally Stable consumer
 declarations, and 33 opt-in SPI declarations. The three sets are disjoint and
 exhaustive. `Scripts/symbols/stable-rules.tsv` maps the Stable ledger to symbol
 paths, while the compiler-authored SPI flag is snapshotted in
@@ -593,6 +593,13 @@ Stable.
   `HLSInterstitialRuntimeEvent`, and `HLSInterstitialSkippableState`. The
   observation-only bridge emits bounded, value-redacted lifecycle streams
   while AVFoundation owns scheduling and system skip controls.
+- Integrated timeline: `HLSIntegratedTimelineMonitor`,
+  `HLSIntegratedTimelineSegmentKind`,
+  `HLSIntegratedTimelineSegmentSnapshot`, `HLSIntegratedTimelineSnapshot`,
+  `HLSIntegratedTimelineUpdate`, and `HLSIntegratedTimelineUpdateReason`. The
+  version-gated, observation-only bridge emits bounded value snapshots of
+  primary and interstitial ranges while the application owns playback,
+  seeking, scheduling, and navigation policy.
 
 ### InnoNetworkHLSAudio
 

@@ -304,6 +304,54 @@ URLs, asset-list bodies, user-defined attributes, and underlying errors.
 Version 26 lifecycle events are emitted only where the operating system
 provides them.
 
+## Integrated playback timeline
+
+On macOS 15, iOS and tvOS 18, watchOS 11, and visionOS 2 or newer,
+``HLSIntegratedTimelineMonitor`` turns
+`AVPlayerItem.integratedTimeline` into value-only snapshots suitable for
+custom player UI:
+
+```swift
+let timeline = HLSIntegratedTimelineMonitor(
+    playerItem: playerItem,
+    updateInterval: 0.5,
+    maximumBufferedUpdateCount: 64
+)
+
+for await update in timeline.updates() {
+    let currentSegment = update.snapshot.currentSegmentIndex.map {
+        update.snapshot.segments[$0]
+    }
+    renderTimeline(
+        duration: update.snapshot.duration,
+        playhead: update.snapshot.currentTime,
+        currentKind: currentSegment?.kind,
+        reason: update.reason
+    )
+}
+```
+
+The monitor combines sampled playhead changes with AVFoundation's native
+segment, current-segment, and loaded-range invalidations. It enqueues an
+initial state before observation begins. Each call to
+``HLSIntegratedTimelineMonitor/updates()`` creates an independent newest-value
+buffer; prolonged unconsumed streams can replace older updates, including the
+initial one. Cancel the consuming task when observation ends.
+
+Each ``HLSIntegratedTimelineSnapshot`` retains at most 1,024 chronological
+segments, and each segment retains at most 256 native loaded ranges. Truncation
+flags distinguish a complete value from a bounded prefix. Interstitial
+identifiers are limited to 1,024 UTF-8 bytes with an explicit truncation flag.
+Invalid, indefinite, negative-duration, and non-finite native times become
+`nil`; a point interstitial remains an empty integrated range rather than
+being discarded.
+
+Snapshots exclude player items, assets, template items, URLs, custom
+attributes, asset-list responses, and underlying errors. The monitor retains
+the caller-owned primary item only for observation lifetime and remains
+read-only: the application and AVFoundation continue to own playback, seeking,
+interstitial scheduling, skip controls, and navigation restrictions.
+
 ## Playback metrics
 
 ``HLSPlaybackMetrics`` converts `AVPlayerItem.allMetrics()` into typed events

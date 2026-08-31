@@ -36,7 +36,7 @@ optional product selected only when that capability is required.
 | `InnoNetworkDownload` | You need foreground/background download lifecycle management with pause, resume, retry, persistence, and event streams. |
 | `InnoNetworkHLS` | You need bounded HLS playlist resolution, deterministic variant selection, browser-free non-DRM VOD assembly, or typed retry and recovery diagnostics. |
 | `InnoNetworkHLSLive` | You need blocking reloads, delta-window reconstruction, bounded snapshots, or atomic live DVR capture. |
-| `InnoNetworkHLSAVFoundation` | You need AVFoundation-managed background HLS persistence, media selections, value-redacted playback health, an app-owned FairPlay content-key setup, or system-download lifecycle diagnostics. |
+| `InnoNetworkHLSAVFoundation` | You need AVFoundation-managed background HLS persistence, media selections, a value-only integrated interstitial timeline, playback health, an app-owned FairPlay content-key setup, or system-download lifecycle diagnostics. |
 | `InnoNetworkHLSAudio` | You need demand-driven decoded PCM from an HLS player item on version 27 platforms for waveform, level, speech, or navigation-assistance processing. |
 | `InnoNetworkWebSocket` | You need long-lived bidirectional connections with heartbeat, reconnect, close taxonomy, and event delivery. |
 | `InnoNetworkPersistentCache` | You want `ResponseCache` backed by disk with conservative RFC-aware storage guards and data protection. |
@@ -608,6 +608,10 @@ for await event in await manager.events(for: task) {
 - a main-actor, read-only interstitial monitor that emits bounded,
   cancellation-safe lifecycle streams as value-redacted `Sendable` events;
   AVFoundation retains schedule and system skip-control ownership
+- a version-gated integrated-timeline monitor for primary and interstitial
+  segments, sampled playhead progress, wall-clock mapping, loaded ranges, and
+  native structural invalidations; snapshots cap segment, range, and
+  identifier storage while the application retains playback and seeking policy
 - a pure, bounded playback-health analyzer that reduces delivered metric
   events into stable healthy/degraded/critical snapshots while applications
   retain UI, alerting, and policy ownership
