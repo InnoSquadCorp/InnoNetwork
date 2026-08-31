@@ -137,6 +137,9 @@ let recorder = HLSLiveDVRRecorder(
             )
         ),
         parts: HLSLiveDVRPartPack(policy: .independent),
+        preloading: HLSLiveDVRPreloadPack(
+            policy: .unencryptedMedia
+        ),
         recovery: HLSLiveDVRRecoveryPack(policy: .resumable)
     )
 )
@@ -221,6 +224,17 @@ the parent; otherwise it removes the temporary parts and downloads the normal
 complete segment. The committed package contains complete VOD segments only.
 Identity-format AES-128 parts are not staged because part-level IV metadata is
 not available; their complete parent follows the existing decryption path.
+
+Speculative media loading is also disabled by default. Opt in with
+``HLSLiveDVRPreloadPack`` to begin bounded clear-media `PART` and `MAP`
+transfers while a blocking or polling reload is in flight. A preload is reused
+only after a later playlist confirms its URL, byte range, discontinuity
+sequence, initialization map, and encryption state. Open-ended hinted ranges
+must resolve to an exact advertised range with the same start and transferred
+length. Delta updates, encrypted presentations, mismatches, cancellations,
+and transfer failures discard temporary bytes and leave the ordinary DVR
+request path available. ``InnoNetworkHLS/HLSRequestPurpose/mediaPreloadHint``
+lets request adapters distinguish this speculative traffic.
 
 MPEG transport streams and fragmented MP4 with one stable initialization map
 are written as a URL-free local VOD playlist. Identity-format AES-128 uses
@@ -316,6 +330,8 @@ instead of resuming it.
 - ``HLSLiveDVRRenditionSelectionPolicy``
 - ``HLSLiveDVRPartPack``
 - ``HLSLiveDVRPartCapturePolicy``
+- ``HLSLiveDVRPreloadPack``
+- ``HLSLiveDVRPreloadPolicy``
 - ``HLSLiveDVRRecoveryPack``
 - ``HLSLiveDVRRecoveryPolicy``
 - ``HLSLiveDVRStartPosition``

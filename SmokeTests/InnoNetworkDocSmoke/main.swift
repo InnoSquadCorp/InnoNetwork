@@ -45,6 +45,9 @@ private let smokeHLSLiveDVRConfiguration =
         parts: HLSLiveDVRPartPack(
             policy: .independent
         ),
+        preloading: HLSLiveDVRPreloadPack(
+            policy: .unencryptedMedia
+        ),
         recovery: HLSLiveDVRRecoveryPack(policy: .resumable)
     )
 private let smokeHLSLiveDVRRecorder = HLSLiveDVRRecorder(

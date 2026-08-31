@@ -561,6 +561,11 @@ for await event in await manager.events(for: task) {
   byte bounds, exact range validation, temporary-progress metadata, parent-
   duration proof before promotion, and complete-segment fallback without
   exposing partial files in the committed package
+- opt-in clear-media `PART` and `MAP` hint preloading with per-resource and
+  aggregate byte bounds, open-ended range validation, exact discontinuity,
+  initialization-map, and encryption-context confirmation, cancellation-safe
+  temporary storage, and ordinary-request fallback on every mismatch or
+  transfer failure
 - recording-scoped, memory-only identity AES-128 key reuse and rotation,
   explicit or media-sequence IV decryption, encrypted fMP4 maps, and plaintext-
   only local packages that never persist key declarations or source key URLs

@@ -88,6 +88,9 @@ Versioning.
   bounded, URL-free local VOD package. It supports record-from-now and
   current-window starts, exact byte-range validation, progress events,
   in-process plus cross-process destination exclusion, and atomic commit.
+  An opt-in bounded preload pack speculatively fetches clear `PART` and `MAP`
+  hints, reuses bytes only after exact range and presentation-context
+  confirmation, and otherwise falls back to the ordinary DVR transfer path.
   Encrypted media, gaps, external renditions or timeline resources,
   missing/changing initialization maps, and lost live-window history fail
   explicitly without exposing a partial package.

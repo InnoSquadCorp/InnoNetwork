@@ -2,6 +2,7 @@ InnoNetworkHLSLive	swift.class	HLSLiveDVRRecording
 InnoNetworkHLSLive	swift.enum	HLSLiveDVRError
 InnoNetworkHLSLive	swift.enum	HLSLiveDVREvent
 InnoNetworkHLSLive	swift.enum	HLSLiveDVRPartCapturePolicy
+InnoNetworkHLSLive	swift.enum	HLSLiveDVRPreloadPolicy
 InnoNetworkHLSLive	swift.enum	HLSLiveDVRRecoveryPolicy
 InnoNetworkHLSLive	swift.enum	HLSLiveDVRRenditionSelectionPolicy
 InnoNetworkHLSLive	swift.enum	HLSLiveDVRStartPosition
@@ -37,6 +38,8 @@ InnoNetworkHLSLive	swift.enum.case	HLSLiveDVREvent.completed(_:)
 InnoNetworkHLSLive	swift.enum.case	HLSLiveDVREvent.progress(_:)
 InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRPartCapturePolicy.disabled
 InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRPartCapturePolicy.independent
+InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRPreloadPolicy.disabled
+InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRPreloadPolicy.unencryptedMedia
 InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRRecoveryPolicy.disabled
 InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRRecoveryPolicy.resumable
 InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRRenditionSelectionPolicy.all
@@ -82,6 +85,7 @@ InnoNetworkHLSLive	swift.enum.case	HLSLiveReloadMode.initial
 InnoNetworkHLSLive	swift.enum.case	HLSLiveReloadMode.polling
 InnoNetworkHLSLive	swift.init	HLSLiveDVRLimitPack.init(maximumDuration:maximumSegmentCount:maximumMediaResourceBytes:maximumTotalMediaBytes:requestTimeout:diskCapacityPolicy:)
 InnoNetworkHLSLive	swift.init	HLSLiveDVRPartPack.init(policy:maximumStagedPartCount:maximumStagedPartBytes:)
+InnoNetworkHLSLive	swift.init	HLSLiveDVRPreloadPack.init(policy:maximumResourceBytes:maximumTotalBytes:)
 InnoNetworkHLSLive	swift.init	HLSLiveDVRRecorder.init(client:configuration:)
 InnoNetworkHLSLive	swift.init	HLSLiveDVRRecorder.init(configuration:)
 InnoNetworkHLSLive	swift.init	HLSLiveDVRRecoveryPack.init(policy:)
@@ -205,6 +209,7 @@ InnoNetworkHLSLive	swift.struct	HLSLiveConfiguration
 InnoNetworkHLSLive	swift.struct	HLSLiveDVRConfiguration
 InnoNetworkHLSLive	swift.struct	HLSLiveDVRLimitPack
 InnoNetworkHLSLive	swift.struct	HLSLiveDVRPartPack
+InnoNetworkHLSLive	swift.struct	HLSLiveDVRPreloadPack
 InnoNetworkHLSLive	swift.struct	HLSLiveDVRProgress
 InnoNetworkHLSLive	swift.struct	HLSLiveDVRReceipt
 InnoNetworkHLSLive	swift.struct	HLSLiveDVRRecorder
@@ -226,6 +231,8 @@ InnoNetworkHLSLive	swift.type.method	HLSLiveConfiguration.advanced(reload:)
 InnoNetworkHLSLive	swift.type.method	HLSLiveConfiguration.advanced(reload:variantSelectionPolicy:contentSteering:)
 InnoNetworkHLSLive	swift.type.method	HLSLiveConfiguration.safeDefaults()
 InnoNetworkHLSLive	swift.type.method	HLSLiveDVRConfiguration.advanced(limits:startPosition:renditions:parts:)
+InnoNetworkHLSLive	swift.type.method	HLSLiveDVRConfiguration.advanced(limits:startPosition:renditions:parts:preloading:)
+InnoNetworkHLSLive	swift.type.method	HLSLiveDVRConfiguration.advanced(limits:startPosition:renditions:parts:preloading:recovery:)
 InnoNetworkHLSLive	swift.type.method	HLSLiveDVRConfiguration.advanced(limits:startPosition:renditions:parts:recovery:)
 InnoNetworkHLSLive	swift.type.method	HLSLiveDVRConfiguration.safeDefaults()
 InnoNetworkHLSLive	swift.type.method	HLSLiveHealthConfiguration.advanced(thresholds:)

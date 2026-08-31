@@ -268,6 +268,7 @@ InnoNetworkHLS	swift.enum.case	HLSRequestPurpose.entryPlaylist
 InnoNetworkHLS	swift.enum.case	HLSRequestPurpose.interstitialAssetList
 InnoNetworkHLS	swift.enum.case	HLSRequestPurpose.livePlaylistReload
 InnoNetworkHLS	swift.enum.case	HLSRequestPurpose.mediaPlaylist
+InnoNetworkHLS	swift.enum.case	HLSRequestPurpose.mediaPreloadHint
 InnoNetworkHLS	swift.enum.case	HLSRequestPurpose.mediaResource
 InnoNetworkHLS	swift.enum.case	HLSRequestPurpose.sessionData
 InnoNetworkHLS	swift.enum.case	HLSResumePolicy.automatic

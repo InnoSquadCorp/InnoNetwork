@@ -3,12 +3,12 @@ authaws.allowlist	10
 cache.allowlist	51
 core.allowlist	786
 download.allowlist	94
-hls.allowlist	742
-hls-live.allowlist	232
+hls.allowlist	743
+hls-live.allowlist	239
 hls-avfoundation.allowlist	545
 hls-audio.allowlist	37
 openapi.allowlist	36
 testsupport.allowlist	84
 trust.allowlist	17
 websocket.allowlist	130
-TOTAL	2764
+TOTAL	2772
