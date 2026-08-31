@@ -169,6 +169,28 @@ private let smokeHLSCommonMediaClientDataPolicy =
 private let smokeHLSCommonMediaClientDataStatusType =
     HLSCommonMediaClientDataStatus.self
 
+@MainActor
+private func smokeHLSTimedMetadataSurface(
+    playerItem: AVPlayerItem
+) throws {
+    let configuration = HLSTimedMetadataConfiguration.advanced(
+        fields: [
+            .text(.id3Title),
+            .redacted(.id3Private),
+        ]
+    )
+    let monitor = try HLSTimedMetadataMonitor(
+        playerItem: playerItem,
+        configuration: configuration
+    )
+    _ = (
+        HLSTimedMetadataEvent.self,
+        HLSTimedMetadataValue.self,
+        monitor.events()
+    )
+    monitor.detach()
+}
+
 @available(macOS 27, iOS 27, tvOS 27, watchOS 27, visionOS 27, *)
 @MainActor
 private func smokeHLSDecodedAudioSurface(

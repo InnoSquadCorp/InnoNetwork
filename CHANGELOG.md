@@ -9,6 +9,12 @@ Versioning.
 
 ### Added
 
+- `HLSTimedMetadataMonitor` adds an allowlist-first
+  `AVPlayerItemMetadataOutput` bridge. Identifier-only safe defaults load no
+  values; explicit text, number, and date fields map into bounded `Sendable`
+  events with sequence-flush and callback-overflow signals. Raw data, URL
+  objects, underlying load errors, non-finite numbers, unsafe identifiers, and
+  oversized text or language values do not cross the public boundary.
 - `InnoNetworkHLSAudio` adds a version 27-only, optional decoded-PCM
   companion around `AVPlayerItemSampleBufferOutput`. It validates linear PCM
   requests, offers a concise Float32 configuration, preserves marker and

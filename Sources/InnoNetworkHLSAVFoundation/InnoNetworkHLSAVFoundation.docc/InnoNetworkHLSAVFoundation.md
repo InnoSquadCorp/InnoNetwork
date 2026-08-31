@@ -1,7 +1,8 @@
 # ``InnoNetworkHLSAVFoundation``
 
 Persist HLS streams with AVFoundation's system-managed background download
-session and observe playback through value-redacted AVMetrics events.
+session and observe playback through value-redacted metrics and timed metadata
+events.
 
 ## Overview
 
@@ -207,6 +208,60 @@ disabled selection respects the group's empty-selection policy.
 Applications that prefer AVKit's system-owned menu can use
 `AVLegibleMediaOptionsMenuController` directly instead of building custom UI.
 InnoNetwork does not retain or own that controller.
+
+## Timed metadata
+
+``HLSTimedMetadataMonitor`` observes ID3 and other allowlisted metadata through
+`AVPlayerItemMetadataOutput`. It never uses the deprecated
+`AVPlayerItem.timedMetadata` property and never passes `nil` identifiers to the
+native output:
+
+```swift
+let metadataConfiguration = HLSTimedMetadataConfiguration.advanced(
+    fields: [
+        .text(.id3Title, maximumUTF8ByteCount: 1_024),
+        .text(.id3LeadPerformer, maximumUTF8ByteCount: 1_024),
+        .redacted(.id3Private),
+    ],
+    advanceInterval: 0.25,
+    maximumBufferedEventCount: 64
+)
+let metadata = try HLSTimedMetadataMonitor(
+    playerItem: playerItem,
+    configuration: metadataConfiguration
+)
+
+for await event in metadata.events() {
+    switch event {
+    case .metadata(let group):
+        consume(group.items)
+    case .sequenceFlushed:
+        discardQueuedMetadata()
+    case .eventsDropped(let count):
+        recordMetadataLoss(count)
+    }
+}
+```
+
+Start with ``HLSTimedMetadataConfiguration/safeDefaults(identifiers:)`` when
+only identifier and timing should cross the boundary. Text, number, and date
+access are per-identifier opt-ins. Text is UTF-8 bounded, numbers must be
+finite, language tags are bounded and control-character free, and failed or
+type-mismatched loads become ``HLSTimedMetadataValue/unavailable`` without an
+underlying value or error. Raw data and URL objects have no public value case.
+
+The monitor is main-actor lifecycle state around a caller-owned player item.
+Each ``HLSTimedMetadataMonitor/events()`` call creates an independent bounded
+subscriber that retains the newest events. ``HLSTimedMetadataEvent/eventsDropped(count:)``
+reports native callbacks discarded before asynchronous value mapping; a slow
+subscriber may still replace its own older buffered values by design. Seeking
+and playback-direction changes produce
+``HLSTimedMetadataEvent/sequenceFlushed``. Call
+``HLSTimedMetadataMonitor/detach()`` when observation should end early.
+
+This initial contract does not decode arbitrary ID3 payloads or fragmented-MP4
+`emsg` boxes. Add a typed representation only after a checked-in playback
+fixture proves the native AVFoundation value shape.
 
 ## Interstitial playback
 
@@ -471,6 +526,20 @@ expiry, deletion, and server-side invalidation.
 - ``HLSInterstitialEventSnapshot``
 - ``HLSInterstitialAssetListStatus``
 - ``HLSInterstitialSkippableState``
+
+### Timed metadata
+
+- ``HLSTimedMetadataMonitor``
+- ``HLSTimedMetadataConfiguration``
+- ``HLSTimedMetadataField``
+- ``HLSTimedMetadataIdentifier``
+- ``HLSTimedMetadataValueExposure``
+- ``HLSTimedMetadataEvent``
+- ``HLSTimedMetadataGroup``
+- ``HLSTimedMetadataItem``
+- ``HLSTimedMetadataValue``
+- ``HLSTimedMetadataSource``
+- ``HLSTimedMetadataError``
 
 ### Playback metrics
 

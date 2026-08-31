@@ -601,6 +601,10 @@ for await event in await manager.events(for: task) {
   localized display names, BCP 47 languages, current/default state,
   generated/translated provenance, accessibility features, and opaque exact
   selection IDs that never expose AVFoundation objects
+- an allowlist-first timed-metadata monitor built on
+  `AVPlayerItemMetadataOutput`, with identifier-only safe defaults, explicit
+  bounded text/number/date opt-in, sequence-flush and callback-overflow
+  events, and no raw data, URL object, or underlying-error exposure
 - a main-actor, read-only interstitial monitor that emits bounded,
   cancellation-safe lifecycle streams as value-redacted `Sendable` events;
   AVFoundation retains schedule and system skip-control ownership
