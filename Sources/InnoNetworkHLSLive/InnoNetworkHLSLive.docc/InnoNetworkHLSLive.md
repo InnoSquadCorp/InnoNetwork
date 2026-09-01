@@ -325,6 +325,19 @@ limit, variability, timeline occupancy and style, navigation restrictions,
 and effective skip-control metadata remain typed and are written back to the
 local playlist.
 
+When interstitial packaging is enabled, a
+`com.apple.hls.daterange-schedule` Date Range is also resolved through the
+recorder's existing transport before timeline metadata is retained. Nested
+schedules are flattened in server order and source-only `X-SCHEDULE-OFFSET`
+values become absolute local `START-DATE` values. The same schedule identity
+reuses one bounded in-memory resolution across playlist reloads, including
+future members after the declaring Date Range leaves the live window. A
+changed source, duplicate identifier, malformed schedule, unsupported nested
+external resource, or resolution failure stops the recording before primary
+media publication. Schedule resolution is not converted into
+``HLSLiveDVRInterstitialFailurePolicy/omitEvent`` because an unavailable JSON
+document cannot prove the complete event set.
+
 ``HLSLiveDVRInterstitialFailurePolicy/failRecording`` is the default and keeps
 publication atomic when an event cannot be packaged completely.
 ``HLSLiveDVRInterstitialFailurePolicy/omitEvent`` removes that entire Date
@@ -339,6 +352,9 @@ playable segment budget.
 Rolling retention removes an expired event directory as one unit. Resumable
 checkpoints retain only local relative paths, file sizes, and digests; source
 identities are query-free hashes and no interstitial URL is serialized.
+Schedule JSON and its `X-URI` are never serialized. A resumed recording
+refetches an actively advertised schedule to discover members that were not
+yet observed, while already packaged events reuse their validated local files.
 In-progress playback snapshots clone the retained event packages and validate
 the complete local reference graph before returning. Current retained and
 omitted counts, ordered asset count, and retained bytes are available through

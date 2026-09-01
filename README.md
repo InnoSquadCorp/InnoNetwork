@@ -593,6 +593,10 @@ for await event in await manager.events(for: task) {
   asset, playlist, resource, and aggregate byte bounds stay explicit,
   complete-event omission never publishes a partial reference, and progress
   plus receipts expose value-redacted retained and omitted statistics
+- Apple Date Range Schedules expand through the same bounded resolver when
+  interstitial packaging is enabled; nested members preserve server order,
+  reloads reuse one in-memory resolution, source changes fail closed, and no
+  schedule `X-URI` reaches the recording or recovery checkpoint
 - rolling interstitial expiry removes each event directory atomically;
   recovery checkpoints keep only query-free source hashes and local file
   proofs, and in-progress playback snapshots freeze the complete asset-list
@@ -603,7 +607,8 @@ for await event in await manager.events(for: task) {
   metadata, and Content Steering failover requires stable rendition identity
 - retained Program Date Time and self-contained standard Date Ranges for the
   recorded interval, with atomic rejection when redacted extension values,
-  external timeline resources, or an incomplete rendition cannot be preserved
+  non-schedule external timeline resources, or an incomplete rendition cannot
+  be preserved
 - configurable destination-capacity enforcement plus typed key status,
   key-length, decryption, and storage failures
 - opt-in, URL-free recovery checkpoints at coherent complete-segment

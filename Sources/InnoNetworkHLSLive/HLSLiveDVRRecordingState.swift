@@ -21,6 +21,8 @@ struct HLSLiveDVRRecordingState {
     var dateRanges: [HLSDateRange] = []
     var interstitials: [HLSLiveDVRStoredInterstitial] = []
     var omittedInterstitials: [HLSLiveDVROmittedInterstitial] = []
+    var resolvedDateRangeSchedules: [HLSLiveDVRResolvedDateRangeSchedule] = []
+    var observedDateRangeScheduleIDs: Set<String> = []
     var partState: HLSLiveDVRPartRecordingState
     var preloadStatistics = HLSLiveDVRPreloadStatistics()
     var retentionStatistics = HLSLiveDVRRetentionStatistics()

@@ -4624,6 +4624,367 @@ extension HLSLivePlaylistClientTests {
         )
     }
 
+    @Test("Date Range Schedules become package-local interstitials")
+    func packagesDateRangeScheduleInterstitial() async throws {
+        let sourceURL = try url(
+            "https://media.example/scheduled-event-live.m3u8"
+        )
+        let primaryURL = try url(
+            "https://media.example/scheduled-event-primary.ts"
+        )
+        let scheduleURL = try url(
+            "https://schedule.example/events.json?token=secret"
+        )
+        let eventURL = try url(
+            "https://schedule.example/event.m3u8"
+        )
+        let eventMediaURL = try url(
+            "https://schedule.example/event.ts"
+        )
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-PROGRAM-DATE-TIME:2026-09-01T00:00:00.000Z
+                #EXT-X-DATERANGE:ID="schedule-1",CLASS="com.apple.hls.daterange-schedule",START-DATE="2026-09-01T00:00:00.000Z",DURATION=4,X-URI="https://schedule.example/events.json?token=secret"
+                #EXTINF:4,
+                scheduled-event-primary.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(
+            HLSLiveURLProtocol.Response(
+                statusCode: 200,
+                data: Data(
+                    """
+                    {"DATERANGES":[{
+                      "ID":"scheduled-event",
+                      "CLASS":"com.apple.hls.interstitial",
+                      "X-SCHEDULE-OFFSET":1,
+                      "DURATION":2,
+                      "X-ASSET-URI":"https://schedule.example/event.m3u8"
+                    }]}
+                    """.utf8
+                ),
+                headers: ["Content-Type": "application/json"]
+            ),
+            for: scheduleURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:2
+                #EXTINF:2,
+                event.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: eventURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("primary".utf8)),
+            for: primaryURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("event".utf8)),
+            for: eventMediaURL
+        )
+
+        let receipt = try await recorder(
+            session: fixture.session,
+            startPosition: .currentWindow,
+            interstitials: HLSLiveDVRInterstitialPack(policy: .package)
+        ).record(from: sourceURL, to: fixture.destinationURL)
+        let contents = try String(
+            contentsOf: receipt.playlistURL,
+            encoding: .utf8
+        )
+        let playlist = try PlaylistResolver().resolve(
+            contents,
+            relativeTo: receipt.playlistURL
+        )
+
+        #expect(playlist.dateRanges.map(\.id) == ["scheduled-event"])
+        #expect(receipt.interstitialStatistics.retainedEventCount == 1)
+        #expect(!contents.contains("schedule-1"))
+        #expect(!contents.contains("schedule.example"))
+        #expect(!contents.contains("token=secret"))
+        #expect(
+            HLSLiveURLProtocol.capturedRequests().compactMap(\.url)
+                .count { $0 == scheduleURL } == 1
+        )
+        _ = try HLSLocalPlaybackPackageSnapshot(
+            source: receipt.playbackSource
+        )
+    }
+
+    @Test("future scheduled events reuse one bounded schedule resolution")
+    func cachesDateRangeScheduleUntilEventIsObserved() async throws {
+        let sourceURL = try url(
+            "https://media.example/future-schedule-live.m3u8"
+        )
+        let reloadURL = try url(
+            "https://media.example/future-schedule-live.m3u8?_HLS_msn=2"
+        )
+        let firstURL = try url(
+            "https://media.example/future-schedule-1.ts"
+        )
+        let secondURL = try url(
+            "https://media.example/future-schedule-2.ts"
+        )
+        let scheduleURL = try url(
+            "https://schedule.example/future-events.json"
+        )
+        let eventURL = try url(
+            "https://schedule.example/future-event.m3u8"
+        )
+        let eventMediaURL = try url(
+            "https://schedule.example/future-event.ts"
+        )
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        let scheduleTag =
+            "#EXT-X-DATERANGE:ID=\"future-schedule\",CLASS=\"com.apple.hls.daterange-schedule\",START-DATE=\"2026-09-01T00:00:00.000Z\",DURATION=8,X-URI=\"https://schedule.example/future-events.json\""
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:1
+                #EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES
+                #EXT-X-PROGRAM-DATE-TIME:2026-09-01T00:00:00.000Z
+                \(scheduleTag)
+                #EXTINF:4,
+                future-schedule-1.ts
+                """
+            ),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:1
+                #EXT-X-PROGRAM-DATE-TIME:2026-09-01T00:00:00.000Z
+                #EXTINF:4,
+                future-schedule-1.ts
+                #EXTINF:4,
+                future-schedule-2.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: reloadURL
+        )
+        HLSLiveURLProtocol.register(
+            HLSLiveURLProtocol.Response(
+                statusCode: 200,
+                data: Data(
+                    """
+                    {"DATERANGES":[{
+                      "ID":"future-scheduled-event",
+                      "CLASS":"com.apple.hls.interstitial",
+                      "X-SCHEDULE-OFFSET":4,
+                      "DURATION":2,
+                      "X-ASSET-URI":"https://schedule.example/future-event.m3u8"
+                    }]}
+                    """.utf8
+                ),
+                headers: ["Content-Type": "application/json"]
+            ),
+            for: scheduleURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:2
+                #EXTINF:2,
+                future-event.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: eventURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("one".utf8)),
+            for: firstURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("two".utf8)),
+            for: secondURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("event".utf8)),
+            for: eventMediaURL
+        )
+
+        let receipt = try await recorder(
+            session: fixture.session,
+            startPosition: .currentWindow,
+            interstitials: HLSLiveDVRInterstitialPack(policy: .package)
+        ).record(from: sourceURL, to: fixture.destinationURL)
+
+        #expect(receipt.segmentCount == 2)
+        #expect(receipt.interstitialStatistics.retainedEventCount == 1)
+        #expect(
+            HLSLiveURLProtocol.capturedRequests().compactMap(\.url)
+                .count { $0 == scheduleURL } == 1
+        )
+        #expect(
+            HLSLiveURLProtocol.capturedRequests().compactMap(\.url)
+                .count { $0 == eventURL } == 1
+        )
+    }
+
+    @Test("recovery refetches schedules and reuses local interstitials")
+    func restoresScheduledInterstitial() async throws {
+        let sourceURL = try url(
+            "https://media.example/recovery-schedule-live.m3u8"
+        )
+        let firstURL = try url(
+            "https://media.example/recovery-schedule-1.ts"
+        )
+        let secondURL = try url(
+            "https://media.example/recovery-schedule-2.ts"
+        )
+        let scheduleURL = try url(
+            "https://schedule.example/recovery.json?token=secret"
+        )
+        let eventURL = try url(
+            "https://ads.example/recovery-scheduled.m3u8?token=secret"
+        )
+        let eventMediaURL = try url(
+            "https://ads.example/recovery-scheduled.ts"
+        )
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        let initialPlaylist = """
+            #EXTM3U
+            #EXT-X-TARGETDURATION:60
+            #EXT-X-MEDIA-SEQUENCE:1
+            #EXT-X-PROGRAM-DATE-TIME:2026-09-01T00:00:00.000Z
+            #EXT-X-DATERANGE:ID="recovery-schedule",CLASS="com.apple.hls.daterange-schedule",START-DATE="2026-09-01T00:00:00.000Z",DURATION=8,X-URI="https://schedule.example/recovery.json?token=secret"
+            #EXTINF:4,
+            recovery-schedule-1.ts
+            """
+        let scheduleResponse = HLSLiveURLProtocol.Response(
+            statusCode: 200,
+            data: Data(
+                """
+                {"DATERANGES":[{
+                  "ID":"recovery-scheduled-event",
+                  "CLASS":"com.apple.hls.interstitial",
+                  "X-SCHEDULE-OFFSET":1,
+                  "DURATION":2,
+                  "X-ASSET-URI":"https://ads.example/recovery-scheduled.m3u8?token=secret"
+                }]}
+                """.utf8
+            ),
+            headers: ["Content-Type": "application/json"]
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(initialPlaylist),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(scheduleResponse, for: scheduleURL)
+        HLSLiveURLProtocol.register(scheduleResponse, for: scheduleURL)
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:2
+                #EXTINF:2,
+                recovery-scheduled.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: eventURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("first".utf8)),
+            for: firstURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("event".utf8)),
+            for: eventMediaURL
+        )
+        let recorder = recorder(
+            session: fixture.session,
+            startPosition: .currentWindow,
+            recovery: HLSLiveDVRRecoveryPack(policy: .resumable),
+            interstitials: HLSLiveDVRInterstitialPack(policy: .package)
+        )
+        let recording = recorder.startRecording(
+            from: sourceURL,
+            to: fixture.destinationURL
+        )
+        var events = recording.events.makeAsyncIterator()
+        guard case .progress(let progress) = try await events.next() else {
+            Issue.record("Expected a durable scheduled interstitial checkpoint")
+            return
+        }
+        #expect(progress.interstitialStatistics.retainedEventCount == 1)
+        await recording.interrupt()
+
+        let checkpointURL = HLSLiveDVRCheckpointStore(
+            destinationURL: fixture.destinationURL
+        ).rootURL.appendingPathComponent("checkpoint.json")
+        let checkpointData = try Data(contentsOf: checkpointURL)
+        let checkpointText = try #require(
+            String(data: checkpointData, encoding: .utf8)
+        )
+        #expect(!checkpointText.contains("schedule.example"))
+        #expect(!checkpointText.contains("ads.example"))
+        #expect(!checkpointText.contains("token=secret"))
+
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                initialPlaylist
+                    + """
+
+                    #EXTINF:4,
+                    recovery-schedule-2.ts
+                    #EXT-X-ENDLIST
+                    """
+            ),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("second".utf8)),
+            for: secondURL
+        )
+
+        let receipt = try await recorder.resume(
+            from: sourceURL,
+            to: fixture.destinationURL
+        )
+        let requests = HLSLiveURLProtocol.capturedRequests().compactMap(\.url)
+
+        #expect(receipt.segmentCount == 2)
+        #expect(receipt.interstitialStatistics.retainedEventCount == 1)
+        #expect(requests.count { $0 == scheduleURL } == 2)
+        #expect(requests.count { $0 == eventURL } == 1)
+        _ = try HLSLocalPlaybackPackageSnapshot(
+            source: receipt.playbackSource
+        )
+    }
+
     @Test("future interstitials wait for an observed recording window")
     func defersFutureInterstitial() async throws {
         let sourceURL = try url(
@@ -5467,6 +5828,110 @@ extension HLSLivePlaylistClientTests {
                 $0.url == primaryURL
             }
         )
+    }
+
+    @Test("Date Range Schedule resolution is opt-in and atomic")
+    func rejectsDateRangeScheduleByDefault() async throws {
+        let sourceURL = try url(
+            "https://media.example/reject-schedule-live.m3u8"
+        )
+        let scheduleURL = try url(
+            "https://schedule.example/unrequested.json"
+        )
+        let primaryURL = try url(
+            "https://media.example/unrequested-schedule-primary.ts"
+        )
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-PROGRAM-DATE-TIME:2026-09-01T00:00:00.000Z
+                #EXT-X-DATERANGE:ID="schedule",CLASS="com.apple.hls.daterange-schedule",START-DATE="2026-09-01T00:00:00.000Z",DURATION=4,X-URI="https://schedule.example/unrequested.json"
+                #EXTINF:4,
+                unrequested-schedule-primary.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: sourceURL
+        )
+
+        await #expect(
+            throws: HLSLiveDVRError.unsupportedFeature(
+                .externalTimelineResource
+            )
+        ) {
+            try await recorder(
+                session: fixture.session,
+                startPosition: .currentWindow
+            ).record(from: sourceURL, to: fixture.destinationURL)
+        }
+        let requests = HLSLiveURLProtocol.capturedRequests()
+            .compactMap(\.url)
+        #expect(requests == [sourceURL])
+        #expect(!requests.contains(scheduleURL))
+        #expect(!requests.contains(primaryURL))
+    }
+
+    @Test("invalid schedules fail atomically even when events may be omitted")
+    func rejectsInvalidDateRangeScheduleAtomically() async throws {
+        let sourceURL = try url(
+            "https://media.example/invalid-schedule-live.m3u8"
+        )
+        let scheduleURL = try url(
+            "https://schedule.example/invalid.json"
+        )
+        let primaryURL = try url(
+            "https://media.example/unrequested-invalid-schedule.ts"
+        )
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-PROGRAM-DATE-TIME:2026-09-01T00:00:00.000Z
+                #EXT-X-DATERANGE:ID="invalid-schedule",CLASS="com.apple.hls.daterange-schedule",START-DATE="2026-09-01T00:00:00.000Z",DURATION=4,X-URI="https://schedule.example/invalid.json"
+                #EXTINF:4,
+                unrequested-invalid-schedule.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(
+            HLSLiveURLProtocol.Response(
+                statusCode: 200,
+                data: Data("{\"DATERANGES\":[]}".utf8),
+                headers: ["Content-Type": "application/json"]
+            ),
+            for: scheduleURL
+        )
+
+        await #expect(
+            throws: HLSLiveDVRError.interstitialPackagingFailed
+        ) {
+            try await recorder(
+                session: fixture.session,
+                startPosition: .currentWindow,
+                interstitials: HLSLiveDVRInterstitialPack(
+                    policy: .package,
+                    failurePolicy: .omitEvent
+                )
+            ).record(from: sourceURL, to: fixture.destinationURL)
+        }
+        let requests = HLSLiveURLProtocol.capturedRequests().compactMap(\.url)
+        #expect(requests == [sourceURL, scheduleURL])
+        #expect(!requests.contains(primaryURL))
     }
 
     @Test("recorded Date Ranges survive later live-window eviction")

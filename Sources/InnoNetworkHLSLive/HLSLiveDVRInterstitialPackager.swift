@@ -5,6 +5,7 @@ struct HLSLiveDVRInterstitialPackager: Sendable {
     private let client: HLSHTTPClient
     private let configuration: HLSLiveDVRConfiguration
     private let resolver: HLSExternalResourceResolver
+    private let scheduleResolver: HLSLiveDVRDateRangeScheduleResolver
 
     init(
         client: HLSHTTPClient,
@@ -12,13 +13,20 @@ struct HLSLiveDVRInterstitialPackager: Sendable {
     ) {
         self.client = client
         self.configuration = configuration
-        self.resolver = HLSExternalResourceResolver(
+        let resolver = HLSExternalResourceResolver(
             client: client,
             configuration: HLSExternalResourcePack(
                 maximumInterstitialAssetCount:
                     configuration.interstitials.maximumAssetsPerEvent,
+                maximumScheduledDateRangeCount:
+                    configuration.interstitials.maximumEventCount,
                 requestTimeout: configuration.limits.requestTimeout
             )
+        )
+        self.resolver = resolver
+        self.scheduleResolver = HLSLiveDVRDateRangeScheduleResolver(
+            resolver: resolver,
+            configuration: configuration
         )
     }
 
@@ -26,10 +34,16 @@ struct HLSLiveDVRInterstitialPackager: Sendable {
         from snapshot: HLSLivePlaylistSnapshot,
         state: inout HLSLiveDVRRecordingState
     ) async throws {
+        let dateRanges = try await scheduleResolver.resolve(
+            from: snapshot,
+            state: &state
+        )
+        try state.validateDateRanges(dateRanges, isPrimary: true)
+        state.mergeDateRanges(dateRanges)
         guard configuration.interstitials.policy == .package else {
             return
         }
-        for dateRange in snapshot.dateRanges {
+        for dateRange in dateRanges {
             guard let interstitial = dateRange.interstitial else {
                 continue
             }

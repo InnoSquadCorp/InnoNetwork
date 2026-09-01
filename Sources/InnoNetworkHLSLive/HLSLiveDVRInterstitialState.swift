@@ -54,7 +54,93 @@ struct HLSLiveDVROmittedInterstitial: Equatable, Sendable {
     let sourceIdentity: String
 }
 
+struct HLSLiveDVRResolvedDateRangeSchedule: Equatable, Sendable {
+    let id: String
+    let sourceIdentity: String
+    let dateRanges: [HLSDateRange]
+}
+
 extension HLSLiveDVRRecordingState {
+    func resolvedDateRanges(
+        forScheduleID id: String,
+        sourceIdentity: String
+    ) throws -> [HLSDateRange]? {
+        guard
+            let schedule = resolvedDateRangeSchedules.first(where: {
+                $0.id == id
+            })
+        else {
+            return nil
+        }
+        guard schedule.sourceIdentity == sourceIdentity else {
+            throw HLSLiveDVRError.interstitialPackagingFailed
+        }
+        return schedule.dateRanges
+    }
+
+    mutating func retainResolvedDateRangeSchedule(
+        id: String,
+        sourceIdentity: String,
+        dateRanges: [HLSDateRange]
+    ) throws {
+        guard !dateRanges.isEmpty,
+            !resolvedDateRangeSchedules.contains(where: { $0.id == id }),
+            !resolvedDateRangeSchedules.contains(where: { schedule in
+                schedule.dateRanges.contains(where: { $0.id == id })
+            }),
+            !self.dateRanges.contains(where: { $0.id == id })
+        else {
+            throw HLSLiveDVRError.interstitialPackagingFailed
+        }
+        let retainedInterstitialIDs = Set(interstitials.map(\.id))
+        let omittedInterstitialIDs = Set(omittedInterstitials.map(\.id))
+        var scheduledIDs = Set(
+            resolvedDateRangeSchedules.flatMap { schedule in
+                schedule.dateRanges.map(\.id)
+            }
+        )
+        for dateRange in dateRanges {
+            guard scheduledIDs.insert(dateRange.id).inserted,
+                !self.dateRanges.contains(where: { existing in
+                    guard existing.id == dateRange.id else {
+                        return false
+                    }
+                    return existing != dateRange
+                        && !retainedInterstitialIDs.contains(existing.id)
+                        && !omittedInterstitialIDs.contains(existing.id)
+                })
+            else {
+                throw HLSLiveDVRError.interstitialPackagingFailed
+            }
+        }
+        var observedEventIDs = scheduledIDs
+        observedEventIDs.formUnion(interstitials.map(\.id))
+        observedEventIDs.formUnion(omittedInterstitials.map(\.id))
+        guard
+            observedEventIDs.count
+                <= configuration.interstitials.maximumEventCount,
+            resolvedDateRangeSchedules.count
+                < configuration.interstitials.maximumEventCount
+        else {
+            throw HLSLiveDVRError.interstitialEventLimitExceeded(
+                limit: configuration.interstitials.maximumEventCount
+            )
+        }
+        resolvedDateRangeSchedules.append(
+            HLSLiveDVRResolvedDateRangeSchedule(
+                id: id,
+                sourceIdentity: sourceIdentity,
+                dateRanges: dateRanges
+            )
+        )
+    }
+
+    mutating func updateObservedDateRangeScheduleIDs(
+        _ ids: Set<String>
+    ) {
+        observedDateRangeScheduleIDs = ids
+    }
+
     mutating func retainInterstitial(
         _ interstitial: HLSLiveDVRStoredInterstitial
     ) throws {
@@ -126,9 +212,6 @@ extension HLSLiveDVRRecordingState {
             }
             return end <= retainedStart
         }
-        guard !expired.isEmpty else {
-            return
-        }
         let expiredIDs = Set(expired.map(\.id))
         for interstitial in expired {
             guard mediaByteCount >= interstitial.byteCount else {
@@ -142,8 +225,23 @@ extension HLSLiveDVRRecordingState {
                 mediaByteCount: interstitial.byteCount
             )
         }
-        interstitials.removeAll { expiredIDs.contains($0.id) }
-        dateRanges.removeAll { expiredIDs.contains($0.id) }
+        if !expiredIDs.isEmpty {
+            interstitials.removeAll { expiredIDs.contains($0.id) }
+            dateRanges.removeAll { expiredIDs.contains($0.id) }
+        }
+        resolvedDateRangeSchedules.removeAll { schedule in
+            guard
+                !observedDateRangeScheduleIDs.contains(schedule.id)
+            else {
+                return false
+            }
+            return schedule.dateRanges.allSatisfy { dateRange in
+                guard let end = Self.endDate(of: dateRange) else {
+                    return false
+                }
+                return end <= retainedStart
+            }
+        }
     }
 
     private static func endDate(

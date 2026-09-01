@@ -27,7 +27,6 @@ extension HLSLiveDVRRecordingState {
                 )
         }
         try validateTimeline(snapshot, isPrimary: true)
-        mergeDateRanges(snapshot.dateRanges)
 
         guard let snapshotContainer = snapshot.playlist.mediaContainer else {
             throw HLSLiveDVRError.unsupportedFeature(
@@ -270,15 +269,31 @@ extension HLSLiveDVRRecordingState {
         _ snapshot: HLSLivePlaylistSnapshot,
         isPrimary: Bool
     ) throws {
-        if snapshot.dateRanges.contains(where: {
-            $0.externalResource != nil || $0.preload != nil
+        try validateDateRanges(
+            snapshot.dateRanges,
+            isPrimary: isPrimary
+        )
+    }
+
+    func validateDateRanges(
+        _ dateRanges: [HLSDateRange],
+        isPrimary: Bool
+    ) throws {
+        if dateRanges.contains(where: { dateRange in
+            guard dateRange.externalResource != nil else {
+                return dateRange.preload != nil
+            }
+            return configuration.interstitials.policy != .package
+                || dateRange.className
+                    != Self.dateRangeScheduleClass
+                || dateRange.preload != nil
         }) {
             throw HLSLiveDVRError.unsupportedFeature(
                 .externalTimelineResource
             )
         }
         if configuration.interstitials.policy == .disabled,
-            snapshot.dateRanges.contains(where: {
+            dateRanges.contains(where: {
                 $0.interstitial != nil
             })
         {
@@ -286,12 +301,18 @@ extension HLSLiveDVRRecordingState {
                 .externalTimelineResource
             )
         }
-        if snapshot.dateRanges.contains(where: {
-            let representedNames =
-                $0.interstitial == nil
-                ? Set<String>()
-                : Self.interstitialAttributeNames
-            return !$0.extensionAttributeNames.allSatisfy(
+        if dateRanges.contains(where: { dateRange in
+            let representedNames: Set<String>
+            if dateRange.interstitial != nil {
+                representedNames = Self.interstitialAttributeNames
+            } else if dateRange.className
+                == Self.dateRangeScheduleClass
+            {
+                representedNames = Self.dateRangeScheduleAttributeNames
+            } else {
+                representedNames = []
+            }
+            return !dateRange.extensionAttributeNames.allSatisfy(
                 representedNames.contains
             )
         }) {
@@ -299,7 +320,7 @@ extension HLSLiveDVRRecordingState {
                 .unrepresentableTimelineMetadata
             )
         }
-        if !isPrimary, !snapshot.dateRanges.isEmpty {
+        if !isPrimary, !dateRanges.isEmpty {
             throw HLSLiveDVRError.unsupportedFeature(
                 .unrepresentableTimelineMetadata
             )
@@ -320,7 +341,14 @@ extension HLSLiveDVRRecordingState {
         "X-TIMELINE-STYLE",
     ]
 
-    private mutating func mergeDateRanges(
+    private static let dateRangeScheduleClass =
+        "com.apple.hls.daterange-schedule"
+
+    private static let dateRangeScheduleAttributeNames: Set<String> = [
+        "X-URI"
+    ]
+
+    mutating func mergeDateRanges(
         _ updates: [HLSDateRange]
     ) {
         for update in updates {
