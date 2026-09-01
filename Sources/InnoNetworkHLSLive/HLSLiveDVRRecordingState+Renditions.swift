@@ -163,4 +163,18 @@ extension HLSLiveDVRRecordingState {
         nextResourceIndex += 1
     }
 
+    mutating func retainRenditionGap(
+        _ segment: HLSLiveSegment,
+        at index: Int,
+        fileName: String
+    ) throws {
+        guard renditionStates.indices.contains(index) else {
+            throw HLSLiveDVRError.storageFailed
+        }
+        try renditionStates[index].retainGap(
+            segment,
+            fileName: fileName
+        )
+    }
+
 }

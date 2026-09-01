@@ -1,6 +1,33 @@
 import Foundation
 import InnoNetworkHLS
 
+enum HLSLiveDVRStoredSegmentResource: Equatable, Sendable {
+    case media(byteCount: Int64, contentSHA256: String)
+    case gap
+
+    var byteCount: Int64 {
+        switch self {
+        case .media(let byteCount, _):
+            return byteCount
+        case .gap:
+            return 0
+        }
+    }
+
+    var contentSHA256: String? {
+        switch self {
+        case .media(_, let contentSHA256):
+            return contentSHA256
+        case .gap:
+            return nil
+        }
+    }
+
+    var isGap: Bool {
+        self == .gap
+    }
+}
+
 struct HLSLiveDVRStoredSegment: Equatable, Sendable {
     let sequenceNumber: Int64
     let duration: TimeInterval
@@ -9,8 +36,19 @@ struct HLSLiveDVRStoredSegment: Equatable, Sendable {
     let initializationSourceIdentity: String?
     let initializationFileName: String?
     let fileName: String
-    let byteCount: Int64
-    let contentSHA256: String
+    let resource: HLSLiveDVRStoredSegmentResource
+
+    var isGap: Bool {
+        resource.isGap
+    }
+
+    var byteCount: Int64 {
+        resource.byteCount
+    }
+
+    var contentSHA256: String? {
+        resource.contentSHA256
+    }
 
     init(
         sequenceNumber: Int64,
@@ -31,8 +69,53 @@ struct HLSLiveDVRStoredSegment: Equatable, Sendable {
             initializationSourceIdentity
         self.initializationFileName = initializationFileName
         self.fileName = fileName
-        self.byteCount = byteCount
-        self.contentSHA256 = contentSHA256
+        self.resource = .media(
+            byteCount: byteCount,
+            contentSHA256: contentSHA256
+        )
+    }
+
+    static func gap(
+        sequenceNumber: Int64,
+        duration: TimeInterval,
+        beginsDiscontinuity: Bool,
+        programDateTime: Date?,
+        initializationSourceIdentity: String?,
+        initializationFileName: String?,
+        fileName: String
+    ) -> Self {
+        Self(
+            sequenceNumber: sequenceNumber,
+            duration: duration,
+            beginsDiscontinuity: beginsDiscontinuity,
+            programDateTime: programDateTime,
+            initializationSourceIdentity:
+                initializationSourceIdentity,
+            initializationFileName: initializationFileName,
+            fileName: fileName,
+            resource: .gap
+        )
+    }
+
+    private init(
+        sequenceNumber: Int64,
+        duration: TimeInterval,
+        beginsDiscontinuity: Bool,
+        programDateTime: Date?,
+        initializationSourceIdentity: String?,
+        initializationFileName: String?,
+        fileName: String,
+        resource: HLSLiveDVRStoredSegmentResource
+    ) {
+        self.sequenceNumber = sequenceNumber
+        self.duration = duration
+        self.beginsDiscontinuity = beginsDiscontinuity
+        self.programDateTime = programDateTime
+        self.initializationSourceIdentity =
+            initializationSourceIdentity
+        self.initializationFileName = initializationFileName
+        self.fileName = fileName
+        self.resource = resource
     }
 }
 
@@ -115,6 +198,9 @@ enum HLSLiveDVRPlaylistWriter {
                 lines.append(
                     contentsOf: try dateRanges.map(dateRangeLine)
                 )
+            }
+            if segment.isGap {
+                lines.append("#EXT-X-GAP")
             }
             lines.append("#EXTINF:\(durationString(segment.duration)),")
             lines.append(segment.fileName)

@@ -574,6 +574,10 @@ for await event in await manager.events(for: task) {
 - fMP4 initialization-map rotation for primary and external rendition tracks,
   with deduplicated local map files, segment-accurate `EXT-X-MAP` boundaries,
   and map-aware LL-HLS part promotion
+- complete `EXT-X-GAP` preservation for primary and external rendition tracks;
+  unavailable media is never requested or synthesized, local playlists retain
+  the timeline with safe placeholder paths, and primary progress plus receipts
+  expose a typed gap count
 - bounded external audio, alternate-video, and subtitle selection by default,
   preferred languages, exact names, or all referenced renditions; URL-free
   local master playlists expose one package entry point plus typed local-track
@@ -591,9 +595,10 @@ for await event in await manager.events(for: task) {
 - one-shot or controllable resume with a caller-supplied current source URL,
   plus explicit checkpoint discard; a moved live window fails with the typed
   `liveWindowAdvanced` result and final publication remains one atomic move
-- typed rejection of gaps, DRM/sample encryption, unsupported timeline
-  metadata, missing maps, retroactive map changes, incomplete renditions, and
-  live-window loss instead of silently committing an incomplete presentation
+- typed rejection of DRM/sample encryption, unsupported timeline metadata,
+  missing maps, retroactive map or gap-availability changes, incomplete
+  renditions, and live-window loss instead of silently committing an
+  incomplete presentation
 - local DVR receipts expose the same typed, loopback-only playback bridge as
   offline-package receipts without claiming direct `file://` playback
 

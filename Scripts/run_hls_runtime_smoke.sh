@@ -115,14 +115,17 @@ base_url="$(tr -d '\r\n' <"$ready_file")"
 playlist_url="$base_url/audio-fmp4/index.m3u8"
 live_preload_url="$base_url/live-preload/index.m3u8"
 live_map_rotation_url="$base_url/live-map-rotation/index.m3u8"
+live_gap_url="$base_url/live-gap/index.m3u8"
 curl --fail --silent --show-error "$playlist_url" \
   | grep -Fxq '#EXT-X-ENDLIST'
 curl --fail --silent --show-error "$live_map_rotation_url" \
   | grep -Fxq '#EXT-X-MAP:URI="init-b.mp4"'
+curl --fail --silent --show-error "$live_gap_url" \
+  | grep -Fxq '#EXT-X-GAP'
 
 test_command=(
   xcrun swift test
-  --filter 'HLS(DecodedAudio|IntegratedTimeline|LocalPlayback|OfflineAsset|LiveDVRPreload|LiveDVRMapRotation)RuntimeTests'
+  --filter 'HLS(DecodedAudio|IntegratedTimeline|LocalPlayback|OfflineAsset|LiveDVRPreload|LiveDVRMapRotation|LiveDVRGap)RuntimeTests'
 )
 if [[ "$skip_build" == true ]]; then
   test_command+=(--skip-build)
@@ -131,6 +134,7 @@ fi
 if ! INNONETWORK_HLS_RUNTIME_PLAYLIST_URL="$playlist_url" \
   INNONETWORK_HLS_LIVE_PRELOAD_RUNTIME_URL="$live_preload_url" \
   INNONETWORK_HLS_LIVE_MAP_ROTATION_RUNTIME_URL="$live_map_rotation_url" \
+  INNONETWORK_HLS_LIVE_GAP_RUNTIME_URL="$live_gap_url" \
   "${test_command[@]}"; then
   cat "$server_log" >&2
   exit 1
@@ -158,4 +162,17 @@ for key, value in expected.items():
         )
 PY
 
-echo "hls-runtime-smoke: OK (AVPlayer timeline/local bridge, paced decoded PCM, offline movpkg, LL-HLS DVR preloading, and rotating fMP4 MAP playback)"
+gap_state="$(curl --fail --silent --show-error \
+  "$base_url/live-gap/state")"
+python3 - "$gap_state" <<'PY'
+import json
+import sys
+
+state = json.loads(sys.argv[1])
+if state.get("gap_resource_requests") != 0:
+    raise SystemExit(
+        f"hls-runtime-smoke: GAP resource was requested: {state}"
+    )
+PY
+
+echo "hls-runtime-smoke: OK (AVPlayer timeline/local bridge, paced decoded PCM, offline movpkg, LL-HLS DVR preloading, rotating fMP4 MAP playback, and GAP skipping)"

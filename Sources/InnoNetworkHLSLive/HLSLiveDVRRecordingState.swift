@@ -10,6 +10,7 @@ struct HLSLiveDVRRecordingState {
     var segments: [HLSLiveDVRStoredSegment] = []
     var recordedDuration: TimeInterval = 0
     var mediaByteCount: Int64 = 0
+    var gapCount = 0
     var lastObservedSequence: Int64?
     var didObserveInitialSnapshot = false
     var nextResourceIndex = 0
@@ -49,6 +50,7 @@ struct HLSLiveDVRRecordingState {
     var progress: HLSLiveDVRProgress {
         HLSLiveDVRProgress(
             segmentCount: segments.count,
+            gapCount: gapCount,
             recordedDuration: recordedDuration,
             mediaByteCount: mediaByteCount,
             stagedPartCount: partState.stagedParts.count,
@@ -186,6 +188,9 @@ struct HLSLiveDVRRecordingState {
         contentSHA256: String,
         nextDuration: TimeInterval
     ) throws {
+        guard !segment.isGap else {
+            throw HLSLiveDVRError.storageFailed
+        }
         let initialization = try storedInitialization(for: segment)
         segments.append(
             HLSLiveDVRStoredSegment(
@@ -203,6 +208,36 @@ struct HLSLiveDVRRecordingState {
             )
         )
         recordedDuration = nextDuration
+        lastObservedSequence = segment.sequenceNumber
+    }
+
+    mutating func retainGap(
+        _ segment: HLSLiveSegment,
+        fileName: String
+    ) throws {
+        guard segment.isGap else {
+            throw HLSLiveDVRError.storageFailed
+        }
+        let nextDuration = recordedDuration + segment.duration
+        guard nextDuration.isFinite else {
+            throw HLSLiveDVRError.storageFailed
+        }
+        let initialization = try storedInitialization(for: segment)
+        segments.append(
+            HLSLiveDVRStoredSegment.gap(
+                sequenceNumber: segment.sequenceNumber,
+                duration: segment.duration,
+                beginsDiscontinuity:
+                    segment.beginsDiscontinuity,
+                programDateTime: segment.programDateTime,
+                initializationSourceIdentity:
+                    initialization?.sourceIdentity,
+                initializationFileName: initialization?.fileName,
+                fileName: fileName
+            )
+        )
+        recordedDuration = nextDuration
+        gapCount += 1
         lastObservedSequence = segment.sequenceNumber
     }
 

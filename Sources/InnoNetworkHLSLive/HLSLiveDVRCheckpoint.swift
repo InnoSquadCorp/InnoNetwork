@@ -67,8 +67,9 @@ struct HLSLiveDVRCheckpoint: Codable, Sendable {
         let programDateTime: Date?
         let initializationSourceIdentity: String?
         let initializationPlaylistPath: String?
+        let isGap: Bool?
         let playlistPath: String
-        let file: FileRecord
+        let file: FileRecord?
 
         init(
             _ segment: HLSLiveDVRStoredSegment,
@@ -82,39 +83,63 @@ struct HLSLiveDVRCheckpoint: Codable, Sendable {
                 segment.initializationSourceIdentity
             initializationPlaylistPath =
                 segment.initializationFileName
+            isGap = segment.isGap
             playlistPath = segment.fileName
-            file = FileRecord(
-                relativePath: Self.storagePath(
-                    prefix: storagePrefix,
-                    playlistPath: segment.fileName
-                ),
-                byteCount: segment.byteCount,
-                contentSHA256: segment.contentSHA256
-            )
+            file = segment.contentSHA256.map {
+                FileRecord(
+                    relativePath: Self.storagePath(
+                        prefix: storagePrefix,
+                        playlistPath: segment.fileName
+                    ),
+                    byteCount: segment.byteCount,
+                    contentSHA256: $0
+                )
+            }
         }
 
-        var storedSegment: HLSLiveDVRStoredSegment {
-            storedSegment(defaultInitialization: nil)
+        func storedSegment() throws -> HLSLiveDVRStoredSegment {
+            try storedSegment(defaultInitialization: nil)
         }
 
         func storedSegment(
             defaultInitialization: Initialization?
-        ) -> HLSLiveDVRStoredSegment {
-            HLSLiveDVRStoredSegment(
-                sequenceNumber: sequenceNumber,
-                duration: duration,
-                beginsDiscontinuity: beginsDiscontinuity,
-                programDateTime: programDateTime,
-                initializationSourceIdentity:
-                    initializationSourceIdentity
-                    ?? defaultInitialization?.sourceIdentity,
-                initializationFileName:
-                    initializationPlaylistPath
-                    ?? defaultInitialization?.playlistPath,
-                fileName: playlistPath,
-                byteCount: file.byteCount,
-                contentSHA256: file.contentSHA256
-            )
+        ) throws -> HLSLiveDVRStoredSegment {
+            let resolvedInitializationSourceIdentity =
+                initializationSourceIdentity
+                ?? defaultInitialization?.sourceIdentity
+            let resolvedInitializationPlaylistPath =
+                initializationPlaylistPath
+                ?? defaultInitialization?.playlistPath
+            switch (isGap ?? false, file) {
+            case (false, let file?):
+                return HLSLiveDVRStoredSegment(
+                    sequenceNumber: sequenceNumber,
+                    duration: duration,
+                    beginsDiscontinuity: beginsDiscontinuity,
+                    programDateTime: programDateTime,
+                    initializationSourceIdentity:
+                        resolvedInitializationSourceIdentity,
+                    initializationFileName:
+                        resolvedInitializationPlaylistPath,
+                    fileName: playlistPath,
+                    byteCount: file.byteCount,
+                    contentSHA256: file.contentSHA256
+                )
+            case (true, nil):
+                return HLSLiveDVRStoredSegment.gap(
+                    sequenceNumber: sequenceNumber,
+                    duration: duration,
+                    beginsDiscontinuity: beginsDiscontinuity,
+                    programDateTime: programDateTime,
+                    initializationSourceIdentity:
+                        resolvedInitializationSourceIdentity,
+                    initializationFileName:
+                        resolvedInitializationPlaylistPath,
+                    fileName: playlistPath
+                )
+            default:
+                throw HLSLiveDVRError.recoveryCorrupted
+            }
         }
 
         fileprivate static func storagePath(
@@ -232,11 +257,11 @@ struct HLSLiveDVRCheckpoint: Codable, Sendable {
     var files: [FileRecord] {
         let primaryFiles =
             primary.resolvedInitializations.map(\.file)
-            + primary.segments.map(\.file)
+            + primary.segments.compactMap(\.file)
         return primaryFiles
             + renditions.flatMap { rendition in
                 rendition.track.resolvedInitializations.map(\.file)
-                    + rendition.track.segments.map(\.file)
+                    + rendition.track.segments.compactMap(\.file)
             }
     }
 }

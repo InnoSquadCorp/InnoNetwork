@@ -152,6 +152,7 @@ for try await event in recorder.events(
     case .progress(let progress):
         updateProgress(
             segments: progress.segmentCount,
+            gaps: progress.gapCount,
             duration: progress.recordedDuration
         )
     case .completed(let receipt):
@@ -205,9 +206,10 @@ application intentionally abandons a preserved checkpoint. Starting a fresh
 resumable recording at a destination that already has a checkpoint fails
 instead of silently overwriting it.
 
-Only complete segments are retained. Duration, segment count, per-resource
-bytes, total media bytes, external renditions per kind, request timeout,
-destination free capacity, and event buffering are bounded.
+Only complete segment records are retained. A complete `EXT-X-GAP` record
+contributes duration and segment count but no media bytes. Duration, segment
+count, per-resource bytes, total media bytes, external renditions per kind,
+request timeout, destination free capacity, and event buffering are bounded.
 ``HLSLiveDVRLimitPack/diskCapacityPolicy`` uses the same required,
 best-effort, or disabled capacity contract as VOD storage. When the duration,
 count, or total-byte boundary is reached, the recorder finishes at the last
@@ -258,6 +260,15 @@ explicit or media-sequence IVs, caches each 16-byte key only for the recording,
 supports key rotation and encrypted fMP4 maps, and persists plaintext media
 without `EXT-X-KEY` or source key URLs.
 
+Declared `EXT-X-GAP` segments are retained for primary and external rendition
+timelines. The recorder emits `EXT-X-GAP` with a confined local placeholder
+URI, never requests the unavailable media, and never creates a fake resource.
+For fragmented MP4, the segment's initialization-map boundary is still
+preserved. Staged LL-HLS parts are discarded when their completed parent is a
+gap. ``HLSLiveDVRProgress/gapCount`` and ``HLSLiveDVRReceipt/gapCount`` report
+the retained primary-track gap count; ``HLSLiveDVRProgress/segmentCount`` and
+``HLSLiveDVRReceipt/segmentCount`` include those gaps.
+
 The default rendition pack retains one external audio rendition. Applications
 can select external audio, alternate video, and subtitle playlists by default,
 preferred language, exact name, or all referenced renditions. A URL-free local
@@ -278,12 +289,13 @@ selection are unchanged. ``HLSLiveDVRTrack/characteristics``,
 Program Date Time and self-contained, standard Date Range attributes are
 preserved for the recorded interval. Source URLs, signed query values, key
 bytes, redacted Date Range extension values, and request errors are never
-persisted. Gaps, FairPlay or sample encryption, externally resolved timeline
+persisted. FairPlay or sample encryption, externally resolved timeline
 resources, unrepresentable timeline metadata, incomplete external renditions,
-missing initialization maps, and retroactive map changes for already retained
-segments fail with ``HLSLiveDVRError`` rather than producing an incomplete
-presentation. Declared map rotation for new segments remains supported across
-durable recovery, including legacy single-map checkpoints.
+missing initialization maps, and retroactive map or gap-availability changes
+for already retained segments fail with ``HLSLiveDVRError`` rather than
+producing an incomplete presentation. Declared map rotation and gap status for
+new segments remain supported across durable recovery, including legacy
+single-map checkpoints.
 
 An arbitrary `file://` HLS directory is not directly AVFoundation playable.
 Pass ``HLSLiveDVRReceipt/playbackSource`` to `HLSLocalPlaybackAsset` in
@@ -299,10 +311,12 @@ bounded URL-free checkpoint after each retained complete primary segment and
 keeps the owned hidden directory after ordinary interruption. Resume verifies
 the query-free source identity, selected variant and renditions, initialization
 map identity, exact file sizes, SHA-256 content digests, path confinement, and
-configured limits before reuse. AES-128 key bytes and source key URLs are never
-checkpointed and are fetched again. If the live window has moved beyond the
-last recorded sequence, resume reports ``HLSLiveDVRError/liveWindowAdvanced``
-without publishing a partial destination. Explicit cancellation and checkpoint
+configured limits before reuse. Gap entries are checkpointed without a file
+record and their declared availability must still match any overlapping live
+window. AES-128 key bytes and source key URLs are never checkpointed and are
+fetched again. If the live window has moved beyond the last recorded sequence,
+resume reports ``HLSLiveDVRError/liveWindowAdvanced`` without publishing a
+partial destination. Explicit cancellation and checkpoint
 discard remove the owned recovery directory.
 
 Query rotation is intended only for a refreshed authorization signature that

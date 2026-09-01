@@ -140,14 +140,28 @@ struct HLSLiveDVRResourceWriter: Sendable {
                 .unknownMediaContainer
             )
         }
+        let pathFormat =
+            segment.isGap
+            ? "resources/gap-%05d.%@"
+            : "resources/%05d.%@"
         let path = String(
-            format: "resources/%05d.%@",
+            format: pathFormat,
             state.segments.count,
             HLSLiveDVRPlaylistWriter.fileExtension(
                 for: segment.url,
                 fallback: fallbackExtension
             )
         )
+        if segment.isGap {
+            try discard(
+                state.discardStagedParts(
+                    mediaSequenceNumber: segment.sequenceNumber
+                ),
+                workspace: state.workspace
+            )
+            try state.retainGap(segment, fileName: path)
+            return true
+        }
         let destinationURL = state.workspace.directoryURL
             .appendingPathComponent(path)
         if let promotion = state.partPromotion(for: segment) {
@@ -422,14 +436,26 @@ struct HLSLiveDVRResourceWriter: Sendable {
         case .fragmentedMP4:
             fallbackExtension = "m4s"
         }
+        let fileNameFormat =
+            segment.isGap
+            ? "resources/gap-%05d.%@"
+            : "resources/%05d.%@"
         let fileName = String(
-            format: "resources/%05d.%@",
+            format: fileNameFormat,
             state.renditionSegmentCount(at: index),
             HLSLiveDVRPlaylistWriter.fileExtension(
                 for: segment.url,
                 fallback: fallbackExtension
             )
         )
+        if segment.isGap {
+            try state.retainRenditionGap(
+                segment,
+                at: index,
+                fileName: fileName
+            )
+            return true
+        }
         let directoryPath = try state.renditionDirectoryPath(at: index)
         let destinationURL = try renditionResourceURL(
             directoryPath: directoryPath,

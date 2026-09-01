@@ -91,6 +91,14 @@ extension HLSLiveDVRRecordingState {
                 .changingInitializationSegment
             )
         }
+        guard
+            Self.matchesOverlappingGaps(
+                segments,
+                snapshot: snapshot
+            )
+        else {
+            throw HLSLiveDVRError.unsupportedFeature(.gap)
+        }
     }
 
     mutating func candidates(
@@ -145,9 +153,6 @@ extension HLSLiveDVRRecordingState {
     func validate(_ segment: HLSLiveSegment) throws {
         guard segment.duration.isFinite, segment.duration > 0 else {
             throw HLSLiveDVRError.transferFailed
-        }
-        guard !segment.isGap else {
-            throw HLSLiveDVRError.unsupportedFeature(.gap)
         }
         switch container {
         case .mpegTransportStream:

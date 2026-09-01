@@ -123,6 +123,80 @@ extension HLSLivePlaylistClientTests {
         )
     }
 
+    @Test("declared gaps preserve timeline without requesting missing media")
+    func recordsDeclaredGapWithoutMediaRequest() async throws {
+        let sourceURL = try url("https://media.example/gap.m3u8")
+        let firstURL = try url("https://media.example/gap-10.ts")
+        let gapURL = try url("https://media.example/gap-11.ts")
+        let thirdURL = try url("https://media.example/gap-12.ts")
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:10
+                #EXTINF:4,
+                gap-10.ts
+                #EXT-X-GAP
+                #EXTINF:4,
+                gap-11.ts
+                #EXTINF:4,
+                gap-12.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("first".utf8)),
+            for: firstURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("third".utf8)),
+            for: thirdURL
+        )
+
+        let receipt = try await recorder(
+            session: fixture.session,
+            startPosition: .currentWindow
+        ).record(from: sourceURL, to: fixture.destinationURL)
+
+        #expect(receipt.segmentCount == 3)
+        #expect(receipt.gapCount == 1)
+        #expect(receipt.recordedDuration == 12)
+        #expect(receipt.mediaByteCount == 10)
+        let playlist = try String(
+            contentsOf: receipt.playlistURL,
+            encoding: .utf8
+        )
+        #expect(
+            playlist.contains(
+                "#EXT-X-GAP\n#EXTINF:4.0,\nresources/gap-00001.ts"
+            )
+        )
+        #expect(!playlist.contains("media.example"))
+        #expect(
+            !FileManager.default.fileExists(
+                atPath: receipt.directoryURL.appendingPathComponent(
+                    "resources/gap-00001.ts"
+                ).path
+            )
+        )
+        #expect(
+            HLSLiveURLProtocol.capturedRequests().compactMap(\.url)
+                == [sourceURL, firstURL, thirdURL]
+        )
+        #expect(
+            !HLSLiveURLProtocol.capturedRequests().contains { request in
+                request.url == gapURL
+            })
+    }
+
     @Test("recording handle stops and commits idempotently")
     func stopsAndCommitsRecordingHandle() async throws {
         let sourceURL = try url("https://media.example/controlled.m3u8")
@@ -351,6 +425,138 @@ extension HLSLivePlaylistClientTests {
                     .appendingPathComponent("partial").path
             )
         )
+    }
+
+    @Test("resumable DVR checkpoints gaps and rejects retroactive availability")
+    func resumesCheckpointedGap() async throws {
+        let sourceURL = try url(
+            "https://media.example/gap-recovery.m3u8?mode=initial"
+        )
+        let mismatchedURL = try url(
+            "https://media.example/gap-recovery.m3u8?mode=mismatch"
+        )
+        let resumedURL = try url(
+            "https://media.example/gap-recovery.m3u8?mode=resumed"
+        )
+        let firstSegmentURL = try url(
+            "https://media.example/gap-recovery-10.ts"
+        )
+        let gapSegmentURL = try url(
+            "https://media.example/gap-recovery-11.ts"
+        )
+        let thirdSegmentURL = try url(
+            "https://media.example/gap-recovery-12.ts"
+        )
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:60
+                #EXT-X-MEDIA-SEQUENCE:10
+                #EXTINF:4,
+                gap-recovery-10.ts
+                #EXT-X-GAP
+                #EXTINF:4,
+                gap-recovery-11.ts
+                """
+            ),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("first".utf8)),
+            for: firstSegmentURL
+        )
+        let recorder = recoveryRecorder(session: fixture.session)
+        let recording = recorder.startRecording(
+            from: sourceURL,
+            to: fixture.destinationURL
+        )
+        var events = recording.events.makeAsyncIterator()
+        guard case .progress = try await events.next(),
+            case .progress(let gapProgress) = try await events.next()
+        else {
+            Issue.record("Expected media and gap checkpoints")
+            return
+        }
+        #expect(gapProgress.segmentCount == 2)
+        #expect(gapProgress.gapCount == 1)
+        await recording.interrupt()
+
+        let checkpointURL = HLSLiveDVRCheckpointStore(
+            destinationURL: fixture.destinationURL
+        ).rootURL.appendingPathComponent("checkpoint.json")
+        let checkpoint = try JSONDecoder().decode(
+            HLSLiveDVRCheckpoint.self,
+            from: Data(contentsOf: checkpointURL)
+        )
+        let gap = try #require(
+            checkpoint.primary.segments.first(where: { $0.isGap == true })
+        )
+        #expect(gap.playlistPath == "resources/gap-00001.ts")
+        #expect(gap.file == nil)
+
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:10
+                #EXTINF:4,
+                gap-recovery-10.ts
+                #EXTINF:4,
+                gap-recovery-11.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: mismatchedURL
+        )
+        await #expect(throws: HLSLiveDVRError.recoveryMismatch) {
+            try await recorder.resume(
+                from: mismatchedURL,
+                to: fixture.destinationURL
+            )
+        }
+
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:10
+                #EXTINF:4,
+                gap-recovery-10.ts
+                #EXT-X-GAP
+                #EXTINF:4,
+                gap-recovery-11.ts
+                #EXTINF:4,
+                gap-recovery-12.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: resumedURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("third".utf8)),
+            for: thirdSegmentURL
+        )
+
+        let receipt = try await recorder.resume(
+            from: resumedURL,
+            to: fixture.destinationURL
+        )
+
+        #expect(receipt.segmentCount == 3)
+        #expect(receipt.gapCount == 1)
+        #expect(receipt.mediaByteCount == 10)
+        let requests = HLSLiveURLProtocol.capturedRequests().compactMap(\.url)
+        #expect(requests.count { $0 == firstSegmentURL } == 1)
+        #expect(!requests.contains(gapSegmentURL))
+        #expect(requests.count { $0 == thirdSegmentURL } == 1)
     }
 
     @Test("recovery rejects source mismatch and tampered media")
@@ -597,7 +803,7 @@ extension HLSLivePlaylistClientTests {
     }
 
     @Test("rendition checkpoint paths remain package-relative and distinct")
-    func renditionCheckpointStoragePathIsDistinct() {
+    func renditionCheckpointStoragePathIsDistinct() throws {
         let stored = HLSLiveDVRStoredSegment(
             sequenceNumber: 10,
             duration: 4,
@@ -614,13 +820,76 @@ extension HLSLivePlaylistClientTests {
         )
 
         #expect(
-            checkpoint.file.relativePath
+            try #require(checkpoint.file).relativePath
                 == "audio/00/resources/00000.aac"
         )
         #expect(
-            checkpoint.storedSegment.fileName
+            try checkpoint.storedSegment().fileName
                 == "resources/00000.aac"
         )
+    }
+
+    @Test("checkpoint segments reject conflicting gap resources")
+    func checkpointGapResourceInvariantIsTyped() throws {
+        let invalidGap = try JSONDecoder().decode(
+            HLSLiveDVRCheckpoint.Segment.self,
+            from: Data(
+                """
+                {
+                  "sequenceNumber": 10,
+                  "duration": 4,
+                  "beginsDiscontinuity": false,
+                  "isGap": true,
+                  "playlistPath": "resources/gap-00000.ts",
+                  "file": {
+                    "relativePath": "resources/gap-00000.ts",
+                    "byteCount": 1,
+                    "contentSHA256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                  }
+                }
+                """.utf8
+            )
+        )
+        let invalidMedia = try JSONDecoder().decode(
+            HLSLiveDVRCheckpoint.Segment.self,
+            from: Data(
+                """
+                {
+                  "sequenceNumber": 10,
+                  "duration": 4,
+                  "beginsDiscontinuity": false,
+                  "isGap": false,
+                  "playlistPath": "resources/00000.ts"
+                }
+                """.utf8
+            )
+        )
+        let legacyMedia = try JSONDecoder().decode(
+            HLSLiveDVRCheckpoint.Segment.self,
+            from: Data(
+                """
+                {
+                  "sequenceNumber": 10,
+                  "duration": 4,
+                  "beginsDiscontinuity": false,
+                  "playlistPath": "resources/00000.ts",
+                  "file": {
+                    "relativePath": "resources/00000.ts",
+                    "byteCount": 1,
+                    "contentSHA256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                  }
+                }
+                """.utf8
+            )
+        )
+
+        #expect(throws: HLSLiveDVRError.recoveryCorrupted) {
+            try invalidGap.storedSegment()
+        }
+        #expect(throws: HLSLiveDVRError.recoveryCorrupted) {
+            try invalidMedia.storedSegment()
+        }
+        #expect(try !legacyMedia.storedSegment().isGap)
     }
 
     @Test("variant recovery identity covers local master attributes")
@@ -1297,6 +1566,97 @@ extension HLSLivePlaylistClientTests {
             ]
         )
         #expect(!playlist.contains("media.example"))
+    }
+
+    @Test("fragmented MP4 gaps retain their initialization-map boundary")
+    func recordsFragmentedMP4GapMapBoundary() async throws {
+        let sourceURL = try url("https://media.example/fmp4-gap.m3u8")
+        let firstMapURL = try url("https://media.example/gap-init-a.mp4")
+        let gapMapURL = try url("https://media.example/gap-init-b.mp4")
+        let firstSegmentURL = try url(
+            "https://media.example/fmp4-gap-1.m4s"
+        )
+        let gapSegmentURL = try url(
+            "https://media.example/fmp4-gap-2.m4s"
+        )
+        let thirdSegmentURL = try url(
+            "https://media.example/fmp4-gap-3.m4s"
+        )
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-VERSION:7
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:1
+                #EXT-X-MAP:URI="gap-init-a.mp4"
+                #EXTINF:4,
+                fmp4-gap-1.m4s
+                #EXT-X-DISCONTINUITY
+                #EXT-X-MAP:URI="gap-init-b.mp4"
+                #EXT-X-GAP
+                #EXTINF:4,
+                fmp4-gap-2.m4s
+                #EXT-X-DISCONTINUITY
+                #EXT-X-MAP:URI="gap-init-a.mp4"
+                #EXTINF:4,
+                fmp4-gap-3.m4s
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("map-a".utf8)),
+            for: firstMapURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("map-b".utf8)),
+            for: gapMapURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("first".utf8)),
+            for: firstSegmentURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("third".utf8)),
+            for: thirdSegmentURL
+        )
+
+        let receipt = try await recorder(
+            session: fixture.session,
+            startPosition: .currentWindow
+        ).record(from: sourceURL, to: fixture.destinationURL)
+
+        #expect(receipt.segmentCount == 3)
+        #expect(receipt.gapCount == 1)
+        let requests = HLSLiveURLProtocol.capturedRequests().compactMap(\.url)
+        #expect(requests.count { $0 == firstMapURL } == 1)
+        #expect(requests.count { $0 == gapMapURL } == 1)
+        #expect(!requests.contains(gapSegmentURL))
+        let playlist = try String(
+            contentsOf: receipt.playlistURL,
+            encoding: .utf8
+        )
+        #expect(
+            playlist.split(separator: "\n").filter {
+                $0.hasPrefix("#EXT-X-MAP:")
+            } == [
+                "#EXT-X-MAP:URI=\"resources/initialization.mp4\"",
+                "#EXT-X-MAP:URI=\"resources/initialization-00001.mp4\"",
+                "#EXT-X-MAP:URI=\"resources/initialization.mp4\"",
+            ]
+        )
+        #expect(
+            playlist.contains(
+                "#EXT-X-GAP\n#EXTINF:4.0,\nresources/gap-00001.m4s"
+            )
+        )
     }
 
     @Test("resumable DVR accepts a new map after checkpointed media")
@@ -2529,6 +2889,121 @@ extension HLSLivePlaylistClientTests {
         )
     }
 
+    @Test("external rendition gaps preserve their local timeline")
+    func retainsExternalAudioGap() async throws {
+        let masterURL = try url(
+            "https://media.example/gap-audio-master.m3u8"
+        )
+        let videoPlaylistURL = try url(
+            "https://media.example/gap-audio-video.m3u8"
+        )
+        let audioPlaylistURL = try url(
+            "https://media.example/gap-audio.m3u8"
+        )
+        let videoURLs = try [1, 2, 3].map {
+            try url("https://media.example/gap-video-\($0).ts")
+        }
+        let audioURLs = try [1, 2, 3].map {
+            try url("https://media.example/gap-audio-\($0).aac")
+        }
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="Stereo",DEFAULT=YES,URI="gap-audio.m3u8"
+                #EXT-X-STREAM-INF:BANDWIDTH=1000,AUDIO="audio"
+                gap-audio-video.m3u8
+                """
+            ),
+            for: masterURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:1
+                #EXTINF:4,
+                gap-video-1.ts
+                #EXTINF:4,
+                gap-video-2.ts
+                #EXTINF:4,
+                gap-video-3.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: videoPlaylistURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:1
+                #EXT-X-GAP
+                #EXTINF:4,
+                gap-audio-1.aac
+                #EXT-X-GAP
+                #EXTINF:4,
+                gap-audio-2.aac
+                #EXT-X-GAP
+                #EXTINF:4,
+                gap-audio-3.aac
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: audioPlaylistURL
+        )
+        for (index, videoURL) in videoURLs.enumerated() {
+            HLSLiveURLProtocol.register(
+                mediaResponse(Data("video-\(index + 1)".utf8)),
+                for: videoURL
+            )
+        }
+        let receipt = try await recorder(
+            session: fixture.session,
+            startPosition: .currentWindow
+        ).record(from: masterURL, to: fixture.destinationURL)
+
+        #expect(receipt.gapCount == 0)
+        let audioTrack = try #require(
+            receipt.tracks.first { $0.kind == .audio }
+        )
+        let audioPlaylist = try String(
+            contentsOf: receipt.directoryURL.appendingPathComponent(
+                audioTrack.relativePlaylistPath
+            ),
+            encoding: .utf8
+        )
+        #expect(
+            audioPlaylist.contains(
+                "#EXT-X-GAP\n#EXTINF:4.0,\nresources/gap-00001.aac"
+            )
+        )
+        #expect(
+            audioPlaylist.components(separatedBy: "#EXT-X-GAP").count
+                - 1 == 3
+        )
+        let requests = HLSLiveURLProtocol.capturedRequests().compactMap(\.url)
+        #expect(audioURLs.allSatisfy { !requests.contains($0) })
+        #expect(
+            !FileManager.default.fileExists(
+                atPath: receipt.directoryURL
+                    .appendingPathComponent(
+                        audioTrack.relativePlaylistPath
+                    )
+                    .deletingLastPathComponent()
+                    .appendingPathComponent("resources/gap-00001.aac")
+                    .path
+            )
+        )
+    }
+
     @Test("external fMP4 renditions preserve initialization map rotation")
     func recordsRenditionInitializationMapRotation() async throws {
         let masterURL = try url(
@@ -3597,6 +4072,75 @@ extension HLSLivePlaylistClientTests {
             !FileManager.default.fileExists(
                 atPath: fixture.destinationURL
                     .appendingPathComponent("partial").path
+            )
+        )
+    }
+
+    @Test("a completed GAP discards staged LL-HLS parts")
+    func discardsStagedPartsForGapParent() async throws {
+        let sourceURL = try url("https://media.example/gap-parts.m3u8")
+        let reloadURL = try url(
+            "https://media.example/gap-parts.m3u8?_HLS_msn=11&_HLS_part=2"
+        )
+        let firstPartURL = try url("https://media.example/11.0.ts")
+        let secondPartURL = try url("https://media.example/11.1.ts")
+        let parentURL = try url("https://media.example/11.ts")
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(partialPlaylist()),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                partialPlaylist()
+                    + """
+
+                    #EXT-X-GAP
+                    #EXTINF:4,
+                    11.ts
+                    #EXT-X-ENDLIST
+                    """
+            ),
+            for: reloadURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("one".utf8)),
+            for: firstPartURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("two".utf8)),
+            for: secondPartURL
+        )
+
+        let receipt = try await recorder(
+            session: fixture.session,
+            startPosition: .nextCompletedSegment,
+            parts: HLSLiveDVRPartPack(policy: .independent)
+        ).record(from: sourceURL, to: fixture.destinationURL)
+
+        #expect(receipt.segmentCount == 1)
+        #expect(receipt.gapCount == 1)
+        #expect(receipt.recordedDuration == 4)
+        #expect(receipt.mediaByteCount == 0)
+        #expect(receipt.promotedPartCount == 0)
+        let requests = HLSLiveURLProtocol.capturedRequests().compactMap(\.url)
+        #expect(requests.contains(firstPartURL))
+        #expect(requests.contains(secondPartURL))
+        #expect(!requests.contains(parentURL))
+        #expect(
+            !FileManager.default.fileExists(
+                atPath: fixture.destinationURL
+                    .appendingPathComponent("partial").path
+            )
+        )
+        #expect(
+            !FileManager.default.fileExists(
+                atPath: fixture.destinationURL
+                    .appendingPathComponent("resources/gap-00000.ts").path
             )
         )
     }

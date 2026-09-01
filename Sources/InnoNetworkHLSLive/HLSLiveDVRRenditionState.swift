@@ -16,7 +16,7 @@ struct HLSLiveDVRRenditionRecordingState {
     private(set) var recordedDuration: TimeInterval = 0
     private(set) var lastObservedSequence: Int64?
     private(set) var didObserveInitialSnapshot = false
-    private var requiresRecoveryInitializationValidation = false
+    private var requiresRecoveryPresentationValidation = false
 
     init(selection: HLSLiveDVRSelectedRendition) {
         self.selection = selection
@@ -41,8 +41,8 @@ struct HLSLiveDVRRenditionRecordingState {
             checkpoint.initializations == nil
             ? checkpoint.resolvedInitializations.first
             : nil
-        let restoredSegments = checkpoint.segments.map {
-            $0.storedSegment(
+        let restoredSegments = try checkpoint.segments.map {
+            try $0.storedSegment(
                 defaultInitialization: legacyInitialization
             )
         }
@@ -70,7 +70,7 @@ struct HLSLiveDVRRenditionRecordingState {
         }
         self.lastObservedSequence = segments.last?.sequenceNumber
         self.didObserveInitialSnapshot = true
-        self.requiresRecoveryInitializationValidation = true
+        self.requiresRecoveryPresentationValidation = true
     }
 
     var checkpointTrack: HLSLiveDVRCheckpoint.Track? {
@@ -156,14 +156,25 @@ struct HLSLiveDVRRenditionRecordingState {
                     snapshot: snapshot
                 )
         else {
-            if requiresRecoveryInitializationValidation {
+            if requiresRecoveryPresentationValidation {
                 throw HLSLiveDVRError.recoveryMismatch
             }
             throw HLSLiveDVRError.unsupportedFeature(
                 .changingInitializationSegment
             )
         }
-        requiresRecoveryInitializationValidation = false
+        guard
+            HLSLiveDVRRecordingState.matchesOverlappingGaps(
+                segments,
+                snapshot: snapshot
+            )
+        else {
+            if requiresRecoveryPresentationValidation {
+                throw HLSLiveDVRError.recoveryMismatch
+            }
+            throw HLSLiveDVRError.unsupportedFeature(.gap)
+        }
+        requiresRecoveryPresentationValidation = false
     }
 
     mutating func candidates(
@@ -213,9 +224,6 @@ struct HLSLiveDVRRenditionRecordingState {
         guard segment.duration.isFinite, segment.duration > 0 else {
             throw HLSLiveDVRError.transferFailed
         }
-        guard !segment.isGap else {
-            throw HLSLiveDVRError.unsupportedFeature(.gap)
-        }
         switch container {
         case .mpegTransportStream:
             guard segment.initializationSegment == nil else {
@@ -242,6 +250,9 @@ struct HLSLiveDVRRenditionRecordingState {
         byteCount: Int64,
         contentSHA256: String
     ) throws {
+        guard !segment.isGap else {
+            throw HLSLiveDVRError.storageFailed
+        }
         let nextDuration = recordedDuration + segment.duration
         guard nextDuration.isFinite else {
             throw HLSLiveDVRError.storageFailed
@@ -259,6 +270,35 @@ struct HLSLiveDVRRenditionRecordingState {
                 fileName: fileName,
                 byteCount: byteCount,
                 contentSHA256: contentSHA256
+            )
+        )
+        recordedDuration = nextDuration
+        lastObservedSequence = segment.sequenceNumber
+    }
+
+    mutating func retainGap(
+        _ segment: HLSLiveSegment,
+        fileName: String
+    ) throws {
+        guard segment.isGap else {
+            throw HLSLiveDVRError.storageFailed
+        }
+        let nextDuration = recordedDuration + segment.duration
+        guard nextDuration.isFinite else {
+            throw HLSLiveDVRError.storageFailed
+        }
+        let initialization = try storedInitialization(for: segment)
+        segments.append(
+            HLSLiveDVRStoredSegment.gap(
+                sequenceNumber: segment.sequenceNumber,
+                duration: segment.duration,
+                beginsDiscontinuity:
+                    segment.beginsDiscontinuity,
+                programDateTime: segment.programDateTime,
+                initializationSourceIdentity:
+                    initialization?.sourceIdentity,
+                initializationFileName: initialization?.fileName,
+                fileName: fileName
             )
         )
         recordedDuration = nextDuration

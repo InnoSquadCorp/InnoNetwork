@@ -68,8 +68,23 @@ class LivePreloadState:
             }
 
 
+class LiveGapState:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._gap_resource_requests = 0
+
+    def mark_gap_resource(self) -> None:
+        with self._lock:
+            self._gap_resource_requests += 1
+
+    def snapshot(self) -> dict[str, object]:
+        with self._lock:
+            return {"gap_resource_requests": self._gap_resource_requests}
+
+
 class FixtureRequestHandler(http.server.SimpleHTTPRequestHandler):
     preload_state: LivePreloadState
+    gap_state: LiveGapState
 
     extensions_map = {
         **http.server.SimpleHTTPRequestHandler.extensions_map,
@@ -89,8 +104,18 @@ class FixtureRequestHandler(http.server.SimpleHTTPRequestHandler):
         if path == "/live-map-rotation/index.m3u8":
             self._serve_live_map_rotation_playlist()
             return
+        if path == "/live-gap/index.m3u8":
+            self._serve_live_gap_playlist()
+            return
         if path == "/live-preload/state":
             self._send_json(self.preload_state.snapshot())
+            return
+        if path == "/live-gap/state":
+            self._send_json(self.gap_state.snapshot())
+            return
+        if path == "/live-gap/segment-1.m4s":
+            self.gap_state.mark_gap_resource()
+            self.send_error(404)
             return
         rotation_resources = {
             "/live-map-rotation/init-a.mp4": "init.mp4",
@@ -98,6 +123,9 @@ class FixtureRequestHandler(http.server.SimpleHTTPRequestHandler):
             "/live-map-rotation/segment-0.m4s": "segment-0.m4s",
             "/live-map-rotation/segment-1.m4s": "segment-1.m4s",
             "/live-map-rotation/segment-2.m4s": "segment-2.m4s",
+            "/live-gap/init.mp4": "init.mp4",
+            "/live-gap/segment-0.m4s": "segment-0.m4s",
+            "/live-gap/segment-2.m4s": "segment-2.m4s",
         }
         rotation_resource = rotation_resources.get(path)
         if rotation_resource is not None:
@@ -202,6 +230,28 @@ segment-2.m4s
             "application/vnd.apple.mpegurl",
         )
 
+    def _serve_live_gap_playlist(self) -> None:
+        playlist = """#EXTM3U
+#EXT-X-VERSION:7
+#EXT-X-TARGETDURATION:2
+#EXT-X-MEDIA-SEQUENCE:0
+#EXT-X-PLAYLIST-TYPE:EVENT
+#EXT-X-INDEPENDENT-SEGMENTS
+#EXT-X-MAP:URI="init.mp4"
+#EXTINF:1.002667,
+segment-0.m4s
+#EXT-X-GAP
+#EXTINF:1.002667,
+segment-1.m4s
+#EXTINF:0.021333,
+segment-2.m4s
+#EXT-X-ENDLIST
+"""
+        self._send_bytes(
+            playlist.encode("utf-8"),
+            "application/vnd.apple.mpegurl",
+        )
+
     def _send_runtime_fixture(self, name: str) -> None:
         fixture = Path(self.directory) / "audio-fmp4" / name
         content_type = self.extensions_map.get(
@@ -247,6 +297,7 @@ def main() -> None:
         )
 
     FixtureRequestHandler.preload_state = LivePreloadState()
+    FixtureRequestHandler.gap_state = LiveGapState()
     handler = functools.partial(
         FixtureRequestHandler,
         directory=str(fixture_root),

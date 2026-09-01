@@ -3,7 +3,7 @@ import InnoNetworkHLS
 
 /// A live feature that the bounded DVR writer cannot preserve safely.
 public enum HLSLiveDVRUnsupportedFeature: Equatable, Sendable {
-    /// One or more complete segments are intentionally absent.
+    /// A retained segment's declared availability changed retroactively.
     case gap
 
     /// Media uses DRM or sample encryption that cannot become plaintext.
@@ -202,7 +202,7 @@ private extension HLSLiveDVRUnsupportedFeature {
     var description: String {
         switch self {
         case .gap:
-            return "timeline gap"
+            return "incompatible gap history"
         case .encryptedMedia:
             return "DRM or sample-encrypted media"
         case .unknownMediaContainer:
@@ -299,8 +299,11 @@ public struct HLSLiveDVRTrack: Equatable, Sendable {
 
 /// A bounded live DVR progress snapshot.
 public struct HLSLiveDVRProgress: Equatable, Sendable {
-    /// The number of retained complete segments.
+    /// The number of retained complete segments, including declared gaps.
     public let segmentCount: Int
+
+    /// The number of retained primary-track `EXT-X-GAP` segments.
+    public let gapCount: Int
 
     /// The retained playback duration in seconds.
     public let recordedDuration: TimeInterval
@@ -325,6 +328,7 @@ public struct HLSLiveDVRProgress: Equatable, Sendable {
 
     init(
         segmentCount: Int,
+        gapCount: Int = 0,
         recordedDuration: TimeInterval,
         mediaByteCount: Int64,
         stagedPartCount: Int = 0,
@@ -335,6 +339,7 @@ public struct HLSLiveDVRProgress: Equatable, Sendable {
             HLSLiveDVRPreloadStatistics()
     ) {
         self.segmentCount = segmentCount
+        self.gapCount = gapCount
         self.recordedDuration = recordedDuration
         self.mediaByteCount = mediaByteCount
         self.stagedPartCount = stagedPartCount
@@ -379,8 +384,11 @@ public struct HLSLiveDVRReceipt: Equatable, Sendable {
     /// The local playlists retained in the package.
     public let tracks: [HLSLiveDVRTrack]
 
-    /// The number of retained complete segments.
+    /// The number of retained complete segments, including declared gaps.
     public let segmentCount: Int
+
+    /// The number of retained primary-track `EXT-X-GAP` segments.
+    public let gapCount: Int
 
     /// The retained playback duration in seconds.
     public let recordedDuration: TimeInterval
@@ -406,6 +414,7 @@ public struct HLSLiveDVRReceipt: Equatable, Sendable {
         entryPlaylistURL: URL,
         tracks: [HLSLiveDVRTrack],
         segmentCount: Int,
+        gapCount: Int = 0,
         recordedDuration: TimeInterval,
         mediaByteCount: Int64,
         promotedPartCount: Int = 0,
@@ -419,6 +428,7 @@ public struct HLSLiveDVRReceipt: Equatable, Sendable {
         self.entryPlaylistURL = entryPlaylistURL
         self.tracks = tracks
         self.segmentCount = segmentCount
+        self.gapCount = gapCount
         self.recordedDuration = recordedDuration
         self.mediaByteCount = mediaByteCount
         self.promotedPartCount = promotedPartCount

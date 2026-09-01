@@ -84,8 +84,8 @@ extension HLSLiveDVRRecordingState {
             checkpoint.primary.initializations == nil
             ? checkpoint.primary.resolvedInitializations.first
             : nil
-        let restoredSegments = checkpoint.primary.segments.map {
-            $0.storedSegment(
+        let restoredSegments = try checkpoint.primary.segments.map {
+            try $0.storedSegment(
                 defaultInitialization: legacyInitialization
             )
         }
@@ -137,6 +137,14 @@ extension HLSLiveDVRRecordingState {
                 throw HLSLiveDVRError.recoveryMismatch
             }
         }
+        guard
+            Self.matchesOverlappingGaps(
+                restoredSegments,
+                snapshot: snapshot
+            )
+        else {
+            throw HLSLiveDVRError.recoveryMismatch
+        }
         let restoredRenditionStates = try zip(
             selection.external,
             checkpoint.renditions
@@ -173,6 +181,7 @@ extension HLSLiveDVRRecordingState {
         segments = restoredSegments
         recordedDuration = restoredDuration
         mediaByteCount = restoredMediaBytes
+        gapCount = restoredSegments.count(where: \.isGap)
         lastObservedSequence = restoredSegments.last?.sequenceNumber
         didObserveInitialSnapshot = true
         nextResourceIndex = checkpoint.files.count
@@ -277,6 +286,27 @@ extension HLSLiveDVRRecordingState {
         }
     }
 
+    static func matchesOverlappingGaps(
+        _ restoredSegments: [HLSLiveDVRStoredSegment],
+        snapshot: HLSLivePlaylistSnapshot
+    ) -> Bool {
+        let restoredBySequence = Dictionary(
+            uniqueKeysWithValues: restoredSegments.map {
+                ($0.sequenceNumber, $0)
+            }
+        )
+        return snapshot.segments.allSatisfy { segment in
+            guard
+                let restored = restoredBySequence[
+                    segment.sequenceNumber
+                ]
+            else {
+                return true
+            }
+            return segment.isGap == restored.isGap
+        }
+    }
+
     private static func validatedDuration(
         _ segments: [HLSLiveDVRStoredSegment]
     ) throws -> TimeInterval {
@@ -337,6 +367,10 @@ extension HLSLiveDVRRecordingState {
                     prefix: storagePrefix
                 ) == initialization.file.relativePath
             }
+        let segmentPlaylistPaths = track.segments.map(\.playlistPath)
+        let segmentPlaylistPathsAreUnique =
+            Set(segmentPlaylistPaths).count
+            == segmentPlaylistPaths.count
         let firstInitialization = initializations.first
         let legacyFileIsValid: Bool
         switch (track.initialization, firstInitialization?.file) {
@@ -358,12 +392,23 @@ extension HLSLiveDVRRecordingState {
             && legacyFileIsValid
         guard initializationsAreValid,
             legacyInitializationIsValid,
+            segmentPlaylistPathsAreUnique,
             track.segments.allSatisfy({ segment in
                 let mediaPathIsValid =
-                    storagePath(
-                        for: segment.playlistPath,
-                        prefix: storagePrefix
-                    ) == segment.file.relativePath
+                    switch (segment.isGap ?? false, segment.file) {
+                    case (false, let file?):
+                        storagePath(
+                            for: segment.playlistPath,
+                            prefix: storagePrefix
+                        ) == file.relativePath
+                    case (true, nil):
+                        storagePath(
+                            for: segment.playlistPath,
+                            prefix: storagePrefix
+                        ) != nil
+                    default:
+                        false
+                    }
                 let initializationIsValid: Bool
                 switch (
                     segment.initializationSourceIdentity,

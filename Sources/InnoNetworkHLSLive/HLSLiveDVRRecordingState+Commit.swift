@@ -52,6 +52,10 @@ extension HLSLiveDVRRecordingState {
                         renditionState.selection.track
                             .relativePlaylistPath
                     )
+                try FileManager.default.createDirectory(
+                    at: playlistURL.deletingLastPathComponent(),
+                    withIntermediateDirectories: true
+                )
                 try Data(renditionPlaylist.utf8).write(
                     to: playlistURL,
                     options: .atomic
@@ -123,6 +127,7 @@ extension HLSLiveDVRRecordingState {
                 ),
             tracks: [primaryTrack] + selectedRenditions.map(\.track),
             segmentCount: segments.count,
+            gapCount: gapCount,
             recordedDuration: recordedDuration,
             mediaByteCount: mediaByteCount,
             promotedPartCount: promotedPartCount,

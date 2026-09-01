@@ -98,9 +98,13 @@ Versioning.
   and external rendition tracks, deduplicates repeated maps, emits local map
   boundaries per segment, and resumes both legacy single-map and new multi-map
   checkpoints.
-  Encrypted media, gaps, external renditions or timeline resources,
-  missing or retroactively changed initialization maps, and lost live-window
-  history fail explicitly without exposing a partial package.
+  Complete `EXT-X-GAP` entries now retain primary and external-rendition
+  timelines without requesting or synthesizing unavailable media. Primary
+  progress and receipts expose a gap count, recovery checkpoints preserve gap
+  state, and retroactive availability changes fail explicitly. Encrypted
+  media, external timeline resources, missing or retroactively changed
+  initialization maps, and lost live-window history still fail without
+  exposing a partial package.
 - `HLSExternalResourceResolver` resolves inline or bounded remote
   `EXT-X-SESSION-DATA` plus Apple interstitial `ASSETS` JSON. Typed request
   purposes let authentication distinguish Session Data from asset lists;
