@@ -97,6 +97,13 @@ Versioning.
   header strings or changing reload policy.
   Reload requests retain the shared typed request-policy, URL-admission,
   redirect, body-boundary, and value-redacted pathway-observation behavior.
+- LL-HLS initial tune-in now follows the HLS 2nd Edition CDN algorithm when a
+  cache supplies `Age`: it estimates a newer `_HLS_msn`/`_HLS_part` from
+  `TARGETDURATION` and `PART-TARGET`, includes the subsecond safety margin,
+  removes stale `_HLS_*` directives from the full entry request while
+  retaining other query items, and validates each response before replacing
+  the latest snapshot. A
+  dedicated pack bounds or disables the best-effort additional requests.
 - `HLSLiveDVRRecorder` captures complete live TS or fMP4 segments into a
   bounded, URL-free local VOD package. It supports record-from-now and
   current-window starts, exact byte-range validation, progress events,

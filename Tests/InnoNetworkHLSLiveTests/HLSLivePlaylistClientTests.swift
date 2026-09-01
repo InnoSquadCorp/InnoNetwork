@@ -373,6 +373,88 @@ struct HLSLivePlaylistClientTests {
         #expect(values["_HLS_skip"] == "v2")
     }
 
+    @Test("completed parts do not move the blocking edge backward")
+    func buildsBlockingPositionAfterCompletedParts() throws {
+        let sourceURL = try #require(
+            URL(string: "https://media.example/completed-parts.m3u8")
+        )
+        let playlist = try PlaylistResolver().resolve(
+            """
+            #EXTM3U
+            #EXT-X-VERSION:9
+            #EXT-X-TARGETDURATION:4
+            #EXT-X-MEDIA-SEQUENCE:20
+            #EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES,PART-HOLD-BACK=2
+            #EXT-X-PART-INF:PART-TARGET=1
+            #EXT-X-PART:DURATION=1,URI="20.0.m4s",INDEPENDENT=YES
+            #EXT-X-PART:DURATION=1,URI="20.1.m4s"
+            #EXT-X-PART:DURATION=1,URI="20.2.m4s"
+            #EXT-X-PART:DURATION=1,URI="20.3.m4s"
+            #EXTINF:4,
+            20.ts
+            #EXTINF:4,
+            21.ts
+            """,
+            relativeTo: sourceURL
+        )
+        let snapshot = HLSLivePlaylistSnapshot(
+            playlist: playlist,
+            segments: [
+                HLSLiveSegment(
+                    sequenceNumber: 20,
+                    duration: 4,
+                    url: sourceURL,
+                    byteRange: nil,
+                    beginsDiscontinuity: false,
+                    isGap: false
+                ),
+                HLSLiveSegment(
+                    sequenceNumber: 21,
+                    duration: 4,
+                    url: sourceURL,
+                    byteRange: nil,
+                    beginsDiscontinuity: false,
+                    isGap: false
+                ),
+            ],
+            partialSegments: (0..<4).map { partIndex in
+                HLSLivePartialSegment(
+                    mediaSequenceNumber: 20,
+                    partIndex: partIndex,
+                    duration: 1,
+                    url: sourceURL,
+                    byteRange: nil,
+                    isIndependent: partIndex == 0,
+                    isGap: false
+                )
+            },
+            dateRanges: [],
+            generation: 0,
+            isDeltaUpdate: false,
+            isEnded: false
+        )
+
+        let request = try HLSLiveReloadRequestBuilder.nextRequest(
+            after: snapshot,
+            settings: HLSLiveReloadPack().resolvedSettings()
+        )
+        let components = try #require(
+            URLComponents(
+                url: request.url,
+                resolvingAgainstBaseURL: false
+            )
+        )
+        let values: [String: String?] = Dictionary(
+            uniqueKeysWithValues: (components.queryItems ?? []).map {
+                ($0.name, $0.value)
+            }
+        )
+
+        #expect(request.mode == .blocking)
+        #expect(values["_HLS_msn"] == "22")
+        #expect(values["_HLS_part"] == nil)
+    }
+
     @Test("reload settings remain finite and safe to convert to Duration")
     func clampsReloadSettings() {
         let settings = HLSLiveReloadPack(

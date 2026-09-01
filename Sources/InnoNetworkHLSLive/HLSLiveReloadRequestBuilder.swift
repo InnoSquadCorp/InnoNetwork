@@ -6,6 +6,7 @@ struct HLSLiveReloadRequest {
 
     var usesBlockingReload: Bool {
         mode == .blocking || mode == .blockingPartial
+            || mode == .cdnTuneIn
     }
 }
 
@@ -136,6 +137,37 @@ enum HLSLiveReloadRequestBuilder {
         return url
     }
 
+    static func cdnTuneInRequest(
+        from sourceURL: URL,
+        mediaSequenceNumber: Int64,
+        partIndex: Int
+    ) throws -> HLSLiveReloadRequest {
+        var components = try components(for: sourceURL)
+        var queryItems = (components.queryItems ?? []).filter {
+            !reloadQueryNames.contains($0.name)
+        }
+        queryItems.append(
+            URLQueryItem(
+                name: "_HLS_msn",
+                value: String(mediaSequenceNumber)
+            )
+        )
+        queryItems.append(
+            URLQueryItem(
+                name: "_HLS_part",
+                value: String(partIndex)
+            )
+        )
+        components.queryItems = queryItems
+        guard let url = components.url else {
+            throw HLSLiveError.invalidReloadURL
+        }
+        return HLSLiveReloadRequest(
+            url: url,
+            mode: .cdnTuneIn
+        )
+    }
+
     static func pollingDelay(
         after snapshot: HLSLivePlaylistSnapshot,
         settings: HLSLiveReloadSettings
@@ -157,26 +189,15 @@ enum HLSLiveReloadRequestBuilder {
         mediaSequenceNumber: Int64,
         partIndex: Int?
     )? {
-        if let partial = snapshot.partialSegments.last {
-            let (nextPartIndex, overflow) =
-                partial.partIndex.addingReportingOverflow(1)
-            guard !overflow else {
-                throw HLSLiveError.sequenceOverflow
-            }
-            return (
-                partial.mediaSequenceNumber,
-                nextPartIndex
-            )
-        }
-        guard let segment = snapshot.segments.last else {
+        guard let edge = try HLSLiveMediaEdge.latest(in: snapshot) else {
             return nil
         }
-        let (nextSequence, overflow) =
-            segment.sequenceNumber.addingReportingOverflow(1)
-        guard !overflow else {
-            throw HLSLiveError.sequenceOverflow
-        }
-        return (nextSequence, nil)
+        return (
+            edge.mediaSequenceNumber,
+            edge.partBoundaryIndex == 0
+                ? nil
+                : edge.partBoundaryIndex
+        )
     }
 
     private static func components(

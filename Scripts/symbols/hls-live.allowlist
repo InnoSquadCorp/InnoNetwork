@@ -94,10 +94,12 @@ InnoNetworkHLSLive	swift.enum.case	HLSLiveHealthStatus.healthy
 InnoNetworkHLSLive	swift.enum.case	HLSLiveHealthStatus.unknown
 InnoNetworkHLSLive	swift.enum.case	HLSLiveReloadMode.blocking
 InnoNetworkHLSLive	swift.enum.case	HLSLiveReloadMode.blockingPartial
+InnoNetworkHLSLive	swift.enum.case	HLSLiveReloadMode.cdnTuneIn
 InnoNetworkHLSLive	swift.enum.case	HLSLiveReloadMode.contentSteeringRecovery
 InnoNetworkHLSLive	swift.enum.case	HLSLiveReloadMode.fullReloadRecovery
 InnoNetworkHLSLive	swift.enum.case	HLSLiveReloadMode.initial
 InnoNetworkHLSLive	swift.enum.case	HLSLiveReloadMode.polling
+InnoNetworkHLSLive	swift.init	HLSLiveCDNTuneInPack.init(isEnabled:maximumAdditionalRequestCount:)
 InnoNetworkHLSLive	swift.init	HLSLiveDVRInterstitialPack.init(policy:failurePolicy:maximumEventCount:maximumAssetsPerEvent:maximumPlaylistCount:maximumMediaResourceBytes:maximumTotalBytes:variantSelectionPolicy:renditions:transfer:)
 InnoNetworkHLSLive	swift.init	HLSLiveDVRLimitPack.init(maximumDuration:maximumSegmentCount:maximumMediaResourceBytes:maximumTotalMediaBytes:requestTimeout:diskCapacityPolicy:)
 InnoNetworkHLSLive	swift.init	HLSLiveDVRLimitPack.init(maximumDuration:maximumSegmentCount:maximumMediaResourceBytes:maximumTotalMediaBytes:requestTimeout:diskCapacityPolicy:retentionPolicy:)
@@ -252,6 +254,7 @@ InnoNetworkHLSLive	swift.property	HLSLiveSegment.isGap
 InnoNetworkHLSLive	swift.property	HLSLiveSegment.sequenceNumber
 InnoNetworkHLSLive	swift.property	HLSLiveSegment.url
 InnoNetworkHLSLive	swift.protocol	HLSLiveEncryptionKeyPreloading
+InnoNetworkHLSLive	swift.struct	HLSLiveCDNTuneInPack
 InnoNetworkHLSLive	swift.struct	HLSLiveConfiguration
 InnoNetworkHLSLive	swift.struct	HLSLiveDVRConfiguration
 InnoNetworkHLSLive	swift.struct	HLSLiveDVRInterstitialPack
@@ -280,7 +283,9 @@ InnoNetworkHLSLive	swift.struct	HLSLivePlaylistSnapshot
 InnoNetworkHLSLive	swift.struct	HLSLiveReloadPack
 InnoNetworkHLSLive	swift.struct	HLSLiveSegment
 InnoNetworkHLSLive	swift.type.method	HLSLiveConfiguration.advanced(reload:)
+InnoNetworkHLSLive	swift.type.method	HLSLiveConfiguration.advanced(reload:cdnTuneIn:)
 InnoNetworkHLSLive	swift.type.method	HLSLiveConfiguration.advanced(reload:variantSelectionPolicy:contentSteering:)
+InnoNetworkHLSLive	swift.type.method	HLSLiveConfiguration.advanced(reload:variantSelectionPolicy:contentSteering:cdnTuneIn:)
 InnoNetworkHLSLive	swift.type.method	HLSLiveConfiguration.safeDefaults()
 InnoNetworkHLSLive	swift.type.method	HLSLiveDVRConfiguration.advanced(limits:startPosition:renditions:parts:)
 InnoNetworkHLSLive	swift.type.method	HLSLiveDVRConfiguration.advanced(limits:startPosition:renditions:parts:interstitials:)

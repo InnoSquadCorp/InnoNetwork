@@ -303,6 +303,11 @@ InnoNetwork 기반 클라이언트를 출시하기 전에 점검해야 할 운�
   URL은 redirect가 끝난 JSON URL을 기준으로 해석하며 credential URL과 HTTPS downgrade를
   거부합니다. Catalog는 선호 언어 title, image category, 사용 가능한 title 언어,
   중첩을 보존한 현재 chapter 조회를 제공합니다.
+- **LL-HLS CDN 진입.** `HLSLivePlaylistClient` 는 cache의 초기 `Age` 응답과
+  `TARGETDURATION`/`PART-TARGET`으로 더 최신 `_HLS_msn`/`_HLS_part`를 계산합니다.
+  첫 full 요청에서는 이전 `_HLS_*` reload 지시자만 제거하고 다른 caller query는 보존합니다.
+  추가 요청은 `HLSLiveCDNTuneInPack`으로 1~8회 안에서 제한하거나 비활성화할 수 있고,
+  실패하거나 합칠 수 없는 응답은 마지막 유효 snapshot을 덮어쓰지 않습니다.
 
 ### 회복탄력성
 

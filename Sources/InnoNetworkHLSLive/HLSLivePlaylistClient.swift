@@ -91,12 +91,20 @@ public struct HLSLivePlaylistClient: Sendable {
         from sourceURL: URL
     ) async throws -> HLSLivePlaylistSnapshot {
         let contentSteeringSession = makeContentSteeringSession()
+        let entryURL = try HLSLiveReloadRequestBuilder.fullReloadURL(
+            from: sourceURL
+        )
         let presentation = try await resolvePresentation(
-            from: sourceURL,
+            from: entryURL,
             session: contentSteeringSession
         )
+        let tuned = try await tuneIn(
+            presentation.document,
+            multivariantVariables:
+                presentation.multivariantVariables
+        )
         return try HLSLivePlaylistMerger.makeSnapshot(
-            from: presentation.document,
+            from: tuned.document,
             previous: nil,
             generation: 0,
             selectedVariant: presentation.selectedVariant,
@@ -104,6 +112,7 @@ public struct HLSLivePlaylistClient: Sendable {
             pathwayID: presentation.pathwayID,
             multivariantVariables:
                 presentation.multivariantVariables,
+            reloadMode: tuned.reloadMode,
             measuredAt: now()
         )
     }
@@ -113,16 +122,24 @@ public struct HLSLivePlaylistClient: Sendable {
         multivariantVariables: [String: String],
         generation: Int
     ) async throws -> HLSLivePlaylistSnapshot {
+        let entryURL = try HLSLiveReloadRequestBuilder.fullReloadURL(
+            from: sourceURL
+        )
         let document = try await resolveDocument(
-            from: sourceURL,
+            from: entryURL,
             purpose: .mediaPlaylist,
             multivariantVariables: multivariantVariables
         )
+        let tuned = try await tuneIn(
+            document,
+            multivariantVariables: multivariantVariables
+        )
         return try HLSLivePlaylistMerger.makeSnapshot(
-            from: document,
+            from: tuned.document,
             previous: nil,
             generation: generation,
             multivariantVariables: multivariantVariables,
+            reloadMode: tuned.reloadMode,
             measuredAt: now()
         )
     }
@@ -186,14 +203,22 @@ public struct HLSLivePlaylistClient: Sendable {
             HLSLiveKeyPreloadCoordinator?
     ) async throws {
         let contentSteeringSession = makeContentSteeringSession()
+        let entryURL = try HLSLiveReloadRequestBuilder.fullReloadURL(
+            from: sourceURL
+        )
         let initialPresentation = try await resolvePresentation(
-            from: sourceURL,
+            from: entryURL,
             session: contentSteeringSession
         )
+        let tuned = try await tuneIn(
+            initialPresentation.document,
+            multivariantVariables:
+                initialPresentation.multivariantVariables
+        )
         var pendingDocument: HLSLiveResolvedDocument? =
-            initialPresentation.document
+            tuned.document
         var requestURL =
-            initialPresentation.document.playlist.sourceURL
+            tuned.document.playlist.sourceURL
         var purpose = HLSRequestPurpose.livePlaylistReload
         var selectedVariant = initialPresentation.selectedVariant
         var availableRenditions = initialPresentation.renditions
@@ -205,7 +230,7 @@ public struct HLSLivePlaylistClient: Sendable {
         var previous: HLSLivePlaylistSnapshot?
         var generation = 0
         var isFullReloadRecovery = false
-        var reloadMode = HLSLiveReloadMode.initial
+        var reloadMode = tuned.reloadMode
 
         while true {
             try Task.checkCancellation()
@@ -363,6 +388,23 @@ public struct HLSLivePlaylistClient: Sendable {
             )
         } catch HLSLiveBridgeError.mediaPlaylistRequired {
             throw HLSLiveError.mediaPlaylistRequired
+        }
+    }
+
+    private func tuneIn(
+        _ document: HLSLiveResolvedDocument,
+        multivariantVariables: [String: String]
+    ) async throws -> HLSLiveCDNTuneInResult {
+        try await HLSLiveCDNTuneInCoordinator.resolve(
+            initialDocument: document,
+            settings: configuration.cdnTuneIn,
+            now: now
+        ) { url in
+            try await resolveDocument(
+                from: url,
+                purpose: .livePlaylistReload,
+                multivariantVariables: multivariantVariables
+            )
         }
     }
 

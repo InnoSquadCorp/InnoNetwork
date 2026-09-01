@@ -543,6 +543,12 @@ for await event in await manager.events(for: task) {
   bounded-memory `AsyncThrowingStream`
 - negotiated `_HLS_msn`, `_HLS_part`, and `_HLS_skip` requests based on typed
   `EXT-X-SERVER-CONTROL` capabilities
+- freshness-aware LL-HLS CDN tune-in: an initial cached `Age` response drives
+  bounded `_HLS_msn`/`_HLS_part` estimation from target and part durations;
+  the full entry request removes prior `_HLS_*` reload directives while
+  preserving other caller query items;
+  malformed or failed optional responses retain the latest valid snapshot,
+  while `HLSLiveCDNTuneInPack` can tune or disable the behavior
 - media-sequence reconstruction of skipped complete segments and active Date
   Ranges, with one query-clean full-reload recovery when history is missing
 - per-snapshot reload-mode attribution plus a pure, caller-clocked live-health

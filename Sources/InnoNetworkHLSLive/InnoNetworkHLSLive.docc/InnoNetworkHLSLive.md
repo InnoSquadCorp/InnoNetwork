@@ -17,7 +17,10 @@ import InnoNetworkHLSLive
 
 let client = HLSLivePlaylistClient(
     configuration: .advanced(
-        variantSelectionPolicy: .compatible(deviceCapabilities)
+        variantSelectionPolicy: .compatible(deviceCapabilities),
+        cdnTuneIn: HLSLiveCDNTuneInPack(
+            maximumAdditionalRequestCount: 3
+        )
     )
 )
 for try await snapshot in client.snapshots(from: masterOrMediaPlaylistURL) {
@@ -56,11 +59,22 @@ does not request, decrypt, persist, or log key bytes. Removing or replacing a
 hint cancels its pending callback; ending the snapshot stream cancels all
 remaining callbacks.
 
-The first response is full. Later requests add `_HLS_msn` and `_HLS_part`
-only when blocking reload is advertised, and `_HLS_skip` only when the server
-advertises a skip window. Delta responses are reconstructed from the prior
-window by media-sequence number. If the necessary base history is missing, the
-client attempts one query-clean full reload.
+The first response is full: stale `_HLS_msn`, `_HLS_part`, and `_HLS_skip`
+directives are removed from the entry URL while other caller query items are
+preserved. For LL-HLS responses delivered through a cache,
+the default ``HLSLiveCDNTuneInPack`` consumes `Age`, `TARGETDURATION`, and
+`PART-TARGET` to make up to three freshness-aware `_HLS_msn`/`_HLS_part`
+requests before exposing the initial snapshot. Subsecond part targets receive
+the specification's additional one-second margin. The optimization requires
+blocking reload support, stays bounded, and keeps the newest validated
+snapshot when an optional request fails. Pass a pack with `isEnabled: false`
+to preserve a single media-playlist request during initial tune-in.
+
+Later requests add `_HLS_msn` and `_HLS_part` only when blocking reload is
+advertised, and `_HLS_skip` only when the server advertises a skip window.
+Delta responses are reconstructed from the prior window by media-sequence
+number. If the necessary base history is missing, the client attempts one
+query-clean full reload.
 
 Snapshots expose resolved media URLs and normal parsed playlist metadata; they
 are application data, not an observability surface. Purpose-aware request
@@ -439,6 +453,7 @@ instead of resuming it.
 - ``HLSLivePlaylistClient``
 - ``HLSLiveConfiguration``
 - ``HLSLiveReloadPack``
+- ``HLSLiveCDNTuneInPack``
 - ``HLSLiveEncryptionKeyPreloading``
 
 ### Snapshots

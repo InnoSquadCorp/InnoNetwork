@@ -14,6 +14,9 @@ public enum HLSLiveReloadMode: Equatable, Sendable {
     /// A blocking reload positioned at the next partial segment.
     case blockingPartial
 
+    /// A freshness-aware blocking request targeted a newer CDN position.
+    case cdnTuneIn
+
     /// A query-clean full reload after delta history could not be merged.
     case fullReloadRecovery
 
