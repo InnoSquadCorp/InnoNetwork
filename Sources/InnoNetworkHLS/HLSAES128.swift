@@ -29,6 +29,10 @@ struct HLSAES128KeySet: Sendable {
     func fingerprint(for keyURL: URL) -> String? {
         keysByURL[keyURL].map(HLSContentFingerprint.sha256)
     }
+
+    func keyData(for keyURL: URL) -> Data? {
+        keysByURL[keyURL]
+    }
 }
 
 struct HLSAES128KeyResolver: Sendable {
@@ -49,7 +53,8 @@ struct HLSAES128KeyResolver: Sendable {
     }
 
     func resolve(
-        resources: [HLSResourceTransfer]
+        resources: [HLSResourceTransfer],
+        preloadedKeys: HLSAES128KeySet = .empty
     ) async throws -> HLSAES128KeySet {
         var keysByURL: [URL: Data] = [:]
         for resource in resources {
@@ -59,7 +64,11 @@ struct HLSAES128KeyResolver: Sendable {
             else {
                 continue
             }
-            keysByURL[keyURL] = try await fetcher.fetch(keyURL)
+            if let preloadedKey = preloadedKeys.keyData(for: keyURL) {
+                keysByURL[keyURL] = preloadedKey
+            } else {
+                keysByURL[keyURL] = try await fetcher.fetch(keyURL)
+            }
         }
         return HLSAES128KeySet(keysByURL: keysByURL)
     }
@@ -93,7 +102,7 @@ package actor HLSAES128KeyCache {
     }
 }
 
-private struct HLSAES128KeyFetcher: Sendable {
+struct HLSAES128KeyFetcher: Sendable {
     private let client: HLSHTTPClient
     private let retryPolicy: (any RetryPolicy)?
     private let retryCoordinator: RetryCoordinator

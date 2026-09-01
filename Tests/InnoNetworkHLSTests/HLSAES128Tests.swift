@@ -454,9 +454,12 @@ extension HLSDownloaderTests {
         )
     }
 
-    @Test("offline packages persist plaintext and remove key declarations")
+    @Test("offline packages preload, decrypt, and remove key declarations")
     func localizesDecryptedAES128Package() async throws {
         let playlistURL = try #require(
+            URL(string: "https://media.example/offline-master.m3u8")
+        )
+        let mediaURL = try #require(
             URL(string: "https://media.example/encrypted.m3u8")
         )
         let keyURL = try #require(
@@ -484,10 +487,9 @@ extension HLSDownloaderTests {
                 data: Data(
                     """
                     #EXTM3U
-                    #EXT-X-KEY:METHOD=AES-128,URI="key.bin",IV=0x101112131415161718191a1b1c1d1e1f
-                    #EXTINF:1,
-                    segment.ts
-                    #EXT-X-ENDLIST
+                    #EXT-X-SESSION-KEY:METHOD=AES-128,URI="key.bin"
+                    #EXT-X-STREAM-INF:BANDWIDTH=1000
+                    encrypted.m3u8
 
                     """.utf8
                 ),
@@ -496,10 +498,29 @@ extension HLSDownloaderTests {
             for: playlistURL
         )
         HLSURLProtocol.register(
-            .success(
+            .delayedSuccess(
+                statusCode: 200,
+                data: Data(
+                    """
+                    #EXTM3U
+                    #EXT-X-KEY:METHOD=AES-128,URI="key.bin",IV=0x101112131415161718191a1b1c1d1e1f
+                    #EXTINF:1,
+                    segment.ts
+                    #EXT-X-ENDLIST
+
+                    """.utf8
+                ),
+                headers: [:],
+                delay: 0.1
+            ),
+            for: mediaURL
+        )
+        HLSURLProtocol.register(
+            .delayedSuccess(
                 statusCode: 200,
                 data: key,
-                headers: ["Content-Length": "16"]
+                headers: ["Content-Length": "16"],
+                delay: 0.1
             ),
             for: keyURL
         )
@@ -528,7 +549,10 @@ extension HLSDownloaderTests {
                 storage: HLSOfflinePackageStoragePack(
                     diskCapacityPolicy: .disabled
                 ),
-                transfer: HLSTransferPack(retryPolicy: nil)
+                transfer: HLSTransferPack(
+                    retryPolicy: nil,
+                    sessionKeyPreloadPolicy: .identityAES128
+                )
             )
         ).downloadPackage(
             sourceURL: playlistURL,
@@ -552,6 +576,575 @@ extension HLSDownloaderTests {
             try Data(contentsOf: localizedResourceURL)
                 == plaintext
         )
+        #expect(HLSURLProtocol.maximumActiveRequestCount() >= 2)
+        #expect(
+            HLSURLProtocol.capturedRequests().count {
+                $0.url == keyURL
+            } == 1
+        )
+    }
+
+    @Test("session key preload overlaps media resolution and is reused")
+    func preloadsSessionKeyDuringMediaResolution() async throws {
+        let masterURL = try #require(
+            URL(string: "https://media.example/master.m3u8")
+        )
+        let mediaURL = try #require(
+            URL(string: "https://media.example/media.m3u8")
+        )
+        let keyURL = try #require(
+            URL(string: "https://media.example/key.bin")
+        )
+        let segmentURL = try #require(
+            URL(string: "https://media.example/segment.ts")
+        )
+        let key = Data(0..<16)
+        let initializationVector = Data(16..<32)
+        let plaintext = Data("session key preload".utf8)
+        let ciphertext = try aes128Encrypt(
+            plaintext,
+            key: key,
+            initializationVector: initializationVector
+        )
+        let session = makeAES128Session()
+        defer {
+            session.invalidateAndCancel()
+            HLSURLProtocol.reset()
+        }
+        HLSURLProtocol.register(
+            .success(
+                statusCode: 200,
+                data: Data(
+                    """
+                    #EXTM3U
+                    #EXT-X-SESSION-KEY:METHOD=AES-128,URI="key.bin"
+                    #EXT-X-STREAM-INF:BANDWIDTH=1000
+                    media.m3u8
+
+                    """.utf8
+                ),
+                headers: [:]
+            ),
+            for: masterURL
+        )
+        HLSURLProtocol.register(
+            .delayedSuccess(
+                statusCode: 200,
+                data: Data(
+                    """
+                    #EXTM3U
+                    #EXT-X-KEY:METHOD=AES-128,URI="key.bin",IV=0x101112131415161718191a1b1c1d1e1f
+                    #EXTINF:1,
+                    segment.ts
+                    #EXT-X-ENDLIST
+
+                    """.utf8
+                ),
+                headers: [:],
+                delay: 0.1
+            ),
+            for: mediaURL
+        )
+        HLSURLProtocol.register(
+            .delayedSuccess(
+                statusCode: 200,
+                data: key,
+                headers: ["Content-Length": "16"],
+                delay: 0.1
+            ),
+            for: keyURL
+        )
+        HLSURLProtocol.register(
+            .success(
+                statusCode: 200,
+                data: ciphertext,
+                headers: ["Content-Length": "\(ciphertext.count)"]
+            ),
+            for: segmentURL
+        )
+        let directoryURL = try makeAES128TemporaryDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: directoryURL)
+        }
+        let destinationURL = directoryURL.appendingPathComponent(
+            "preloaded.ts"
+        )
+
+        let event = await aes128TerminalEvent(
+            from: HLSDownloader(
+                session: session,
+                configuration: .advanced(
+                    storage: HLSStoragePack(
+                        diskCapacityPolicy: .disabled
+                    ),
+                    transfer: HLSTransferPack(
+                        retryPolicy: nil,
+                        sessionKeyPreloadPolicy: .identityAES128
+                    )
+                )
+            ).download(
+                sourceURL: masterURL,
+                destinationURL: destinationURL
+            )
+        )
+
+        guard case .completed = event else {
+            Issue.record("Expected session-key download to complete.")
+            return
+        }
+        #expect(try Data(contentsOf: destinationURL) == plaintext)
+        #expect(HLSURLProtocol.maximumActiveRequestCount() >= 2)
+        #expect(
+            HLSURLProtocol.capturedRequests().count {
+                $0.url == keyURL
+            } == 1
+        )
+    }
+
+    @Test("failed session key preload falls back to demand loading")
+    func retriesFailedSessionKeyPreloadOnDemand() async throws {
+        let masterURL = try #require(
+            URL(string: "https://media.example/fallback-master.m3u8")
+        )
+        let mediaURL = try #require(
+            URL(string: "https://media.example/fallback-media.m3u8")
+        )
+        let keyURL = try #require(
+            URL(string: "https://media.example/fallback.key")
+        )
+        let segmentURL = try #require(
+            URL(string: "https://media.example/fallback.ts")
+        )
+        let key = Data(0..<16)
+        let initializationVector = Data(16..<32)
+        let plaintext = Data("fallback key load".utf8)
+        let ciphertext = try aes128Encrypt(
+            plaintext,
+            key: key,
+            initializationVector: initializationVector
+        )
+        let session = makeAES128Session()
+        defer {
+            session.invalidateAndCancel()
+            HLSURLProtocol.reset()
+        }
+        HLSURLProtocol.register(
+            .success(
+                statusCode: 200,
+                data: Data(
+                    """
+                    #EXTM3U
+                    #EXT-X-SESSION-KEY:METHOD=AES-128,URI="fallback.key"
+                    #EXT-X-STREAM-INF:BANDWIDTH=1000
+                    fallback-media.m3u8
+
+                    """.utf8
+                ),
+                headers: [:]
+            ),
+            for: masterURL
+        )
+        HLSURLProtocol.register(
+            .delayedSuccess(
+                statusCode: 200,
+                data: Data(
+                    """
+                    #EXTM3U
+                    #EXT-X-KEY:METHOD=AES-128,URI="fallback.key",IV=0x101112131415161718191a1b1c1d1e1f
+                    #EXTINF:1,
+                    fallback.ts
+                    #EXT-X-ENDLIST
+
+                    """.utf8
+                ),
+                headers: [:],
+                delay: 0.05
+            ),
+            for: mediaURL
+        )
+        HLSURLProtocol.register(
+            .success(statusCode: 503, data: Data(), headers: [:]),
+            for: keyURL
+        )
+        HLSURLProtocol.register(
+            .success(
+                statusCode: 200,
+                data: key,
+                headers: ["Content-Length": "16"]
+            ),
+            for: keyURL
+        )
+        HLSURLProtocol.register(
+            .success(
+                statusCode: 200,
+                data: ciphertext,
+                headers: ["Content-Length": "\(ciphertext.count)"]
+            ),
+            for: segmentURL
+        )
+        let directoryURL = try makeAES128TemporaryDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: directoryURL)
+        }
+        let destinationURL = directoryURL.appendingPathComponent(
+            "fallback.ts"
+        )
+
+        let event = await aes128TerminalEvent(
+            from: HLSDownloader(
+                session: session,
+                configuration: .advanced(
+                    storage: HLSStoragePack(
+                        diskCapacityPolicy: .disabled
+                    ),
+                    transfer: HLSTransferPack(
+                        retryPolicy: nil,
+                        sessionKeyPreloadPolicy: .identityAES128
+                    )
+                )
+            ).download(
+                sourceURL: masterURL,
+                destinationURL: destinationURL
+            )
+        )
+
+        guard case .completed = event else {
+            Issue.record("Expected demand-key fallback to complete.")
+            return
+        }
+        #expect(try Data(contentsOf: destinationURL) == plaintext)
+        #expect(
+            HLSURLProtocol.capturedRequests().count {
+                $0.url == keyURL
+            } == 2
+        )
+    }
+
+    @Test("prepare never executes an enabled session key preload")
+    func preparesSessionKeyMetadataWithoutPreloading() async throws {
+        let masterURL = try #require(
+            URL(string: "https://media.example/prepare-master.m3u8")
+        )
+        let mediaURL = try #require(
+            URL(string: "https://media.example/prepare-media.m3u8")
+        )
+        let keyURL = try #require(
+            URL(string: "https://media.example/prepare.key")
+        )
+        let session = makeAES128Session()
+        defer {
+            session.invalidateAndCancel()
+            HLSURLProtocol.reset()
+        }
+        HLSURLProtocol.register(
+            .success(
+                statusCode: 200,
+                data: Data(
+                    """
+                    #EXTM3U
+                    #EXT-X-SESSION-KEY:METHOD=AES-128,URI="prepare.key"
+                    #EXT-X-STREAM-INF:BANDWIDTH=1000
+                    prepare-media.m3u8
+
+                    """.utf8
+                ),
+                headers: [:]
+            ),
+            for: masterURL
+        )
+        HLSURLProtocol.register(
+            .success(
+                statusCode: 200,
+                data: Data(
+                    """
+                    #EXTM3U
+                    #EXT-X-KEY:METHOD=AES-128,URI="prepare.key"
+                    #EXTINF:1,
+                    segment.ts
+                    #EXT-X-ENDLIST
+
+                    """.utf8
+                ),
+                headers: [:]
+            ),
+            for: mediaURL
+        )
+
+        let preparation = try await HLSDownloader(
+            session: session,
+            configuration: .advanced(
+                storage: HLSStoragePack(
+                    diskCapacityPolicy: .disabled
+                ),
+                transfer: HLSTransferPack(
+                    retryPolicy: nil,
+                    sessionKeyPreloadPolicy: .identityAES128
+                )
+            )
+        ).prepare(sourceURL: masterURL)
+
+        #expect(preparation.segmentCount == 1)
+        #expect(
+            HLSURLProtocol.capturedRequests().compactMap(\.url)
+                == [masterURL, mediaURL]
+        )
+        #expect(
+            !HLSURLProtocol.capturedRequests().contains {
+                $0.url == keyURL
+            }
+        )
+    }
+
+    @Test("unused session key preload never blocks media transfer")
+    func cancelsUnusedSessionKeyPreload() async throws {
+        let masterURL = try #require(
+            URL(string: "https://media.example/unused-master.m3u8")
+        )
+        let mediaURL = try #require(
+            URL(string: "https://media.example/unused-media.m3u8")
+        )
+        let keyURL = try #require(
+            URL(string: "https://media.example/unused.key")
+        )
+        let segmentURL = try #require(
+            URL(string: "https://media.example/clear.ts")
+        )
+        let session = makeAES128Session()
+        defer {
+            session.invalidateAndCancel()
+            HLSURLProtocol.reset()
+        }
+        HLSURLProtocol.register(
+            .success(
+                statusCode: 200,
+                data: Data(
+                    """
+                    #EXTM3U
+                    #EXT-X-SESSION-KEY:METHOD=AES-128,URI="unused.key"
+                    #EXT-X-STREAM-INF:BANDWIDTH=1000
+                    unused-media.m3u8
+
+                    """.utf8
+                ),
+                headers: [:]
+            ),
+            for: masterURL
+        )
+        HLSURLProtocol.register(
+            .delayedSuccess(
+                statusCode: 200,
+                data: Data(
+                    """
+                    #EXTM3U
+                    #EXTINF:1,
+                    clear.ts
+                    #EXT-X-ENDLIST
+
+                    """.utf8
+                ),
+                headers: [:],
+                delay: 0.05
+            ),
+            for: mediaURL
+        )
+        HLSURLProtocol.register(
+            .unfinished(
+                statusCode: 200,
+                data: Data(0..<16),
+                headers: ["Content-Length": "16"]
+            ),
+            for: keyURL
+        )
+        HLSURLProtocol.register(
+            .success(
+                statusCode: 200,
+                data: Data("clear media".utf8),
+                headers: [:]
+            ),
+            for: segmentURL
+        )
+        let directoryURL = try makeAES128TemporaryDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: directoryURL)
+        }
+
+        let event = await aes128TerminalEvent(
+            from: HLSDownloader(
+                session: session,
+                configuration: .advanced(
+                    storage: HLSStoragePack(
+                        diskCapacityPolicy: .disabled
+                    ),
+                    transfer: HLSTransferPack(
+                        retryPolicy: nil,
+                        sessionKeyPreloadPolicy: .identityAES128
+                    )
+                )
+            ).download(
+                sourceURL: masterURL,
+                destinationURL:
+                    directoryURL.appendingPathComponent("clear.ts")
+            )
+        )
+
+        guard case .completed = event else {
+            Issue.record("An unused key preload blocked clear media.")
+            return
+        }
+        #expect(
+            HLSURLProtocol.capturedRequests().contains {
+                $0.url == keyURL
+            }
+        )
+    }
+
+    @Test("session key preload is bounded and ignores nonidentity formats")
+    func boundsSessionKeyPreloadCandidates() async throws {
+        let masterURL = try #require(
+            URL(string: "https://media.example/bounded-master.m3u8")
+        )
+        let mediaURL = try #require(
+            URL(string: "https://media.example/bounded-media.m3u8")
+        )
+        let segmentURL = try #require(
+            URL(string: "https://media.example/bounded.ts")
+        )
+        let identityKeyURLs = try (0..<5).map { index in
+            try #require(
+                URL(string: "https://media.example/key-\(index).bin")
+            )
+        }
+        let fairPlayURL = try #require(
+            URL(string: "skd://asset")
+        )
+        let session = makeAES128Session()
+        defer {
+            session.invalidateAndCancel()
+            HLSURLProtocol.reset()
+        }
+        let keyDeclarations = (0..<5).map {
+            "#EXT-X-SESSION-KEY:METHOD=AES-128,URI=\"key-\($0).bin\""
+        }.joined(separator: "\n")
+        HLSURLProtocol.register(
+            .success(
+                statusCode: 200,
+                data: Data(
+                    """
+                    #EXTM3U
+                    #EXT-X-VERSION:5
+                    \(keyDeclarations)
+                    #EXT-X-SESSION-KEY:METHOD=SAMPLE-AES,URI="skd://asset",KEYFORMAT="com.apple.streamingkeydelivery"
+                    #EXT-X-STREAM-INF:BANDWIDTH=1000
+                    bounded-media.m3u8
+
+                    """.utf8
+                ),
+                headers: [:]
+            ),
+            for: masterURL
+        )
+        HLSURLProtocol.register(
+            .delayedSuccess(
+                statusCode: 200,
+                data: Data(
+                    """
+                    #EXTM3U
+                    #EXTINF:1,
+                    bounded.ts
+                    #EXT-X-ENDLIST
+
+                    """.utf8
+                ),
+                headers: [:],
+                delay: 0.1
+            ),
+            for: mediaURL
+        )
+        for keyURL in identityKeyURLs {
+            HLSURLProtocol.register(
+                .unfinished(
+                    statusCode: 200,
+                    data: Data(0..<16),
+                    headers: ["Content-Length": "16"]
+                ),
+                for: keyURL
+            )
+        }
+        HLSURLProtocol.register(
+            .success(
+                statusCode: 200,
+                data: Data("bounded media".utf8),
+                headers: [:]
+            ),
+            for: segmentURL
+        )
+        let directoryURL = try makeAES128TemporaryDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: directoryURL)
+        }
+
+        let event = await aes128TerminalEvent(
+            from: HLSDownloader(
+                session: session,
+                configuration: .advanced(
+                    storage: HLSStoragePack(
+                        diskCapacityPolicy: .disabled
+                    ),
+                    transfer: HLSTransferPack(
+                        retryPolicy: nil,
+                        sessionKeyPreloadPolicy: .identityAES128
+                    )
+                )
+            ).download(
+                sourceURL: masterURL,
+                destinationURL:
+                    directoryURL.appendingPathComponent("bounded.ts")
+            )
+        )
+
+        guard case .completed = event else {
+            Issue.record(
+                "Expected bounded session-key preload to complete, got \(String(reflecting: event))."
+            )
+            return
+        }
+        let requestedURLs = Set(
+            HLSURLProtocol.capturedRequests().compactMap(\.url)
+        )
+        #expect(
+            requestedURLs.isSuperset(
+                of: Set(identityKeyURLs.prefix(4))
+            )
+        )
+        #expect(!requestedURLs.contains(identityKeyURLs[4]))
+        #expect(!requestedURLs.contains(fairPlayURL))
+    }
+
+    @Test("session key preload preserves structured cancellation")
+    func cancelsRequiredSessionKeyPreload() async throws {
+        let keyURL = try #require(
+            URL(string: "https://media.example/cancelled.key")
+        )
+        let keyTask = Task<Data?, Never> {
+            try? await ContinuousClock().sleep(
+                for: .seconds(3_600)
+            )
+            return Data(0..<16)
+        }
+        let preload = HLSAES128SessionKeyPreload(
+            tasksByURL: [keyURL: keyTask]
+        )
+        let resolution = Task {
+            try await preload.resolve(requiredKeyURLs: [keyURL])
+        }
+        await Task.yield()
+
+        resolution.cancel()
+
+        await #expect(throws: CancellationError.self) {
+            try await resolution.value
+        }
+        #expect(keyTask.isCancelled)
     }
 
     @Test("media sequence numbers derive distinct AES-128 IVs")

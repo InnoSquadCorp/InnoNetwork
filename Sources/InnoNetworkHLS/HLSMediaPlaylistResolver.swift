@@ -48,11 +48,37 @@ struct HLSMediaPlaylistResolver: Sendable {
         requestTimeout: TimeInterval = 15,
         disablesCaching: Bool = false
     ) async throws -> HLSResolvedMediaSelection {
-        let document = try await playlistResolver.resolveDocument(
+        let document = try await resolveEntryDocument(
             from: sourceURL,
             requestTimeout: requestTimeout,
             disablesCaching: disablesCaching
         )
+        return try await resolve(
+            from: document,
+            session: session,
+            requestTimeout: requestTimeout,
+            disablesCaching: disablesCaching
+        )
+    }
+
+    func resolveEntryDocument(
+        from sourceURL: URL,
+        requestTimeout: TimeInterval = 15,
+        disablesCaching: Bool = false
+    ) async throws -> HLSResolvedPlaylistDocument {
+        try await playlistResolver.resolveDocument(
+            from: sourceURL,
+            requestTimeout: requestTimeout,
+            disablesCaching: disablesCaching
+        )
+    }
+
+    func resolve(
+        from document: HLSResolvedPlaylistDocument,
+        session: HLSContentSteeringSession,
+        requestTimeout: TimeInterval = 15,
+        disablesCaching: Bool = false
+    ) async throws -> HLSResolvedMediaSelection {
         let playlist = document.playlist
         guard playlist.kind == .multivariant else {
             return HLSResolvedMediaSelection(

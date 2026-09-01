@@ -42,6 +42,7 @@ InnoNetworkHLS	swift.enum	HLSResumePolicy
 InnoNetworkHLS	swift.enum	HLSSessionDataContent
 InnoNetworkHLS	swift.enum	HLSSessionDataFormat
 InnoNetworkHLS	swift.enum	HLSSessionDataValue
+InnoNetworkHLS	swift.enum	HLSSessionKeyPreloadPolicy
 InnoNetworkHLS	swift.enum	HLSUnsupportedMediaFeature
 InnoNetworkHLS	swift.enum	HLSVariantSelectionPolicy
 InnoNetworkHLS	swift.enum	HLSVideoChannelLayout
@@ -297,6 +298,8 @@ InnoNetworkHLS	swift.enum.case	HLSSessionDataFormat.raw
 InnoNetworkHLS	swift.enum.case	HLSSessionDataValue.json(_:)
 InnoNetworkHLS	swift.enum.case	HLSSessionDataValue.raw(_:)
 InnoNetworkHLS	swift.enum.case	HLSSessionDataValue.string(_:)
+InnoNetworkHLS	swift.enum.case	HLSSessionKeyPreloadPolicy.disabled
+InnoNetworkHLS	swift.enum.case	HLSSessionKeyPreloadPolicy.identityAES128
 InnoNetworkHLS	swift.enum.case	HLSUnsupportedMediaFeature.dateRangeExternalResource
 InnoNetworkHLS	swift.enum.case	HLSUnsupportedMediaFeature.deltaUpdate
 InnoNetworkHLS	swift.enum.case	HLSUnsupportedMediaFeature.discontinuity
@@ -355,7 +358,7 @@ InnoNetworkHLS	swift.init	HLSRendition.init(kind:groupID:name:language:associate
 InnoNetworkHLS	swift.init	HLSRequestPolicy.init(eventObservers:adapter:)
 InnoNetworkHLS	swift.init	HLSStoragePack.init(maximumMediaResourceBytes:maximumTotalDownloadBytes:diskCapacityPolicy:resumePolicy:)
 InnoNetworkHLS	swift.init	HLSSubtitleProvenancePolicy.init(machineGenerated:translation:)
-InnoNetworkHLS	swift.init	HLSTransferPack.init(maximumConcurrentResourceTransfers:retryPolicy:)
+InnoNetworkHLS	swift.init	HLSTransferPack.init(maximumConcurrentResourceTransfers:retryPolicy:sessionKeyPreloadPolicy:)
 InnoNetworkHLS	swift.init	HLSVariant.init(url:bandwidth:averageBandwidth:score:width:height:audioGroupID:subtitleGroupID:videoGroupID:closedCaptions:codecs:supplementalCodecs:frameRate:videoRange:stableID:pathwayID:)
 InnoNetworkHLS	swift.init	PlaylistResolver.init()
 InnoNetworkHLS	swift.init	PlaylistResolver.init(session:requestContext:requestAdapter:)

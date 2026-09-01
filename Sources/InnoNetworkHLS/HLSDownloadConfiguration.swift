@@ -76,18 +76,22 @@ public struct HLSStoragePack: Sendable {
     }
 }
 
-/// Groups bounded media-resource concurrency and retry behavior.
+/// Groups bounded media-resource concurrency, retry behavior, and optional
+/// session-key preparation.
 public struct HLSTransferPack: Sendable {
     private let maximumConcurrentResourceTransfers: Int
     private let retryPolicy: (any RetryPolicy)?
+    private let sessionKeyPreloadPolicy: HLSSessionKeyPreloadPolicy
 
     public init(
         maximumConcurrentResourceTransfers: Int = 3,
-        retryPolicy: (any RetryPolicy)? = ExponentialBackoffRetryPolicy()
+        retryPolicy: (any RetryPolicy)? = ExponentialBackoffRetryPolicy(),
+        sessionKeyPreloadPolicy: HLSSessionKeyPreloadPolicy = .disabled
     ) {
         self.maximumConcurrentResourceTransfers =
             maximumConcurrentResourceTransfers
         self.retryPolicy = retryPolicy
+        self.sessionKeyPreloadPolicy = sessionKeyPreloadPolicy
     }
 
     func apply(to builder: inout HLSDownloadConfiguration.Builder) {
@@ -95,6 +99,7 @@ public struct HLSTransferPack: Sendable {
         builder.maximumConcurrentResourceTransfers =
             settings.maximumConcurrentResourceTransfers
         builder.retryPolicy = settings.retryPolicy
+        builder.sessionKeyPreloadPolicy = settings.sessionKeyPreloadPolicy
     }
 
     func resolvedSettings() -> HLSResolvedTransferSettings {
@@ -103,7 +108,8 @@ public struct HLSTransferPack: Sendable {
                 max(1, maximumConcurrentResourceTransfers),
                 8
             ),
-            retryPolicy: retryPolicy
+            retryPolicy: retryPolicy,
+            sessionKeyPreloadPolicy: sessionKeyPreloadPolicy
         )
     }
 }
@@ -111,6 +117,7 @@ public struct HLSTransferPack: Sendable {
 struct HLSResolvedTransferSettings: Sendable {
     let maximumConcurrentResourceTransfers: Int
     let retryPolicy: (any RetryPolicy)?
+    let sessionKeyPreloadPolicy: HLSSessionKeyPreloadPolicy
 }
 
 /// Configures bounded HLS VOD transfer and assembly behavior.
@@ -127,6 +134,7 @@ public struct HLSDownloadConfiguration: Sendable {
     let variantSelectionPolicy: HLSVariantSelectionPolicy
     let resumePolicy: HLSResumePolicy
     let contentSteering: HLSContentSteeringSettings
+    let sessionKeyPreloadPolicy: HLSSessionKeyPreloadPolicy
 
     struct Builder {
         var maximumMediaResourceBytes = 128 * 1_024 * 1_024
@@ -139,6 +147,7 @@ public struct HLSDownloadConfiguration: Sendable {
         var variantSelectionPolicy: HLSVariantSelectionPolicy = .highestQuality
         var resumePolicy: HLSResumePolicy = .automatic
         var contentSteering = HLSContentSteeringPack().resolvedSettings
+        var sessionKeyPreloadPolicy: HLSSessionKeyPreloadPolicy = .disabled
     }
 
     private init(builder: Builder) {
@@ -151,6 +160,7 @@ public struct HLSDownloadConfiguration: Sendable {
         self.variantSelectionPolicy = builder.variantSelectionPolicy
         self.resumePolicy = builder.resumePolicy
         self.contentSteering = builder.contentSteering
+        self.sessionKeyPreloadPolicy = builder.sessionKeyPreloadPolicy
     }
 
     /// Returns the conservative configuration used by ``HLSDownloader``.
@@ -158,7 +168,8 @@ public struct HLSDownloadConfiguration: Sendable {
     /// The default limits each media resource to 128 MiB, the assembled output
     /// to 8 GiB, requires 512 MiB of currently available disk capacity,
     /// resumes from completed media-resource boundaries, prefetches at most
-    /// three resources, and selects the highest-quality supported variant.
+    /// three resources, leaves session-key preloading disabled, and selects
+    /// the highest-quality supported variant.
     /// Transient GET failures receive up to three exponential-backoff retries
     /// through InnoNetwork's core ``RetryPolicy``.
     public static func safeDefaults() -> HLSDownloadConfiguration {
@@ -170,7 +181,7 @@ public struct HLSDownloadConfiguration: Sendable {
     /// Invalid storage and transfer values are normalized to safe runtime
     /// bounds. Byte limits are at least one, disk thresholds are non-negative,
     /// and concurrency is clamped to `1...8`. Pass `nil` to
-    /// ``HLSTransferPack/init(maximumConcurrentResourceTransfers:retryPolicy:)``
+    /// ``HLSTransferPack/init(maximumConcurrentResourceTransfers:retryPolicy:sessionKeyPreloadPolicy:)``
     /// to disable automatic retries.
     public static func advanced(
         storage: HLSStoragePack = HLSStoragePack(),

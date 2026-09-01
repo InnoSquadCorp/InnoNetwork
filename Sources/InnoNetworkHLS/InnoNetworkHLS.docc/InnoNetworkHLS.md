@@ -76,7 +76,8 @@ let configuration = HLSDownloadConfiguration.advanced(
     ),
     transfer: HLSTransferPack(
         maximumConcurrentResourceTransfers: 2,
-        retryPolicy: ExponentialBackoffRetryPolicy(maxRetries: 2)
+        retryPolicy: ExponentialBackoffRetryPolicy(maxRetries: 2),
+        sessionKeyPreloadPolicy: .identityAES128
     )
 )
 let downloader = HLSDownloader(
@@ -519,6 +520,16 @@ enforces HLS compatibility versions 8 and 11, and never recursively expands a
 replacement value. Offline localization strips definitions and rejects any
 unresolved reference so signed query values are not persisted.
 
+Multivariant `EXT-X-SESSION-KEY` declarations remain metadata by default.
+Set ``HLSTransferPack/init(maximumConcurrentResourceTransfers:retryPolicy:sessionKeyPreloadPolicy:)``
+to `.identityAES128` to overlap at most four identity AES-128 key requests with
+media-playlist resolution. Only keys referenced by the selected media are
+awaited and retained in the operation's memory-only key set; unused requests
+are cancelled, and a failed single-attempt preload falls back to demand loading
+with the configured retry policy. Every `prepare` operation remains key-I/O
+free. FairPlay and other nonidentity key formats are never fetched by this
+policy.
+
 Multivariant inspection exposes the resolved
 ``HLSPlaylist/contentSteering`` declaration. Download configuration enables
 bounded Content Steering by default through ``HLSContentSteeringPack``. The
@@ -772,6 +783,7 @@ so adding an HLS target cannot silently leave it outside release validation.
 - ``HLSDownloadConfiguration``
 - ``HLSStoragePack``
 - ``HLSTransferPack``
+- ``HLSSessionKeyPreloadPolicy``
 - ``HLSDiskCapacityPolicy``
 - ``HLSResumePolicy``
 - ``HLSDownloadPreparation``

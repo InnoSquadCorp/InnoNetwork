@@ -53,6 +53,7 @@ public struct HLSOfflinePackageConfiguration: Sendable {
     let variantSelectionPolicy: HLSVariantSelectionPolicy
     let renditionPack: HLSOfflineRenditionPack
     let contentSteering: HLSContentSteeringSettings
+    let sessionKeyPreloadPolicy: HLSSessionKeyPreloadPolicy
 
     struct Builder {
         var maximumMediaResourceBytes = 128 * 1_024 * 1_024
@@ -69,6 +70,7 @@ public struct HLSOfflinePackageConfiguration: Sendable {
             .highestQuality
         var renditionPack = HLSOfflineRenditionPack()
         var contentSteering = HLSContentSteeringPack().resolvedSettings
+        var sessionKeyPreloadPolicy: HLSSessionKeyPreloadPolicy = .disabled
     }
 
     private init(builder: Builder) {
@@ -85,6 +87,7 @@ public struct HLSOfflinePackageConfiguration: Sendable {
             builder.variantSelectionPolicy
         self.renditionPack = builder.renditionPack
         self.contentSteering = builder.contentSteering
+        self.sessionKeyPreloadPolicy = builder.sessionKeyPreloadPolicy
     }
 
     /// Returns conservative package defaults.
@@ -117,6 +120,8 @@ public struct HLSOfflinePackageConfiguration: Sendable {
         builder.maximumConcurrentResourceTransfers =
             transferSettings.maximumConcurrentResourceTransfers
         builder.retryPolicy = transferSettings.retryPolicy
+        builder.sessionKeyPreloadPolicy =
+            transferSettings.sessionKeyPreloadPolicy
         builder.variantSelectionPolicy = variantSelectionPolicy
         builder.renditionPack = renditions
         builder.contentSteering = contentSteering.resolvedSettings

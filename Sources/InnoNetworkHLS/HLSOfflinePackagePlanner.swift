@@ -5,6 +5,7 @@ struct HLSOfflinePackagePlan: Sendable {
     let selectedVariant: HLSVariant?
     let selectedIFrameVariant: HLSVariant?
     let tracks: [HLSOfflinePackageTrackPlan]
+    let preloadedAES128Keys: HLSAES128KeySet
 
     var resourceCount: Int {
         tracks.reduce(0) { $0 + $1.resources.count }
@@ -49,12 +50,14 @@ struct HLSOfflinePackagePlanner: Sendable {
     private let contentSteering: HLSContentSteeringSettings
     private let isContentSteeringEnabled: Bool
     private let clock: any InnoNetworkClock
+    private let sessionKeyPreloader: HLSAES128SessionKeyPreloader
 
     init(
         client: HLSHTTPClient,
         variantSelectionPolicy: HLSVariantSelectionPolicy,
         renditionPack: HLSOfflineRenditionPack,
         contentSteering: HLSContentSteeringSettings,
+        sessionKeyPreloadPolicy: HLSSessionKeyPreloadPolicy,
         clock: any InnoNetworkClock
     ) {
         self.playlistResolver = PlaylistResolver(client: client)
@@ -67,14 +70,27 @@ struct HLSOfflinePackagePlanner: Sendable {
         self.contentSteering = contentSteering
         self.isContentSteeringEnabled = contentSteering.isEnabled
         self.clock = clock
+        self.sessionKeyPreloader = HLSAES128SessionKeyPreloader(
+            client: client,
+            policy: sessionKeyPreloadPolicy,
+            clock: clock
+        )
     }
 
     func resolve(
-        sourceURL: URL
+        sourceURL: URL,
+        preloadsSessionKeys: Bool = false
     ) async throws -> HLSOfflinePackagePlan {
         let sourceDocument = try await playlistResolver.resolveDocument(
             from: sourceURL
         )
+        let sessionKeyPreload = sessionKeyPreloader.start(
+            sessionKeys: sourceDocument.playlist.sessionKeys,
+            isDownloadExecution: preloadsSessionKeys
+        )
+        defer {
+            sessionKeyPreload.cancel()
+        }
         guard sourceDocument.playlist.kind == .multivariant else {
             return HLSOfflinePackagePlan(
                 selectedVariant: nil,
@@ -93,7 +109,8 @@ struct HLSOfflinePackagePlanner: Sendable {
                                 "media/primary/index.m3u8"
                         )
                     )
-                ]
+                ],
+                preloadedAES128Keys: .empty
             )
         }
 
@@ -170,7 +187,20 @@ struct HLSOfflinePackagePlanner: Sendable {
                         reason: reason
                     )
                 )
-                return plan
+                let requiredKeyURLs = Set(
+                    plan.tracks.flatMap(\.resources).compactMap {
+                        $0.encryption?.keyURL
+                    }
+                )
+                return HLSOfflinePackagePlan(
+                    selectedVariant: plan.selectedVariant,
+                    selectedIFrameVariant: plan.selectedIFrameVariant,
+                    tracks: plan.tracks,
+                    preloadedAES128Keys:
+                        try await sessionKeyPreload.resolve(
+                            requiredKeyURLs: requiredKeyURLs
+                        )
+                )
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
@@ -324,7 +354,8 @@ struct HLSOfflinePackagePlanner: Sendable {
         return HLSOfflinePackagePlan(
             selectedVariant: selectedVariant,
             selectedIFrameVariant: selectedIFrameVariant,
-            tracks: tracks
+            tracks: tracks,
+            preloadedAES128Keys: .empty
         )
     }
 

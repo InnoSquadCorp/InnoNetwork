@@ -113,6 +113,12 @@ Versioning.
   `KEYFORMAT`-isolated key state as complete media resources. Identity AES-128
   selection is declaration-order independent, while every context freezes the
   active key at its own playlist boundary.
+- VOD and offline-package transfers can opt into bounded identity AES-128
+  `EXT-X-SESSION-KEY` preloading through `HLSTransferPack`. Up to four keys
+  overlap media-playlist resolution, only selected-media keys are awaited and
+  reused, unused work is cancelled, and failed single-attempt speculation
+  falls back to the configured demand retry path. `prepare()` remains key-I/O
+  free.
 - `HLSLiveDVRRecorder` captures complete live TS or fMP4 segments into a
   bounded, URL-free local VOD package. It supports record-from-now and
   current-window starts, exact byte-range validation, progress events,

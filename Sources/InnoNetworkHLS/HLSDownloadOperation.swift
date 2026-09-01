@@ -26,6 +26,8 @@ struct HLSDownloadOperation: Sendable {
             contentSteering: configuration.contentSteering,
             maximumTransferBytes:
                 configuration.maximumMediaResourceBytes,
+            sessionKeyPreloadPolicy:
+                configuration.sessionKeyPreloadPolicy,
             clock: clock
         )
         self.configuration = configuration
@@ -124,13 +126,19 @@ struct HLSDownloadOperation: Sendable {
                 policy: configuration.diskCapacityPolicy
             )
 
-            let plan = try await planner.resolve(sourceURL: sourceURL)
+            let plan = try await planner.resolve(
+                sourceURL: sourceURL,
+                preloadsSessionKeys: true
+            )
             let resourcePlan = plan.resourcePlan
             let aes128KeySet = try await HLSAES128KeyResolver(
                 client: client,
                 retryPolicy: configuration.retryPolicy,
                 clock: clock
-            ).resolve(resources: resourcePlan.transfers)
+            ).resolve(
+                resources: resourcePlan.transfers,
+                preloadedKeys: plan.preloadedAES128Keys
+            )
             let contentSteeringRecovery =
                 makeContentSteeringRecovery(for: plan)
             let resourcePipeline = HLSResourcePipeline(

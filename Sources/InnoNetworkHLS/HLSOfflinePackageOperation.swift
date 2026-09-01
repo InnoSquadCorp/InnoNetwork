@@ -26,6 +26,8 @@ struct HLSOfflinePackageOperation: Sendable {
                 configuration.variantSelectionPolicy,
             renditionPack: configuration.renditionPack,
             contentSteering: configuration.contentSteering,
+            sessionKeyPreloadPolicy:
+                configuration.sessionKeyPreloadPolicy,
             clock: clock
         )
         self.configuration = configuration
@@ -142,7 +144,8 @@ struct HLSOfflinePackageOperation: Sendable {
                 policy: configuration.diskCapacityPolicy
             )
             let plan = try await planner.resolve(
-                sourceURL: sourceURL
+                sourceURL: sourceURL,
+                preloadsSessionKeys: true
             )
             let transfersByTrack = plan.tracks.map { track in
                 track.resources.map {
@@ -157,7 +160,10 @@ struct HLSOfflinePackageOperation: Sendable {
                 client: client,
                 retryPolicy: configuration.retryPolicy,
                 clock: clock
-            ).resolve(resources: transfersByTrack.flatMap { $0 })
+            ).resolve(
+                resources: transfersByTrack.flatMap { $0 },
+                preloadedKeys: plan.preloadedAES128Keys
+            )
             let store = HLSOfflinePackageResumeStore(
                 destinationURL: destinationDirectoryURL
             )

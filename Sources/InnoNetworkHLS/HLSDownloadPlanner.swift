@@ -12,6 +12,7 @@ struct HLSResolvedDownloadPlan: Sendable {
     let pathwayID: String?
     let pathwayCandidates: [HLSMediaPlaylistCandidate]
     let contentSteeringSession: HLSContentSteeringSession
+    let preloadedAES128Keys: HLSAES128KeySet
 
     func preparation(
         sourceURL: URL
@@ -33,12 +34,14 @@ struct HLSDownloadPlanner: Sendable {
     private let maximumTransferBytes: Int
     private let contentSteering: HLSContentSteeringSettings
     private let clock: any InnoNetworkClock
+    private let sessionKeyPreloader: HLSAES128SessionKeyPreloader
 
     init(
         client: HLSHTTPClient,
         selectionPolicy: HLSVariantSelectionPolicy,
         contentSteering: HLSContentSteeringSettings,
         maximumTransferBytes: Int,
+        sessionKeyPreloadPolicy: HLSSessionKeyPreloadPolicy,
         clock: any InnoNetworkClock
     ) {
         self.mediaPlaylistResolver = HLSMediaPlaylistResolver(
@@ -49,17 +52,34 @@ struct HLSDownloadPlanner: Sendable {
         self.maximumTransferBytes = maximumTransferBytes
         self.contentSteering = contentSteering
         self.clock = clock
+        self.sessionKeyPreloader = HLSAES128SessionKeyPreloader(
+            client: client,
+            policy: sessionKeyPreloadPolicy,
+            clock: clock
+        )
     }
 
     func resolve(
-        sourceURL: URL
+        sourceURL: URL,
+        preloadsSessionKeys: Bool = false
     ) async throws -> HLSResolvedDownloadPlan {
         let contentSteeringSession = HLSContentSteeringSession(
             settings: contentSteering,
             now: { clock.now() }
         )
+        let sourceDocument =
+            try await mediaPlaylistResolver.resolveEntryDocument(
+                from: sourceURL
+            )
+        let sessionKeyPreload = sessionKeyPreloader.start(
+            sessionKeys: sourceDocument.playlist.sessionKeys,
+            isDownloadExecution: preloadsSessionKeys
+        )
+        defer {
+            sessionKeyPreload.cancel()
+        }
         let selection = try await mediaPlaylistResolver.resolve(
-            from: sourceURL,
+            from: sourceDocument,
             session: contentSteeringSession
         )
         guard
@@ -69,6 +89,15 @@ struct HLSDownloadPlanner: Sendable {
             throw HLSDownloadError.invalidPlaylist
         }
         try HLSMediaPlaylistValidator.validate(media)
+        let resourcePlan = HLSResourcePlan(
+            resources: media.resources,
+            maximumTransferBytes: maximumTransferBytes
+        )
+        let requiredKeyURLs = Set(
+            resourcePlan.transfers.compactMap {
+                $0.encryption?.keyURL
+            }
+        )
         return HLSResolvedDownloadPlan(
             mediaPlaylistURL: selection.playlist.sourceURL,
             mediaPlaylistIdentity: selection.mediaPlaylistIdentity,
@@ -76,13 +105,13 @@ struct HLSDownloadPlanner: Sendable {
             availableRenditions: selection.renditions,
             mediaContainer: mediaContainer,
             media: media,
-            resourcePlan: HLSResourcePlan(
-                resources: media.resources,
-                maximumTransferBytes: maximumTransferBytes
-            ),
+            resourcePlan: resourcePlan,
             pathwayID: selection.pathwayID,
             pathwayCandidates: selection.pathwayCandidates,
-            contentSteeringSession: contentSteeringSession
+            contentSteeringSession: contentSteeringSession,
+            preloadedAES128Keys: try await sessionKeyPreload.resolve(
+                requiredKeyURLs: requiredKeyURLs
+            )
         )
     }
 
