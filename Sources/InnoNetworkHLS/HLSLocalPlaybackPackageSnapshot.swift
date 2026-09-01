@@ -15,11 +15,15 @@ package struct HLSLocalPlaybackPackageSnapshot: Sendable {
     private static let maximumPlaylistByteCount = 8 * 1_024 * 1_024
     private static let maximumTotalPlaylistByteCount = 32 * 1_024 * 1_024
     private static let maximumPlaylistCount = 256
+    private static let maximumAssetListCount = 256
+    private static let maximumAssetListByteCount = 2 * 1_024 * 1_024
+    private static let maximumAssetsPerList = 1_000
     private static let maximumReferenceUTF8ByteCount = 4_096
 
     package let directoryURL: URL
     package let entryRelativePath: String
     package let playlistDataByRelativePath: [String: Data]
+    package let frozenResourceDataByRelativePath: [String: Data]
 
     package init(source: HLSLocalPlaybackSource) throws {
         let sourceDirectoryURL = source.packageDirectoryURL
@@ -102,7 +106,9 @@ package struct HLSLocalPlaybackPackageSnapshot: Sendable {
 
         var pending = [entryURL]
         var visited: Set<String> = []
+        var visitedAssetLists: Set<String> = []
         var playlistDataByRelativePath: [String: Data] = [:]
+        var frozenResourceDataByRelativePath: [String: Data] = [:]
         var totalByteCount = 0
 
         while let playlistURL = pending.popLast() {
@@ -154,7 +160,74 @@ package struct HLSLocalPlaybackPackageSnapshot: Sendable {
                     relativeTo: playlistURL,
                     in: directoryURL
                 )
-                if reference.isPlaylist
+                if reference.isAssetList {
+                    let assetListRelativePath = try Self.relativePath(
+                        of: referencedURL,
+                        in: directoryURL
+                    )
+                    if visitedAssetLists.insert(
+                        assetListRelativePath
+                    ).inserted {
+                        guard
+                            visitedAssetLists.count
+                                <= Self.maximumAssetListCount
+                        else {
+                            throw HLSLocalPlaybackPackageValidationError
+                                .unsafePackageContents
+                        }
+                        let assetListData = try Self.regularFileData(
+                            at: referencedURL,
+                            in: directoryURL,
+                            maximumByteCount:
+                                Self.maximumAssetListByteCount
+                        )
+                        let (nextTotal, assetListOverflow) =
+                            totalByteCount.addingReportingOverflow(
+                                assetListData.count
+                            )
+                        guard !assetListOverflow,
+                            nextTotal
+                                <= Self.maximumTotalPlaylistByteCount
+                        else {
+                            throw HLSLocalPlaybackPackageValidationError
+                                .unsafePackageContents
+                        }
+                        totalByteCount = nextTotal
+                        let assetReferences: [String]
+                        do {
+                            assetReferences =
+                                try HLSInterstitialAssetListDecoder
+                                .decodeLocalAssetReferences(
+                                    assetListData,
+                                    maximumAssetCount:
+                                        Self.maximumAssetsPerList
+                                )
+                        } catch {
+                            throw HLSLocalPlaybackPackageValidationError
+                                .unsafePackageContents
+                        }
+                        for assetReference in assetReferences {
+                            let assetURL = try Self.localURL(
+                                assetReference,
+                                relativeTo: referencedURL,
+                                in: directoryURL
+                            )
+                            guard
+                                Self.isContainedRegularFile(
+                                    assetURL,
+                                    in: directoryURL
+                                )
+                            else {
+                                throw HLSLocalPlaybackPackageValidationError
+                                    .unsafePackageContents
+                            }
+                            pending.append(assetURL)
+                        }
+                        frozenResourceDataByRelativePath[
+                            assetListRelativePath
+                        ] = assetListData
+                    }
+                } else if reference.isPlaylist
                     || referencedURL.pathExtension.lowercased() == "m3u8"
                 {
                     guard
@@ -170,16 +243,20 @@ package struct HLSLocalPlaybackPackageSnapshot: Sendable {
                 }
             }
             playlistDataByRelativePath[relativePath] = data
+            frozenResourceDataByRelativePath[relativePath] = data
         }
 
         self.directoryURL = directoryURL
         self.entryRelativePath = entryRelativePath
         self.playlistDataByRelativePath = playlistDataByRelativePath
+        self.frozenResourceDataByRelativePath =
+            frozenResourceDataByRelativePath
     }
 
     private struct Reference {
         let value: String
         let isPlaylist: Bool
+        let isAssetList: Bool
     }
 
     private static func references(
@@ -198,7 +275,8 @@ package struct HLSLocalPlaybackPackageSnapshot: Sendable {
                 references.append(
                     Reference(
                         value: line,
-                        isPlaylist: kind == .multivariant
+                        isPlaylist: kind == .multivariant,
+                        isAssetList: false
                     )
                 )
                 continue
@@ -233,8 +311,13 @@ package struct HLSLocalPlaybackPackageSnapshot: Sendable {
                 references.append(
                     Reference(
                         value: value,
-                        isPlaylist: Self.playlistReferenceTags
-                            .contains(tag)
+                        isPlaylist:
+                            Self.playlistReferenceTags.contains(tag)
+                            || (tag == "#EXT-X-DATERANGE"
+                                && name == "X-ASSET-URI"),
+                        isAssetList:
+                            tag == "#EXT-X-DATERANGE"
+                            && name == "X-ASSET-LIST"
                     )
                 )
             }
@@ -325,6 +408,18 @@ package struct HLSLocalPlaybackPackageSnapshot: Sendable {
         at url: URL,
         in directoryURL: URL
     ) throws -> Data {
+        try regularFileData(
+            at: url,
+            in: directoryURL,
+            maximumByteCount: maximumPlaylistByteCount
+        )
+    }
+
+    private static func regularFileData(
+        at url: URL,
+        in directoryURL: URL,
+        maximumByteCount: Int
+    ) throws -> Data {
         guard isContainedRegularFile(url, in: directoryURL) else {
             throw HLSLocalPlaybackPackageValidationError
                 .unsafePackageContents
@@ -338,14 +433,14 @@ package struct HLSLocalPlaybackPackageSnapshot: Sendable {
         }
         guard let fileSize = values.fileSize,
             fileSize >= 0,
-            fileSize <= maximumPlaylistByteCount
+            fileSize <= maximumByteCount
         else {
             throw HLSLocalPlaybackPackageValidationError
                 .unsafePackageContents
         }
         do {
             let data = try Data(contentsOf: url, options: [.mappedIfSafe])
-            guard data.count <= maximumPlaylistByteCount else {
+            guard data.count <= maximumByteCount else {
                 throw HLSLocalPlaybackPackageValidationError
                     .unsafePackageContents
             }
@@ -425,7 +520,11 @@ package struct HLSLocalPlaybackPackageSnapshot: Sendable {
 
     private static let uriAttributeNamesByTag: [String: [String]] = [
         "#EXT-X-CONTENT-STEERING": ["SERVER-URI"],
-        "#EXT-X-DATERANGE": ["X-ASSET-URI", "X-URI"],
+        "#EXT-X-DATERANGE": [
+            "X-ASSET-LIST",
+            "X-ASSET-URI",
+            "X-URI",
+        ],
         "#EXT-X-I-FRAME-STREAM-INF": ["URI"],
         "#EXT-X-IMAGE-STREAM-INF": ["URI"],
         "#EXT-X-KEY": ["URI"],
@@ -441,9 +540,7 @@ package struct HLSLocalPlaybackPackageSnapshot: Sendable {
     private static let disallowedIndirectAttributesByTag: [String: [String]] = [
         "#EXT-X-CONTENT-STEERING": ["SERVER-URI"],
         "#EXT-X-DATERANGE": [
-            "X-ASSET-LIST",
-            "X-ASSET-URI",
-            "X-URI",
+            "X-URI"
         ],
     ]
 }

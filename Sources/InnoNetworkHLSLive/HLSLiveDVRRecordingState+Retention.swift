@@ -9,6 +9,7 @@ extension HLSLiveDVRRecordingState {
             try evictOldestPrimarySegment()
         }
         try prunePrimaryInitializations()
+        try pruneExpiredInterstitials()
         if renditionStates.isEmpty {
             try enforceRollingByteLimit()
         }
@@ -75,6 +76,9 @@ extension HLSLiveDVRRecordingState {
                 }
             )
         }
+        paths.formUnion(
+            interstitials.flatMap { $0.files.map(\.relativePath) }
+        )
         return paths
     }
 

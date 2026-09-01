@@ -264,6 +264,9 @@ extension HLSDownloaderTests {
 
     @Test("interstitial asset lists enforce schema and count")
     func enforcesInterstitialAssetListBoundaries() async throws {
+        let emptyURL = try #require(
+            URL(string: "https://ads.example/empty.json")
+        )
         let malformedURL = try #require(
             URL(string: "https://ads.example/malformed.json")
         )
@@ -275,6 +278,14 @@ extension HLSDownloaderTests {
             session.invalidateAndCancel()
             HLSURLProtocol.reset()
         }
+        HLSURLProtocol.register(
+            .success(
+                statusCode: 200,
+                data: Data(#"{"ASSETS":[]}"#.utf8),
+                headers: [:]
+            ),
+            for: emptyURL
+        )
         HLSURLProtocol.register(
             .success(
                 statusCode: 200,
@@ -308,6 +319,17 @@ extension HLSDownloaderTests {
             )
         )
 
+        await #expect(
+            throws:
+                HLSExternalResourceError
+                .invalidInterstitialAssetList
+        ) {
+            try await resolver.resolveInterstitialAssets(
+                HLSInterstitial(
+                    source: .assetList(emptyURL)
+                )
+            )
+        }
         await #expect(
             throws:
                 HLSExternalResourceError

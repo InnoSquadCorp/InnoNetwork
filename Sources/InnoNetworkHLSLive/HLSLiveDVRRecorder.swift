@@ -336,6 +336,10 @@ public struct HLSLiveDVRRecorder: Sendable {
             workspace: workspace,
             context: resourceContext
         )
+        let interstitialPackager = HLSLiveDVRInterstitialPackager(
+            client: liveClient.resourceClient,
+            configuration: configuration
+        )
         let snapshots:
             AsyncThrowingStream<
                 HLSLivePlaylistSnapshot,
@@ -386,6 +390,10 @@ public struct HLSLiveDVRRecorder: Sendable {
                     pendingCheckpoint = nil
                 }
                 try state.validatePresentation(snapshot)
+                try await interstitialPackager.update(
+                    from: snapshot,
+                    state: &state
+                )
                 await preloadCoordinator?.update(from: snapshot)
                 if let statistics = await preloadCoordinator?
                     .statisticsSnapshot()

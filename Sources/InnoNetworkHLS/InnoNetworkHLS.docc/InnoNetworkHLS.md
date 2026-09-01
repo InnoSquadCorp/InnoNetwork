@@ -464,10 +464,12 @@ Media-playlist inspection also exposes typed timeline metadata.
 ``HLSPlaylist/dateRanges`` consolidates repeated `EXT-X-DATERANGE` tags by
 identifier. Date Range extension values stay private: the public model exposes
 only their names plus typed interstitial and external-resource URLs. External
-interstitial, schedule, and preload resources block raw assembly and
-application-owned offline packaging instead of leaving remote references in a
-local playlist. Use the `InnoNetworkHLSAVFoundation` companion when the system
-should retain interstitial assets.
+interstitial, schedule, and preload resources block raw assembly and the
+ordinary application-owned offline package operation instead of leaving
+remote references in a local playlist. The `InnoNetworkHLSLive` companion can
+opt into bounded, URL-free interstitial DVR packaging; use the
+`InnoNetworkHLSAVFoundation` companion when the system should retain live
+interstitial assets.
 
 ``HLSDateRangePreload`` retains the target identity and join-duration
 metadata, while ``HLSPreloadedDateRangeResource`` keeps bounded opaque bytes

@@ -14,8 +14,11 @@ struct HLSLiveDVRCheckpoint: Codable, Sendable {
     let promotedPartCount: Int
     var retentionPolicy: String? = nil
     var retentionStatistics: RetentionStatistics? = nil
+    var interstitialPolicy: String? = nil
+    var interstitials: [Interstitial]? = nil
+    var omittedInterstitials: [OmittedInterstitial]? = nil
 
-    struct FileRecord: Codable, Sendable {
+    struct FileRecord: Codable, Equatable, Sendable {
         let relativePath: String
         let byteCount: Int64
         let contentSHA256: String
@@ -227,6 +230,32 @@ struct HLSLiveDVRCheckpoint: Codable, Sendable {
         let track: Track
     }
 
+    struct Interstitial: Codable, Sendable {
+        let id: String
+        let sourceIdentity: String
+        let eventDirectoryPath: String
+        let assetCount: Int
+        let files: [FileRecord]
+
+        init(_ interstitial: HLSLiveDVRStoredInterstitial) {
+            id = interstitial.id
+            sourceIdentity = interstitial.sourceIdentity
+            eventDirectoryPath = interstitial.eventDirectoryPath
+            assetCount = interstitial.assetCount
+            files = interstitial.files
+        }
+    }
+
+    struct OmittedInterstitial: Codable, Sendable {
+        let id: String
+        let sourceIdentity: String
+
+        init(_ interstitial: HLSLiveDVROmittedInterstitial) {
+            id = interstitial.id
+            sourceIdentity = interstitial.sourceIdentity
+        }
+    }
+
     struct DateRange: Codable, Sendable {
         let id: String
         let className: String?
@@ -236,6 +265,7 @@ struct HLSLiveDVRCheckpoint: Codable, Sendable {
         let plannedDuration: TimeInterval?
         let cues: [String]
         let endsOnNext: Bool
+        let interstitial: InterstitialMetadata?
 
         init(_ dateRange: HLSDateRange) {
             id = dateRange.id
@@ -255,6 +285,9 @@ struct HLSLiveDVRCheckpoint: Codable, Sendable {
                 }
             }
             endsOnNext = dateRange.endsOnNext
+            interstitial = dateRange.interstitial.map(
+                InterstitialMetadata.init
+            )
         }
 
         var model: HLSDateRange? {
@@ -279,8 +312,166 @@ struct HLSLiveDVRCheckpoint: Codable, Sendable {
                 duration: duration,
                 plannedDuration: plannedDuration,
                 cues: decodedCues,
-                endsOnNext: endsOnNext
+                endsOnNext: endsOnNext,
+                interstitial: interstitial?.model
             )
+        }
+
+        struct InterstitialMetadata: Codable, Sendable {
+            let sourceKind: String
+            let sourcePath: String
+            let resumeOffset: TimeInterval?
+            let playoutLimit: TimeInterval?
+            let contentVariability: String
+            let timelineOccupancy: String
+            let timelineStyle: String
+            let navigationRestrictions: [String]
+            let skipControl: SkipControl?
+
+            init(_ interstitial: HLSInterstitial) {
+                switch interstitial.source {
+                case .asset(let url):
+                    sourceKind = "asset"
+                    sourcePath = url.relativeString
+                case .assetList(let url):
+                    sourceKind = "assetList"
+                    sourcePath = url.relativeString
+                }
+                resumeOffset = interstitial.resumeOffset
+                playoutLimit = interstitial.playoutLimit
+                contentVariability =
+                    interstitial.contentVariability == .mayVary
+                    ? "mayVary" : "sameForAllPlayers"
+                timelineOccupancy =
+                    interstitial.timelineOccupancy == .point
+                    ? "point" : "range"
+                timelineStyle =
+                    interstitial.timelineStyle == .highlight
+                    ? "highlight" : "primary"
+                navigationRestrictions = [
+                    HLSInterstitialNavigationRestriction.skip,
+                    .jump,
+                ].filter {
+                    interstitial.navigationRestrictions.contains($0)
+                }.map {
+                    switch $0 {
+                    case .skip:
+                        "skip"
+                    case .jump:
+                        "jump"
+                    }
+                }
+                skipControl = interstitial.skipControl.map(SkipControl.init)
+            }
+
+            var model: HLSInterstitial? {
+                guard let sourceURL = URL(string: sourcePath),
+                    sourceURL.scheme == nil,
+                    sourceURL.host == nil,
+                    sourceURL.user == nil,
+                    sourceURL.password == nil,
+                    sourceURL.port == nil,
+                    sourceURL.query == nil,
+                    sourceURL.fragment == nil,
+                    !sourcePath.isEmpty,
+                    resumeOffset.map({ $0.isFinite }) ?? true,
+                    playoutLimit.map({ $0.isFinite && $0 >= 0 }) ?? true
+                else {
+                    return nil
+                }
+                let source: HLSInterstitialSource
+                switch sourceKind {
+                case "asset":
+                    source = .asset(sourceURL)
+                case "assetList":
+                    source = .assetList(sourceURL)
+                default:
+                    return nil
+                }
+                let variability: HLSInterstitialContentVariability
+                switch contentVariability {
+                case "mayVary":
+                    variability = .mayVary
+                case "sameForAllPlayers":
+                    variability = .sameForAllPlayers
+                default:
+                    return nil
+                }
+                let occupancy: HLSInterstitialTimelineOccupancy
+                switch timelineOccupancy {
+                case "point":
+                    occupancy = .point
+                case "range":
+                    occupancy = .range
+                default:
+                    return nil
+                }
+                let style: HLSInterstitialTimelineStyle
+                switch timelineStyle {
+                case "highlight":
+                    style = .highlight
+                case "primary":
+                    style = .primary
+                default:
+                    return nil
+                }
+                var restrictions:
+                    Set<
+                        HLSInterstitialNavigationRestriction
+                    > = []
+                for restriction in navigationRestrictions {
+                    switch restriction {
+                    case "skip":
+                        restrictions.insert(.skip)
+                    case "jump":
+                        restrictions.insert(.jump)
+                    default:
+                        return nil
+                    }
+                }
+                guard restrictions.count == navigationRestrictions.count
+                else {
+                    return nil
+                }
+                return HLSInterstitial(
+                    source: source,
+                    resumeOffset: resumeOffset,
+                    playoutLimit: playoutLimit,
+                    contentVariability: variability,
+                    timelineOccupancy: occupancy,
+                    timelineStyle: style,
+                    navigationRestrictions: restrictions,
+                    skipControl: skipControl?.model
+                )
+            }
+        }
+
+        struct SkipControl: Codable, Sendable {
+            let offset: UInt64?
+            let duration: UInt64?
+            let labelID: String?
+
+            init(_ skipControl: HLSInterstitialSkipControl) {
+                offset = skipControl.offset
+                duration = skipControl.duration
+                labelID = skipControl.labelID
+            }
+
+            var model: HLSInterstitialSkipControl? {
+                guard offset != nil || duration != nil || labelID != nil,
+                    labelID?.allSatisfy({
+                        $0.isASCII
+                            && ($0.isLetter || $0 == "-" || $0 == "_")
+                    }) != false
+                else {
+                    return nil
+                }
+                return HLSInterstitialSkipControl(
+                    offset: offset,
+                    duration: duration,
+                    labelID: labelID
+                )
+            }
         }
     }
 
@@ -293,5 +484,6 @@ struct HLSLiveDVRCheckpoint: Codable, Sendable {
                 rendition.track.resolvedInitializations.map(\.file)
                     + rendition.track.segments.compactMap(\.file)
             }
+            + (interstitials ?? []).flatMap(\.files)
     }
 }

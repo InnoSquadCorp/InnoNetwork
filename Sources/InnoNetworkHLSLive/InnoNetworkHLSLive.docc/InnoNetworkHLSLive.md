@@ -141,7 +141,11 @@ let recorder = HLSLiveDVRRecorder(
         preloading: HLSLiveDVRPreloadPack(
             policy: .unencryptedMedia
         ),
-        recovery: HLSLiveDVRRecoveryPack(policy: .resumable)
+        recovery: HLSLiveDVRRecoveryPack(policy: .resumable),
+        interstitials: HLSLiveDVRInterstitialPack(
+            policy: .package,
+            failurePolicy: .failRecording
+        )
     )
 )
 
@@ -310,6 +314,37 @@ gap. ``HLSLiveDVRProgress/gapCount`` and ``HLSLiveDVRReceipt/gapCount`` report
 the retained primary-track gap count; ``HLSLiveDVRProgress/segmentCount`` and
 ``HLSLiveDVRReceipt/segmentCount`` include those gaps.
 
+Apple HLS interstitial packaging is disabled by default. Opt in with
+``HLSLiveDVRInterstitialPack`` to resolve each direct asset or ordered asset
+list through the recorder's existing transport and retain every asset as a
+self-contained offline HLS package. The output always uses one package-local
+asset list, including for a direct `X-ASSET-URI`, so the committed Date Range
+has no remote URL and the local-playback bridge can freeze every reachable
+playlist and asset-list document before listening. Resume offset, playout
+limit, variability, timeline occupancy and style, navigation restrictions,
+and effective skip-control metadata remain typed and are written back to the
+local playlist.
+
+``HLSLiveDVRInterstitialFailurePolicy/failRecording`` is the default and keeps
+publication atomic when an event cannot be packaged completely.
+``HLSLiveDVRInterstitialFailurePolicy/omitEvent`` removes that entire Date
+Range instead; it never publishes a partial asset sequence. Event and
+local-playback playlist counts remain hard bounds under either policy, and
+local storage or disk-capacity failures are never converted into event
+omission. Per-resource, aggregate interstitial, and overall DVR byte limits
+apply before publication. The recorder reserves one maximum-size primary
+media resource so an accepted interstitial cannot consume the package's only
+playable segment budget.
+
+Rolling retention removes an expired event directory as one unit. Resumable
+checkpoints retain only local relative paths, file sizes, and digests; source
+identities are query-free hashes and no interstitial URL is serialized.
+In-progress playback snapshots clone the retained event packages and validate
+the complete local reference graph before returning. Current retained and
+omitted counts, ordered asset count, and retained bytes are available through
+``HLSLiveDVRProgress/interstitialStatistics`` and
+``HLSLiveDVRReceipt/interstitialStatistics``.
+
 The default rendition pack retains one external audio rendition. Applications
 can select external audio, alternate video, and subtitle playlists by default,
 preferred language, exact name, or all referenced renditions. A URL-free local
@@ -412,6 +447,10 @@ instead of resuming it.
 - ``HLSLiveDVRPreloadPolicy``
 - ``HLSLiveDVRPreloadResourceStatistics``
 - ``HLSLiveDVRPreloadStatistics``
+- ``HLSLiveDVRInterstitialPack``
+- ``HLSLiveDVRInterstitialPolicy``
+- ``HLSLiveDVRInterstitialFailurePolicy``
+- ``HLSLiveDVRInterstitialStatistics``
 - ``HLSLiveDVRRecoveryPack``
 - ``HLSLiveDVRRecoveryPolicy``
 - ``HLSLiveDVRStartPosition``

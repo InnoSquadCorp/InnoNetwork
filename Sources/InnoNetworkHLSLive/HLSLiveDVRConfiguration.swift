@@ -238,7 +238,8 @@ public struct HLSLiveDVRLimitPack: Sendable {
     /// The maximum bytes accepted from one media request.
     public let maximumMediaResourceBytes: Int
 
-    /// The maximum bytes retained across initialization and media segments.
+    /// The maximum bytes retained across initialization, media segments, and
+    /// packaged interstitials.
     public let maximumTotalMediaBytes: Int64
 
     /// The timeout applied to each media request.
@@ -340,6 +341,7 @@ public struct HLSLiveDVRConfiguration: Sendable {
     let parts: HLSLiveDVRPartPack
     let preloading: HLSLiveDVRPreloadPack
     let recovery: HLSLiveDVRRecoveryPack
+    let interstitials: HLSLiveDVRInterstitialPack
 
     private init(
         limits: HLSLiveDVRLimitPack,
@@ -347,7 +349,8 @@ public struct HLSLiveDVRConfiguration: Sendable {
         renditions: HLSLiveDVRRenditionPack,
         parts: HLSLiveDVRPartPack,
         preloading: HLSLiveDVRPreloadPack,
-        recovery: HLSLiveDVRRecoveryPack
+        recovery: HLSLiveDVRRecoveryPack,
+        interstitials: HLSLiveDVRInterstitialPack
     ) {
         self.limits = limits
         self.startPosition = startPosition
@@ -355,6 +358,7 @@ public struct HLSLiveDVRConfiguration: Sendable {
         self.parts = parts
         self.preloading = preloading
         self.recovery = recovery
+        self.interstitials = interstitials
     }
 
     /// Returns conservative record-from-now defaults.
@@ -376,8 +380,28 @@ public struct HLSLiveDVRConfiguration: Sendable {
             startPosition: startPosition,
             renditions: renditions,
             parts: parts,
+            interstitials: HLSLiveDVRInterstitialPack()
+        )
+    }
+
+    /// Returns explicitly tuned live DVR behavior with interstitials.
+    public static func advanced(
+        limits: HLSLiveDVRLimitPack = HLSLiveDVRLimitPack(),
+        startPosition: HLSLiveDVRStartPosition =
+            .nextCompletedSegment,
+        renditions: HLSLiveDVRRenditionPack =
+            HLSLiveDVRRenditionPack(),
+        parts: HLSLiveDVRPartPack = HLSLiveDVRPartPack(),
+        interstitials: HLSLiveDVRInterstitialPack
+    ) -> HLSLiveDVRConfiguration {
+        advanced(
+            limits: limits,
+            startPosition: startPosition,
+            renditions: renditions,
+            parts: parts,
             preloading: HLSLiveDVRPreloadPack(),
-            recovery: HLSLiveDVRRecoveryPack()
+            recovery: HLSLiveDVRRecoveryPack(),
+            interstitials: interstitials
         )
     }
 
@@ -397,7 +421,30 @@ public struct HLSLiveDVRConfiguration: Sendable {
             renditions: renditions,
             parts: parts,
             preloading: preloading,
-            recovery: HLSLiveDVRRecoveryPack()
+            interstitials: HLSLiveDVRInterstitialPack()
+        )
+    }
+
+    /// Returns explicitly tuned live DVR behavior with media preloading and
+    /// interstitials.
+    public static func advanced(
+        limits: HLSLiveDVRLimitPack = HLSLiveDVRLimitPack(),
+        startPosition: HLSLiveDVRStartPosition =
+            .nextCompletedSegment,
+        renditions: HLSLiveDVRRenditionPack =
+            HLSLiveDVRRenditionPack(),
+        parts: HLSLiveDVRPartPack = HLSLiveDVRPartPack(),
+        preloading: HLSLiveDVRPreloadPack,
+        interstitials: HLSLiveDVRInterstitialPack
+    ) -> HLSLiveDVRConfiguration {
+        advanced(
+            limits: limits,
+            startPosition: startPosition,
+            renditions: renditions,
+            parts: parts,
+            preloading: preloading,
+            recovery: HLSLiveDVRRecoveryPack(),
+            interstitials: interstitials
         )
     }
 
@@ -416,8 +463,31 @@ public struct HLSLiveDVRConfiguration: Sendable {
             startPosition: startPosition,
             renditions: renditions,
             parts: parts,
+            recovery: recovery,
+            interstitials: HLSLiveDVRInterstitialPack()
+        )
+    }
+
+    /// Returns explicitly tuned live DVR behavior with recovery and
+    /// interstitials.
+    public static func advanced(
+        limits: HLSLiveDVRLimitPack = HLSLiveDVRLimitPack(),
+        startPosition: HLSLiveDVRStartPosition =
+            .nextCompletedSegment,
+        renditions: HLSLiveDVRRenditionPack =
+            HLSLiveDVRRenditionPack(),
+        parts: HLSLiveDVRPartPack = HLSLiveDVRPartPack(),
+        recovery: HLSLiveDVRRecoveryPack,
+        interstitials: HLSLiveDVRInterstitialPack
+    ) -> HLSLiveDVRConfiguration {
+        advanced(
+            limits: limits,
+            startPosition: startPosition,
+            renditions: renditions,
+            parts: parts,
             preloading: HLSLiveDVRPreloadPack(),
-            recovery: recovery
+            recovery: recovery,
+            interstitials: interstitials
         )
     }
 
@@ -433,13 +503,38 @@ public struct HLSLiveDVRConfiguration: Sendable {
         preloading: HLSLiveDVRPreloadPack,
         recovery: HLSLiveDVRRecoveryPack
     ) -> HLSLiveDVRConfiguration {
+        advanced(
+            limits: limits,
+            startPosition: startPosition,
+            renditions: renditions,
+            parts: parts,
+            preloading: preloading,
+            recovery: recovery,
+            interstitials: HLSLiveDVRInterstitialPack()
+        )
+    }
+
+    /// Returns explicitly tuned live DVR behavior with preloading, recovery,
+    /// and interstitials.
+    public static func advanced(
+        limits: HLSLiveDVRLimitPack = HLSLiveDVRLimitPack(),
+        startPosition: HLSLiveDVRStartPosition =
+            .nextCompletedSegment,
+        renditions: HLSLiveDVRRenditionPack =
+            HLSLiveDVRRenditionPack(),
+        parts: HLSLiveDVRPartPack = HLSLiveDVRPartPack(),
+        preloading: HLSLiveDVRPreloadPack,
+        recovery: HLSLiveDVRRecoveryPack,
+        interstitials: HLSLiveDVRInterstitialPack
+    ) -> HLSLiveDVRConfiguration {
         HLSLiveDVRConfiguration(
             limits: limits,
             startPosition: startPosition,
             renditions: renditions,
             parts: parts,
             preloading: preloading,
-            recovery: recovery
+            recovery: recovery,
+            interstitials: interstitials
         )
     }
 }

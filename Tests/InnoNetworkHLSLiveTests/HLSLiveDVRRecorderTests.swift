@@ -45,6 +45,23 @@ extension HLSLivePlaylistClientTests {
         #expect(preloading.policy == .unencryptedMedia)
         #expect(preloading.maximumResourceBytes == 1)
         #expect(preloading.maximumTotalBytes == 256 * 1_024 * 1_024)
+
+        let interstitials = HLSLiveDVRInterstitialPack(
+            policy: .package,
+            maximumEventCount: -1,
+            maximumAssetsPerEvent: .max,
+            maximumPlaylistCount: .max,
+            maximumMediaResourceBytes: -1,
+            maximumTotalBytes: .max
+        )
+        #expect(interstitials.maximumEventCount == 1)
+        #expect(interstitials.maximumAssetsPerEvent == 1_000)
+        #expect(interstitials.maximumPlaylistCount == 128)
+        #expect(interstitials.maximumMediaResourceBytes == 1)
+        #expect(
+            interstitials.maximumTotalBytes
+                == 16 * 1_024 * 1_024 * 1_024
+        )
     }
 
     @Test("current live window commits a URL-free local VOD playlist")
@@ -4510,6 +4527,948 @@ extension HLSLivePlaylistClientTests {
         )
     }
 
+    @Test("direct interstitial media becomes a package-local event")
+    func packagesDirectInterstitial() async throws {
+        let sourceURL = try url("https://media.example/event-live.m3u8")
+        let primaryURL = try url("https://media.example/primary.ts")
+        let eventURL = try url("https://ads.example/event.m3u8?token=secret")
+        let eventMediaURL = try url("https://ads.example/event.ts")
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-PROGRAM-DATE-TIME:2026-09-01T00:00:00.000Z
+                #EXT-X-DATERANGE:ID="event-1",CLASS="com.apple.hls.interstitial",START-DATE="2026-09-01T00:00:01.000Z",DURATION=2,X-ASSET-URI="https://ads.example/event.m3u8?token=secret",X-RESUME-OFFSET=0,X-PLAYOUT-LIMIT=2,X-CONTENT-MAY-VARY="NO",X-TIMELINE-OCCUPIES="RANGE",X-TIMELINE-STYLE="PRIMARY",X-RESTRICT="SKIP,JUMP",X-SKIP-CONTROL-OFFSET=1,X-SKIP-CONTROL-LABEL-ID="Exit_Label"
+                #EXTINF:4,
+                primary.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:2
+                #EXTINF:2,
+                event.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: eventURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("primary".utf8)),
+            for: primaryURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("event".utf8)),
+            for: eventMediaURL
+        )
+
+        let receipt = try await recorder(
+            session: fixture.session,
+            startPosition: .currentWindow,
+            interstitials: HLSLiveDVRInterstitialPack(policy: .package)
+        ).record(from: sourceURL, to: fixture.destinationURL)
+        let contents = try String(
+            contentsOf: receipt.playlistURL,
+            encoding: .utf8
+        )
+        let playlist = try PlaylistResolver().resolve(
+            contents,
+            relativeTo: receipt.playlistURL
+        )
+        let interstitial = try #require(
+            playlist.dateRanges.first?.interstitial
+        )
+
+        #expect(receipt.interstitialStatistics.retainedEventCount == 1)
+        #expect(receipt.interstitialStatistics.retainedAssetCount == 1)
+        #expect(receipt.interstitialStatistics.retainedByteCount > 0)
+        #expect(receipt.interstitialStatistics.omittedEventCount == 0)
+        #expect(receipt.mediaByteCount > Int64("primary".utf8.count))
+        #expect(!contents.contains("ads.example"))
+        #expect(!contents.contains("token=secret"))
+        #expect(interstitial.resumeOffset == 0)
+        #expect(interstitial.playoutLimit == 2)
+        #expect(interstitial.contentVariability == .sameForAllPlayers)
+        #expect(interstitial.timelineOccupancy == .range)
+        #expect(interstitial.timelineStyle == .primary)
+        #expect(interstitial.navigationRestrictions == [.skip, .jump])
+        #expect(
+            interstitial.skipControl
+                == HLSInterstitialSkipControl(
+                    offset: 1,
+                    labelID: "Exit_Label"
+                )
+        )
+        if case .assetList(let localURL) = interstitial.source {
+            #expect(localURL.isFileURL)
+            #expect(
+                localURL.path.hasPrefix(receipt.directoryURL.path + "/")
+            )
+            #expect(FileManager.default.fileExists(atPath: localURL.path))
+        } else {
+            Issue.record("expected one local interstitial asset list")
+        }
+        _ = try HLSLocalPlaybackPackageSnapshot(
+            source: receipt.playbackSource
+        )
+    }
+
+    @Test("future interstitials wait for an observed recording window")
+    func defersFutureInterstitial() async throws {
+        let sourceURL = try url(
+            "https://media.example/future-event-live.m3u8"
+        )
+        let primaryURL = try url(
+            "https://media.example/future-event-primary.ts"
+        )
+        let eventURL = try url(
+            "https://ads.example/unrequested-future-event.m3u8"
+        )
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-PROGRAM-DATE-TIME:2026-09-01T00:00:00.000Z
+                #EXT-X-DATERANGE:ID="future-event",CLASS="com.apple.hls.interstitial",START-DATE="2026-09-01T00:00:10.000Z",DURATION=2,X-ASSET-URI="https://ads.example/unrequested-future-event.m3u8"
+                #EXTINF:4,
+                future-event-primary.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("primary".utf8)),
+            for: primaryURL
+        )
+
+        let receipt = try await recorder(
+            session: fixture.session,
+            startPosition: .currentWindow,
+            interstitials: HLSLiveDVRInterstitialPack(policy: .package)
+        ).record(from: sourceURL, to: fixture.destinationURL)
+        let contents = try String(
+            contentsOf: receipt.playlistURL,
+            encoding: .utf8
+        )
+
+        #expect(receipt.interstitialStatistics.retainedEventCount == 0)
+        #expect(receipt.interstitialStatistics.retainedAssetCount == 0)
+        #expect(!contents.contains("#EXT-X-DATERANGE"))
+        #expect(
+            !HLSLiveURLProtocol.capturedRequests().contains {
+                $0.url == eventURL
+            }
+        )
+    }
+
+    @Test("interstitial asset lists preserve order, durations, and skip override")
+    func packagesInterstitialAssetList() async throws {
+        let sourceURL = try url("https://media.example/list-live.m3u8")
+        let primaryURL = try url("https://media.example/list-primary.ts")
+        let listURL = try url("https://ads.example/assets.json")
+        let firstPlaylistURL = try url("https://ads.example/first.m3u8")
+        let secondPlaylistURL = try url("https://ads.example/second.m3u8")
+        let firstMediaURL = try url("https://ads.example/first.ts")
+        let secondMediaURL = try url("https://ads.example/second.ts")
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-PROGRAM-DATE-TIME:2026-09-01T00:00:00.000Z
+                #EXT-X-DATERANGE:ID="event-list",CLASS="com.apple.hls.interstitial",START-DATE="2026-09-01T00:00:01.000Z",DURATION=3,X-ASSET-LIST="https://ads.example/assets.json",X-RESUME-OFFSET=1,X-SKIP-CONTROL-LABEL-ID="Exit_Label"
+                #EXTINF:4,
+                list-primary.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(
+            HLSLiveURLProtocol.Response(
+                statusCode: 200,
+                data: Data(
+                    """
+                    {"ASSETS":[
+                      {"URI":"https://ads.example/first.m3u8","DURATION":1},
+                      {"URI":"https://ads.example/second.m3u8","DURATION":2}
+                    ],"SKIP-CONTROL":{"OFFSET":2,"DURATION":1}}
+                    """.utf8
+                ),
+                headers: ["Content-Type": "application/json"]
+            ),
+            for: listURL
+        )
+        for (playlistURL, mediaName) in [
+            (firstPlaylistURL, "first.ts"),
+            (secondPlaylistURL, "second.ts"),
+        ] {
+            HLSLiveURLProtocol.register(
+                playlistResponse(
+                    """
+                    #EXTM3U
+                    #EXT-X-TARGETDURATION:2
+                    #EXTINF:1,
+                    \(mediaName)
+                    #EXT-X-ENDLIST
+                    """
+                ),
+                for: playlistURL
+            )
+        }
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("primary".utf8)),
+            for: primaryURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("first".utf8)),
+            for: firstMediaURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("second".utf8)),
+            for: secondMediaURL
+        )
+
+        let receipt = try await recorder(
+            session: fixture.session,
+            startPosition: .currentWindow,
+            interstitials: HLSLiveDVRInterstitialPack(policy: .package)
+        ).record(from: sourceURL, to: fixture.destinationURL)
+        let contents = try String(
+            contentsOf: receipt.playlistURL,
+            encoding: .utf8
+        )
+        let playlist = try PlaylistResolver().resolve(
+            contents,
+            relativeTo: receipt.playlistURL
+        )
+        let interstitial = try #require(
+            playlist.dateRanges.first?.interstitial
+        )
+
+        #expect(receipt.interstitialStatistics.retainedAssetCount == 2)
+        #expect(
+            interstitial.skipControl
+                == HLSInterstitialSkipControl(
+                    offset: 2,
+                    duration: 1,
+                    labelID: "Exit_Label"
+                )
+        )
+        if case .assetList(let localListURL) = interstitial.source {
+            let data = try Data(contentsOf: localListURL)
+            let object = try #require(
+                JSONSerialization.jsonObject(with: data)
+                    as? [String: Any]
+            )
+            let assets = try #require(object["ASSETS"] as? [[String: Any]])
+            #expect(assets.map { $0["DURATION"] as? Double } == [1, 2])
+            #expect(
+                assets.compactMap { $0["URI"] as? String }
+                    == [
+                        "asset-00000/index.m3u8",
+                        "asset-00001/index.m3u8",
+                    ]
+            )
+        } else {
+            Issue.record("expected one local interstitial asset list")
+        }
+        _ = try HLSLocalPlaybackPackageSnapshot(
+            source: receipt.playbackSource
+        )
+    }
+
+    @Test("event omission never publishes a broken interstitial reference")
+    func omitsUnavailableInterstitialAtomically() async throws {
+        let sourceURL = try url("https://media.example/omit-live.m3u8")
+        let primaryURL = try url("https://media.example/omit-primary.ts")
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-PROGRAM-DATE-TIME:2026-09-01T00:00:00.000Z
+                #EXT-X-DATERANGE:ID="missing",CLASS="com.apple.hls.interstitial",START-DATE="2026-09-01T00:00:01.000Z",DURATION=2,X-ASSET-URI="https://ads.example/missing.m3u8"
+                #EXTINF:4,
+                omit-primary.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("primary".utf8)),
+            for: primaryURL
+        )
+
+        let receipt = try await recorder(
+            session: fixture.session,
+            startPosition: .currentWindow,
+            interstitials: HLSLiveDVRInterstitialPack(
+                policy: .package,
+                failurePolicy: .omitEvent,
+                transfer: HLSTransferPack(retryPolicy: nil)
+            )
+        ).record(from: sourceURL, to: fixture.destinationURL)
+        let contents = try String(
+            contentsOf: receipt.playlistURL,
+            encoding: .utf8
+        )
+
+        #expect(receipt.interstitialStatistics.retainedEventCount == 0)
+        #expect(receipt.interstitialStatistics.omittedEventCount == 1)
+        #expect(!contents.contains("#EXT-X-DATERANGE"))
+        #expect(!contents.contains("ads.example"))
+    }
+
+    @Test("interstitial transfer failures remain typed")
+    func preservesInterstitialTransferFailure() async throws {
+        let sourceURL = try url(
+            "https://media.example/failing-event-live.m3u8"
+        )
+        let eventURL = try url(
+            "https://ads.example/unavailable-event.m3u8"
+        )
+        let primaryURL = try url(
+            "https://media.example/unrequested-primary.ts"
+        )
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-PROGRAM-DATE-TIME:2026-09-01T00:00:00.000Z
+                #EXT-X-DATERANGE:ID="failing-event",CLASS="com.apple.hls.interstitial",START-DATE="2026-09-01T00:00:01.000Z",DURATION=2,X-ASSET-URI="https://ads.example/unavailable-event.m3u8"
+                #EXTINF:4,
+                unrequested-primary.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: sourceURL
+        )
+
+        await #expect(throws: HLSLiveDVRError.transferFailed) {
+            try await recorder(
+                session: fixture.session,
+                startPosition: .currentWindow,
+                interstitials: HLSLiveDVRInterstitialPack(
+                    policy: .package,
+                    transfer: HLSTransferPack(retryPolicy: nil)
+                )
+            ).record(from: sourceURL, to: fixture.destinationURL)
+        }
+        let requests = HLSLiveURLProtocol.capturedRequests()
+            .compactMap(\.url)
+        #expect(requests == [sourceURL, eventURL])
+        #expect(!requests.contains(primaryURL))
+    }
+
+    @Test("the event bound remains hard under complete-event omission")
+    func enforcesInterstitialEventLimit() async throws {
+        let sourceURL = try url(
+            "https://media.example/event-limit-live.m3u8"
+        )
+        let firstEventURL = try url(
+            "https://ads.example/first-event.m3u8"
+        )
+        let firstEventMediaURL = try url(
+            "https://ads.example/first-event.ts"
+        )
+        let secondEventURL = try url(
+            "https://ads.example/unrequested-second-event.m3u8"
+        )
+        let primaryURL = try url(
+            "https://media.example/unrequested-event-limit-primary.ts"
+        )
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-PROGRAM-DATE-TIME:2026-09-01T00:00:00.000Z
+                #EXT-X-DATERANGE:ID="first-event",CLASS="com.apple.hls.interstitial",START-DATE="2026-09-01T00:00:00.000Z",DURATION=2,X-ASSET-URI="https://ads.example/first-event.m3u8"
+                #EXT-X-DATERANGE:ID="second-event",CLASS="com.apple.hls.interstitial",START-DATE="2026-09-01T00:00:02.000Z",DURATION=2,X-ASSET-URI="https://ads.example/unrequested-second-event.m3u8"
+                #EXTINF:4,
+                unrequested-event-limit-primary.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:2
+                #EXTINF:2,
+                first-event.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: firstEventURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("event".utf8)),
+            for: firstEventMediaURL
+        )
+
+        await #expect(
+            throws: HLSLiveDVRError.interstitialEventLimitExceeded(
+                limit: 1
+            )
+        ) {
+            try await recorder(
+                session: fixture.session,
+                startPosition: .currentWindow,
+                interstitials: HLSLiveDVRInterstitialPack(
+                    policy: .package,
+                    failurePolicy: .omitEvent,
+                    maximumEventCount: 1
+                )
+            ).record(from: sourceURL, to: fixture.destinationURL)
+        }
+        let requests = HLSLiveURLProtocol.capturedRequests()
+            .compactMap(\.url)
+        #expect(!requests.contains(secondEventURL))
+        #expect(!requests.contains(primaryURL))
+    }
+
+    @Test("interstitial rendition playlists respect the playback bound")
+    func enforcesInterstitialPlaylistLimit() async throws {
+        let sourceURL = try url(
+            "https://media.example/playlist-limit-live.m3u8"
+        )
+        let eventURL = try url(
+            "https://ads.example/rendition-event.m3u8"
+        )
+        let videoPlaylistURL = try url(
+            "https://ads.example/video.m3u8"
+        )
+        let audioPlaylistURL = try url(
+            "https://ads.example/audio.m3u8"
+        )
+        let videoURL = try url("https://ads.example/video.ts")
+        let audioURL = try url("https://ads.example/audio.ts")
+        let primaryURL = try url(
+            "https://media.example/unrequested-playlist-limit-primary.ts"
+        )
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-PROGRAM-DATE-TIME:2026-09-01T00:00:00.000Z
+                #EXT-X-DATERANGE:ID="rendition-event",CLASS="com.apple.hls.interstitial",START-DATE="2026-09-01T00:00:01.000Z",DURATION=2,X-ASSET-URI="https://ads.example/rendition-event.m3u8"
+                #EXTINF:4,
+                unrequested-playlist-limit-primary.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="English",DEFAULT=YES,AUTOSELECT=YES,URI="audio.m3u8"
+                #EXT-X-STREAM-INF:BANDWIDTH=100000,AUDIO="audio"
+                video.m3u8
+                """
+            ),
+            for: eventURL
+        )
+        for (playlistURL, mediaName) in [
+            (videoPlaylistURL, "video.ts"),
+            (audioPlaylistURL, "audio.ts"),
+        ] {
+            HLSLiveURLProtocol.register(
+                playlistResponse(
+                    """
+                    #EXTM3U
+                    #EXT-X-TARGETDURATION:2
+                    #EXTINF:2,
+                    \(mediaName)
+                    #EXT-X-ENDLIST
+                    """
+                ),
+                for: playlistURL
+            )
+        }
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("video".utf8)),
+            for: videoURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("audio".utf8)),
+            for: audioURL
+        )
+
+        await #expect(
+            throws: HLSLiveDVRError.interstitialPlaylistLimitExceeded(
+                limit: 1
+            )
+        ) {
+            try await recorder(
+                session: fixture.session,
+                startPosition: .currentWindow,
+                interstitials: HLSLiveDVRInterstitialPack(
+                    policy: .package,
+                    maximumPlaylistCount: 1
+                )
+            ).record(from: sourceURL, to: fixture.destinationURL)
+        }
+        #expect(
+            !HLSLiveURLProtocol.capturedRequests().contains {
+                $0.url == primaryURL
+            }
+        )
+    }
+
+    @Test("interstitial storage reserves one primary media resource")
+    func reservesPrimaryMediaBudgetForInterstitials() async throws {
+        let sourceURL = try url(
+            "https://media.example/event-budget-live.m3u8"
+        )
+        let eventURL = try url(
+            "https://ads.example/oversized-event.m3u8"
+        )
+        let eventMediaURL = try url(
+            "https://ads.example/oversized-event.ts"
+        )
+        let primaryURL = try url(
+            "https://media.example/unrequested-budget-primary.ts"
+        )
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-PROGRAM-DATE-TIME:2026-09-01T00:00:00.000Z
+                #EXT-X-DATERANGE:ID="oversized-event",CLASS="com.apple.hls.interstitial",START-DATE="2026-09-01T00:00:01.000Z",DURATION=2,X-ASSET-URI="https://ads.example/oversized-event.m3u8"
+                #EXTINF:4,
+                unrequested-budget-primary.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:2
+                #EXTINF:2,
+                oversized-event.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: eventURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data(repeating: 1, count: 3_073)),
+            for: eventMediaURL
+        )
+
+        await #expect(
+            throws: HLSLiveDVRError.interstitialStorageLimitReached
+        ) {
+            try await recorder(
+                session: fixture.session,
+                startPosition: .currentWindow,
+                interstitials: HLSLiveDVRInterstitialPack(
+                    policy: .package,
+                    transfer: HLSTransferPack(retryPolicy: nil)
+                )
+            ).record(from: sourceURL, to: fixture.destinationURL)
+        }
+        #expect(
+            !HLSLiveURLProtocol.capturedRequests().contains {
+                $0.url == primaryURL
+            }
+        )
+    }
+
+    @Test("rolling retention removes expired interstitial packages")
+    func prunesExpiredInterstitialPackage() async throws {
+        let sourceURL = try url("https://media.example/rolling-event.m3u8")
+        let reloadURL = try url(
+            "https://media.example/rolling-event.m3u8?_HLS_msn=2"
+        )
+        let firstURL = try url("https://media.example/rolling-event-1.ts")
+        let secondURL = try url("https://media.example/rolling-event-2.ts")
+        let eventURL = try url("https://ads.example/rolling-event.m3u8")
+        let eventMediaURL = try url("https://ads.example/rolling-event.ts")
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:1
+                #EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES
+                #EXT-X-PROGRAM-DATE-TIME:2026-09-01T00:00:00.000Z
+                #EXT-X-DATERANGE:ID="rolling-event",CLASS="com.apple.hls.interstitial",START-DATE="2026-09-01T00:00:00.000Z",DURATION=4,X-ASSET-URI="https://ads.example/rolling-event.m3u8"
+                #EXTINF:4,
+                rolling-event-1.ts
+                """
+            ),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:2
+                #EXT-X-PROGRAM-DATE-TIME:2026-09-01T00:00:04.000Z
+                #EXTINF:4,
+                rolling-event-2.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: reloadURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXTINF:4,
+                rolling-event.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: eventURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("one".utf8)),
+            for: firstURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("two".utf8)),
+            for: secondURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("event".utf8)),
+            for: eventMediaURL
+        )
+
+        let receipt = try await rollingRecorder(
+            session: fixture.session,
+            maximumSegmentCount: 1,
+            interstitials: HLSLiveDVRInterstitialPack(policy: .package)
+        ).record(from: sourceURL, to: fixture.destinationURL)
+        let contents = try String(
+            contentsOf: receipt.playlistURL,
+            encoding: .utf8
+        )
+
+        #expect(receipt.segmentCount == 1)
+        #expect(receipt.firstMediaSequence == 2)
+        #expect(receipt.interstitialStatistics.retainedEventCount == 0)
+        #expect(!contents.contains("#EXT-X-DATERANGE"))
+        #expect(
+            receipt.retentionStatistics.evictedMediaByteCount
+                > Int64("one".utf8.count)
+        )
+        #expect(
+            HLSLiveURLProtocol.capturedRequests().compactMap(\.url)
+                .count { $0 == eventURL } == 1
+        )
+        #expect(
+            try packageFileURLs(receipt.directoryURL).allSatisfy {
+                !$0.path.contains("/interstitials/")
+            }
+        )
+    }
+
+    @Test("resumable recording reuses URL-free interstitial packages")
+    func restoresPackagedInterstitial() async throws {
+        let sourceURL = try url("https://media.example/recovery-event.m3u8")
+        let firstURL = try url("https://media.example/recovery-event-1.ts")
+        let secondURL = try url("https://media.example/recovery-event-2.ts")
+        let eventURL = try url(
+            "https://ads.example/recovery-event.m3u8?token=secret"
+        )
+        let eventMediaURL = try url(
+            "https://ads.example/recovery-event.ts"
+        )
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        let initialPlaylist = """
+            #EXTM3U
+            #EXT-X-TARGETDURATION:60
+            #EXT-X-MEDIA-SEQUENCE:1
+            #EXT-X-PROGRAM-DATE-TIME:2026-09-01T00:00:00.000Z
+            #EXT-X-DATERANGE:ID="recovery-event",CLASS="com.apple.hls.interstitial",START-DATE="2026-09-01T00:00:01.000Z",DURATION=8,X-ASSET-URI="https://ads.example/recovery-event.m3u8?token=secret",X-RESUME-OFFSET=1
+            #EXTINF:4,
+            recovery-event-1.ts
+            """
+        HLSLiveURLProtocol.register(
+            playlistResponse(initialPlaylist),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXTINF:4,
+                recovery-event.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: eventURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("first".utf8)),
+            for: firstURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("event".utf8)),
+            for: eventMediaURL
+        )
+        let recorder = recorder(
+            session: fixture.session,
+            startPosition: .currentWindow,
+            recovery: HLSLiveDVRRecoveryPack(policy: .resumable),
+            interstitials: HLSLiveDVRInterstitialPack(policy: .package)
+        )
+        let recording = recorder.startRecording(
+            from: sourceURL,
+            to: fixture.destinationURL
+        )
+        var events = recording.events.makeAsyncIterator()
+        guard case .progress(let progress) = try await events.next() else {
+            Issue.record("Expected a durable interstitial checkpoint")
+            return
+        }
+        #expect(progress.interstitialStatistics.retainedEventCount == 1)
+        await recording.interrupt()
+
+        let checkpointURL = HLSLiveDVRCheckpointStore(
+            destinationURL: fixture.destinationURL
+        ).rootURL.appendingPathComponent("checkpoint.json")
+        let checkpointData = try Data(contentsOf: checkpointURL)
+        let checkpointText = try #require(
+            String(data: checkpointData, encoding: .utf8)
+        )
+        let checkpoint = try JSONDecoder().decode(
+            HLSLiveDVRCheckpoint.self,
+            from: checkpointData
+        )
+        #expect(checkpoint.interstitials?.count == 1)
+        #expect(checkpoint.interstitials?.first?.files.isEmpty == false)
+        #expect(!checkpointText.contains("ads.example"))
+        #expect(!checkpointText.contains("token=secret"))
+
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                initialPlaylist
+                    + """
+
+                    #EXTINF:4,
+                    recovery-event-2.ts
+                    #EXT-X-ENDLIST
+                    """
+            ),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("second".utf8)),
+            for: secondURL
+        )
+
+        let receipt = try await recorder.resume(
+            from: sourceURL,
+            to: fixture.destinationURL
+        )
+
+        #expect(receipt.segmentCount == 2)
+        #expect(receipt.interstitialStatistics.retainedEventCount == 1)
+        #expect(
+            HLSLiveURLProtocol.capturedRequests().compactMap(\.url)
+                .count { $0 == eventURL } == 1
+        )
+        _ = try HLSLocalPlaybackPackageSnapshot(
+            source: receipt.playbackSource
+        )
+    }
+
+    @Test("playback snapshots freeze packaged interstitial media")
+    func snapshotsPackagedInterstitial() async throws {
+        let sourceURL = try url("https://media.example/snapshot-event.m3u8")
+        let primaryURL = try url("https://media.example/snapshot-primary.ts")
+        let eventURL = try url("https://ads.example/snapshot-event.m3u8")
+        let eventMediaURL = try url("https://ads.example/snapshot-event.ts")
+        let fixture = try makeFixture()
+        let snapshotURL = fixture.rootURL.appendingPathComponent(
+            "snapshot",
+            isDirectory: true
+        )
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:60
+                #EXT-X-MEDIA-SEQUENCE:1
+                #EXT-X-PROGRAM-DATE-TIME:2026-09-01T00:00:00.000Z
+                #EXT-X-DATERANGE:ID="snapshot-event",CLASS="com.apple.hls.interstitial",START-DATE="2026-09-01T00:00:01.000Z",DURATION=4,X-ASSET-URI="https://ads.example/snapshot-event.m3u8"
+                #EXTINF:4,
+                snapshot-primary.ts
+                """,
+                delay: 0.05
+            ),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXTINF:4,
+                snapshot-event.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: eventURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("primary".utf8)),
+            for: primaryURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("event".utf8)),
+            for: eventMediaURL
+        )
+        let recording = recorder(
+            session: fixture.session,
+            startPosition: .currentWindow,
+            interstitials: HLSLiveDVRInterstitialPack(policy: .package)
+        ).startRecording(from: sourceURL, to: fixture.destinationURL)
+        async let captured = recording.capturePlaybackSnapshot(
+            to: snapshotURL
+        )
+        var events = recording.events.makeAsyncIterator()
+        guard case .progress = try await events.next() else {
+            Issue.record("Expected a snapshot boundary")
+            await recording.interrupt()
+            return
+        }
+        let receipt = try await captured
+        await recording.interrupt()
+
+        #expect(receipt.interstitialStatistics.retainedEventCount == 1)
+        #expect(!FileManager.default.fileExists(atPath: fixture.destinationURL.path))
+        _ = try HLSLocalPlaybackPackageSnapshot(
+            source: receipt.playbackSource
+        )
+    }
+
+    @Test("interstitial packaging remains opt-in and fails before primary media")
+    func rejectsInterstitialByDefault() async throws {
+        let sourceURL = try url("https://media.example/reject-event.m3u8")
+        let primaryURL = try url("https://media.example/unrequested.ts")
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-PROGRAM-DATE-TIME:2026-09-01T00:00:00.000Z
+                #EXT-X-DATERANGE:ID="event",CLASS="com.apple.hls.interstitial",START-DATE="2026-09-01T00:00:01.000Z",X-ASSET-URI="https://ads.example/event.m3u8"
+                #EXTINF:4,
+                unrequested.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: sourceURL
+        )
+
+        await #expect(
+            throws: HLSLiveDVRError.unsupportedFeature(
+                .externalTimelineResource
+            )
+        ) {
+            try await recorder(
+                session: fixture.session,
+                startPosition: .currentWindow
+            ).record(from: sourceURL, to: fixture.destinationURL)
+        }
+        #expect(
+            HLSLiveURLProtocol.capturedRequests().compactMap(\.url)
+                == [sourceURL]
+        )
+        #expect(
+            !HLSLiveURLProtocol.capturedRequests().contains {
+                $0.url == primaryURL
+            }
+        )
+    }
+
     @Test("recorded Date Ranges survive later live-window eviction")
     func retainsEvictedTimelineMetadata() async throws {
         let sourceURL = try url(
@@ -6589,6 +7548,8 @@ extension HLSLivePlaylistClientTests {
         parts: HLSLiveDVRPartPack = HLSLiveDVRPartPack(),
         preloading: HLSLiveDVRPreloadPack = HLSLiveDVRPreloadPack(),
         recovery: HLSLiveDVRRecoveryPack = HLSLiveDVRRecoveryPack(),
+        interstitials: HLSLiveDVRInterstitialPack =
+            HLSLiveDVRInterstitialPack(),
         requestPolicy: HLSRequestPolicy = HLSRequestPolicy()
     ) -> HLSLiveDVRRecorder {
         HLSLiveDVRRecorder(
@@ -6607,7 +7568,8 @@ extension HLSLivePlaylistClientTests {
                 renditions: renditions,
                 parts: parts,
                 preloading: preloading,
-                recovery: recovery
+                recovery: recovery,
+                interstitials: interstitials
             )
         )
     }
@@ -6618,7 +7580,9 @@ extension HLSLivePlaylistClientTests {
         maximumSegmentCount: Int,
         maximumTotalMediaBytes: Int64 = 4_096,
         recovery: HLSLiveDVRRecoveryPack = HLSLiveDVRRecoveryPack(),
-        parts: HLSLiveDVRPartPack = HLSLiveDVRPartPack()
+        parts: HLSLiveDVRPartPack = HLSLiveDVRPartPack(),
+        interstitials: HLSLiveDVRInterstitialPack =
+            HLSLiveDVRInterstitialPack()
     ) -> HLSLiveDVRRecorder {
         HLSLiveDVRRecorder(
             client: HLSLivePlaylistClient(session: session),
@@ -6632,7 +7596,8 @@ extension HLSLivePlaylistClientTests {
                 ),
                 startPosition: .currentWindow,
                 parts: parts,
-                recovery: recovery
+                recovery: recovery,
+                interstitials: interstitials
             )
         )
     }

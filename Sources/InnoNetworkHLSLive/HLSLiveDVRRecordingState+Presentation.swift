@@ -271,16 +271,29 @@ extension HLSLiveDVRRecordingState {
         isPrimary: Bool
     ) throws {
         if snapshot.dateRanges.contains(where: {
-            $0.interstitial != nil
-                || $0.externalResource != nil
-                || $0.preload != nil
+            $0.externalResource != nil || $0.preload != nil
         }) {
             throw HLSLiveDVRError.unsupportedFeature(
                 .externalTimelineResource
             )
         }
+        if configuration.interstitials.policy == .disabled,
+            snapshot.dateRanges.contains(where: {
+                $0.interstitial != nil
+            })
+        {
+            throw HLSLiveDVRError.unsupportedFeature(
+                .externalTimelineResource
+            )
+        }
         if snapshot.dateRanges.contains(where: {
-            !$0.extensionAttributeNames.isEmpty
+            let representedNames =
+                $0.interstitial == nil
+                ? Set<String>()
+                : Self.interstitialAttributeNames
+            return !$0.extensionAttributeNames.allSatisfy(
+                representedNames.contains
+            )
         }) {
             throw HLSLiveDVRError.unsupportedFeature(
                 .unrepresentableTimelineMetadata
@@ -292,6 +305,20 @@ extension HLSLiveDVRRecordingState {
             )
         }
     }
+
+    private static let interstitialAttributeNames: Set<String> = [
+        "X-ASSET-LIST",
+        "X-ASSET-URI",
+        "X-CONTENT-MAY-VARY",
+        "X-PLAYOUT-LIMIT",
+        "X-RESTRICT",
+        "X-RESUME-OFFSET",
+        "X-SKIP-CONTROL-DURATION",
+        "X-SKIP-CONTROL-LABEL-ID",
+        "X-SKIP-CONTROL-OFFSET",
+        "X-TIMELINE-OCCUPIES",
+        "X-TIMELINE-STYLE",
+    ]
 
     private mutating func mergeDateRanges(
         _ updates: [HLSDateRange]

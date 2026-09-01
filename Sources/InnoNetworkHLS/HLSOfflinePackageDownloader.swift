@@ -77,6 +77,18 @@ public struct HLSOfflinePackageDownloader: Sendable {
         )
     }
 
+    package init(
+        client: HLSHTTPClient,
+        configuration: HLSOfflinePackageConfiguration
+    ) {
+        self.init(
+            client: client,
+            configuration: configuration,
+            diskCapacityChecker: HLSDiskCapacityChecker(),
+            clock: SystemClock()
+        )
+    }
+
     init(
         client: HLSHTTPClient,
         configuration: HLSOfflinePackageConfiguration,

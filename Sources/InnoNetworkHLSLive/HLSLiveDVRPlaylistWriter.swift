@@ -456,6 +456,90 @@ enum HLSLiveDVRPlaylistWriter {
         if dateRange.endsOnNext {
             attributes.append("END-ON-NEXT=YES")
         }
+        if let interstitial = dateRange.interstitial {
+            let sourceAttribute: String
+            let sourceValue: String
+            switch interstitial.source {
+            case .asset(let url):
+                sourceAttribute = "X-ASSET-URI"
+                sourceValue = url.relativeString
+            case .assetList(let url):
+                sourceAttribute = "X-ASSET-LIST"
+                sourceValue = url.relativeString
+            }
+            try HLSPackageMasterPlaylistWriter
+                .validateQuotedAttribute(sourceValue)
+            attributes.append(
+                "\(sourceAttribute)=\"\(sourceValue)\""
+            )
+            if let resumeOffset = interstitial.resumeOffset {
+                attributes.append(
+                    "X-RESUME-OFFSET=\(durationString(resumeOffset))"
+                )
+            }
+            if let playoutLimit = interstitial.playoutLimit {
+                attributes.append(
+                    "X-PLAYOUT-LIMIT=\(durationString(playoutLimit))"
+                )
+            }
+            attributes.append(
+                "X-CONTENT-MAY-VARY=\""
+                    + (interstitial.contentVariability == .mayVary
+                        ? "YES" : "NO")
+                    + "\""
+            )
+            attributes.append(
+                "X-TIMELINE-OCCUPIES=\""
+                    + (interstitial.timelineOccupancy == .point
+                        ? "POINT" : "RANGE")
+                    + "\""
+            )
+            attributes.append(
+                "X-TIMELINE-STYLE=\""
+                    + (interstitial.timelineStyle == .highlight
+                        ? "HIGHLIGHT" : "PRIMARY")
+                    + "\""
+            )
+            let restrictions = [
+                HLSInterstitialNavigationRestriction.skip,
+                .jump,
+            ].filter {
+                interstitial.navigationRestrictions.contains($0)
+            }.map { restriction in
+                switch restriction {
+                case .skip:
+                    return "SKIP"
+                case .jump:
+                    return "JUMP"
+                }
+            }
+            if !restrictions.isEmpty {
+                attributes.append(
+                    "X-RESTRICT=\""
+                        + restrictions.joined(separator: ",")
+                        + "\""
+                )
+            }
+            if let skipControl = interstitial.skipControl {
+                if let offset = skipControl.offset {
+                    attributes.append(
+                        "X-SKIP-CONTROL-OFFSET=\(offset)"
+                    )
+                }
+                if let duration = skipControl.duration {
+                    attributes.append(
+                        "X-SKIP-CONTROL-DURATION=\(duration)"
+                    )
+                }
+                if let labelID = skipControl.labelID {
+                    try HLSPackageMasterPlaylistWriter
+                        .validateQuotedAttribute(labelID)
+                    attributes.append(
+                        "X-SKIP-CONTROL-LABEL-ID=\"\(labelID)\""
+                    )
+                }
+            }
+        }
         return "#EXT-X-DATERANGE:"
             + attributes.joined(separator: ",")
     }

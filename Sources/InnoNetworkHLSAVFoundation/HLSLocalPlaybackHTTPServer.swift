@@ -215,7 +215,7 @@ struct HLSLocalPlaybackPackageRoot: Sendable {
 
     let directoryURL: URL
     let entryRelativePath: String
-    let playlistDataByRelativePath: [String: Data]
+    let frozenResourceDataByRelativePath: [String: Data]
 
     init(source: HLSLocalPlaybackSource) throws {
         let snapshot: HLSLocalPlaybackPackageSnapshot
@@ -238,8 +238,8 @@ struct HLSLocalPlaybackPackageRoot: Sendable {
         }
         self.directoryURL = snapshot.directoryURL
         self.entryRelativePath = snapshot.entryRelativePath
-        self.playlistDataByRelativePath =
-            snapshot.playlistDataByRelativePath
+        self.frozenResourceDataByRelativePath =
+            snapshot.frozenResourceDataByRelativePath
     }
 
     func entryURL(port: UInt16, token: String) -> URL? {
@@ -314,7 +314,7 @@ struct HLSLocalPlaybackPackageRoot: Sendable {
                 Self.directoryPrefix(directoryURL.path).count
             )
         )
-        if let data = playlistDataByRelativePath[relativePath] {
+        if let data = frozenResourceDataByRelativePath[relativePath] {
             return HLSLocalPlaybackFile(
                 storage: .data(data),
                 size: Int64(data.count),
@@ -369,6 +369,8 @@ struct HLSLocalPlaybackPackageRoot: Sendable {
             return "audio/aac"
         case "vtt", "webvtt":
             return "text/vtt"
+        case "json":
+            return "application/json"
         default:
             return "application/octet-stream"
         }

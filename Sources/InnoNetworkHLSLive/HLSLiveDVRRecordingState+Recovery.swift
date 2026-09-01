@@ -37,7 +37,7 @@ extension HLSLiveDVRRecordingState {
             renditions: renditionCheckpoints,
             inBandClosedCaptionIdentities:
                 inBandClosedCaptions.map(\.liveDVRCheckpointIdentity),
-            dateRanges: dateRanges.map(
+            dateRanges: try checkpointDateRanges().map(
                 HLSLiveDVRCheckpoint.DateRange.init
             ),
             promotedPartCount: promotedPartCount
@@ -53,6 +53,19 @@ extension HLSLiveDVRRecordingState {
             HLSLiveDVRCheckpoint.RetentionStatistics(
                 retentionStatistics
             )
+        checkpoint.interstitialPolicy =
+            switch configuration.interstitials.policy {
+            case .disabled:
+                "disabled"
+            case .package:
+                "package"
+            }
+        checkpoint.interstitials = interstitials.map(
+            HLSLiveDVRCheckpoint.Interstitial.init
+        )
+        checkpoint.omittedInterstitials = omittedInterstitials.map(
+            HLSLiveDVRCheckpoint.OmittedInterstitial.init
+        )
         return checkpoint
     }
 
@@ -72,6 +85,21 @@ extension HLSLiveDVRRecordingState {
         guard
             restoredRetentionPolicy
                 == configuration.limits.retentionPolicy
+        else {
+            throw HLSLiveDVRError.recoveryMismatch
+        }
+        let restoredInterstitialPolicy: HLSLiveDVRInterstitialPolicy
+        switch checkpoint.interstitialPolicy ?? "disabled" {
+        case "disabled":
+            restoredInterstitialPolicy = .disabled
+        case "package":
+            restoredInterstitialPolicy = .package
+        default:
+            throw HLSLiveDVRError.recoveryCorrupted
+        }
+        guard
+            restoredInterstitialPolicy
+                == configuration.interstitials.policy
         else {
             throw HLSLiveDVRError.recoveryMismatch
         }
@@ -201,6 +229,18 @@ extension HLSLiveDVRRecordingState {
             }
             return model
         }
+        let restoredInterstitials = try Self.validatedInterstitials(
+            checkpoint.interstitials ?? [],
+            dateRanges: restoredDateRanges,
+            configuration: configuration,
+            workspaceDirectoryURL: workspace.directoryURL
+        )
+        let restoredOmittedInterstitials = try Self.validatedOmissions(
+            checkpoint.omittedInterstitials ?? [],
+            interstitials: restoredInterstitials,
+            maximumEventCount:
+                configuration.interstitials.maximumEventCount
+        )
         let restoredMediaBytes = try Self.validatedMediaByteCount(
             checkpoint.files,
             limit: configuration.limits.maximumTotalMediaBytes
@@ -226,6 +266,8 @@ extension HLSLiveDVRRecordingState {
         inBandClosedCaptions = selection.inBandClosedCaptions
         renditionStates = restoredRenditionStates
         dateRanges = restoredDateRanges
+        interstitials = restoredInterstitials
+        omittedInterstitials = restoredOmittedInterstitials
         partState = HLSLiveDVRPartRecordingState(
             pack: configuration.parts,
             promotedPartCount: checkpoint.promotedPartCount
@@ -234,6 +276,268 @@ extension HLSLiveDVRRecordingState {
         pendingEvictionFilePaths = []
         didConfigureRenditions = true
         initialPathwayID = snapshot.pathwayID
+    }
+
+    private func checkpointDateRanges() throws -> [HLSDateRange] {
+        guard !dateRanges.isEmpty else {
+            return []
+        }
+        guard let first = segments.first,
+            let last = segments.last,
+            let startDate = first.programDateTime,
+            let lastStartDate = last.programDateTime
+        else {
+            throw HLSLiveDVRError.recoveryCorrupted
+        }
+        let endDate = lastStartDate.addingTimeInterval(last.duration)
+        guard endDate.timeIntervalSinceReferenceDate.isFinite else {
+            throw HLSLiveDVRError.recoveryCorrupted
+        }
+        let omittedIDs = Set(omittedInterstitials.map(\.id))
+        return try dateRanges.compactMap { dateRange in
+            guard !omittedIDs.contains(dateRange.id) else {
+                return nil
+            }
+            guard dateRange.startDate < endDate else {
+                return nil
+            }
+            let rangeEnd =
+                dateRange.endDate
+                ?? dateRange.duration.map {
+                    dateRange.startDate.addingTimeInterval($0)
+                }
+            if let rangeEnd, rangeEnd <= startDate {
+                return nil
+            }
+            guard dateRange.interstitial != nil else {
+                return dateRange
+            }
+            guard
+                let stored = interstitials.first(where: {
+                    $0.id == dateRange.id
+                })
+            else {
+                throw HLSLiveDVRError.recoveryCorrupted
+            }
+            return stored.dateRange
+        }
+    }
+
+    private static func validatedInterstitials(
+        _ records: [HLSLiveDVRCheckpoint.Interstitial],
+        dateRanges: [HLSDateRange],
+        configuration: HLSLiveDVRConfiguration,
+        workspaceDirectoryURL: URL
+    ) throws -> [HLSLiveDVRStoredInterstitial] {
+        guard records.count <= configuration.interstitials.maximumEventCount
+        else {
+            throw HLSLiveDVRError.recoveryMismatch
+        }
+        var ids: Set<String> = []
+        var paths: Set<String> = []
+        var totalBytes: Int64 = 0
+        var stored: [HLSLiveDVRStoredInterstitial] = []
+        for record in records {
+            guard ids.insert(record.id).inserted,
+                Self.validInterstitialSourceIdentity(record.sourceIdentity),
+                record.assetCount > 0,
+                record.assetCount
+                    <= configuration.interstitials.maximumAssetsPerEvent,
+                Self.validInterstitialDirectory(record.eventDirectoryPath),
+                let dateRange = dateRanges.first(where: {
+                    $0.id == record.id && $0.interstitial != nil
+                }),
+                try Self.interstitialFilesAreValid(
+                    record.files,
+                    eventDirectoryPath: record.eventDirectoryPath,
+                    occupiedPaths: &paths
+                ),
+                Self.interstitialSourceIsValid(
+                    dateRange.interstitial?.source,
+                    isContainedIn: record.eventDirectoryPath,
+                    files: record.files,
+                    expectedAssetCount: record.assetCount,
+                    maximumAssetCount:
+                        configuration.interstitials.maximumAssetsPerEvent,
+                    workspaceDirectoryURL: workspaceDirectoryURL
+                )
+            else {
+                throw HLSLiveDVRError.recoveryCorrupted
+            }
+            let byteCount = try validatedMediaByteCount(
+                record.files,
+                limit: configuration.interstitials.maximumTotalBytes
+            )
+            let (nextBytes, overflow) = totalBytes.addingReportingOverflow(
+                byteCount
+            )
+            guard !overflow,
+                nextBytes <= configuration.interstitials.maximumTotalBytes
+            else {
+                throw HLSLiveDVRError.recoveryCorrupted
+            }
+            totalBytes = nextBytes
+            stored.append(
+                HLSLiveDVRStoredInterstitial(
+                    id: record.id,
+                    sourceIdentity: record.sourceIdentity,
+                    eventDirectoryPath: record.eventDirectoryPath,
+                    dateRange: dateRange,
+                    assetCount: record.assetCount,
+                    files: record.files
+                )
+            )
+        }
+        return stored
+    }
+
+    private static func validatedOmissions(
+        _ records: [HLSLiveDVRCheckpoint.OmittedInterstitial],
+        interstitials: [HLSLiveDVRStoredInterstitial],
+        maximumEventCount: Int
+    ) throws -> [HLSLiveDVROmittedInterstitial] {
+        guard records.count + interstitials.count <= maximumEventCount else {
+            throw HLSLiveDVRError.recoveryMismatch
+        }
+        var ids = Set(interstitials.map(\.id))
+        return try records.map { record in
+            guard ids.insert(record.id).inserted,
+                validInterstitialSourceIdentity(record.sourceIdentity)
+            else {
+                throw HLSLiveDVRError.recoveryCorrupted
+            }
+            return HLSLiveDVROmittedInterstitial(
+                id: record.id,
+                sourceIdentity: record.sourceIdentity
+            )
+        }
+    }
+
+    private static func validInterstitialSourceIdentity(
+        _ identity: String
+    ) -> Bool {
+        let prefix: String
+        if identity.hasPrefix("asset:") {
+            prefix = "asset:"
+        } else if identity.hasPrefix("assetList:") {
+            prefix = "assetList:"
+        } else {
+            return false
+        }
+        let digest = identity.dropFirst(prefix.count)
+        return digest.count == 64 && digest.allSatisfy(\.isHexDigit)
+    }
+
+    private static func validInterstitialDirectory(_ path: String) -> Bool {
+        let components = path.split(
+            separator: "/",
+            omittingEmptySubsequences: false
+        )
+        guard components.count == 2,
+            components[0] == "interstitials",
+            components[1].hasPrefix("event-")
+        else {
+            return false
+        }
+        let digest = components[1].dropFirst("event-".count)
+        return digest.count == 64 && digest.allSatisfy(\.isHexDigit)
+    }
+
+    private static func interstitialFilesAreValid(
+        _ files: [HLSLiveDVRCheckpoint.FileRecord],
+        eventDirectoryPath: String,
+        occupiedPaths: inout Set<String>
+    ) throws -> Bool {
+        guard !files.isEmpty else {
+            return false
+        }
+        let prefix = eventDirectoryPath + "/"
+        for file in files {
+            guard file.relativePath.hasPrefix(prefix),
+                occupiedPaths.insert(file.relativePath).inserted,
+                file.byteCount > 0,
+                file.contentSHA256.count == 64,
+                file.contentSHA256.allSatisfy(\.isHexDigit)
+            else {
+                return false
+            }
+        }
+        return true
+    }
+
+    private static func interstitialSourceIsValid(
+        _ source: HLSInterstitialSource?,
+        isContainedIn eventDirectoryPath: String,
+        files: [HLSLiveDVRCheckpoint.FileRecord],
+        expectedAssetCount: Int,
+        maximumAssetCount: Int,
+        workspaceDirectoryURL: URL
+    ) -> Bool {
+        let url: URL
+        switch source {
+        case .assetList(let sourceURL):
+            url = sourceURL
+        case .asset, nil:
+            return false
+        }
+        let path = url.relativeString
+        let components = path.split(
+            separator: "/",
+            omittingEmptySubsequences: false
+        )
+        let eventComponents = eventDirectoryPath.split(separator: "/")
+        guard components.count >= 3,
+            Array(components.prefix(2)) == eventComponents,
+            components.allSatisfy({ encoded in
+                guard
+                    let decoded = String(encoded).removingPercentEncoding
+                else {
+                    return false
+                }
+                return !decoded.isEmpty
+                    && decoded != "."
+                    && decoded != ".."
+                    && !decoded.contains("/")
+                    && !decoded.contains("\\")
+                    && !decoded.unicodeScalars.contains(where: {
+                        CharacterSet.controlCharacters.contains($0)
+                    })
+            }),
+            let file = files.first(where: { $0.relativePath == path }),
+            file.byteCount > 0,
+            file.byteCount <= 2 * 1_024 * 1_024
+        else {
+            return false
+        }
+        let directoryURL = workspaceDirectoryURL.standardizedFileURL
+        let sourceURL = directoryURL.appendingPathComponent(path)
+            .standardizedFileURL
+        let prefix =
+            directoryURL.path.hasSuffix("/")
+            ? directoryURL.path : directoryURL.path + "/"
+        guard sourceURL.path.hasPrefix(prefix),
+            let values = try? sourceURL.resourceValues(
+                forKeys: [
+                    .fileSizeKey,
+                    .isRegularFileKey,
+                    .isSymbolicLinkKey,
+                ]
+            ),
+            values.isRegularFile == true,
+            values.isSymbolicLink != true,
+            values.fileSize == Int(file.byteCount),
+            let data = try? Data(contentsOf: sourceURL),
+            data.count == Int(file.byteCount),
+            let references =
+                try? HLSInterstitialAssetListDecoder
+                .decodeLocalAssetReferences(
+                    data,
+                    maximumAssetCount: maximumAssetCount
+                )
+        else {
+            return false
+        }
+        return references.count == expectedAssetCount
     }
 
     private func checkpointTrack(

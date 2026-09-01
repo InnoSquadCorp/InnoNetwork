@@ -45,7 +45,7 @@ public struct HLSExternalResourceResolver: Sendable {
         )
     }
 
-    init(
+    package init(
         client: HLSHTTPClient,
         configuration: HLSExternalResourcePack
     ) {

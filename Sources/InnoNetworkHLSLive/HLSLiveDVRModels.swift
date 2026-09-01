@@ -105,6 +105,18 @@ public enum HLSLiveDVRError: Error, Equatable, Sendable {
 
     /// Local staging or atomic commit failed.
     case storageFailed
+
+    /// An interstitial could not become a complete package-local event.
+    case interstitialPackagingFailed
+
+    /// The source exceeded the configured interstitial-event limit.
+    case interstitialEventLimitExceeded(limit: Int)
+
+    /// Packaged events exceeded the local-playback playlist limit.
+    case interstitialPlaylistLimitExceeded(limit: Int)
+
+    /// Packaged interstitial bytes exceeded their dedicated storage limit.
+    case interstitialStorageLimitReached
 }
 
 extension HLSLiveDVRError: LocalizedError {
@@ -160,6 +172,14 @@ extension HLSLiveDVRError: LocalizedError {
             return "A live DVR media transfer failed."
         case .storageFailed:
             return "The live DVR package could not be written atomically."
+        case .interstitialPackagingFailed:
+            return "A live DVR interstitial could not be packaged completely."
+        case .interstitialEventLimitExceeded(let limit):
+            return "The live DVR source exceeded the interstitial-event limit of \(limit)."
+        case .interstitialPlaylistLimitExceeded(let limit):
+            return "Live DVR interstitials exceeded the local-playback playlist limit of \(limit)."
+        case .interstitialStorageLimitReached:
+            return "Live DVR interstitials exceeded their configured storage limit."
         }
     }
 
@@ -208,6 +228,14 @@ extension HLSLiveDVRError: LocalizedError {
             return "Free destination storage or lower the recording limits, then retry."
         case .storageFailed:
             return "Check destination permissions and available storage, then retry."
+        case .interstitialPackagingFailed:
+            return "Check interstitial asset availability, or opt into complete-event omission."
+        case .interstitialEventLimitExceeded:
+            return "Raise the bounded event limit only for a trusted source."
+        case .interstitialPlaylistLimitExceeded:
+            return "Retain fewer interstitial assets or renditions, or raise the bounded playlist limit."
+        case .interstitialStorageLimitReached:
+            return "Raise the interstitial and recording byte limits, or omit unavailable events."
         }
     }
 }
@@ -371,7 +399,7 @@ public struct HLSLiveDVRProgress: Equatable, Sendable {
     /// The retained playback duration in seconds.
     public let recordedDuration: TimeInterval
 
-    /// Initialization and complete-segment bytes retained so far.
+    /// Initialization, complete-segment, and interstitial bytes retained.
     public let mediaByteCount: Int64
 
     /// Partial segments currently staged for one incomplete parent segment.
@@ -392,6 +420,9 @@ public struct HLSLiveDVRProgress: Equatable, Sendable {
     /// Cumulative media removed by rolling retention.
     public let retentionStatistics: HLSLiveDVRRetentionStatistics
 
+    /// Value-redacted interstitial packaging counters.
+    public let interstitialStatistics: HLSLiveDVRInterstitialStatistics
+
     init(
         segmentCount: Int,
         gapCount: Int = 0,
@@ -404,7 +435,9 @@ public struct HLSLiveDVRProgress: Equatable, Sendable {
         preloadStatistics: HLSLiveDVRPreloadStatistics =
             HLSLiveDVRPreloadStatistics(),
         retentionStatistics: HLSLiveDVRRetentionStatistics =
-            HLSLiveDVRRetentionStatistics()
+            HLSLiveDVRRetentionStatistics(),
+        interstitialStatistics: HLSLiveDVRInterstitialStatistics =
+            HLSLiveDVRInterstitialStatistics()
     ) {
         self.segmentCount = segmentCount
         self.gapCount = gapCount
@@ -416,6 +449,7 @@ public struct HLSLiveDVRProgress: Equatable, Sendable {
         self.promotedPartCount = promotedPartCount
         self.preloadStatistics = preloadStatistics
         self.retentionStatistics = retentionStatistics
+        self.interstitialStatistics = interstitialStatistics
     }
 }
 
@@ -462,7 +496,7 @@ public struct HLSLiveDVRReceipt: Equatable, Sendable {
     /// The retained playback duration in seconds.
     public let recordedDuration: TimeInterval
 
-    /// Initialization and complete-segment bytes retained in the package.
+    /// Initialization, complete-segment, and interstitial bytes retained.
     public let mediaByteCount: Int64
 
     /// Partial segments promoted without refetching their complete parent.
@@ -473,6 +507,9 @@ public struct HLSLiveDVRReceipt: Equatable, Sendable {
 
     /// Cumulative media removed by rolling retention.
     public let retentionStatistics: HLSLiveDVRRetentionStatistics
+
+    /// Value-redacted interstitial packaging counters.
+    public let interstitialStatistics: HLSLiveDVRInterstitialStatistics
 
     /// The first retained media-sequence number.
     public let firstMediaSequence: Int64
@@ -494,6 +531,8 @@ public struct HLSLiveDVRReceipt: Equatable, Sendable {
             HLSLiveDVRPreloadStatistics(),
         retentionStatistics: HLSLiveDVRRetentionStatistics =
             HLSLiveDVRRetentionStatistics(),
+        interstitialStatistics: HLSLiveDVRInterstitialStatistics =
+            HLSLiveDVRInterstitialStatistics(),
         firstMediaSequence: Int64,
         lastMediaSequence: Int64
     ) {
@@ -508,6 +547,7 @@ public struct HLSLiveDVRReceipt: Equatable, Sendable {
         self.promotedPartCount = promotedPartCount
         self.preloadStatistics = preloadStatistics
         self.retentionStatistics = retentionStatistics
+        self.interstitialStatistics = interstitialStatistics
         self.firstMediaSequence = firstMediaSequence
         self.lastMediaSequence = lastMediaSequence
     }

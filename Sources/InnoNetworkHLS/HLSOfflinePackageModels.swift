@@ -296,6 +296,48 @@ public struct HLSOfflinePackageReceipt: Equatable, Sendable {
     }
 }
 
+extension HLSOfflinePackageReceipt {
+    package func primaryPlaybackDuration() throws -> TimeInterval {
+        guard let primary = tracks.first(where: { $0.kind == .primary })
+        else {
+            throw HLSDownloadError.invalidOfflinePackage
+        }
+        let playlistURL = directoryURL.appendingPathComponent(
+            primary.relativePlaylistPath
+        )
+        let contents: String
+        do {
+            contents = try String(
+                contentsOf: playlistURL,
+                encoding: .utf8
+            )
+        } catch {
+            throw HLSDownloadError.invalidOfflinePackage
+        }
+        let playlist = try PlaylistResolver().resolve(
+            contents,
+            relativeTo: playlistURL
+        )
+        guard let media = playlist.media else {
+            throw HLSDownloadError.invalidOfflinePackage
+        }
+        var duration: TimeInterval = 0
+        for resource in media.resources where resource.kind == .segment {
+            guard let segmentDuration = resource.duration,
+                segmentDuration.isFinite,
+                segmentDuration >= 0
+            else {
+                throw HLSDownloadError.invalidOfflinePackage
+            }
+            duration += segmentDuration
+            guard duration.isFinite else {
+                throw HLSDownloadError.invalidOfflinePackage
+            }
+        }
+        return duration
+    }
+}
+
 /// Events emitted while an offline HLS package is created.
 public enum HLSOfflinePackageEvent: Sendable {
     /// Byte-level progress across all selected media resources.

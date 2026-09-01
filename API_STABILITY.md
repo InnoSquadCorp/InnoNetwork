@@ -406,8 +406,8 @@ types and members in addition to top-level declarations. The grouped ledger
 below keeps the high-level compatibility classification readable for the
 5.x release line.
 
-The machine-checked snapshot currently partitions all 2,856 declarations into
-305 Stable consumer declarations, 2,518 Provisionally Stable consumer
+The machine-checked snapshot currently partitions all 2,879 declarations into
+305 Stable consumer declarations, 2,541 Provisionally Stable consumer
 declarations, and 33 opt-in SPI declarations. The three sets are disjoint and
 exhaustive. `Scripts/symbols/stable-rules.tsv` maps the Stable ledger to symbol
 paths, while the compiler-authored SPI flag is snapshotted in
@@ -641,7 +641,10 @@ Stable.
   `HLSLiveHealthAnalyzer`, `HLSLiveHealthConfiguration`,
   `HLSLiveHealthIssue`, `HLSLiveHealthSnapshot`, `HLSLiveHealthStatus`,
   `HLSLiveHealthThresholdPack`, `HLSLiveDVRConfiguration`, `HLSLiveDVRError`,
-  `HLSLiveDVREvent`, `HLSLiveDVRLimitPack`, `HLSLiveDVRPartCapturePolicy`,
+  `HLSLiveDVREvent`, `HLSLiveDVRInterstitialFailurePolicy`,
+  `HLSLiveDVRInterstitialPack`, `HLSLiveDVRInterstitialPolicy`,
+  `HLSLiveDVRInterstitialStatistics`, `HLSLiveDVRLimitPack`,
+  `HLSLiveDVRPartCapturePolicy`,
   `HLSLiveDVRPartPack`, `HLSLiveDVRPreloadPack`, `HLSLiveDVRPreloadPolicy`,
   `HLSLiveDVRPreloadResourceStatistics`, `HLSLiveDVRPreloadStatistics`,
   `HLSLiveDVRProgress`, `HLSLiveDVRRecoveryPack`,
@@ -659,6 +662,11 @@ Stable.
   and
   `HLSLiveDVRError.playbackSnapshotRequestLimitExceeded(limit:)`; these symbols
   remain in the companion product's Provisionally Stable tier.
+- `HLSLiveDVRConfiguration.advanced(...interstitials:)` preserves the existing
+  overload family while opting into bounded package-local Apple HLS
+  interstitial retention. Complete-event failure policy, retained statistics,
+  and the typed interstitial limit failures remain in the companion product's
+  Provisionally Stable tier.
 
 ### InnoNetworkWebSocket
 

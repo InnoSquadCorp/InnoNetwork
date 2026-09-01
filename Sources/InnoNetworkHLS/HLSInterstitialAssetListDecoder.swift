@@ -1,6 +1,6 @@
 import Foundation
 
-enum HLSInterstitialAssetListDecoder {
+package enum HLSInterstitialAssetListDecoder {
     static func decode(
         _ data: Data,
         maximumAssetCount: Int
@@ -12,6 +12,10 @@ enum HLSInterstitialAssetListDecoder {
                 from: data
             )
         } catch {
+            throw HLSExternalResourceError
+                .invalidInterstitialAssetList
+        }
+        guard !document.assets.isEmpty else {
             throw HLSExternalResourceError
                 .invalidInterstitialAssetList
         }
@@ -39,6 +43,49 @@ enum HLSInterstitialAssetListDecoder {
             assets: assets,
             skipControlOverride: document.skipControl?.value
         )
+    }
+
+    package static func decodeLocalAssetReferences(
+        _ data: Data,
+        maximumAssetCount: Int
+    ) throws -> [String] {
+        let document: Document
+        do {
+            document = try JSONDecoder().decode(
+                Document.self,
+                from: data
+            )
+        } catch {
+            throw HLSExternalResourceError
+                .invalidInterstitialAssetList
+        }
+        guard !document.assets.isEmpty else {
+            throw HLSExternalResourceError
+                .invalidInterstitialAssetList
+        }
+        guard document.assets.count <= maximumAssetCount else {
+            throw HLSExternalResourceError.tooManyInterstitialAssets(
+                limit: maximumAssetCount
+            )
+        }
+        return try document.assets.map { asset in
+            guard asset.duration.isFinite,
+                asset.duration >= 0,
+                !asset.uri.isEmpty,
+                let components = URLComponents(string: asset.uri),
+                components.scheme == nil,
+                components.host == nil,
+                components.user == nil,
+                components.password == nil,
+                components.port == nil,
+                components.query == nil,
+                components.fragment == nil
+            else {
+                throw HLSExternalResourceError
+                    .invalidInterstitialAssetList
+            }
+            return asset.uri
+        }
     }
 
     private struct Document: Decodable {

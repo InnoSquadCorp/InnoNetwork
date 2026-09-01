@@ -146,6 +146,119 @@ struct HLSLocalPlaybackAssetTests {
                 source: remoteSource
             )
         }
+
+        try Data(
+            """
+            #EXTM3U
+            #EXT-X-TARGETDURATION:1
+            #EXT-X-PROGRAM-DATE-TIME:2026-09-01T00:00:00Z
+            #EXT-X-DATERANGE:ID="event",CLASS="com.apple.hls.interstitial",START-DATE="2026-09-01T00:00:00Z",X-ASSET-LIST="https://ads.example/assets.json"
+            #EXTINF:1,
+            segment.ts
+            #EXT-X-ENDLIST
+            """.utf8
+        ).write(to: entryURL, options: .atomic)
+        await #expect(
+            throws: HLSLocalPlaybackAssetError.unsafePackageContents
+        ) {
+            _ = try await HLSLocalPlaybackAsset(
+                source: remoteSource
+            )
+        }
+    }
+
+    @Test("the loopback bridge freezes local interstitial metadata and playlists")
+    func servesFrozenInterstitialResources() async throws {
+        let packageURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(
+                "\(UUID().uuidString).hlspkg",
+                isDirectory: true
+            )
+        let eventURL = packageURL.appendingPathComponent(
+            "interstitials/event",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: eventURL,
+            withIntermediateDirectories: true
+        )
+        defer {
+            try? FileManager.default.removeItem(at: packageURL)
+        }
+        let entryURL = packageURL.appendingPathComponent("index.m3u8")
+        let listURL = eventURL.appendingPathComponent("assets.json")
+        let eventPlaylistURL = eventURL.appendingPathComponent("index.m3u8")
+        try Data(
+            """
+            #EXTM3U
+            #EXT-X-TARGETDURATION:1
+            #EXT-X-PROGRAM-DATE-TIME:2026-09-01T00:00:00Z
+            #EXT-X-DATERANGE:ID="event",CLASS="com.apple.hls.interstitial",START-DATE="2026-09-01T00:00:00Z",DURATION=1,X-ASSET-LIST="interstitials/event/assets.json"
+            #EXTINF:1,
+            primary.ts
+            #EXT-X-ENDLIST
+            """.utf8
+        ).write(to: entryURL)
+        try Data("primary".utf8).write(
+            to: packageURL.appendingPathComponent("primary.ts")
+        )
+        let originalList = Data(
+            #"{"ASSETS":[{"URI":"index.m3u8","DURATION":1}]}"#.utf8
+        )
+        try originalList.write(to: listURL)
+        let originalEventPlaylist = Data(
+            """
+            #EXTM3U
+            #EXT-X-TARGETDURATION:1
+            #EXTINF:1,
+            event.ts
+            #EXT-X-ENDLIST
+            """.utf8
+        )
+        try originalEventPlaylist.write(to: eventPlaylistURL)
+        try Data("event".utf8).write(
+            to: eventURL.appendingPathComponent("event.ts")
+        )
+        let asset = try await HLSLocalPlaybackAsset(
+            source: try playbackSource(packageURL)
+        )
+        defer {
+            asset.close()
+        }
+
+        try Data(
+            #"{"ASSETS":[{"URI":"https://ads.example/escape.m3u8","DURATION":1}]}"#.utf8
+        ).write(to: listURL, options: .atomic)
+        try Data(
+            "#EXTM3U\n#EXTINF:1,\nhttps://ads.example/escape.ts\n".utf8
+        ).write(to: eventPlaylistURL, options: .atomic)
+
+        let rootURL = asset.urlAsset.url.deletingLastPathComponent()
+        let session = URLSession(configuration: .ephemeral)
+        defer {
+            session.invalidateAndCancel()
+        }
+        let (servedList, listResponse) = try await session.data(
+            from: rootURL.appendingPathComponent(
+                "interstitials/event/assets.json"
+            )
+        )
+        let (servedPlaylist, playlistResponse) = try await session.data(
+            from: rootURL.appendingPathComponent(
+                "interstitials/event/index.m3u8"
+            )
+        )
+
+        #expect(servedList == originalList)
+        #expect(servedPlaylist == originalEventPlaylist)
+        #expect(
+            (listResponse as? HTTPURLResponse)?
+                .value(forHTTPHeaderField: "Content-Type")
+                == "application/json"
+        )
+        #expect(
+            (playlistResponse as? HTTPURLResponse)?.statusCode == 200
+        )
     }
 
     @Test("package admission preserves actionable failure categories")

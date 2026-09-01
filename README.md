@@ -588,6 +588,15 @@ for await event in await manager.events(for: task) {
   VOD package for the existing local-playback bridge while recording and
   rolling eviction continue, with eight bounded outstanding requests, isolated
   cancellation, and typed terminal or capacity failures
+- opt-in Apple HLS interstitial DVR packaging that rewrites direct assets and
+  ordered asset lists into complete package-local offline HLS assets; event,
+  asset, playlist, resource, and aggregate byte bounds stay explicit,
+  complete-event omission never publishes a partial reference, and progress
+  plus receipts expose value-redacted retained and omitted statistics
+- rolling interstitial expiry removes each event directory atomically;
+  recovery checkpoints keep only query-free source hashes and local file
+  proofs, and in-progress playback snapshots freeze the complete asset-list
+  and playlist graph before publication
 - bounded external audio, alternate-video, and subtitle selection by default,
   preferred languages, exact names, or all referenced renditions; URL-free
   local master playlists expose one package entry point plus typed local-track
@@ -617,9 +626,10 @@ for await event in await manager.events(for: task) {
 
 - a main-actor local-playback owner that serves validated raw offline and DVR
   packages over a random, loopback-only HTTP endpoint; reachable playlists are
-  bounded and frozen before listening, remote/package-escaping references and
-  symbolic links are rejected, and GET, HEAD, and single byte ranges are
-  supported for AVPlayer
+  bounded and frozen before listening, package-local interstitial asset lists
+  are frozen with their reachable playlists, remote/package-escaping
+  references and symbolic links are rejected, and GET, HEAD, and single byte
+  ranges are supported for AVPlayer
 - caller-owned `AVURLAsset` CMCD opt-in with typed availability status while
   AVFoundation retains ownership of generated request-header values; watchOS
   reports the feature as unavailable because it does not expose asset resource

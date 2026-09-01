@@ -225,9 +225,24 @@ extension HLSLiveDVRRecordingState {
                     options: .atomic
                 )
             }
+            if !interstitials.isEmpty {
+                let entryName =
+                    !selectedRenditions.isEmpty
+                        || !inBandClosedCaptions.isEmpty
+                    ? "master.m3u8" : "index.m3u8"
+                let source = try HLSLocalPlaybackSource(
+                    packageDirectoryURL: packageDirectoryURL,
+                    entryPlaylistURL:
+                        packageDirectoryURL.appendingPathComponent(entryName)
+                )
+                _ = try HLSLocalPlaybackPackageSnapshot(source: source)
+            }
         } catch {
             if let error = error as? HLSLiveDVRError {
                 throw error
+            }
+            if !interstitials.isEmpty {
+                throw HLSLiveDVRError.interstitialPackagingFailed
             }
             throw HLSLiveDVRError.storageFailed
         }
@@ -298,6 +313,9 @@ extension HLSLiveDVRRecordingState {
                 }
             )
         }
+        paths.formUnion(
+            interstitials.flatMap { $0.files.map(\.relativePath) }
+        )
         return paths.sorted()
     }
 
@@ -392,6 +410,7 @@ extension HLSLiveDVRRecordingState {
             promotedPartCount: promotedPartCount,
             preloadStatistics: preloadStatistics,
             retentionStatistics: retentionStatistics,
+            interstitialStatistics: interstitialStatistics,
             firstMediaSequence: first.sequenceNumber,
             lastMediaSequence: last.sequenceNumber
         )
@@ -464,9 +483,13 @@ extension HLSLiveDVRRecordingState {
             )
         }
         let endDate = lastStartDate.addingTimeInterval(last.duration)
-        return dateRanges.filter { dateRange in
+        let omittedIDs = Set(omittedInterstitials.map(\.id))
+        return try dateRanges.compactMap { dateRange in
+            guard !omittedIDs.contains(dateRange.id) else {
+                return nil
+            }
             guard dateRange.startDate < endDate else {
-                return false
+                return nil
             }
             let rangeEnd =
                 dateRange.endDate
@@ -474,9 +497,28 @@ extension HLSLiveDVRRecordingState {
                     dateRange.startDate.addingTimeInterval($0)
                 }
             guard let rangeEnd else {
-                return true
+                return try packagedDateRange(dateRange)
             }
-            return rangeEnd > startDate
+            guard rangeEnd > startDate else {
+                return nil
+            }
+            return try packagedDateRange(dateRange)
         }
+    }
+
+    private func packagedDateRange(
+        _ dateRange: HLSDateRange
+    ) throws -> HLSDateRange {
+        guard dateRange.interstitial != nil else {
+            return dateRange
+        }
+        guard
+            let packaged = interstitials.first(where: {
+                $0.id == dateRange.id
+            })
+        else {
+            throw HLSLiveDVRError.interstitialPackagingFailed
+        }
+        return packaged.dateRange
     }
 }

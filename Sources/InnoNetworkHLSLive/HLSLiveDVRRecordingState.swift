@@ -19,6 +19,8 @@ struct HLSLiveDVRRecordingState {
     var inBandClosedCaptions: [HLSRendition] = []
     var renditionStates: [HLSLiveDVRRenditionRecordingState] = []
     var dateRanges: [HLSDateRange] = []
+    var interstitials: [HLSLiveDVRStoredInterstitial] = []
+    var omittedInterstitials: [HLSLiveDVROmittedInterstitial] = []
     var partState: HLSLiveDVRPartRecordingState
     var preloadStatistics = HLSLiveDVRPreloadStatistics()
     var retentionStatistics = HLSLiveDVRRetentionStatistics()
@@ -28,6 +30,19 @@ struct HLSLiveDVRRecordingState {
 
     var promotedPartCount: Int {
         partState.promotedPartCount
+    }
+
+    var interstitialStatistics: HLSLiveDVRInterstitialStatistics {
+        HLSLiveDVRInterstitialStatistics(
+            retainedEventCount: interstitials.count,
+            retainedAssetCount: interstitials.reduce(0) {
+                $0 + $1.assetCount
+            },
+            retainedByteCount: interstitials.reduce(0) {
+                $0 + $1.byteCount
+            },
+            omittedEventCount: omittedInterstitials.count
+        )
     }
 
     init(
@@ -63,7 +78,8 @@ struct HLSLiveDVRRecordingState {
             stagedPartByteCount: partState.stagedPartByteCount,
             promotedPartCount: partState.promotedPartCount,
             preloadStatistics: preloadStatistics,
-            retentionStatistics: retentionStatistics
+            retentionStatistics: retentionStatistics,
+            interstitialStatistics: interstitialStatistics
         )
     }
 
