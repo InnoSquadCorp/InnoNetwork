@@ -291,15 +291,18 @@ InnoNetwork 기반 클라이언트를 출시하기 전에 점검해야 할 운�
   전환 시 분리합니다. 사용자 취소 이후 발생하는 이벤트도 옵저버는 모두 받습니다.
 - **HLS 요청 경계.** `HLSRequestPolicy` 는 entry/media/live reload playlist, media resource,
   AES key, Content Steering manifest, Session Data, chapter document,
-  interstitial asset list, Date Range preload/schedule 을 URL 확장자 없이 구분합니다.
+  localized rendition name, interstitial asset list, Date Range preload/schedule 을
+  URL 확장자 없이 구분합니다.
   `HLSRequestEventObserving` 이벤트에는
   request ID, 목적, resource/retry index, HTTP 상태와 안정된 실패 분류만 포함되며 URL, header,
   query 값, body, 임의 오류 문자열은 포함되지 않습니다.
-- **HLS 외부 메타데이터.** `HLSExternalResourceResolver` 는 inline/remote Session Data와
-  Apple JSON chapter, interstitial asset list를 명시적인 byte·chapter·entry·asset 수·timeout
-  경계 안에서 해석합니다. Chapter image의 상대 URL은 redirect가 끝난 JSON URL을 기준으로
-  해석하며 credential URL과 HTTPS downgrade를 거부합니다. Catalog는 선호 언어 title,
-  image category, 사용 가능한 title 언어, 중첩을 보존한 현재 chapter 조회를 제공합니다.
+- **HLS 외부 메타데이터.** `HLSExternalResourceResolver` 는 inline/remote Session Data,
+  localized rendition name, Apple JSON chapter, interstitial asset list를 명시적인
+  byte·entry·timeout 경계 안에서 해석합니다. Rendition name은 선호 locale을 순서대로
+  적용하고 번역이 없으면 원래 `EXT-X-MEDIA` name으로 돌아갑니다. Chapter image의 상대
+  URL은 redirect가 끝난 JSON URL을 기준으로 해석하며 credential URL과 HTTPS downgrade를
+  거부합니다. Catalog는 선호 언어 title, image category, 사용 가능한 title 언어,
+  중첩을 보존한 현재 chapter 조회를 제공합니다.
 
 ### 회복탄력성
 

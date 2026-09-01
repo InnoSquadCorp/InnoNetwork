@@ -4,6 +4,7 @@ import Foundation
 public struct HLSExternalResourcePack: Sendable {
     private let maximumSessionDataBytes: Int
     private let maximumCustomMediaSelectionEntryCount: Int
+    private let maximumLocalizedRenditionNameEntryCount: Int
     private let maximumChapterCount: Int
     private let maximumChapterEntryCount: Int
     private let maximumInterstitialAssetListBytes: Int
@@ -16,8 +17,8 @@ public struct HLSExternalResourcePack: Sendable {
     /// Creates finite resource limits.
     ///
     /// Byte limits are clamped to `1...2 MiB`, primary entry counts to
-    /// `1...1,000`, nested chapter entries to `1...10,000`, schedule depth to
-    /// `1...3`, and the request timeout to `1...300` seconds.
+    /// `1...1,000`, nested chapter entries to `1...10,000`, schedule depth
+    /// to `1...3`, and the request timeout to `1...300` seconds.
     public init(
         maximumSessionDataBytes: Int = 256 * 1_024,
         maximumCustomMediaSelectionEntryCount: Int = 256,
@@ -30,9 +31,46 @@ public struct HLSExternalResourcePack: Sendable {
         maximumDateRangeScheduleDepth: Int = 3,
         requestTimeout: TimeInterval = 15
     ) {
+        self.init(
+            maximumSessionDataBytes: maximumSessionDataBytes,
+            maximumCustomMediaSelectionEntryCount:
+                maximumCustomMediaSelectionEntryCount,
+            maximumChapterCount: maximumChapterCount,
+            maximumChapterEntryCount: maximumChapterEntryCount,
+            maximumInterstitialAssetListBytes:
+                maximumInterstitialAssetListBytes,
+            maximumInterstitialAssetCount:
+                maximumInterstitialAssetCount,
+            maximumDateRangeResourceBytes:
+                maximumDateRangeResourceBytes,
+            maximumScheduledDateRangeCount:
+                maximumScheduledDateRangeCount,
+            maximumDateRangeScheduleDepth:
+                maximumDateRangeScheduleDepth,
+            requestTimeout: requestTimeout,
+            maximumLocalizedRenditionNameEntryCount: 256
+        )
+    }
+
+    /// Creates finite resource limits with a dedicated rendition-name bound.
+    public init(
+        maximumSessionDataBytes: Int = 256 * 1_024,
+        maximumCustomMediaSelectionEntryCount: Int = 256,
+        maximumChapterCount: Int = 256,
+        maximumChapterEntryCount: Int = 1_000,
+        maximumInterstitialAssetListBytes: Int = 256 * 1_024,
+        maximumInterstitialAssetCount: Int = 100,
+        maximumDateRangeResourceBytes: Int = 256 * 1_024,
+        maximumScheduledDateRangeCount: Int = 100,
+        maximumDateRangeScheduleDepth: Int = 3,
+        requestTimeout: TimeInterval = 15,
+        maximumLocalizedRenditionNameEntryCount: Int
+    ) {
         self.maximumSessionDataBytes = maximumSessionDataBytes
         self.maximumCustomMediaSelectionEntryCount =
             maximumCustomMediaSelectionEntryCount
+        self.maximumLocalizedRenditionNameEntryCount =
+            maximumLocalizedRenditionNameEntryCount
         self.maximumChapterCount = maximumChapterCount
         self.maximumChapterEntryCount = maximumChapterEntryCount
         self.maximumInterstitialAssetListBytes =
@@ -56,6 +94,10 @@ public struct HLSExternalResourcePack: Sendable {
             maximumCustomMediaSelectionEntryCount: min(
                 1_000,
                 max(1, maximumCustomMediaSelectionEntryCount)
+            ),
+            maximumLocalizedRenditionNameEntryCount: min(
+                1_000,
+                max(1, maximumLocalizedRenditionNameEntryCount)
             ),
             maximumChapterCount: min(
                 1_000,
@@ -104,6 +146,7 @@ public struct HLSExternalResourcePack: Sendable {
 struct HLSExternalResourceSettings: Sendable {
     let maximumSessionDataBytes: Int
     let maximumCustomMediaSelectionEntryCount: Int
+    let maximumLocalizedRenditionNameEntryCount: Int
     let maximumChapterCount: Int
     let maximumChapterEntryCount: Int
     let maximumInterstitialAssetListBytes: Int
@@ -178,6 +221,16 @@ public enum HLSExternalResourceError: Error, Equatable, Sendable {
     /// A Custom Media Selection Scheme exceeded its configured entry limit.
     case tooManyCustomMediaSelectionEntries(limit: Int)
 
+    /// The reserved localized-rendition-name Session Data declaration was
+    /// malformed.
+    case invalidLocalizedRenditionNameDeclaration
+
+    /// A localized rendition-name dictionary did not match the HLS schema.
+    case invalidLocalizedRenditionNames
+
+    /// A localized rendition-name dictionary exceeded its entry limit.
+    case tooManyLocalizedRenditionNameEntries(limit: Int)
+
     /// The reserved HLS chapter Session Data declaration was malformed.
     case invalidChapterDeclaration
 
@@ -236,6 +289,12 @@ extension HLSExternalResourceError: LocalizedError {
             return "The HLS Custom Media Selection Scheme is malformed."
         case .tooManyCustomMediaSelectionEntries(let limit):
             return "The HLS Custom Media Selection Scheme exceeds the \(limit)-entry limit."
+        case .invalidLocalizedRenditionNameDeclaration:
+            return "The HLS localized rendition-name declaration is invalid."
+        case .invalidLocalizedRenditionNames:
+            return "The HLS localized rendition-name dictionary is malformed."
+        case .tooManyLocalizedRenditionNameEntries(let limit):
+            return "The HLS localized rendition-name dictionary exceeds the \(limit)-entry limit."
         case .invalidChapterDeclaration:
             return "The HLS chapter Session Data declaration is invalid."
         case .invalidChapterData:

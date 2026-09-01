@@ -386,10 +386,11 @@ key bytes. These normal playlist models can contain source values and resolved
 URLs; value-redaction applies to ``HLSPlaylistDiagnostic`` and Content
 Steering events, not to the requested inspection result.
 
-Remote Session Data, Custom Media Selection Schemes, Apple JSON chapters,
-interstitial asset lists, Date Range preload resources, and Date Range
-Schedules stay opt-in. Use ``HLSExternalResourceResolver`` to apply the same
-URL admission, redirect, request-policy, and bounded-body pipeline:
+Remote Session Data, localized rendition names, Custom Media Selection
+Schemes, Apple JSON chapters, interstitial asset lists, Date Range preload
+resources, and Date Range Schedules stay opt-in. Use
+``HLSExternalResourceResolver`` to apply the same URL admission, redirect,
+request-policy, and bounded-body pipeline:
 
 ```swift
 let resources = HLSExternalResourceResolver(
@@ -400,12 +401,20 @@ let resources = HLSExternalResourceResolver(
         maximumChapterEntryCount: 1_000,
         maximumInterstitialAssetCount: 100,
         maximumDateRangeResourceBytes: 256 * 1_024,
-        maximumScheduledDateRangeCount: 100
+        maximumScheduledDateRangeCount: 100,
+        maximumLocalizedRenditionNameEntryCount: 256
     )
 )
 let value = try await resources.resolveSessionData(sessionData)
 let customScheme = try await resources.resolveCustomMediaSelection(
     in: playlist
+)
+let renditionNames = try await resources.resolveLocalizedRenditionNames(
+    in: playlist
+)
+let localizedRenditionName = renditionNames?.localizedName(
+    for: playlist.renditions[0],
+    preferredLanguages: Locale.preferredLanguages
 )
 let chapters = try await resources.resolveChapterCatalog(in: playlist)
 let title = chapters?.chapters.first?.localizedTitle(
@@ -422,6 +431,11 @@ let schedule = try await resources.resolveDateRangeSchedule(
 ```
 
 JSON Session Data is validated while preserving its original bytes. Apple
+`_hls.localized-rendition-names` JSON exposes a bounded
+``HLSLocalizedRenditionNameCatalog``. Its primary-language keys match ordered
+locale preferences, and a missing translation returns the authored
+``HLSRendition/name`` while platform-specific name decoration remains with
+the application or AVKit. Apple
 chapter JSON preserves chapter and child-array order, infers an omitted
 duration from the next source entry, and bounds chapters, child entries, and
 nested metadata. Relative image references follow the final redirected JSON
@@ -707,6 +721,7 @@ so adding an HLS target cannot silently leave it outside release validation.
 - ``HLSExternalResourceResolver``
 - ``HLSExternalResourcePack``
 - ``HLSExternalResourceError``
+- ``HLSLocalizedRenditionNameCatalog``
 - ``HLSChapterCatalog``
 - ``HLSChapter``
 - ``HLSChapterTitle``

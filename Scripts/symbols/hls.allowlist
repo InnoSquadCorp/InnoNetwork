@@ -144,6 +144,8 @@ InnoNetworkHLS	swift.enum.case	HLSExternalResourceError.invalidDateRangePreload
 InnoNetworkHLS	swift.enum.case	HLSExternalResourceError.invalidDateRangeSchedule
 InnoNetworkHLS	swift.enum.case	HLSExternalResourceError.invalidDateRangeScheduleStartOffset
 InnoNetworkHLS	swift.enum.case	HLSExternalResourceError.invalidInterstitialAssetList
+InnoNetworkHLS	swift.enum.case	HLSExternalResourceError.invalidLocalizedRenditionNameDeclaration
+InnoNetworkHLS	swift.enum.case	HLSExternalResourceError.invalidLocalizedRenditionNames
 InnoNetworkHLS	swift.enum.case	HLSExternalResourceError.invalidResponseStatus(_:)
 InnoNetworkHLS	swift.enum.case	HLSExternalResourceError.invalidSessionDataJSON
 InnoNetworkHLS	swift.enum.case	HLSExternalResourceError.responseTooLarge(limit:)
@@ -151,6 +153,7 @@ InnoNetworkHLS	swift.enum.case	HLSExternalResourceError.tooManyChapterEntries(li
 InnoNetworkHLS	swift.enum.case	HLSExternalResourceError.tooManyChapters(limit:)
 InnoNetworkHLS	swift.enum.case	HLSExternalResourceError.tooManyCustomMediaSelectionEntries(limit:)
 InnoNetworkHLS	swift.enum.case	HLSExternalResourceError.tooManyInterstitialAssets(limit:)
+InnoNetworkHLS	swift.enum.case	HLSExternalResourceError.tooManyLocalizedRenditionNameEntries(limit:)
 InnoNetworkHLS	swift.enum.case	HLSExternalResourceError.tooManyScheduledDateRanges(limit:)
 InnoNetworkHLS	swift.enum.case	HLSHDCPLevel.none
 InnoNetworkHLS	swift.enum.case	HLSHDCPLevel.type0
@@ -280,6 +283,7 @@ InnoNetworkHLS	swift.enum.case	HLSRequestPurpose.encryptionKey
 InnoNetworkHLS	swift.enum.case	HLSRequestPurpose.entryPlaylist
 InnoNetworkHLS	swift.enum.case	HLSRequestPurpose.interstitialAssetList
 InnoNetworkHLS	swift.enum.case	HLSRequestPurpose.livePlaylistReload
+InnoNetworkHLS	swift.enum.case	HLSRequestPurpose.localizedRenditionNames
 InnoNetworkHLS	swift.enum.case	HLSRequestPurpose.mediaPlaylist
 InnoNetworkHLS	swift.enum.case	HLSRequestPurpose.mediaPreloadHint
 InnoNetworkHLS	swift.enum.case	HLSRequestPurpose.mediaResource
@@ -326,6 +330,7 @@ InnoNetworkHLS	swift.init	HLSDownloader.init(configuration:)
 InnoNetworkHLS	swift.init	HLSDownloader.init(session:configuration:requestContext:requestAdapter:)
 InnoNetworkHLS	swift.init	HLSDownloader.init(session:configuration:requestContext:requestPolicy:)
 InnoNetworkHLS	swift.init	HLSExternalResourcePack.init(maximumSessionDataBytes:maximumCustomMediaSelectionEntryCount:maximumChapterCount:maximumChapterEntryCount:maximumInterstitialAssetListBytes:maximumInterstitialAssetCount:maximumDateRangeResourceBytes:maximumScheduledDateRangeCount:maximumDateRangeScheduleDepth:requestTimeout:)
+InnoNetworkHLS	swift.init	HLSExternalResourcePack.init(maximumSessionDataBytes:maximumCustomMediaSelectionEntryCount:maximumChapterCount:maximumChapterEntryCount:maximumInterstitialAssetListBytes:maximumInterstitialAssetCount:maximumDateRangeResourceBytes:maximumScheduledDateRangeCount:maximumDateRangeScheduleDepth:requestTimeout:maximumLocalizedRenditionNameEntryCount:)
 InnoNetworkHLS	swift.init	HLSExternalResourceResolver.init(configuration:)
 InnoNetworkHLS	swift.init	HLSExternalResourceResolver.init(session:configuration:requestContext:requestPolicy:)
 InnoNetworkHLS	swift.init	HLSInterstitial.init(source:resumeOffset:playoutLimit:contentVariability:timelineOccupancy:timelineStyle:navigationRestrictions:skipControl:)
@@ -374,8 +379,10 @@ InnoNetworkHLS	swift.method	HLSExternalResourceResolver.resolveCustomMediaSelect
 InnoNetworkHLS	swift.method	HLSExternalResourceResolver.resolveDateRangeSchedule(_:preloadedResource:startOffset:occupiedDateRangeIDs:)
 InnoNetworkHLS	swift.method	HLSExternalResourceResolver.resolveInterstitial(_:)
 InnoNetworkHLS	swift.method	HLSExternalResourceResolver.resolveInterstitialAssets(_:)
+InnoNetworkHLS	swift.method	HLSExternalResourceResolver.resolveLocalizedRenditionNames(in:)
 InnoNetworkHLS	swift.method	HLSExternalResourceResolver.resolveSessionData(_:)
 InnoNetworkHLS	swift.method	HLSLanguageDecoration.localizedName(preferredLanguages:)
+InnoNetworkHLS	swift.method	HLSLocalizedRenditionNameCatalog.localizedName(for:preferredLanguages:)
 InnoNetworkHLS	swift.method	HLSMediaPresentationSelector.localizedName(preferredLanguages:)
 InnoNetworkHLS	swift.method	HLSMediaPresentationSetting.localizedName(preferredLanguages:)
 InnoNetworkHLS	swift.method	HLSMediaPresentationType.decoratedLanguageName(_:for:preferredDisplayLanguages:)
@@ -507,6 +514,8 @@ InnoNetworkHLS	swift.property	HLSLocalPlaybackSource.entryPlaylistURL
 InnoNetworkHLS	swift.property	HLSLocalPlaybackSource.packageDirectoryURL
 InnoNetworkHLS	swift.property	HLSLocalPlaybackSourceError.errorDescription
 InnoNetworkHLS	swift.property	HLSLocalPlaybackSourceError.recoverySuggestion
+InnoNetworkHLS	swift.property	HLSLocalizedRenditionNameCatalog.availableLanguages
+InnoNetworkHLS	swift.property	HLSLocalizedRenditionNameCatalog.translations
 InnoNetworkHLS	swift.property	HLSLowLatencyMetadata.deltaUpdate
 InnoNetworkHLS	swift.property	HLSLowLatencyMetadata.partialSegmentTargetDuration
 InnoNetworkHLS	swift.property	HLSLowLatencyMetadata.partialSegments
@@ -721,6 +730,7 @@ InnoNetworkHLS	swift.struct	HLSInterstitialAssetResolution
 InnoNetworkHLS	swift.struct	HLSInterstitialSkipControl
 InnoNetworkHLS	swift.struct	HLSLanguageDecoration
 InnoNetworkHLS	swift.struct	HLSLocalPlaybackSource
+InnoNetworkHLS	swift.struct	HLSLocalizedRenditionNameCatalog
 InnoNetworkHLS	swift.struct	HLSLowLatencyMetadata
 InnoNetworkHLS	swift.struct	HLSMediaCharacteristic
 InnoNetworkHLS	swift.struct	HLSMediaPresentationSelector
@@ -778,6 +788,7 @@ InnoNetworkHLS	swift.type.property	HLSDownloadError.errorCodeUserInfoKey
 InnoNetworkHLS	swift.type.property	HLSDownloadError.errorDomain
 InnoNetworkHLS	swift.type.property	HLSDownloadError.statusCodeUserInfoKey
 InnoNetworkHLS	swift.type.property	HLSDownloadProgress.zero
+InnoNetworkHLS	swift.type.property	HLSLocalizedRenditionNameCatalog.sessionDataID
 InnoNetworkHLS	swift.type.property	HLSMediaCharacteristic.machineGenerated
 InnoNetworkHLS	swift.type.property	HLSMediaCharacteristic.translation
 InnoNetworkHLS	swift.type.property	HLSPlaylistInspectionPack.appleAuthoring

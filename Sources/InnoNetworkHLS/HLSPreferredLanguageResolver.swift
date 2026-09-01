@@ -1,6 +1,18 @@
 import Foundation
 
 enum HLSPreferredLanguageResolver {
+    static func resolve(
+        _ localizedValues: [String: String],
+        preferredLanguages: [String]
+    ) -> String? {
+        let entries = localizedValues.sorted { $0.key < $1.key }
+        return resolve(
+            entries,
+            preferredLanguages: preferredLanguages,
+            language: { $0.key }
+        )?.value
+    }
+
     static func resolve<Element>(
         _ elements: [Element],
         preferredLanguages: [String],

@@ -135,6 +135,10 @@ Versioning.
   purposes let authentication distinguish Session Data from asset lists;
   finite byte, asset-count, and timeout boundaries precede JSON validation,
   while direct interstitial assets require no network request.
+- Apple `_hls.localized-rendition-names` Session Data now resolves into a
+  bounded typed catalog. Primary-language translations match ordered locale
+  preferences and fall back to the authored `EXT-X-MEDIA` name, while name
+  decoration remains application- or AVKit-owned.
 - Apple `com.apple.hls.chapters` Session Data now resolves into bounded typed
   chapters, localized titles, admitted image references, and recursive
   metadata values. Omitted durations follow source order, image references use

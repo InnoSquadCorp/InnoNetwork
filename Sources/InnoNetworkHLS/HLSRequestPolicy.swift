@@ -36,6 +36,9 @@ public enum HLSRequestPurpose: Equatable, Sendable {
     /// An Apple Custom Media Selection Scheme JSON resource.
     case customMediaSelectionScheme
 
+    /// An Apple HLS localized rendition-name JSON resource.
+    case localizedRenditionNames
+
     /// An Apple HLS JSON chapter metadata resource.
     case chapterData
 
@@ -123,10 +126,10 @@ public protocol HLSRequestEventObserving: Sendable {
 /// Applies purpose-aware request adaptation and HLS-specific observation.
 ///
 /// The policy is immutable and shared by playlist, media, AES-key, Content
-/// Steering, Session Data, Custom Media Selection, interstitial, and Date
-/// Range resource requests. The adapter may change headers and other request
-/// properties, but its resulting URL still passes through InnoNetwork's
-/// secure URL admission.
+/// Steering, Session Data, localized rendition names, Custom Media Selection,
+/// interstitial, and Date Range resource requests. The adapter may change
+/// headers and other request properties, but its resulting URL still passes
+/// through InnoNetwork's secure URL admission.
 public struct HLSRequestPolicy: Sendable {
     private let adapter: @Sendable (URLRequest, HLSRequestContext) async throws -> URLRequest
     private let eventObservers: [any HLSRequestEventObserving]

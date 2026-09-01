@@ -150,11 +150,9 @@ private enum HLSLocalizedDisplayNameResolver {
         _ displayNames: [String: String],
         preferredLanguages: [String]
     ) -> String? {
-        let entries = displayNames.sorted { $0.key < $1.key }
-        return HLSPreferredLanguageResolver.resolve(
-            entries,
+        HLSPreferredLanguageResolver.resolve(
+            displayNames,
             preferredLanguages: preferredLanguages,
-            language: { $0.key }
-        )?.value ?? entries.first?.value
+        ) ?? displayNames.sorted { $0.key < $1.key }.first?.value
     }
 }

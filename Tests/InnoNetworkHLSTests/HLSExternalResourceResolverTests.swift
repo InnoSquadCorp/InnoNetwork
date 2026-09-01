@@ -396,6 +396,11 @@ extension HLSDownloaderTests {
 
     @Test("external resource settings stay within conversion-safe bounds")
     func clampsExternalResourceSettings() {
+        #expect(
+            HLSExternalResourcePack().resolvedSettings
+                .maximumLocalizedRenditionNameEntryCount
+                == 256
+        )
         let settings = HLSExternalResourcePack(
             maximumSessionDataBytes: .max,
             maximumCustomMediaSelectionEntryCount: .max,
@@ -406,12 +411,17 @@ extension HLSDownloaderTests {
             maximumDateRangeResourceBytes: .max,
             maximumScheduledDateRangeCount: .max,
             maximumDateRangeScheduleDepth: .max,
-            requestTimeout: .greatestFiniteMagnitude
+            requestTimeout: .greatestFiniteMagnitude,
+            maximumLocalizedRenditionNameEntryCount: .max
         ).resolvedSettings
 
         #expect(settings.maximumSessionDataBytes == 2 * 1_024 * 1_024)
         #expect(
             settings.maximumCustomMediaSelectionEntryCount
+                == 1_000
+        )
+        #expect(
+            settings.maximumLocalizedRenditionNameEntryCount
                 == 1_000
         )
         #expect(settings.maximumChapterCount == 1_000)

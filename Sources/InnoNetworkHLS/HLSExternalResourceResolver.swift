@@ -134,6 +134,42 @@ public struct HLSExternalResourceResolver: Sendable {
         )
     }
 
+    /// Resolves the playlist's HLS rendition-name localization dictionary.
+    ///
+    /// Returns `nil` when the reserved Session Data identifier is absent.
+    public func resolveLocalizedRenditionNames(
+        in playlist: HLSPlaylist
+    ) async throws -> HLSLocalizedRenditionNameCatalog? {
+        let declarations = playlist.sessionData.filter {
+            $0.dataID
+                == HLSLocalizedRenditionNameCatalog.sessionDataID
+        }
+        guard !declarations.isEmpty else {
+            return nil
+        }
+        guard
+            declarations.count == 1,
+            let declaration = declarations.first,
+            declaration.language == nil,
+            case .remote(let url, format: .json) =
+                declaration.content
+        else {
+            throw HLSExternalResourceError
+                .invalidLocalizedRenditionNameDeclaration
+        }
+        let data = try await loader.load(
+            from: url,
+            purpose: .localizedRenditionNames,
+            accept: "application/json",
+            maximumBytes: settings.maximumSessionDataBytes
+        )
+        return try HLSLocalizedRenditionNameDecoder.decode(
+            data,
+            maximumEntryCount:
+                settings.maximumLocalizedRenditionNameEntryCount
+        )
+    }
+
     /// Resolves the playlist's Apple HLS JSON chapter metadata.
     ///
     /// Returns `nil` when the reserved Session Data identifier is absent.
