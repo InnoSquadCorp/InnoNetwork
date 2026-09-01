@@ -22,6 +22,7 @@ struct HLSLiveDVRRecordingState {
     var renditionStates: [HLSLiveDVRRenditionRecordingState] = []
     var dateRanges: [HLSDateRange] = []
     var partState: HLSLiveDVRPartRecordingState
+    var preloadStatistics = HLSLiveDVRPreloadStatistics()
     var didConfigureRenditions = false
     var initialPathwayID: String?
 
@@ -56,7 +57,8 @@ struct HLSLiveDVRRecordingState {
             stagedPartCount: partState.stagedParts.count,
             stagedPartDuration: partState.stagedPartDuration,
             stagedPartByteCount: partState.stagedPartByteCount,
-            promotedPartCount: partState.promotedPartCount
+            promotedPartCount: partState.promotedPartCount,
+            preloadStatistics: preloadStatistics
         )
     }
 

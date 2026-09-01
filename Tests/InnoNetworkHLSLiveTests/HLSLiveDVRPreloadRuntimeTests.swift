@@ -58,6 +58,24 @@ struct HLSLiveDVRPreloadRuntimeTests {
 
         #expect(receipt.segmentCount == 1)
         #expect(receipt.promotedPartCount == 2)
+        let partStatistics =
+            receipt.preloadStatistics.partialSegments
+        #expect(partStatistics.requestCount == 2)
+        #expect(partStatistics.completedCount == 2)
+        #expect(partStatistics.confirmedCount == 2)
+        #expect(partStatistics.reuseCount == 2)
+        #expect(partStatistics.missCount == 0)
+        #expect(partStatistics.transferredByteCount == 22)
+        #expect(partStatistics.reusedByteCount == 22)
+        let mapStatistics =
+            receipt.preloadStatistics.initializationMaps
+        #expect(mapStatistics.requestCount == 1)
+        #expect(mapStatistics.completedCount == 1)
+        #expect(mapStatistics.confirmedCount == 1)
+        #expect(mapStatistics.reuseCount == 1)
+        #expect(mapStatistics.missCount == 0)
+        #expect(mapStatistics.transferredByteCount == 12)
+        #expect(mapStatistics.reusedByteCount == 12)
         #expect(
             try Data(
                 contentsOf: destinationURL.appendingPathComponent(

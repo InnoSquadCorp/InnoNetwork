@@ -32,11 +32,65 @@ actor HLSLiveDVRPreloadCoordinator {
         let byteCount: Int64
     }
 
+    private enum PreloadOutcome: Sendable {
+        case loaded(PreloadedResource)
+        case failed
+        case cancelled
+    }
+
     private struct Entry: Sendable {
         let target: Target
         let reservedBytes: Int64
-        let task: Task<PreloadedResource?, Never>
+        let task: Task<PreloadOutcome, Never>
         var verifiedTarget: Target?
+        var wasConfirmed: Bool
+    }
+
+    private struct Counters {
+        var requestCount = 0
+        var completedCount = 0
+        var confirmedCount = 0
+        var reuseCount = 0
+        var missCount = 0
+        var failureCount = 0
+        var cancellationCount = 0
+        var discardCount = 0
+        var transferredByteCount: Int64 = 0
+        var reusedByteCount: Int64 = 0
+        var discardedByteCount: Int64 = 0
+
+        mutating func increment(
+            _ keyPath: WritableKeyPath<Self, Int>
+        ) {
+            let value = self[keyPath: keyPath]
+            self[keyPath: keyPath] =
+                value == .max ? .max : value + 1
+        }
+
+        mutating func add(
+            _ byteCount: Int64,
+            to keyPath: WritableKeyPath<Self, Int64>
+        ) {
+            let (value, overflow) = self[keyPath: keyPath]
+                .addingReportingOverflow(byteCount)
+            self[keyPath: keyPath] = overflow ? .max : value
+        }
+
+        var snapshot: HLSLiveDVRPreloadResourceStatistics {
+            HLSLiveDVRPreloadResourceStatistics(
+                requestCount: requestCount,
+                completedCount: completedCount,
+                confirmedCount: confirmedCount,
+                reuseCount: reuseCount,
+                missCount: missCount,
+                failureCount: failureCount,
+                cancellationCount: cancellationCount,
+                discardCount: discardCount,
+                transferredByteCount: transferredByteCount,
+                reusedByteCount: reusedByteCount,
+                discardedByteCount: discardedByteCount
+            )
+        }
     }
 
     private let pack: HLSLiveDVRPreloadPack
@@ -46,6 +100,8 @@ actor HLSLiveDVRPreloadCoordinator {
     private let directoryURL: URL
     private let maximumMediaResourceBytes: Int
     private var entries: [Entry] = []
+    private var partialSegmentCounters = Counters()
+    private var initializationMapCounters = Counters()
 
     init(
         pack: HLSLiveDVRPreloadPack,
@@ -64,12 +120,19 @@ actor HLSLiveDVRPreloadCoordinator {
         self.maximumMediaResourceBytes = maximumMediaResourceBytes
     }
 
+    func statisticsSnapshot() -> HLSLiveDVRPreloadStatistics {
+        HLSLiveDVRPreloadStatistics(
+            partialSegments: partialSegmentCounters.snapshot,
+            initializationMaps: initializationMapCounters.snapshot
+        )
+    }
+
     func update(from snapshot: HLSLivePlaylistSnapshot) async {
         guard pack.policy == .unencryptedMedia,
             !snapshot.isDeltaUpdate,
             snapshot.encryptionMethod == nil
         else {
-            await cancelAll()
+            _ = await cancelAll()
             return
         }
 
@@ -84,6 +147,10 @@ actor HLSLiveDVRPreloadCoordinator {
             if let actual = actualTargets.first(where: {
                 Self.matches(hint: entry.target, actual: $0)
             }) {
+                if !entry.wasConfirmed {
+                    recordConfirmation(for: entry.target.kind)
+                    entry.wasConfirmed = true
+                }
                 entry.verifiedTarget = actual
             } else if let verified = entry.verifiedTarget,
                 !actualTargets.contains(verified)
@@ -113,6 +180,7 @@ actor HLSLiveDVRPreloadCoordinator {
         maximumRetainedBytes: Int64
     ) async -> Int64? {
         guard let context = part.resourceContext else {
+            recordMiss(for: .partialSegment)
             return nil
         }
         let actual = Target(
@@ -145,6 +213,7 @@ actor HLSLiveDVRPreloadCoordinator {
                     )
             })
         else {
+            recordMiss(for: .initializationMap)
             return nil
         }
         return await consume(
@@ -155,11 +224,13 @@ actor HLSLiveDVRPreloadCoordinator {
         )
     }
 
-    func cancelAll() async {
+    @discardableResult
+    func cancelAll() async -> HLSLiveDVRPreloadStatistics {
         let discarded = entries
         entries.removeAll(keepingCapacity: false)
         await discard(discarded)
         try? FileManager.default.removeItem(at: directoryURL)
+        return statisticsSnapshot()
     }
 
     private func consume(
@@ -176,6 +247,7 @@ actor HLSLiveDVRPreloadCoordinator {
                     && verified == actual
             })
         else {
+            recordMiss(for: actual.kind)
             return nil
         }
         let actualByteRange: HLSByteRange?
@@ -200,8 +272,9 @@ actor HLSLiveDVRPreloadCoordinator {
         maximumRetainedBytes: Int64
     ) async -> Int64? {
         let entry = entries.remove(at: index)
-        let resource = await entry.task.value
-        guard let resource,
+        let outcome = await entry.task.value
+        record(outcome, for: entry.target.kind)
+        guard case .loaded(let resource) = outcome,
             resource.byteCount <= maximumRetainedBytes,
             Self.matches(
                 requestRange: entry.target.requestRange,
@@ -209,9 +282,16 @@ actor HLSLiveDVRPreloadCoordinator {
                 transferredByteCount: resource.byteCount
             )
         else {
-            if let resource {
+            if case .loaded(let resource) = outcome {
                 try? FileManager.default.removeItem(at: resource.fileURL)
+                recordDiscard(
+                    byteCount: resource.byteCount,
+                    for: entry.target.kind
+                )
+            } else {
+                recordDiscard(byteCount: 0, for: entry.target.kind)
             }
+            recordMiss(for: entry.target.kind)
             return nil
         }
         do {
@@ -219,9 +299,18 @@ actor HLSLiveDVRPreloadCoordinator {
                 at: resource.fileURL,
                 to: destinationURL
             )
+            recordReuse(
+                byteCount: resource.byteCount,
+                for: entry.target.kind
+            )
             return resource.byteCount
         } catch {
             try? FileManager.default.removeItem(at: resource.fileURL)
+            recordDiscard(
+                byteCount: resource.byteCount,
+                for: entry.target.kind
+            )
+            recordMiss(for: entry.target.kind)
             return nil
         }
     }
@@ -258,7 +347,7 @@ actor HLSLiveDVRPreloadCoordinator {
         )
         let loader = resourceLoader
         let context = context
-        let task = Task<PreloadedResource?, Never> {
+        let task = Task<PreloadOutcome, Never> {
             do {
                 let exactByteRange: HLSByteRange?
                 let openEndedByteRangeStart: Int64?
@@ -287,21 +376,25 @@ actor HLSLiveDVRPreloadCoordinator {
                     diskCapacityGuard: context.diskCapacityGuard,
                     destinationURL: fileURL
                 )
-                return PreloadedResource(
-                    fileURL: fileURL,
-                    byteCount: byteCount
+                return .loaded(
+                    PreloadedResource(
+                        fileURL: fileURL,
+                        byteCount: byteCount
+                    )
                 )
             } catch {
                 try? FileManager.default.removeItem(at: fileURL)
-                return nil
+                return Self.isCancellation(error) ? .cancelled : .failed
             }
         }
+        recordRequest(for: target.kind)
         entries.append(
             Entry(
                 target: target,
                 reservedBytes: maximumBytes64,
                 task: task,
-                verifiedTarget: nil
+                verifiedTarget: nil,
+                wasConfirmed: false
             )
         )
     }
@@ -311,10 +404,85 @@ actor HLSLiveDVRPreloadCoordinator {
             entry.task.cancel()
         }
         for entry in discarded {
-            if let resource = await entry.task.value {
+            let outcome = await entry.task.value
+            record(outcome, for: entry.target.kind)
+            if case .loaded(let resource) = outcome {
                 try? FileManager.default.removeItem(at: resource.fileURL)
+                recordDiscard(
+                    byteCount: resource.byteCount,
+                    for: entry.target.kind
+                )
+            } else {
+                recordDiscard(byteCount: 0, for: entry.target.kind)
             }
         }
+    }
+
+    private func recordRequest(for kind: Kind) {
+        updateCounters(for: kind) {
+            $0.increment(\.requestCount)
+        }
+    }
+
+    private func recordConfirmation(for kind: Kind) {
+        updateCounters(for: kind) {
+            $0.increment(\.confirmedCount)
+        }
+    }
+
+    private func recordReuse(byteCount: Int64, for kind: Kind) {
+        updateCounters(for: kind) {
+            $0.increment(\.reuseCount)
+            $0.add(byteCount, to: \.reusedByteCount)
+        }
+    }
+
+    private func recordMiss(for kind: Kind) {
+        updateCounters(for: kind) {
+            $0.increment(\.missCount)
+        }
+    }
+
+    private func recordDiscard(byteCount: Int64, for kind: Kind) {
+        updateCounters(for: kind) {
+            $0.increment(\.discardCount)
+            $0.add(byteCount, to: \.discardedByteCount)
+        }
+    }
+
+    private func record(_ outcome: PreloadOutcome, for kind: Kind) {
+        updateCounters(for: kind) {
+            switch outcome {
+            case .loaded(let resource):
+                $0.increment(\.completedCount)
+                $0.add(resource.byteCount, to: \.transferredByteCount)
+            case .failed:
+                $0.increment(\.failureCount)
+            case .cancelled:
+                $0.increment(\.cancellationCount)
+            }
+        }
+    }
+
+    private func updateCounters(
+        for kind: Kind,
+        _ update: (inout Counters) -> Void
+    ) {
+        switch kind {
+        case .partialSegment:
+            update(&partialSegmentCounters)
+        case .initializationMap:
+            update(&initializationMapCounters)
+        }
+    }
+
+    private static func isCancellation(_ error: Error) -> Bool {
+        if error is CancellationError {
+            return true
+        }
+        let error = error as NSError
+        return error.domain == NSURLErrorDomain
+            && error.code == NSURLErrorCancelled
     }
 
     private func hintedTargets(

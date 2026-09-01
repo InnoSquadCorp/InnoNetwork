@@ -87,6 +87,10 @@ extension HLSLivePlaylistClientTests {
         #expect(receipt.segmentCount == 2)
         #expect(receipt.recordedDuration == 7.5)
         #expect(receipt.mediaByteCount == 11)
+        #expect(
+            receipt.preloadStatistics
+                == HLSLiveDVRPreloadStatistics()
+        )
         #expect(receipt.firstMediaSequence == 10)
         #expect(receipt.lastMediaSequence == 11)
         #expect(
@@ -158,6 +162,10 @@ extension HLSLivePlaylistClientTests {
             return
         }
         #expect(progress.segmentCount == 1)
+        #expect(
+            progress.preloadStatistics
+                == HLSLiveDVRPreloadStatistics()
+        )
 
         let receipt = try await recording.stopAndCommit()
         let repeatedReceipt = try await recording.stopAndCommit()
@@ -3068,7 +3076,9 @@ extension HLSLivePlaylistClientTests {
             mediaResponse(Data("two".utf8)),
             for: secondPartURL
         )
-        let receipt = try await recorder(
+        var progressSnapshots: [HLSLiveDVRProgress] = []
+        var completedReceipt: HLSLiveDVRReceipt?
+        for try await event in recorder(
             session: fixture.session,
             startPosition: .nextCompletedSegment,
             parts: HLSLiveDVRPartPack(policy: .independent),
@@ -3078,7 +3088,15 @@ extension HLSLivePlaylistClientTests {
             requestPolicy: HLSRequestPolicy(
                 eventObservers: [requestRecorder]
             )
-        ).record(from: sourceURL, to: fixture.destinationURL)
+        ).events(from: sourceURL, to: fixture.destinationURL) {
+            switch event {
+            case .progress(let progress):
+                progressSnapshots.append(progress)
+            case .completed(let receipt):
+                completedReceipt = receipt
+            }
+        }
+        let receipt = try #require(completedReceipt)
 
         #expect(receipt.promotedPartCount == 2)
         #expect(
@@ -3094,6 +3112,22 @@ extension HLSLivePlaylistClientTests {
             await requestRecorder.purposes().filter {
                 $0 == .mediaPreloadHint
             }.count == 1
+        )
+        let statistics = receipt.preloadStatistics.partialSegments
+        #expect(statistics.requestCount == 1)
+        #expect(statistics.completedCount == 1)
+        #expect(statistics.confirmedCount == 1)
+        #expect(statistics.reuseCount == 1)
+        #expect(statistics.missCount == 1)
+        #expect(statistics.failureCount == 0)
+        #expect(statistics.cancellationCount == 0)
+        #expect(statistics.discardCount == 0)
+        #expect(statistics.transferredByteCount == 3)
+        #expect(statistics.reusedByteCount == 3)
+        #expect(statistics.discardedByteCount == 0)
+        #expect(
+            progressSnapshots.last?.preloadStatistics
+                == receipt.preloadStatistics
         )
     }
 
@@ -3196,6 +3230,18 @@ extension HLSLivePlaylistClientTests {
                 $0.url == secondPartURL
             }.count == 2
         )
+        let statistics = receipt.preloadStatistics.partialSegments
+        #expect(statistics.requestCount == 1)
+        #expect(statistics.completedCount == 0)
+        #expect(statistics.confirmedCount == 1)
+        #expect(statistics.reuseCount == 0)
+        #expect(statistics.missCount == 2)
+        #expect(statistics.failureCount == 1)
+        #expect(statistics.cancellationCount == 0)
+        #expect(statistics.discardCount == 1)
+        #expect(statistics.transferredByteCount == 0)
+        #expect(statistics.reusedByteCount == 0)
+        #expect(statistics.discardedByteCount == 0)
     }
 
     @Test("a changed discontinuity rejects a hinted PART")
@@ -3298,7 +3344,25 @@ extension HLSLivePlaylistClientTests {
                 atPath: destinationURL.path
             )
         )
-        await coordinator.cancelAll()
+        let statistics = await coordinator.cancelAll().partialSegments
+        #expect(statistics.requestCount == 1)
+        #expect(statistics.confirmedCount == 0)
+        #expect(statistics.reuseCount == 0)
+        #expect(statistics.missCount == 1)
+        #expect(statistics.discardCount == 1)
+        #expect(
+            (statistics.transferredByteCount == 6 ? 1 : 0)
+                + statistics.failureCount
+                + statistics.cancellationCount == 1
+        )
+        #expect(
+            statistics.completedCount
+                == (statistics.transferredByteCount == 6 ? 1 : 0)
+        )
+        #expect(
+            statistics.transferredByteCount
+                == statistics.discardedByteCount
+        )
     }
 
     @Test("an open MAP hint may confirm an exact PART context")
@@ -3378,6 +3442,8 @@ extension HLSLivePlaylistClientTests {
             from: actualPlaylistURL
         )
         await coordinator.update(from: actualSnapshot)
+        await coordinator.update(from: hintSnapshot)
+        await coordinator.update(from: actualSnapshot)
         let part = try #require(actualSnapshot.partialSegments.first)
         let destinationURL = workspace.directoryURL
             .appendingPathComponent("confirmed.part")
@@ -3393,7 +3459,14 @@ extension HLSLivePlaylistClientTests {
             try Data(contentsOf: destinationURL)
                 == Data("hinted".utf8)
         )
-        await coordinator.cancelAll()
+        let statistics = await coordinator.cancelAll().partialSegments
+        #expect(statistics.requestCount == 1)
+        #expect(statistics.completedCount == 1)
+        #expect(statistics.confirmedCount == 1)
+        #expect(statistics.reuseCount == 1)
+        #expect(statistics.missCount == 0)
+        #expect(statistics.transferredByteCount == 6)
+        #expect(statistics.reusedByteCount == 6)
     }
 
     @Test("cancelling preloads removes recording-scoped temporary files")
@@ -3459,7 +3532,7 @@ extension HLSLivePlaylistClientTests {
             await Task.yield()
         }
 
-        await coordinator.cancelAll()
+        let statistics = await coordinator.cancelAll().partialSegments
 
         #expect(
             !FileManager.default.fileExists(
@@ -3467,6 +3540,10 @@ extension HLSLivePlaylistClientTests {
                     .appendingPathComponent("preload").path
             )
         )
+        #expect(statistics.requestCount == 1)
+        #expect(statistics.reuseCount == 0)
+        #expect(statistics.cancellationCount == 1)
+        #expect(statistics.discardCount == 1)
     }
 
     @Test("encrypted edge MAP metadata is not treated as clear media")
@@ -3599,6 +3676,24 @@ extension HLSLivePlaylistClientTests {
                     .appendingPathComponent("resources/initialization.mp4")
             ) == Data("init".utf8)
         )
+        let partStatistics =
+            receipt.preloadStatistics.partialSegments
+        #expect(partStatistics.requestCount == 1)
+        #expect(partStatistics.completedCount == 1)
+        #expect(partStatistics.confirmedCount == 1)
+        #expect(partStatistics.reuseCount == 1)
+        #expect(partStatistics.missCount == 1)
+        #expect(partStatistics.transferredByteCount == 3)
+        #expect(partStatistics.reusedByteCount == 3)
+        let mapStatistics =
+            receipt.preloadStatistics.initializationMaps
+        #expect(mapStatistics.requestCount == 1)
+        #expect(mapStatistics.completedCount == 1)
+        #expect(mapStatistics.confirmedCount == 1)
+        #expect(mapStatistics.reuseCount == 1)
+        #expect(mapStatistics.missCount == 0)
+        #expect(mapStatistics.transferredByteCount == 4)
+        #expect(mapStatistics.reusedByteCount == 4)
     }
 
     @Test("LL-HLS part capture remains opt-in")
@@ -3638,6 +3733,10 @@ extension HLSLivePlaylistClientTests {
         ).record(from: sourceURL, to: fixture.destinationURL)
 
         #expect(receipt.promotedPartCount == 0)
+        #expect(
+            receipt.preloadStatistics
+                == HLSLiveDVRPreloadStatistics()
+        )
         let requests = HLSLiveURLProtocol.capturedRequests().compactMap(\.url)
         #expect(!requests.contains(firstPartURL))
         #expect(!requests.contains(secondPartURL))

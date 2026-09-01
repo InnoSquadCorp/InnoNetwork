@@ -565,7 +565,9 @@ for await event in await manager.events(for: task) {
   aggregate byte bounds, open-ended range validation, exact discontinuity,
   initialization-map, and encryption-context confirmation, cancellation-safe
   temporary storage, and ordinary-request fallback on every mismatch or
-  transfer failure
+  transfer failure; progress and receipts expose separate value-redacted
+  request, completion, confirmation, reuse, miss, failure, cancellation,
+  discard, and byte counters for parts and initialization maps
 - recording-scoped, memory-only identity AES-128 key reuse and rotation,
   explicit or media-sequence IV decryption, encrypted fMP4 maps, and plaintext-
   only local packages that never persist key declarations or source key URLs

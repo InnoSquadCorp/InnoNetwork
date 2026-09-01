@@ -91,6 +91,9 @@ Versioning.
   An opt-in bounded preload pack speculatively fetches clear `PART` and `MAP`
   hints, reuses bytes only after exact range and presentation-context
   confirmation, and otherwise falls back to the ordinary DVR transfer path.
+  Progress and committed receipts expose separate, value-redacted preload
+  request, completion, confirmation, reuse, miss, failure, cancellation,
+  discard, and byte counters for partial segments and initialization maps.
   Encrypted media, gaps, external renditions or timeline resources,
   missing/changing initialization maps, and lost live-window history fail
   explicitly without exposing a partial package.

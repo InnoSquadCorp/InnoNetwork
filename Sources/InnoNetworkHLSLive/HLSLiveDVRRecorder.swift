@@ -381,6 +381,11 @@ public struct HLSLiveDVRRecorder: Sendable {
                 }
                 try state.validatePresentation(snapshot)
                 await preloadCoordinator?.update(from: snapshot)
+                if let statistics = await preloadCoordinator?
+                    .statisticsSnapshot()
+                {
+                    state.preloadStatistics = statistics
+                }
                 let candidates = try state.candidates(
                     in: snapshot
                 )
@@ -482,6 +487,11 @@ public struct HLSLiveDVRRecorder: Sendable {
                     else {
                         break recordingLoop
                     }
+                    if let statistics = await preloadCoordinator?
+                        .statisticsSnapshot()
+                    {
+                        state.preloadStatistics = statistics
+                    }
                     if let checkpointStore {
                         try resourceWriter.discardAllStagedParts(
                             state: &state
@@ -518,7 +528,7 @@ public struct HLSLiveDVRRecorder: Sendable {
                 }
             }
         } catch is CancellationError {
-            await preloadCoordinator?.cancelAll()
+            _ = await preloadCoordinator?.cancelAll()
             if let control,
                 await control.shouldCancelAndDiscard
             {
@@ -526,10 +536,10 @@ public struct HLSLiveDVRRecorder: Sendable {
             }
             throw CancellationError()
         } catch let error as HLSLiveDVRError {
-            await preloadCoordinator?.cancelAll()
+            _ = await preloadCoordinator?.cancelAll()
             throw error
         } catch let error as HLSDownloadError {
-            await preloadCoordinator?.cancelAll()
+            _ = await preloadCoordinator?.cancelAll()
             switch error {
             case .separateAudioRenditionUnsupported:
                 throw HLSLiveDVRError.unsupportedFeature(
@@ -539,11 +549,13 @@ public struct HLSLiveDVRRecorder: Sendable {
                 throw HLSLiveDVRError.transferFailed
             }
         } catch {
-            await preloadCoordinator?.cancelAll()
+            _ = await preloadCoordinator?.cancelAll()
             throw HLSLiveDVRError.transferFailed
         }
 
-        await preloadCoordinator?.cancelAll()
+        if let statistics = await preloadCoordinator?.cancelAll() {
+            state.preloadStatistics = statistics
+        }
         if let control,
             await control.shouldCancelAndDiscard
         {
@@ -574,14 +586,18 @@ public struct HLSLiveDVRRecorder: Sendable {
         )
         for candidate in update.candidates {
             do {
-                guard
-                    try await resourceWriter.stage(
-                        candidate,
-                        state: &state,
-                        context: context,
-                        preloadCoordinator: preloadCoordinator
-                    )
-                else {
+                let didStage = try await resourceWriter.stage(
+                    candidate,
+                    state: &state,
+                    context: context,
+                    preloadCoordinator: preloadCoordinator
+                )
+                if let statistics = await preloadCoordinator?
+                    .statisticsSnapshot()
+                {
+                    state.preloadStatistics = statistics
+                }
+                guard didStage else {
                     try resourceWriter.abandonStagedParts(
                         mediaSequenceNumber:
                             candidate.part.mediaSequenceNumber,
@@ -593,6 +609,11 @@ public struct HLSLiveDVRRecorder: Sendable {
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
+                if let statistics = await preloadCoordinator?
+                    .statisticsSnapshot()
+                {
+                    state.preloadStatistics = statistics
+                }
                 try resourceWriter.abandonStagedParts(
                     mediaSequenceNumber:
                         candidate.part.mediaSequenceNumber,

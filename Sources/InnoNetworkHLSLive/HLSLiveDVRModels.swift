@@ -319,6 +319,9 @@ public struct HLSLiveDVRProgress: Equatable, Sendable {
     /// Parts promoted into complete retained segments so far.
     public let promotedPartCount: Int
 
+    /// Value-redacted LL-HLS preload counters for this recording session.
+    public let preloadStatistics: HLSLiveDVRPreloadStatistics
+
     init(
         segmentCount: Int,
         recordedDuration: TimeInterval,
@@ -326,7 +329,9 @@ public struct HLSLiveDVRProgress: Equatable, Sendable {
         stagedPartCount: Int = 0,
         stagedPartDuration: TimeInterval = 0,
         stagedPartByteCount: Int64 = 0,
-        promotedPartCount: Int = 0
+        promotedPartCount: Int = 0,
+        preloadStatistics: HLSLiveDVRPreloadStatistics =
+            HLSLiveDVRPreloadStatistics()
     ) {
         self.segmentCount = segmentCount
         self.recordedDuration = recordedDuration
@@ -335,6 +340,7 @@ public struct HLSLiveDVRProgress: Equatable, Sendable {
         self.stagedPartDuration = stagedPartDuration
         self.stagedPartByteCount = stagedPartByteCount
         self.promotedPartCount = promotedPartCount
+        self.preloadStatistics = preloadStatistics
     }
 }
 
@@ -384,6 +390,9 @@ public struct HLSLiveDVRReceipt: Equatable, Sendable {
     /// Partial segments promoted without refetching their complete parent.
     public let promotedPartCount: Int
 
+    /// Value-redacted LL-HLS preload counters for this recording session.
+    public let preloadStatistics: HLSLiveDVRPreloadStatistics
+
     /// The first retained media-sequence number.
     public let firstMediaSequence: Int64
 
@@ -399,6 +408,8 @@ public struct HLSLiveDVRReceipt: Equatable, Sendable {
         recordedDuration: TimeInterval,
         mediaByteCount: Int64,
         promotedPartCount: Int = 0,
+        preloadStatistics: HLSLiveDVRPreloadStatistics =
+            HLSLiveDVRPreloadStatistics(),
         firstMediaSequence: Int64,
         lastMediaSequence: Int64
     ) {
@@ -410,6 +421,7 @@ public struct HLSLiveDVRReceipt: Equatable, Sendable {
         self.recordedDuration = recordedDuration
         self.mediaByteCount = mediaByteCount
         self.promotedPartCount = promotedPartCount
+        self.preloadStatistics = preloadStatistics
         self.firstMediaSequence = firstMediaSequence
         self.lastMediaSequence = lastMediaSequence
     }

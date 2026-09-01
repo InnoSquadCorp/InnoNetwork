@@ -236,6 +236,19 @@ and transfer failures discard temporary bytes and leave the ordinary DVR
 request path available. ``InnoNetworkHLS/HLSRequestPurpose/mediaPreloadHint``
 lets request adapters distinguish this speculative traffic.
 
+``HLSLiveDVRProgress/preloadStatistics`` and
+``HLSLiveDVRReceipt/preloadStatistics`` expose separate partial-segment and
+initialization-map counters without retaining URLs, headers, or bodies. Each
+``HLSLiveDVRPreloadResourceStatistics`` reports requests, completed transfers,
+exact playlist confirmations, reuse, ordinary-path misses, failures,
+cancellations, discards, and transferred, reused, and discarded bytes.
+Subtracting completed, failed, and cancelled transfers from `requestCount`
+gives the current in-flight count. Progress carries a point-in-time snapshot;
+the completed receipt also includes outcomes observed while discarding unused
+preloads during final cleanup. Counters describe the current recording session
+only; resuming from a durable checkpoint starts a new preload-statistics
+session because speculative files are never checkpointed.
+
 MPEG transport streams and fragmented MP4 with one stable initialization map
 are written as a URL-free local VOD playlist. Identity-format AES-128 uses
 explicit or media-sequence IVs, caches each 16-byte key only for the recording,
@@ -332,6 +345,8 @@ instead of resuming it.
 - ``HLSLiveDVRPartCapturePolicy``
 - ``HLSLiveDVRPreloadPack``
 - ``HLSLiveDVRPreloadPolicy``
+- ``HLSLiveDVRPreloadResourceStatistics``
+- ``HLSLiveDVRPreloadStatistics``
 - ``HLSLiveDVRRecoveryPack``
 - ``HLSLiveDVRRecoveryPolicy``
 - ``HLSLiveDVRStartPosition``
