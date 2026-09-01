@@ -338,6 +338,17 @@ media publication. Schedule resolution is not converted into
 ``HLSLiveDVRInterstitialFailurePolicy/omitEvent`` because an unavailable JSON
 document cannot prove the complete event set.
 
+An eligible `com.apple.hls.preload` whose target class is a Date Range
+Schedule is fetched asynchronously before its target appears, without holding
+up primary-segment work. The recorder keeps at most 32 resource bodies in
+memory, and each body retains the resolver's 256 KiB byte limit. An unchanged
+declaration is attempted once. When the target arrives, a matching preload
+avoids the schedule request; an unavailable, mismatched, or malformed preload
+falls back to the authoritative schedule URL. Preloading is therefore a
+latency optimization and never weakens schedule validation or the recording's
+atomic failure policy. Ineligible VOD preloads are neither requested nor
+retained.
+
 ``HLSLiveDVRInterstitialFailurePolicy/failRecording`` is the default and keeps
 publication atomic when an event cannot be packaged completely.
 ``HLSLiveDVRInterstitialFailurePolicy/omitEvent`` removes that entire Date
@@ -355,6 +366,8 @@ identities are query-free hashes and no interstitial URL is serialized.
 Schedule JSON and its `X-URI` are never serialized. A resumed recording
 refetches an actively advertised schedule to discover members that were not
 yet observed, while already packaged events reuse their validated local files.
+Date Range preload bytes and failed-attempt state are also memory-only and are
+not restored from a checkpoint.
 In-progress playback snapshots clone the retained event packages and validate
 the complete local reference graph before returning. Current retained and
 omitted counts, ordered asset count, and retained bytes are available through

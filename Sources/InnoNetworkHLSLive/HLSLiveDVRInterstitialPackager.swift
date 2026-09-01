@@ -140,6 +140,10 @@ struct HLSLiveDVRInterstitialPackager: Sendable {
         }
     }
 
+    func cancelPreloads() async {
+        await scheduleResolver.cancelPreloads()
+    }
+
     private func package(
         dateRange: HLSDateRange,
         interstitial: HLSInterstitial,

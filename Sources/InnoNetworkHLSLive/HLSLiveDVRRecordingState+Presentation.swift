@@ -280,13 +280,19 @@ extension HLSLiveDVRRecordingState {
         isPrimary: Bool
     ) throws {
         if dateRanges.contains(where: { dateRange in
+            if let preload = dateRange.preload {
+                return configuration.interstitials.policy != .package
+                    || dateRange.className
+                        != Self.dateRangePreloadClass
+                    || preload.targetClass
+                        != Self.dateRangeScheduleClass
+            }
             guard dateRange.externalResource != nil else {
-                return dateRange.preload != nil
+                return false
             }
             return configuration.interstitials.policy != .package
                 || dateRange.className
                     != Self.dateRangeScheduleClass
-                || dateRange.preload != nil
         }) {
             throw HLSLiveDVRError.unsupportedFeature(
                 .externalTimelineResource
@@ -303,7 +309,9 @@ extension HLSLiveDVRRecordingState {
         }
         if dateRanges.contains(where: { dateRange in
             let representedNames: Set<String>
-            if dateRange.interstitial != nil {
+            if dateRange.preload != nil {
+                representedNames = Self.dateRangePreloadAttributeNames
+            } else if dateRange.interstitial != nil {
                 representedNames = Self.interstitialAttributeNames
             } else if dateRange.className
                 == Self.dateRangeScheduleClass
@@ -344,8 +352,18 @@ extension HLSLiveDVRRecordingState {
     private static let dateRangeScheduleClass =
         "com.apple.hls.daterange-schedule"
 
+    private static let dateRangePreloadClass =
+        "com.apple.hls.preload"
+
     private static let dateRangeScheduleAttributeNames: Set<String> = [
         "X-URI"
+    ]
+
+    private static let dateRangePreloadAttributeNames: Set<String> = [
+        "X-DURATION-AT-JOIN",
+        "X-TARGET-CLASS",
+        "X-TARGET-ID",
+        "X-URI",
     ]
 
     mutating func mergeDateRanges(

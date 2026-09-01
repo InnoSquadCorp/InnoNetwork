@@ -468,7 +468,8 @@ interstitial, schedule, and preload resources block raw assembly and the
 ordinary application-owned offline package operation instead of leaving
 remote references in a local playlist. The `InnoNetworkHLSLive` companion can
 opt into bounded, URL-free interstitial DVR packaging and expand Date Range
-Schedules before retaining their members; use the
+Schedules before retaining their members, including reuse of an eligible
+Date Range preload; use the
 `InnoNetworkHLSAVFoundation` companion when the system should retain live
 interstitial assets.
 

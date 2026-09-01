@@ -597,6 +597,10 @@ for await event in await manager.events(for: task) {
   interstitial packaging is enabled; nested members preserve server order,
   reloads reuse one in-memory resolution, source changes fail closed, and no
   schedule `X-URI` reaches the recording or recovery checkpoint
+- eligible `com.apple.hls.preload` declarations can seed a later Date Range
+  Schedule without a second request; at most 32 bounded 256 KiB resources are
+  retained in memory, failed or stale preloads fall back to the authoritative
+  schedule URL, and preload bytes never enter the package or checkpoint
 - rolling interstitial expiry removes each event directory atomically;
   recovery checkpoints keep only query-free source hashes and local file
   proofs, and in-progress playback snapshots freeze the complete asset-list

@@ -4849,6 +4849,274 @@ extension HLSLivePlaylistClientTests {
         )
     }
 
+    @Test("Date Range preloads seed a later schedule")
+    func reusesDateRangePreloadForSchedule() async throws {
+        let sourceURL = try url(
+            "https://media.example/preloaded-schedule-live.m3u8"
+        )
+        let reloadURL = try url(
+            "https://media.example/preloaded-schedule-live.m3u8?_HLS_msn=2"
+        )
+        let firstURL = try url(
+            "https://media.example/preloaded-schedule-1.ts"
+        )
+        let secondURL = try url(
+            "https://media.example/preloaded-schedule-2.ts"
+        )
+        let scheduleURL = try url(
+            "https://schedule.example/preloaded.json?token=secret"
+        )
+        let eventURL = try url(
+            "https://ads.example/preloaded-event.m3u8"
+        )
+        let eventMediaURL = try url(
+            "https://ads.example/preloaded-event.ts"
+        )
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:1
+                #EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES
+                #EXT-X-PROGRAM-DATE-TIME:2026-09-01T00:00:00.000Z
+                #EXT-X-DATERANGE:ID="schedule-preload",CLASS="com.apple.hls.preload",START-DATE="2026-09-01T00:00:00.000Z",DURATION=8,X-URI="https://schedule.example/preloaded.json?token=secret",X-TARGET-ID="preloaded-schedule",X-TARGET-CLASS="com.apple.hls.daterange-schedule"
+                #EXTINF:4,
+                preloaded-schedule-1.ts
+                """
+            ),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:1
+                #EXT-X-PROGRAM-DATE-TIME:2026-09-01T00:00:00.000Z
+                #EXTINF:4,
+                preloaded-schedule-1.ts
+                #EXT-X-DATERANGE:ID="preloaded-schedule",CLASS="com.apple.hls.daterange-schedule",START-DATE="2026-09-01T00:00:04.000Z",DURATION=4,X-URI="https://schedule.example/preloaded.json?token=secret"
+                #EXTINF:4,
+                preloaded-schedule-2.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: reloadURL
+        )
+        HLSLiveURLProtocol.register(
+            HLSLiveURLProtocol.Response(
+                statusCode: 200,
+                data: Data(
+                    """
+                    {"DATERANGES":[{
+                      "ID":"preloaded-event",
+                      "CLASS":"com.apple.hls.interstitial",
+                      "X-SCHEDULE-OFFSET":1,
+                      "DURATION":2,
+                      "X-ASSET-URI":"https://ads.example/preloaded-event.m3u8"
+                    }]}
+                    """.utf8
+                ),
+                headers: ["Content-Type": "application/json"]
+            ),
+            for: scheduleURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:2
+                #EXTINF:2,
+                preloaded-event.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: eventURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("one".utf8)),
+            for: firstURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("two".utf8)),
+            for: secondURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("event".utf8)),
+            for: eventMediaURL
+        )
+
+        let receipt = try await recorder(
+            session: fixture.session,
+            startPosition: .currentWindow,
+            interstitials: HLSLiveDVRInterstitialPack(policy: .package)
+        ).record(from: sourceURL, to: fixture.destinationURL)
+        let contents = try String(
+            contentsOf: receipt.playlistURL,
+            encoding: .utf8
+        )
+        let scheduleRequests = HLSLiveURLProtocol.capturedRequests()
+            .filter { $0.url == scheduleURL }
+
+        #expect(receipt.segmentCount == 2)
+        #expect(receipt.interstitialStatistics.retainedEventCount == 1)
+        #expect(scheduleRequests.count == 1)
+        #expect(
+            scheduleRequests.first?.value(
+                forHTTPHeaderField: "Accept"
+            ) == "*/*"
+        )
+        #expect(!contents.contains("schedule-preload"))
+        #expect(!contents.contains("preloaded-schedule"))
+        #expect(!contents.contains("schedule.example"))
+        #expect(!contents.contains("token=secret"))
+        _ = try HLSLocalPlaybackPackageSnapshot(
+            source: receipt.playbackSource
+        )
+    }
+
+    @Test("invalid Date Range preload data falls back to the schedule URL")
+    func fallsBackFromInvalidDateRangePreload() async throws {
+        let sourceURL = try url(
+            "https://media.example/preload-fallback-live.m3u8"
+        )
+        let reloadURL = try url(
+            "https://media.example/preload-fallback-live.m3u8?_HLS_msn=2"
+        )
+        let firstURL = try url(
+            "https://media.example/preload-fallback-1.ts"
+        )
+        let secondURL = try url(
+            "https://media.example/preload-fallback-2.ts"
+        )
+        let scheduleURL = try url(
+            "https://schedule.example/preload-fallback.json"
+        )
+        let fallbackScheduleURL = try url(
+            "https://schedule.example/preload-fallback.json?_HLS_start_offset=2.0"
+        )
+        let eventURL = try url(
+            "https://ads.example/preload-fallback-event.m3u8"
+        )
+        let eventMediaURL = try url(
+            "https://ads.example/preload-fallback-event.ts"
+        )
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:1
+                #EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES
+                #EXT-X-PROGRAM-DATE-TIME:2026-09-01T00:00:00.000Z
+                #EXT-X-DATERANGE:ID="fallback-preload",CLASS="com.apple.hls.preload",START-DATE="2026-09-01T00:00:00.000Z",DURATION=8,X-URI="https://schedule.example/preload-fallback.json",X-TARGET-ID="fallback-schedule",X-TARGET-CLASS="com.apple.hls.daterange-schedule",X-DURATION-AT-JOIN=2
+                #EXTINF:4,
+                preload-fallback-1.ts
+                """
+            ),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:1
+                #EXT-X-PROGRAM-DATE-TIME:2026-09-01T00:00:00.000Z
+                #EXTINF:4,
+                preload-fallback-1.ts
+                #EXT-X-DATERANGE:ID="fallback-schedule",CLASS="com.apple.hls.daterange-schedule",START-DATE="2026-09-01T00:00:04.000Z",DURATION=4,X-URI="https://schedule.example/preload-fallback.json"
+                #EXTINF:4,
+                preload-fallback-2.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: reloadURL
+        )
+        HLSLiveURLProtocol.register(
+            HLSLiveURLProtocol.Response(
+                statusCode: 200,
+                data: Data("not-json".utf8),
+                headers: ["Content-Type": "application/octet-stream"]
+            ),
+            for: scheduleURL
+        )
+        HLSLiveURLProtocol.register(
+            HLSLiveURLProtocol.Response(
+                statusCode: 200,
+                data: Data(
+                    """
+                    {"DATERANGES":[{
+                      "ID":"fallback-event",
+                      "CLASS":"com.apple.hls.interstitial",
+                      "X-SCHEDULE-OFFSET":1,
+                      "DURATION":2,
+                      "X-ASSET-URI":"https://ads.example/preload-fallback-event.m3u8"
+                    }]}
+                    """.utf8
+                ),
+                headers: ["Content-Type": "application/json"]
+            ),
+            for: fallbackScheduleURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:2
+                #EXTINF:2,
+                preload-fallback-event.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: eventURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("one".utf8)),
+            for: firstURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("two".utf8)),
+            for: secondURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("event".utf8)),
+            for: eventMediaURL
+        )
+
+        let receipt = try await recorder(
+            session: fixture.session,
+            startPosition: .currentWindow,
+            interstitials: HLSLiveDVRInterstitialPack(policy: .package)
+        ).record(from: sourceURL, to: fixture.destinationURL)
+        let requests = HLSLiveURLProtocol.capturedRequests()
+
+        #expect(receipt.segmentCount == 2)
+        #expect(receipt.interstitialStatistics.retainedEventCount == 1)
+        #expect(requests.count { $0.url == scheduleURL } == 1)
+        #expect(requests.count { $0.url == fallbackScheduleURL } == 1)
+        #expect(
+            requests.first { $0.url == scheduleURL }?
+                .value(forHTTPHeaderField: "Accept") == "*/*"
+        )
+        #expect(
+            requests.first { $0.url == fallbackScheduleURL }?
+                .value(forHTTPHeaderField: "Accept")
+                == "application/json"
+        )
+    }
+
     @Test("recovery refetches schedules and reuses local interstitials")
     func restoresScheduledInterstitial() async throws {
         let sourceURL = try url(
@@ -5875,6 +6143,53 @@ extension HLSLivePlaylistClientTests {
             .compactMap(\.url)
         #expect(requests == [sourceURL])
         #expect(!requests.contains(scheduleURL))
+        #expect(!requests.contains(primaryURL))
+    }
+
+    @Test("Date Range preloading is opt-in and starts no resource request")
+    func rejectsDateRangePreloadByDefault() async throws {
+        let sourceURL = try url(
+            "https://media.example/reject-preload-live.m3u8"
+        )
+        let preloadURL = try url(
+            "https://schedule.example/unrequested-preload.json"
+        )
+        let primaryURL = try url(
+            "https://media.example/unrequested-preload-primary.ts"
+        )
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-PROGRAM-DATE-TIME:2026-09-01T00:00:00.000Z
+                #EXT-X-DATERANGE:ID="preload",CLASS="com.apple.hls.preload",START-DATE="2026-09-01T00:00:00.000Z",DURATION=8,X-URI="https://schedule.example/unrequested-preload.json",X-TARGET-ID="schedule",X-TARGET-CLASS="com.apple.hls.daterange-schedule"
+                #EXTINF:4,
+                unrequested-preload-primary.ts
+                """
+            ),
+            for: sourceURL
+        )
+
+        await #expect(
+            throws: HLSLiveDVRError.unsupportedFeature(
+                .externalTimelineResource
+            )
+        ) {
+            try await recorder(
+                session: fixture.session,
+                startPosition: .currentWindow
+            ).record(from: sourceURL, to: fixture.destinationURL)
+        }
+        let requests = HLSLiveURLProtocol.capturedRequests()
+            .compactMap(\.url)
+        #expect(requests == [sourceURL])
+        #expect(!requests.contains(preloadURL))
         #expect(!requests.contains(primaryURL))
     }
 

@@ -581,6 +581,7 @@ public struct HLSLiveDVRRecorder: Sendable {
             }
         } catch is CancellationError {
             _ = await preloadCoordinator?.cancelAll()
+            await interstitialPackager.cancelPreloads()
             if let control,
                 await control.shouldCancelAndDiscard
             {
@@ -589,9 +590,11 @@ public struct HLSLiveDVRRecorder: Sendable {
             throw CancellationError()
         } catch let error as HLSLiveDVRError {
             _ = await preloadCoordinator?.cancelAll()
+            await interstitialPackager.cancelPreloads()
             throw error
         } catch let error as HLSDownloadError {
             _ = await preloadCoordinator?.cancelAll()
+            await interstitialPackager.cancelPreloads()
             switch error {
             case .separateAudioRenditionUnsupported:
                 throw HLSLiveDVRError.unsupportedFeature(
@@ -602,12 +605,14 @@ public struct HLSLiveDVRRecorder: Sendable {
             }
         } catch {
             _ = await preloadCoordinator?.cancelAll()
+            await interstitialPackager.cancelPreloads()
             throw HLSLiveDVRError.transferFailed
         }
 
         if let statistics = await preloadCoordinator?.cancelAll() {
             state.preloadStatistics = statistics
         }
+        await interstitialPackager.cancelPreloads()
         if let control,
             await control.shouldCancelAndDiscard
         {
