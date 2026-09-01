@@ -155,13 +155,16 @@ public struct HLSLiveDVRRecorder: Sendable {
                 ) {
                     continuation.yield(.progress($0))
                 }
+                await control.finishPlaybackSnapshotRequests()
                 continuation.yield(.completed(receipt))
                 continuation.finish()
                 return receipt
             } catch is CancellationError {
+                await control.finishPlaybackSnapshotRequests()
                 continuation.finish()
                 throw CancellationError()
             } catch {
+                await control.finishPlaybackSnapshotRequests()
                 continuation.finish(throwing: error)
                 throw error
             }
@@ -527,6 +530,10 @@ public struct HLSLiveDVRRecorder: Sendable {
                             preservesRecovery: &preservesRecovery,
                             state: &state
                         )
+                        await fulfillPlaybackSnapshotRequests(
+                            control: control,
+                            state: state
+                        )
                     }
                     if !usesRollingRetention {
                         onProgress(state.progress)
@@ -548,6 +555,10 @@ public struct HLSLiveDVRRecorder: Sendable {
                         checkpointedFilePaths: &checkpointedFilePaths,
                         preservesRecovery: &preservesRecovery,
                         state: &state
+                    )
+                    await fulfillPlaybackSnapshotRequests(
+                        control: control,
+                        state: state
                     )
                     onProgress(state.progress)
                     if let control,
@@ -607,6 +618,108 @@ public struct HLSLiveDVRRecorder: Sendable {
         committed = true
         try? checkpointStore?.cleanup()
         return receipt
+    }
+
+    private func fulfillPlaybackSnapshotRequests(
+        control: HLSLiveDVRRecordingControl?,
+        state: HLSLiveDVRRecordingState
+    ) async {
+        guard let control else {
+            return
+        }
+        let requests = await control.takePlaybackSnapshotRequests()
+        var processableRequests: [HLSLiveDVRPlaybackSnapshotRequest] = []
+        for request in requests {
+            if await request.shouldProcess {
+                processableRequests.append(request)
+            } else {
+                await control.completePlaybackSnapshotRequest(request)
+            }
+        }
+        guard !processableRequests.isEmpty else {
+            return
+        }
+        let sharedSnapshot: HLSLiveDVRSharedPlaybackSnapshot
+        do {
+            sharedSnapshot = HLSLiveDVRSharedPlaybackSnapshot(
+                snapshot: try state.freezePlaybackSnapshot(),
+                userCount: processableRequests.count
+            )
+        } catch let error as HLSLiveDVRError {
+            for request in processableRequests {
+                await request.fail(error)
+                await control.completePlaybackSnapshotRequest(request)
+            }
+            return
+        } catch {
+            for request in processableRequests {
+                await request.fail(.storageFailed)
+                await control.completePlaybackSnapshotRequest(request)
+            }
+            return
+        }
+        for request in processableRequests {
+            let task = Task<HLSLiveDVRReceipt, Error> {
+                do {
+                    let receipt = try await capturePlaybackSnapshot(
+                        to: request.destinationDirectoryURL,
+                        snapshot: sharedSnapshot.snapshot
+                    )
+                    await sharedSnapshot.release()
+                    return receipt
+                } catch {
+                    await sharedSnapshot.release()
+                    throw error
+                }
+            }
+            guard await request.installOperationTask(task) else {
+                Task {
+                    _ = try? await task.value
+                    await control.completePlaybackSnapshotRequest(request)
+                }
+                continue
+            }
+            Task {
+                do {
+                    await request.succeed(try await task.value)
+                } catch is CancellationError {
+                    await request.cancel()
+                } catch let error as HLSLiveDVRError {
+                    await request.fail(error)
+                } catch {
+                    await request.fail(.storageFailed)
+                }
+                await control.completePlaybackSnapshotRequest(request)
+            }
+        }
+    }
+
+    private func capturePlaybackSnapshot(
+        to destinationDirectoryURL: URL,
+        snapshot: HLSLiveDVRFrozenPlaybackSnapshot
+    ) async throws -> HLSLiveDVRReceipt {
+        let lease: HLSDestinationLease
+        do {
+            lease = try await HLSDestinationLease.acquire(
+                for: destinationDirectoryURL
+            )
+        } catch HLSDownloadError.destinationInUse {
+            throw HLSLiveDVRError.destinationInUse
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            throw HLSLiveDVRError.storageFailed
+        }
+        do {
+            let receipt = try await snapshot.publish(
+                to: destinationDirectoryURL
+            )
+            await lease.release()
+            return receipt
+        } catch {
+            await lease.release()
+            throw error
+        }
     }
 
     private func persistRetainedBoundary(

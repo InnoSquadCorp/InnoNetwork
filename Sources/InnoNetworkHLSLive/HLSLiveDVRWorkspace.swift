@@ -7,11 +7,22 @@ struct HLSLiveDVRWorkspace: Sendable {
     static func make(
         for destinationDirectoryURL: URL
     ) throws -> HLSLiveDVRWorkspace {
-        let fileManager = FileManager.default
         let parentURL = destinationDirectoryURL.deletingLastPathComponent()
+        return try makeTemporary(
+            in: parentURL,
+            name:
+                ".\(destinationDirectoryURL.lastPathComponent)."
+                + "\(UUID().uuidString).live-dvr-staging"
+        )
+    }
+
+    static func makeTemporary(
+        in parentURL: URL,
+        name: String
+    ) throws -> HLSLiveDVRWorkspace {
+        let fileManager = FileManager.default
         let directoryURL = parentURL.appendingPathComponent(
-            ".\(destinationDirectoryURL.lastPathComponent)."
-                + "\(UUID().uuidString).live-dvr-staging",
+            name,
             isDirectory: true
         )
         do {

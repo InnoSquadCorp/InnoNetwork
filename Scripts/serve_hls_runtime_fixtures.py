@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import sys
 import threading
+import time
 from urllib.parse import urlsplit
 
 
@@ -107,6 +108,9 @@ class FixtureRequestHandler(http.server.SimpleHTTPRequestHandler):
         if path == "/live-gap/index.m3u8":
             self._serve_live_gap_playlist()
             return
+        if path == "/live-timeshift/index.m3u8":
+            self._serve_live_timeshift_playlist()
+            return
         if path == "/live-preload/state":
             self._send_json(self.preload_state.snapshot())
             return
@@ -126,10 +130,21 @@ class FixtureRequestHandler(http.server.SimpleHTTPRequestHandler):
             "/live-gap/init.mp4": "init.mp4",
             "/live-gap/segment-0.m4s": "segment-0.m4s",
             "/live-gap/segment-2.m4s": "segment-2.m4s",
+            "/live-timeshift/init.mp4": "init.mp4",
         }
         rotation_resource = rotation_resources.get(path)
         if rotation_resource is not None:
             self._send_runtime_fixture(rotation_resource)
+            return
+        timeshift_resources = {
+            "/live-timeshift/segment-0.m4s": ("segment-0.m4s", 0.2),
+            "/live-timeshift/segment-1.m4s": ("segment-1.m4s", 1.2),
+            "/live-timeshift/segment-2.m4s": ("segment-2.m4s", 0),
+        }
+        timeshift_resource = timeshift_resources.get(path)
+        if timeshift_resource is not None:
+            name, delay = timeshift_resource
+            self._send_runtime_fixture(name, delay=delay)
             return
         resources = {
             "/live-preload/init.mp4": (
@@ -252,12 +267,35 @@ segment-2.m4s
             "application/vnd.apple.mpegurl",
         )
 
-    def _send_runtime_fixture(self, name: str) -> None:
+    def _serve_live_timeshift_playlist(self) -> None:
+        playlist = """#EXTM3U
+#EXT-X-VERSION:7
+#EXT-X-TARGETDURATION:2
+#EXT-X-MEDIA-SEQUENCE:0
+#EXT-X-PLAYLIST-TYPE:EVENT
+#EXT-X-INDEPENDENT-SEGMENTS
+#EXT-X-MAP:URI="init.mp4"
+#EXTINF:1.002667,
+segment-0.m4s
+#EXTINF:1.002667,
+segment-1.m4s
+#EXTINF:0.021333,
+segment-2.m4s
+#EXT-X-ENDLIST
+"""
+        self._send_bytes(
+            playlist.encode("utf-8"),
+            "application/vnd.apple.mpegurl",
+        )
+
+    def _send_runtime_fixture(self, name: str, delay: float = 0) -> None:
         fixture = Path(self.directory) / "audio-fmp4" / name
         content_type = self.extensions_map.get(
             fixture.suffix,
             "application/octet-stream",
         )
+        if delay > 0:
+            time.sleep(delay)
         self._send_bytes(fixture.read_bytes(), content_type)
 
     def _send_json(self, value: dict[str, object]) -> None:

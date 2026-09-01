@@ -61,6 +61,12 @@ public enum HLSLiveDVRError: Error, Equatable, Sendable {
     /// No complete segment fit within the configured limits.
     case noSegmentsRecorded
 
+    /// The recording ended before another playback snapshot boundary.
+    case playbackSnapshotUnavailable
+
+    /// Too many playback snapshot requests are outstanding for one recording.
+    case playbackSnapshotRequestLimitExceeded(limit: Int)
+
     /// Rendition selection exceeded the configured per-kind limit.
     case renditionLimitExceeded(limit: Int)
 
@@ -122,6 +128,10 @@ extension HLSLiveDVRError: LocalizedError {
             return "The live DVR checkpoint or retained media failed integrity validation."
         case .noSegmentsRecorded:
             return "No complete live segment fit within the recording limits."
+        case .playbackSnapshotUnavailable:
+            return "The live DVR recording ended before another playback snapshot became available."
+        case .playbackSnapshotRequestLimitExceeded(let limit):
+            return "The live DVR recording already has \(limit) outstanding playback snapshot requests."
         case .renditionLimitExceeded(let limit):
             return "Live DVR rendition selection exceeded the per-kind limit of \(limit)."
         case .liveWindowAdvanced:
@@ -173,6 +183,10 @@ extension HLSLiveDVRError: LocalizedError {
             return "Discard the checkpoint and start a new recording."
         case .noSegmentsRecorded:
             return "Increase the duration or byte limits and record again."
+        case .playbackSnapshotUnavailable:
+            return "Use the final receipt, or request the next snapshot while recording is active."
+        case .playbackSnapshotRequestLimitExceeded:
+            return "Wait for an existing playback snapshot request to finish before requesting another."
         case .renditionLimitExceeded:
             return "Select fewer rendition languages or raise the bounded rendition limit."
         case .liveWindowAdvanced:

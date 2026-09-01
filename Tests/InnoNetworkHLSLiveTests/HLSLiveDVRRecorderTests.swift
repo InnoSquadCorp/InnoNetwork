@@ -302,6 +302,465 @@ extension HLSLivePlaylistClientTests {
         #expect(try await events.next() == nil)
     }
 
+    @Test("playback snapshot freezes a coherent package while recording continues")
+    func capturesPlaybackSnapshotWhileRecordingContinues() async throws {
+        let sourceURL = try url("https://media.example/timeshift.m3u8")
+        let firstURL = try url("https://media.example/timeshift-10.ts")
+        let secondURL = try url("https://media.example/timeshift-11.ts")
+        let fixture = try makeFixture()
+        let snapshotURL = fixture.rootURL.appendingPathComponent(
+            "timeshift-snapshot",
+            isDirectory: true
+        )
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:10
+                #EXTINF:4,
+                timeshift-10.ts
+                #EXTINF:4,
+                timeshift-11.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("first".utf8), delay: 0.1),
+            for: firstURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("second".utf8), delay: 0.5),
+            for: secondURL
+        )
+
+        let recording = recorder(
+            session: fixture.session,
+            startPosition: .currentWindow
+        ).startRecording(
+            from: sourceURL,
+            to: fixture.destinationURL
+        )
+        let snapshot = try await recording.capturePlaybackSnapshot(
+            to: snapshotURL
+        )
+
+        #expect(snapshot.segmentCount == 1)
+        #expect(snapshot.firstMediaSequence == 10)
+        #expect(snapshot.lastMediaSequence == 10)
+        #expect(
+            !FileManager.default.fileExists(
+                atPath: fixture.destinationURL.path
+            )
+        )
+        let snapshotPlaylist = try String(
+            contentsOf: snapshot.playlistURL,
+            encoding: .utf8
+        )
+        #expect(snapshotPlaylist.contains("#EXT-X-PLAYLIST-TYPE:VOD"))
+        #expect(snapshotPlaylist.contains("#EXT-X-ENDLIST"))
+        #expect(!snapshotPlaylist.contains("media.example"))
+        #expect(
+            try Data(
+                contentsOf: snapshot.directoryURL.appendingPathComponent(
+                    "resources/00000.ts"
+                )
+            ) == Data("first".utf8)
+        )
+
+        let finalReceipt = try await recording.stopAndCommit()
+        #expect(finalReceipt.segmentCount == 2)
+        #expect(
+            FileManager.default.fileExists(
+                atPath: snapshot.playlistURL.path
+            )
+        )
+        #expect(
+            try Data(
+                contentsOf: snapshot.directoryURL.appendingPathComponent(
+                    "resources/00000.ts"
+                )
+            ) == Data("first".utf8)
+        )
+    }
+
+    @Test("playback snapshot survives later rolling eviction")
+    func playbackSnapshotSurvivesRollingEviction() async throws {
+        let sourceURL = try url(
+            "https://media.example/timeshift-rolling.m3u8"
+        )
+        let segmentURLs = try (10...12).map {
+            try url("https://media.example/timeshift-rolling-\($0).ts")
+        }
+        let fixture = try makeFixture()
+        let snapshotURL = fixture.rootURL.appendingPathComponent(
+            "rolling-snapshot",
+            isDirectory: true
+        )
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:1
+                #EXT-X-MEDIA-SEQUENCE:10
+                #EXTINF:1,
+                timeshift-rolling-10.ts
+                """
+            ),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:1
+                #EXT-X-MEDIA-SEQUENCE:10
+                #EXTINF:1,
+                timeshift-rolling-10.ts
+                #EXTINF:1,
+                timeshift-rolling-11.ts
+                """
+            ),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:1
+                #EXT-X-MEDIA-SEQUENCE:10
+                #EXTINF:1,
+                timeshift-rolling-10.ts
+                #EXTINF:1,
+                timeshift-rolling-11.ts
+                #EXTINF:1,
+                timeshift-rolling-12.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: sourceURL
+        )
+        for (index, segmentURL) in segmentURLs.enumerated() {
+            HLSLiveURLProtocol.register(
+                mediaResponse(
+                    Data("media-\(index + 10)".utf8),
+                    delay: index == 0 ? 0.15 : 0.05
+                ),
+                for: segmentURL
+            )
+        }
+
+        let recording = rollingRecorder(
+            session: fixture.session,
+            maximumSegmentCount: 2
+        ).startRecording(
+            from: sourceURL,
+            to: fixture.destinationURL
+        )
+        let completion = Task<HLSLiveDVRReceipt, Error> {
+            for try await event in recording.events {
+                if case .completed(let receipt) = event {
+                    return receipt
+                }
+            }
+            throw HLSLiveDVRError.playbackSnapshotUnavailable
+        }
+        let snapshot = try await recording.capturePlaybackSnapshot(
+            to: snapshotURL
+        )
+        let finalReceipt = try await completion.value
+
+        #expect(snapshot.segmentCount == 1)
+        #expect(snapshot.firstMediaSequence == 10)
+        #expect(snapshot.lastMediaSequence == 10)
+        #expect(finalReceipt.segmentCount == 2)
+        #expect(finalReceipt.firstMediaSequence == 11)
+        #expect(finalReceipt.lastMediaSequence == 12)
+        #expect(
+            finalReceipt.retentionStatistics.evictedPrimarySegmentCount == 1
+        )
+        #expect(
+            !FileManager.default.fileExists(
+                atPath: finalReceipt.directoryURL.appendingPathComponent(
+                    "resources/sequence-10.ts"
+                ).path
+            )
+        )
+        #expect(
+            try Data(
+                contentsOf: snapshot.directoryURL.appendingPathComponent(
+                    "resources/sequence-10.ts"
+                )
+            ) == Data("media-10".utf8)
+        )
+    }
+
+    @Test("snapshot failure and cancellation stay isolated from recording")
+    func isolatesPlaybackSnapshotFailureAndCancellation() async throws {
+        let sourceURL = try url("https://media.example/timeshift-failure.m3u8")
+        let segmentURL = try url("https://media.example/timeshift-failure.ts")
+        let fixture = try makeFixture()
+        let existingSnapshotURL = fixture.rootURL.appendingPathComponent(
+            "existing-snapshot",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: existingSnapshotURL,
+            withIntermediateDirectories: false
+        )
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:10
+                #EXTINF:4,
+                timeshift-failure.ts
+                """
+            ),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("segment".utf8), delay: 0.1),
+            for: segmentURL
+        )
+
+        let recording = recorder(
+            session: fixture.session,
+            startPosition: .currentWindow
+        ).startRecording(
+            from: sourceURL,
+            to: fixture.destinationURL
+        )
+        await #expect(throws: HLSLiveDVRError.destinationAlreadyExists) {
+            try await recording.capturePlaybackSnapshot(
+                to: existingSnapshotURL
+            )
+        }
+
+        let cancelledSnapshotURL = fixture.rootURL.appendingPathComponent(
+            "cancelled-snapshot",
+            isDirectory: true
+        )
+        let cancelledSnapshot = Task {
+            try await recording.capturePlaybackSnapshot(
+                to: cancelledSnapshotURL
+            )
+        }
+        await Task.yield()
+        cancelledSnapshot.cancel()
+        await #expect(throws: CancellationError.self) {
+            try await cancelledSnapshot.value
+        }
+
+        let receipt = try await recording.stopAndCommit()
+        #expect(receipt.segmentCount == 1)
+        #expect(
+            !FileManager.default.fileExists(
+                atPath: cancelledSnapshotURL.path
+            )
+        )
+        await #expect(throws: HLSLiveDVRError.playbackSnapshotUnavailable) {
+            try await recording.capturePlaybackSnapshot(
+                to: cancelledSnapshotURL
+            )
+        }
+    }
+
+    @Test("concurrent snapshot requests share one coherent boundary")
+    func capturesConcurrentPlaybackSnapshotsAtOneBoundary() async throws {
+        let sourceURL = try url("https://media.example/timeshift-shared.m3u8")
+        let firstURL = try url("https://media.example/timeshift-shared-10.ts")
+        let secondURL = try url("https://media.example/timeshift-shared-11.ts")
+        let fixture = try makeFixture()
+        let firstSnapshotURL = fixture.rootURL.appendingPathComponent(
+            "first-snapshot",
+            isDirectory: true
+        )
+        let secondSnapshotURL = fixture.rootURL.appendingPathComponent(
+            "second-snapshot",
+            isDirectory: true
+        )
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:10
+                #EXTINF:4,
+                timeshift-shared-10.ts
+                #EXTINF:4,
+                timeshift-shared-11.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("first".utf8), delay: 0.15),
+            for: firstURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("second".utf8), delay: 0.5),
+            for: secondURL
+        )
+
+        let recording = recorder(
+            session: fixture.session,
+            startPosition: .currentWindow
+        ).startRecording(
+            from: sourceURL,
+            to: fixture.destinationURL
+        )
+        async let firstSnapshot = recording.capturePlaybackSnapshot(
+            to: firstSnapshotURL
+        )
+        async let secondSnapshot = recording.capturePlaybackSnapshot(
+            to: secondSnapshotURL
+        )
+        let (first, second) = try await (firstSnapshot, secondSnapshot)
+
+        #expect(first.segmentCount == 1)
+        #expect(second.segmentCount == 1)
+        #expect(first.firstMediaSequence == second.firstMediaSequence)
+        #expect(first.lastMediaSequence == second.lastMediaSequence)
+        #expect(
+            try Data(contentsOf: first.playlistURL)
+                == Data(contentsOf: second.playlistURL)
+        )
+        _ = try await recording.stopAndCommit()
+    }
+
+    @Test("playback snapshot requests are bounded and release cancelled slots")
+    func boundsPlaybackSnapshotRequests() async throws {
+        let control = HLSLiveDVRRecordingControl()
+        var requests: [HLSLiveDVRPlaybackSnapshotRequest] = []
+        for index in 0..<8 {
+            let request = HLSLiveDVRPlaybackSnapshotRequest(
+                destinationDirectoryURL:
+                    FileManager.default.temporaryDirectory
+                    .appendingPathComponent("snapshot-\(index)")
+            )
+            try await control.registerPlaybackSnapshotRequest(request)
+            requests.append(request)
+        }
+        let rejectedRequest = HLSLiveDVRPlaybackSnapshotRequest(
+            destinationDirectoryURL:
+                FileManager.default.temporaryDirectory
+                .appendingPathComponent("snapshot-rejected")
+        )
+        await #expect(
+            throws: HLSLiveDVRError.playbackSnapshotRequestLimitExceeded(
+                limit: 8
+            )
+        ) {
+            try await control.registerPlaybackSnapshotRequest(rejectedRequest)
+        }
+        await requests[0].cancel()
+        await control.cancelPlaybackSnapshotRequest(requests[0])
+        let replacement = HLSLiveDVRPlaybackSnapshotRequest(
+            destinationDirectoryURL:
+                FileManager.default.temporaryDirectory
+                .appendingPathComponent("snapshot-replacement")
+        )
+        try await control.registerPlaybackSnapshotRequest(replacement)
+
+        let activeRequests = await control.takePlaybackSnapshotRequests()
+        #expect(activeRequests.count == 8)
+        await #expect(
+            throws: HLSLiveDVRError.playbackSnapshotRequestLimitExceeded(
+                limit: 8
+            )
+        ) {
+            try await control.registerPlaybackSnapshotRequest(rejectedRequest)
+        }
+
+        await activeRequests[0].cancel()
+        await control.cancelPlaybackSnapshotRequest(activeRequests[0])
+        await #expect(
+            throws: HLSLiveDVRError.playbackSnapshotRequestLimitExceeded(
+                limit: 8
+            )
+        ) {
+            try await control.registerPlaybackSnapshotRequest(rejectedRequest)
+        }
+        await control.completePlaybackSnapshotRequest(activeRequests[0])
+        try await control.registerPlaybackSnapshotRequest(rejectedRequest)
+        for request in activeRequests.dropFirst() {
+            await request.fail(.playbackSnapshotUnavailable)
+            await control.completePlaybackSnapshotRequest(request)
+        }
+        await control.finishPlaybackSnapshotRequests()
+
+        await #expect(throws: CancellationError.self) {
+            try await requests[0].value()
+        }
+        await #expect(throws: HLSLiveDVRError.playbackSnapshotUnavailable) {
+            try await replacement.value()
+        }
+        await #expect(throws: HLSLiveDVRError.playbackSnapshotUnavailable) {
+            try await rejectedRequest.value()
+        }
+        await #expect(throws: HLSLiveDVRError.playbackSnapshotUnavailable) {
+            try await control.registerPlaybackSnapshotRequest(
+                HLSLiveDVRPlaybackSnapshotRequest(
+                    destinationDirectoryURL:
+                        FileManager.default.temporaryDirectory
+                        .appendingPathComponent("snapshot-after-finish")
+                )
+            )
+        }
+    }
+
+    @Test("completed atomic snapshot publication wins a late cancellation")
+    func snapshotPublicationWinsLateCancellation() async throws {
+        let directoryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("published-snapshot")
+        let receipt = HLSLiveDVRReceipt(
+            directoryURL: directoryURL,
+            playlistURL: directoryURL.appendingPathComponent("index.m3u8"),
+            entryPlaylistURL: directoryURL.appendingPathComponent(
+                "index.m3u8"
+            ),
+            tracks: [],
+            segmentCount: 1,
+            recordedDuration: 4,
+            mediaByteCount: 7,
+            firstMediaSequence: 10,
+            lastMediaSequence: 10
+        )
+        let request = HLSLiveDVRPlaybackSnapshotRequest(
+            destinationDirectoryURL: directoryURL
+        )
+        let operation = Task<HLSLiveDVRReceipt, Error> {
+            receipt
+        }
+        #expect(await request.installOperationTask(operation))
+        _ = try await operation.value
+
+        await request.cancel()
+
+        #expect(try await request.value() == receipt)
+    }
+
     @Test("recovery discard respects the active destination lease")
     func recoveryDiscardRespectsDestinationLease() async throws {
         let fixture = try makeFixture()
@@ -6343,7 +6802,8 @@ extension HLSLivePlaylistClientTests {
     }
 
     private func mediaResponse(
-        _ data: Data
+        _ data: Data,
+        delay: TimeInterval = 0
     ) -> HLSLiveURLProtocol.Response {
         HLSLiveURLProtocol.Response(
             statusCode: 200,
@@ -6351,7 +6811,8 @@ extension HLSLivePlaylistClientTests {
             headers: [
                 "Content-Length": "\(data.count)",
                 "Content-Type": "application/octet-stream",
-            ]
+            ],
+            delay: delay
         )
     }
 

@@ -4,8 +4,8 @@ InnoNetworkHLSLive	swift.enum	HLSLiveDVREvent
 InnoNetworkHLSLive	swift.enum	HLSLiveDVRPartCapturePolicy
 InnoNetworkHLSLive	swift.enum	HLSLiveDVRPreloadPolicy
 InnoNetworkHLSLive	swift.enum	HLSLiveDVRRecoveryPolicy
-InnoNetworkHLSLive	swift.enum	HLSLiveDVRRetentionPolicy
 InnoNetworkHLSLive	swift.enum	HLSLiveDVRRenditionSelectionPolicy
+InnoNetworkHLSLive	swift.enum	HLSLiveDVRRetentionPolicy
 InnoNetworkHLSLive	swift.enum	HLSLiveDVRStartPosition
 InnoNetworkHLSLive	swift.enum	HLSLiveDVRTrackKind
 InnoNetworkHLSLive	swift.enum	HLSLiveDVRUnsupportedFeature
@@ -26,6 +26,8 @@ InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRError.invalidMediaResponseStatus(_:
 InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRError.liveWindowAdvanced
 InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRError.mediaResourceTooLarge
 InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRError.noSegmentsRecorded
+InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRError.playbackSnapshotRequestLimitExceeded(limit:)
+InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRError.playbackSnapshotUnavailable
 InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRError.recoveryAlreadyExists
 InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRError.recoveryCorrupted
 InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRError.recoveryDisabled
@@ -43,13 +45,13 @@ InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRPreloadPolicy.disabled
 InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRPreloadPolicy.unencryptedMedia
 InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRRecoveryPolicy.disabled
 InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRRecoveryPolicy.resumable
-InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRRetentionPolicy.rollingWindow
-InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRRetentionPolicy.stopAtLimit
 InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRRenditionSelectionPolicy.all
 InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRRenditionSelectionPolicy.defaultOrFirst
 InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRRenditionSelectionPolicy.disabled
 InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRRenditionSelectionPolicy.named(_:)
 InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRRenditionSelectionPolicy.preferredLanguages(_:)
+InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRRetentionPolicy.rollingWindow
+InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRRetentionPolicy.stopAtLimit
 InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRStartPosition.currentWindow
 InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRStartPosition.nextCompletedSegment
 InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRTrackKind.audio
@@ -107,6 +109,7 @@ InnoNetworkHLSLive	swift.method	HLSLiveDVRRecorder.resume(from:to:)
 InnoNetworkHLSLive	swift.method	HLSLiveDVRRecorder.resumeRecording(from:to:)
 InnoNetworkHLSLive	swift.method	HLSLiveDVRRecorder.startRecording(from:to:)
 InnoNetworkHLSLive	swift.method	HLSLiveDVRRecording.cancelAndDiscard()
+InnoNetworkHLSLive	swift.method	HLSLiveDVRRecording.capturePlaybackSnapshot(to:)
 InnoNetworkHLSLive	swift.method	HLSLiveDVRRecording.stopAndCommit()
 InnoNetworkHLSLive	swift.method	HLSLiveDVRTrack.hasCharacteristic(_:)
 InnoNetworkHLSLive	swift.method	HLSLiveEncryptionKeyPreloading.preloadEncryptionKey(for:)

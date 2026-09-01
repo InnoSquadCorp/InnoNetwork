@@ -177,6 +177,12 @@ async let observeEvents: Void = {
     }
 }()
 
+// Publish an immutable package for playback without stopping the recording.
+let snapshot = try await recording.capturePlaybackSnapshot(
+    to: timeshiftPackageDirectoryURL
+)
+openLocalPlayback(snapshot.playbackSource)
+
 // Later, in response to application state or a user action:
 let receipt = try await recording.stopAndCommit()
 try await observeEvents
@@ -191,6 +197,27 @@ only when every selected rendition covers the retained primary timeline.
 also cancels unfinished work; when resumable recovery is enabled, its last
 complete-segment checkpoint remains available. Stopping event iteration alone
 does not stop a retained recording.
+
+``HLSLiveDVRRecording/capturePlaybackSnapshot(to:)`` waits for the next
+coherent complete-primary-segment boundary, freezes every selected rendition,
+and atomically publishes an independent URL-free VOD package. The mutable
+recording workspace is never exposed. The returned
+``HLSLiveDVRReceipt/playbackSource`` can be opened with a new
+`HLSLocalPlaybackAsset`; request another snapshot and replace the player item
+to refresh the visible timeshift window. Earlier snapshots remain valid after
+rolling eviction, final commit, or recording cancellation until the
+application removes their directories.
+
+The caller owns each fresh local destination and its storage lifetime. At most
+eight snapshot requests may remain outstanding on one recording. A ninth fails with
+``HLSLiveDVRError/playbackSnapshotRequestLimitExceeded(limit:)``; a request
+that cannot reach another boundary fails with
+``HLSLiveDVRError/playbackSnapshotUnavailable``. Cancelling a request releases
+its outstanding slot and any snapshot-only transfer without cancelling the
+recording; if atomic publication already won the race, the request returns its
+receipt. Snapshot publication and failures run independently after the
+recording-workspace freeze, so copying a package to another volume does not
+hold up live ingestion.
 
 Resume with a current source URL after replacing an expired signature:
 

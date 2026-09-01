@@ -107,6 +107,12 @@ Versioning.
   and rotated fMP4 maps. Durable checkpoints publish the replacement suffix
   before old files are reclaimed, recovery preserves cumulative typed eviction
   statistics, and the existing stop-at-limit behavior remains the default.
+  Controllable recordings can now capture the next coherent complete-segment
+  boundary as an independent, atomically published local VOD package without
+  stopping ingestion. Snapshot publication stays isolated from rolling
+  eviction and the final destination, outstanding requests are bounded to eight,
+  and caller cancellation or snapshot-only storage failure does not cancel the
+  recording.
   Encrypted
   media, external timeline resources, missing or retroactively changed
   initialization maps, and lost live-window history still fail without

@@ -583,6 +583,11 @@ for await event in await manager.events(for: task) {
   unreferenced fMP4 maps and aligned rendition resources are reclaimed only
   after a replacement checkpoint is durable, and progress plus receipts expose
   cumulative primary count, duration, and all-track byte eviction statistics
+- on-demand in-progress DVR playback snapshots at the next coherent complete-
+  segment boundary; each request atomically publishes an independent URL-free
+  VOD package for the existing local-playback bridge while recording and
+  rolling eviction continue, with eight bounded outstanding requests, isolated
+  cancellation, and typed terminal or capacity failures
 - bounded external audio, alternate-video, and subtitle selection by default,
   preferred languages, exact names, or all referenced renditions; URL-free
   local master playlists expose one package entry point plus typed local-track
