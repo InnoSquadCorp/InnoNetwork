@@ -6,15 +6,39 @@ struct HLSLiveDVRStoredSegment: Equatable, Sendable {
     let duration: TimeInterval
     let beginsDiscontinuity: Bool
     let programDateTime: Date?
+    let initializationSourceIdentity: String?
+    let initializationFileName: String?
     let fileName: String
     let byteCount: Int64
     let contentSHA256: String
+
+    init(
+        sequenceNumber: Int64,
+        duration: TimeInterval,
+        beginsDiscontinuity: Bool,
+        programDateTime: Date?,
+        initializationSourceIdentity: String? = nil,
+        initializationFileName: String? = nil,
+        fileName: String,
+        byteCount: Int64,
+        contentSHA256: String
+    ) {
+        self.sequenceNumber = sequenceNumber
+        self.duration = duration
+        self.beginsDiscontinuity = beginsDiscontinuity
+        self.programDateTime = programDateTime
+        self.initializationSourceIdentity =
+            initializationSourceIdentity
+        self.initializationFileName = initializationFileName
+        self.fileName = fileName
+        self.byteCount = byteCount
+        self.contentSHA256 = contentSHA256
+    }
 }
 
 enum HLSLiveDVRPlaylistWriter {
     static func make(
         container: HLSMediaContainer,
-        initializationFileName: String?,
         segments: [HLSLiveDVRStoredSegment],
         dateRanges: [HLSDateRange] = []
     ) throws -> String {
@@ -43,25 +67,43 @@ enum HLSLiveDVRPlaylistWriter {
         ]
         switch container {
         case .mpegTransportStream:
-            guard initializationFileName == nil else {
+            guard
+                segments.allSatisfy({
+                    $0.initializationSourceIdentity == nil
+                        && $0.initializationFileName == nil
+                })
+            else {
                 throw HLSLiveDVRError.unsupportedFeature(
                     .changingInitializationSegment
                 )
             }
         case .fragmentedMP4:
-            guard let initializationFileName else {
+            guard
+                segments.allSatisfy({
+                    $0.initializationSourceIdentity != nil
+                        && $0.initializationFileName != nil
+                })
+            else {
                 throw HLSLiveDVRError.unsupportedFeature(
                     .missingInitializationSegment
                 )
             }
-            lines.append(
-                "#EXT-X-MAP:URI=\"\(initializationFileName)\""
-            )
         }
 
+        var activeInitializationFileName: String?
         for (index, segment) in segments.enumerated() {
             if segment.beginsDiscontinuity {
                 lines.append("#EXT-X-DISCONTINUITY")
+            }
+            if let initializationFileName =
+                segment.initializationFileName,
+                initializationFileName
+                    != activeInitializationFileName
+            {
+                lines.append(
+                    "#EXT-X-MAP:URI=\"\(initializationFileName)\""
+                )
+                activeInitializationFileName = initializationFileName
             }
             if let programDateTime = segment.programDateTime {
                 lines.append(

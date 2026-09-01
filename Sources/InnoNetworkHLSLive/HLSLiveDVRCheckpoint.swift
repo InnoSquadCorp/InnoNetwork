@@ -19,11 +19,54 @@ struct HLSLiveDVRCheckpoint: Codable, Sendable {
         let contentSHA256: String
     }
 
+    struct Initialization: Codable, Sendable {
+        let sourceIdentity: String
+        let playlistPath: String
+        let file: FileRecord
+
+        init(
+            _ initialization: HLSLiveDVRStoredInitialization,
+            storagePrefix: String = ""
+        ) {
+            sourceIdentity = initialization.sourceIdentity
+            playlistPath = initialization.fileName
+            file = FileRecord(
+                relativePath: Segment.storagePath(
+                    prefix: storagePrefix,
+                    playlistPath: initialization.fileName
+                ),
+                byteCount: initialization.byteCount,
+                contentSHA256: initialization.contentSHA256
+            )
+        }
+
+        init(
+            sourceIdentity: String,
+            playlistPath: String,
+            file: FileRecord
+        ) {
+            self.sourceIdentity = sourceIdentity
+            self.playlistPath = playlistPath
+            self.file = file
+        }
+
+        var storedInitialization: HLSLiveDVRStoredInitialization {
+            HLSLiveDVRStoredInitialization(
+                sourceIdentity: sourceIdentity,
+                fileName: playlistPath,
+                byteCount: file.byteCount,
+                contentSHA256: file.contentSHA256
+            )
+        }
+    }
+
     struct Segment: Codable, Sendable {
         let sequenceNumber: Int64
         let duration: TimeInterval
         let beginsDiscontinuity: Bool
         let programDateTime: Date?
+        let initializationSourceIdentity: String?
+        let initializationPlaylistPath: String?
         let playlistPath: String
         let file: FileRecord
 
@@ -35,6 +78,10 @@ struct HLSLiveDVRCheckpoint: Codable, Sendable {
             duration = segment.duration
             beginsDiscontinuity = segment.beginsDiscontinuity
             programDateTime = segment.programDateTime
+            initializationSourceIdentity =
+                segment.initializationSourceIdentity
+            initializationPlaylistPath =
+                segment.initializationFileName
             playlistPath = segment.fileName
             file = FileRecord(
                 relativePath: Self.storagePath(
@@ -47,18 +94,30 @@ struct HLSLiveDVRCheckpoint: Codable, Sendable {
         }
 
         var storedSegment: HLSLiveDVRStoredSegment {
+            storedSegment(defaultInitialization: nil)
+        }
+
+        func storedSegment(
+            defaultInitialization: Initialization?
+        ) -> HLSLiveDVRStoredSegment {
             HLSLiveDVRStoredSegment(
                 sequenceNumber: sequenceNumber,
                 duration: duration,
                 beginsDiscontinuity: beginsDiscontinuity,
                 programDateTime: programDateTime,
+                initializationSourceIdentity:
+                    initializationSourceIdentity
+                    ?? defaultInitialization?.sourceIdentity,
+                initializationFileName:
+                    initializationPlaylistPath
+                    ?? defaultInitialization?.playlistPath,
                 fileName: playlistPath,
                 byteCount: file.byteCount,
                 contentSHA256: file.contentSHA256
             )
         }
 
-        private static func storagePath(
+        fileprivate static func storagePath(
             prefix: String,
             playlistPath: String
         ) -> String {
@@ -74,6 +133,7 @@ struct HLSLiveDVRCheckpoint: Codable, Sendable {
         let initializationSourceIdentity: String?
         let initializationPlaylistPath: String?
         let initialization: FileRecord?
+        let initializations: [Initialization]?
         let segments: [Segment]
 
         var mediaContainer: HLSMediaContainer? {
@@ -85,6 +145,25 @@ struct HLSLiveDVRCheckpoint: Codable, Sendable {
             default:
                 return nil
             }
+        }
+
+        var resolvedInitializations: [Initialization] {
+            if let initializations {
+                return initializations
+            }
+            guard let initializationSourceIdentity,
+                let initializationPlaylistPath,
+                let initialization
+            else {
+                return []
+            }
+            return [
+                Initialization(
+                    sourceIdentity: initializationSourceIdentity,
+                    playlistPath: initializationPlaylistPath,
+                    file: initialization
+                )
+            ]
         }
     }
 
@@ -152,11 +231,11 @@ struct HLSLiveDVRCheckpoint: Codable, Sendable {
 
     var files: [FileRecord] {
         let primaryFiles =
-            primary.initialization.map { [$0] } ?? []
+            primary.resolvedInitializations.map(\.file)
             + primary.segments.map(\.file)
         return primaryFiles
             + renditions.flatMap { rendition in
-                (rendition.track.initialization.map { [$0] } ?? [])
+                rendition.track.resolvedInitializations.map(\.file)
                     + rendition.track.segments.map(\.file)
             }
     }

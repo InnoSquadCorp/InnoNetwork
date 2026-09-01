@@ -86,22 +86,25 @@ extension HLSLiveDVRRecordingState {
         return container
     }
 
-    func renditionInitializationSegment(
+    func retainedRenditionInitialization(
+        for source: HLSLiveInitializationSegment,
         at index: Int
-    ) -> HLSLiveInitializationSegment? {
+    ) -> HLSLiveDVRStoredInitialization? {
         guard renditionStates.indices.contains(index) else {
             return nil
         }
-        return renditionStates[index].initializationSegment
+        return renditionStates[index].initializationState.retained(
+            for: source
+        )
     }
 
-    func renditionInitializationFileName(
+    func renditionInitializationCount(
         at index: Int
-    ) -> String? {
+    ) -> Int {
         guard renditionStates.indices.contains(index) else {
-            return nil
+            return 0
         }
-        return renditionStates[index].initializationFileName
+        return renditionStates[index].initializationState.records.count
     }
 
     func renditionSegmentCount(at index: Int) -> Int {
@@ -121,6 +124,7 @@ extension HLSLiveDVRRecordingState {
     }
 
     mutating func retainRenditionInitialization(
+        _ source: HLSLiveInitializationSegment,
         at index: Int,
         fileName: String,
         byteCount: Int64,
@@ -130,9 +134,12 @@ extension HLSLiveDVRRecordingState {
             throw HLSLiveDVRError.storageFailed
         }
         try addMediaBytes(byteCount)
-        renditionStates[index].initializationFileName = fileName
-        renditionStates[index].initializationByteCount = byteCount
-        renditionStates[index].initializationContentSHA256 = contentSHA256
+        try renditionStates[index].initializationState.retain(
+            source,
+            fileName: fileName,
+            byteCount: byteCount,
+            contentSHA256: contentSHA256
+        )
         nextResourceIndex += 1
     }
 

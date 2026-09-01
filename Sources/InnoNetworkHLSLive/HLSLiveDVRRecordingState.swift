@@ -6,10 +6,7 @@ struct HLSLiveDVRRecordingState {
     let workspace: HLSLiveDVRWorkspace
 
     var container: HLSMediaContainer?
-    var initializationSegment: HLSLiveInitializationSegment?
-    var initializationFileName: String?
-    var initializationByteCount: Int64?
-    var initializationContentSHA256: String?
+    var initializationState = HLSLiveDVRInitializationRecordingState()
     var segments: [HLSLiveDVRStoredSegment] = []
     var recordedDuration: TimeInterval = 0
     var mediaByteCount: Int64 = 0
@@ -133,7 +130,7 @@ struct HLSLiveDVRRecordingState {
         }
         try partState.consumePromotion(promotion)
         mediaByteCount = nextBytes
-        append(
+        try append(
             segment,
             fileName: fileName,
             byteCount: promotion.byteCount,
@@ -188,7 +185,8 @@ struct HLSLiveDVRRecordingState {
         byteCount: Int64,
         contentSHA256: String,
         nextDuration: TimeInterval
-    ) {
+    ) throws {
+        let initialization = try storedInitialization(for: segment)
         segments.append(
             HLSLiveDVRStoredSegment(
                 sequenceNumber: segment.sequenceNumber,
@@ -196,6 +194,9 @@ struct HLSLiveDVRRecordingState {
                 beginsDiscontinuity:
                     segment.beginsDiscontinuity,
                 programDateTime: segment.programDateTime,
+                initializationSourceIdentity:
+                    initialization?.sourceIdentity,
+                initializationFileName: initialization?.fileName,
                 fileName: fileName,
                 byteCount: byteCount,
                 contentSHA256: contentSHA256
@@ -203,6 +204,35 @@ struct HLSLiveDVRRecordingState {
         )
         recordedDuration = nextDuration
         lastObservedSequence = segment.sequenceNumber
+    }
+
+    private func storedInitialization(
+        for segment: HLSLiveSegment
+    ) throws -> HLSLiveDVRStoredInitialization? {
+        switch container {
+        case .mpegTransportStream:
+            guard segment.initializationSegment == nil else {
+                throw HLSLiveDVRError.unsupportedFeature(
+                    .changingInitializationSegment
+                )
+            }
+            return nil
+        case .fragmentedMP4:
+            guard let source = segment.initializationSegment,
+                let initialization = initializationState.retained(
+                    for: source
+                )
+            else {
+                throw HLSLiveDVRError.unsupportedFeature(
+                    .missingInitializationSegment
+                )
+            }
+            return initialization
+        case nil:
+            throw HLSLiveDVRError.unsupportedFeature(
+                .unknownMediaContainer
+            )
+        }
     }
 
 }

@@ -249,8 +249,11 @@ preloads during final cleanup. Counters describe the current recording session
 only; resuming from a durable checkpoint starts a new preload-statistics
 session because speculative files are never checkpointed.
 
-MPEG transport streams and fragmented MP4 with one stable initialization map
-are written as a URL-free local VOD playlist. Identity-format AES-128 uses
+MPEG transport streams and fragmented MP4 are written as URL-free local VOD
+playlists. Fragmented MP4 initialization-map rotation is retained per segment
+for the primary and external rendition tracks. Repeated maps share one local
+file, each change emits a local `EXT-X-MAP` boundary, and LL-HLS parts promote
+only when their map matches the completed parent. Identity-format AES-128 uses
 explicit or media-sequence IVs, caches each 16-byte key only for the recording,
 supports key rotation and encrypted fMP4 maps, and persists plaintext media
 without `EXT-X-KEY` or source key URLs.
@@ -277,8 +280,10 @@ preserved for the recorded interval. Source URLs, signed query values, key
 bytes, redacted Date Range extension values, and request errors are never
 persisted. Gaps, FairPlay or sample encryption, externally resolved timeline
 resources, unrepresentable timeline metadata, incomplete external renditions,
-and missing or changing initialization maps fail with ``HLSLiveDVRError``
-rather than producing an incomplete presentation.
+missing initialization maps, and retroactive map changes for already retained
+segments fail with ``HLSLiveDVRError`` rather than producing an incomplete
+presentation. Declared map rotation for new segments remains supported across
+durable recovery, including legacy single-map checkpoints.
 
 An arbitrary `file://` HLS directory is not directly AVFoundation playable.
 Pass ``HLSLiveDVRReceipt/playbackSource`` to `HLSLocalPlaybackAsset` in

@@ -571,6 +571,9 @@ for await event in await manager.events(for: task) {
 - recording-scoped, memory-only identity AES-128 key reuse and rotation,
   explicit or media-sequence IV decryption, encrypted fMP4 maps, and plaintext-
   only local packages that never persist key declarations or source key URLs
+- fMP4 initialization-map rotation for primary and external rendition tracks,
+  with deduplicated local map files, segment-accurate `EXT-X-MAP` boundaries,
+  and map-aware LL-HLS part promotion
 - bounded external audio, alternate-video, and subtitle selection by default,
   preferred languages, exact names, or all referenced renditions; URL-free
   local master playlists expose one package entry point plus typed local-track
@@ -582,13 +585,14 @@ for await event in await manager.events(for: task) {
   key-length, decryption, and storage failures
 - opt-in, URL-free recovery checkpoints at complete primary-segment
   boundaries; signed query values may rotate while source path, selected
-  variant, renditions, initialization map, file sizes, and SHA-256 digests are
-  revalidated before resume, and AES-128 keys are always fetched again
+  variant, renditions, per-segment initialization-map assignments, file sizes,
+  and SHA-256 digests are revalidated before resume, and AES-128 keys are always
+  fetched again
 - one-shot or controllable resume with a caller-supplied current source URL,
   plus explicit checkpoint discard; a moved live window fails with the typed
   `liveWindowAdvanced` result and final publication remains one atomic move
 - typed rejection of gaps, DRM/sample encryption, unsupported timeline
-  metadata, missing/changing initialization maps, incomplete renditions, and
+  metadata, missing maps, retroactive map changes, incomplete renditions, and
   live-window loss instead of silently committing an incomplete presentation
 - local DVR receipts expose the same typed, loopback-only playback bridge as
   offline-package receipts without claiming direct `file://` playback

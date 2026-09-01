@@ -11,15 +11,12 @@ struct HLSLiveDVRRenditionRequest: Sendable {
 struct HLSLiveDVRRenditionRecordingState {
     let selection: HLSLiveDVRSelectedRendition
     private(set) var container: HLSMediaContainer?
-    private(set) var initializationSegment: HLSLiveInitializationSegment?
-    private var expectedInitializationIdentity: String?
-    var initializationFileName: String?
-    var initializationByteCount: Int64?
-    var initializationContentSHA256: String?
+    var initializationState = HLSLiveDVRInitializationRecordingState()
     private(set) var segments: [HLSLiveDVRStoredSegment] = []
     private(set) var recordedDuration: TimeInterval = 0
     private(set) var lastObservedSequence: Int64?
     private(set) var didObserveInitialSnapshot = false
+    private var requiresRecoveryInitializationValidation = false
 
     init(selection: HLSLiveDVRSelectedRendition) {
         self.selection = selection
@@ -35,33 +32,36 @@ struct HLSLiveDVRRenditionRecordingState {
         else {
             throw HLSLiveDVRError.recoveryCorrupted
         }
-        switch container {
-        case .mpegTransportStream:
-            guard checkpoint.initialization == nil,
-                checkpoint.initializationPlaylistPath == nil,
-                checkpoint.initializationSourceIdentity == nil
-            else {
-                throw HLSLiveDVRError.recoveryCorrupted
-            }
-        case .fragmentedMP4:
-            guard checkpoint.initialization != nil,
-                checkpoint.initializationPlaylistPath != nil,
-                checkpoint.initializationSourceIdentity != nil
-            else {
-                throw HLSLiveDVRError.recoveryCorrupted
-            }
+        let restoredInitializations =
+            try HLSLiveDVRRecordingState.validatedInitializations(
+                checkpoint,
+                container: container
+            )
+        let legacyInitialization =
+            checkpoint.initializations == nil
+            ? checkpoint.resolvedInitializations.first
+            : nil
+        let restoredSegments = checkpoint.segments.map {
+            $0.storedSegment(
+                defaultInitialization: legacyInitialization
+            )
+        }
+        guard
+            Self.initializationReferencesAreValid(
+                restoredSegments,
+                initializations: restoredInitializations,
+                container: container
+            )
+        else {
+            throw HLSLiveDVRError.recoveryCorrupted
         }
         self.selection = selection
         self.container = container
-        self.initializationFileName =
-            checkpoint.initializationPlaylistPath
-        self.initializationByteCount =
-            checkpoint.initialization?.byteCount
-        self.initializationContentSHA256 =
-            checkpoint.initialization?.contentSHA256
-        self.expectedInitializationIdentity =
-            checkpoint.initializationSourceIdentity
-        self.segments = checkpoint.segments.map(\.storedSegment)
+        self.initializationState =
+            HLSLiveDVRInitializationRecordingState(
+                records: restoredInitializations
+            )
+        self.segments = restoredSegments
         self.recordedDuration = try Self.validatedDuration(segments)
         guard segments.count <= limits.maximumSegmentCount,
             recordedDuration <= limits.maximumDuration
@@ -70,6 +70,7 @@ struct HLSLiveDVRRenditionRecordingState {
         }
         self.lastObservedSequence = segments.last?.sequenceNumber
         self.didObserveInitialSnapshot = true
+        self.requiresRecoveryInitializationValidation = true
     }
 
     var checkpointTrack: HLSLiveDVRCheckpoint.Track? {
@@ -83,37 +84,21 @@ struct HLSLiveDVRRenditionRecordingState {
         case .fragmentedMP4:
             containerValue = "fragmentedMP4"
         }
-        let initialization: HLSLiveDVRCheckpoint.FileRecord?
-        if let initializationFileName,
-            let initializationByteCount,
-            let initializationContentSHA256
-        {
-            initialization = HLSLiveDVRCheckpoint.FileRecord(
-                relativePath: initializationFileName,
-                byteCount: initializationByteCount,
-                contentSHA256: initializationContentSHA256
+        let initializations = initializationState.records.map {
+            HLSLiveDVRCheckpoint.Initialization(
+                $0,
+                storagePrefix: selection.relativeDirectoryPath
             )
-        } else {
-            initialization = nil
         }
+        let legacyInitialization = initializations.first
         return HLSLiveDVRCheckpoint.Track(
             container: containerValue,
             initializationSourceIdentity:
-                initializationSegment.map(
-                    HLSLiveDVRRecoveryIdentity
-                        .initializationSegmentIdentity
-                ) ?? expectedInitializationIdentity,
-            initializationPlaylistPath: initializationFileName,
-            initialization: initialization.map { record in
-                HLSLiveDVRCheckpoint.FileRecord(
-                    relativePath:
-                        selection.relativeDirectoryPath
-                        + "/"
-                        + record.relativePath,
-                    byteCount: record.byteCount,
-                    contentSHA256: record.contentSHA256
-                )
-            },
+                legacyInitialization?.sourceIdentity,
+            initializationPlaylistPath:
+                legacyInitialization?.playlistPath,
+            initialization: legacyInitialization?.file,
+            initializations: initializations,
             segments: segments.map { segment in
                 HLSLiveDVRCheckpoint.Segment(
                     segment,
@@ -142,41 +127,43 @@ struct HLSLiveDVRRenditionRecordingState {
         {
             throw HLSLiveDVRError.unsupportedFeature(.encryptedMedia)
         }
-        guard snapshot.initializationSegments.count <= 1 else {
-            throw HLSLiveDVRError.unsupportedFeature(
-                .changingInitializationSegment
-            )
-        }
-        let candidate = snapshot.initializationSegments.first
         switch snapshotContainer {
         case .mpegTransportStream:
-            guard candidate == nil else {
+            guard snapshot.initializationSegments.isEmpty,
+                snapshot.segments.allSatisfy({
+                    $0.initializationSegment == nil
+                })
+            else {
                 throw HLSLiveDVRError.unsupportedFeature(
                     .changingInitializationSegment
                 )
             }
         case .fragmentedMP4:
-            guard let candidate else {
+            guard
+                snapshot.segments.allSatisfy({
+                    $0.initializationSegment != nil
+                })
+            else {
                 throw HLSLiveDVRError.unsupportedFeature(
                     .missingInitializationSegment
                 )
             }
-            if let initializationSegment,
-                initializationSegment != candidate
-            {
-                throw HLSLiveDVRError.unsupportedFeature(
-                    .changingInitializationSegment
+        }
+        guard
+            HLSLiveDVRRecordingState
+                .matchesOverlappingInitializations(
+                    segments,
+                    snapshot: snapshot
                 )
-            }
-            if let expectedInitializationIdentity,
-                HLSLiveDVRRecoveryIdentity
-                    .initializationSegmentIdentity(candidate)
-                    != expectedInitializationIdentity
-            {
+        else {
+            if requiresRecoveryInitializationValidation {
                 throw HLSLiveDVRError.recoveryMismatch
             }
-            initializationSegment = candidate
+            throw HLSLiveDVRError.unsupportedFeature(
+                .changingInitializationSegment
+            )
         }
+        requiresRecoveryInitializationValidation = false
     }
 
     mutating func candidates(
@@ -229,6 +216,24 @@ struct HLSLiveDVRRenditionRecordingState {
         guard !segment.isGap else {
             throw HLSLiveDVRError.unsupportedFeature(.gap)
         }
+        switch container {
+        case .mpegTransportStream:
+            guard segment.initializationSegment == nil else {
+                throw HLSLiveDVRError.unsupportedFeature(
+                    .changingInitializationSegment
+                )
+            }
+        case .fragmentedMP4:
+            guard segment.initializationSegment != nil else {
+                throw HLSLiveDVRError.unsupportedFeature(
+                    .missingInitializationSegment
+                )
+            }
+        case nil:
+            throw HLSLiveDVRError.unsupportedFeature(
+                .unknownMediaContainer
+            )
+        }
     }
 
     mutating func retain(
@@ -241,12 +246,16 @@ struct HLSLiveDVRRenditionRecordingState {
         guard nextDuration.isFinite else {
             throw HLSLiveDVRError.storageFailed
         }
+        let initialization = try storedInitialization(for: segment)
         segments.append(
             HLSLiveDVRStoredSegment(
                 sequenceNumber: segment.sequenceNumber,
                 duration: segment.duration,
                 beginsDiscontinuity: segment.beginsDiscontinuity,
                 programDateTime: segment.programDateTime,
+                initializationSourceIdentity:
+                    initialization?.sourceIdentity,
+                initializationFileName: initialization?.fileName,
                 fileName: fileName,
                 byteCount: byteCount,
                 contentSHA256: contentSHA256
@@ -254,6 +263,35 @@ struct HLSLiveDVRRenditionRecordingState {
         )
         recordedDuration = nextDuration
         lastObservedSequence = segment.sequenceNumber
+    }
+
+    private func storedInitialization(
+        for segment: HLSLiveSegment
+    ) throws -> HLSLiveDVRStoredInitialization? {
+        switch container {
+        case .mpegTransportStream:
+            guard segment.initializationSegment == nil else {
+                throw HLSLiveDVRError.unsupportedFeature(
+                    .changingInitializationSegment
+                )
+            }
+            return nil
+        case .fragmentedMP4:
+            guard let source = segment.initializationSegment,
+                let initialization = initializationState.retained(
+                    for: source
+                )
+            else {
+                throw HLSLiveDVRError.unsupportedFeature(
+                    .missingInitializationSegment
+                )
+            }
+            return initialization
+        case nil:
+            throw HLSLiveDVRError.unsupportedFeature(
+                .unknownMediaContainer
+            )
+        }
     }
 
     private func validateSequence(
@@ -295,5 +333,35 @@ struct HLSLiveDVRRenditionRecordingState {
             previousSequence = segment.sequenceNumber
         }
         return duration
+    }
+
+    private static func initializationReferencesAreValid(
+        _ segments: [HLSLiveDVRStoredSegment],
+        initializations: [HLSLiveDVRStoredInitialization],
+        container: HLSMediaContainer
+    ) -> Bool {
+        switch container {
+        case .mpegTransportStream:
+            return initializations.isEmpty
+                && segments.allSatisfy {
+                    $0.initializationSourceIdentity == nil
+                        && $0.initializationFileName == nil
+                }
+        case .fragmentedMP4:
+            return !initializations.isEmpty
+                && segments.allSatisfy { segment in
+                    guard
+                        let sourceIdentity =
+                            segment.initializationSourceIdentity,
+                        let fileName = segment.initializationFileName
+                    else {
+                        return false
+                    }
+                    return initializations.contains {
+                        $0.sourceIdentity == sourceIdentity
+                            && $0.fileName == fileName
+                    }
+                }
+        }
     }
 }

@@ -86,8 +86,22 @@ class FixtureRequestHandler(http.server.SimpleHTTPRequestHandler):
         if path == "/live-preload/index.m3u8":
             self._serve_live_preload_playlist()
             return
+        if path == "/live-map-rotation/index.m3u8":
+            self._serve_live_map_rotation_playlist()
+            return
         if path == "/live-preload/state":
             self._send_json(self.preload_state.snapshot())
+            return
+        rotation_resources = {
+            "/live-map-rotation/init-a.mp4": "init.mp4",
+            "/live-map-rotation/init-b.mp4": "init.mp4",
+            "/live-map-rotation/segment-0.m4s": "segment-0.m4s",
+            "/live-map-rotation/segment-1.m4s": "segment-1.m4s",
+            "/live-map-rotation/segment-2.m4s": "segment-2.m4s",
+        }
+        rotation_resource = rotation_resources.get(path)
+        if rotation_resource is not None:
+            self._send_runtime_fixture(rotation_resource)
             return
         resources = {
             "/live-preload/init.mp4": (
@@ -162,6 +176,39 @@ class FixtureRequestHandler(http.server.SimpleHTTPRequestHandler):
             playlist.encode("utf-8"),
             "application/vnd.apple.mpegurl",
         )
+
+    def _serve_live_map_rotation_playlist(self) -> None:
+        playlist = """#EXTM3U
+#EXT-X-VERSION:7
+#EXT-X-TARGETDURATION:2
+#EXT-X-MEDIA-SEQUENCE:0
+#EXT-X-PLAYLIST-TYPE:EVENT
+#EXT-X-INDEPENDENT-SEGMENTS
+#EXT-X-MAP:URI="init-a.mp4"
+#EXTINF:1.002667,
+segment-0.m4s
+#EXT-X-DISCONTINUITY
+#EXT-X-MAP:URI="init-b.mp4"
+#EXTINF:1.002667,
+segment-1.m4s
+#EXT-X-DISCONTINUITY
+#EXT-X-MAP:URI="init-a.mp4"
+#EXTINF:0.021333,
+segment-2.m4s
+#EXT-X-ENDLIST
+"""
+        self._send_bytes(
+            playlist.encode("utf-8"),
+            "application/vnd.apple.mpegurl",
+        )
+
+    def _send_runtime_fixture(self, name: str) -> None:
+        fixture = Path(self.directory) / "audio-fmp4" / name
+        content_type = self.extensions_map.get(
+            fixture.suffix,
+            "application/octet-stream",
+        )
+        self._send_bytes(fixture.read_bytes(), content_type)
 
     def _send_json(self, value: dict[str, object]) -> None:
         body = (json.dumps(value, sort_keys=True) + "\n").encode("utf-8")

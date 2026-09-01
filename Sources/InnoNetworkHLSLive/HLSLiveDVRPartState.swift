@@ -15,6 +15,7 @@ struct HLSLiveDVRStagedPart: Equatable, Sendable {
     let key: HLSLiveDVRPartKey
     let duration: TimeInterval
     let isIndependent: Bool
+    let initializationSourceIdentity: String?
     let relativeFilePath: String
     let byteCount: Int64
 }
@@ -222,6 +223,11 @@ struct HLSLiveDVRPartRecordingState {
                 key: candidate.key,
                 duration: candidate.part.duration,
                 isIndependent: candidate.part.isIndependent,
+                initializationSourceIdentity:
+                    candidate.part.initializationSegment.map(
+                        HLSLiveDVRRecoveryIdentity
+                            .initializationSegmentIdentity
+                    ),
                 relativeFilePath: relativeFilePath,
                 byteCount: byteCount
             )
@@ -231,6 +237,11 @@ struct HLSLiveDVRPartRecordingState {
     func promotion(
         for segment: HLSLiveSegment
     ) -> HLSLiveDVRPartPromotion? {
+        let initializationSourceIdentity =
+            segment.initializationSegment.map(
+                HLSLiveDVRRecoveryIdentity
+                    .initializationSegmentIdentity
+            )
         guard segment.encryption == nil,
             let first = stagedParts.first,
             first.key.mediaSequenceNumber == segment.sequenceNumber,
@@ -239,6 +250,8 @@ struct HLSLiveDVRPartRecordingState {
             stagedParts.enumerated().allSatisfy({ offset, part in
                 part.key.mediaSequenceNumber == segment.sequenceNumber
                     && part.key.partIndex == offset
+                    && part.initializationSourceIdentity
+                        == initializationSourceIdentity
             })
         else {
             return nil
@@ -328,6 +341,10 @@ struct HLSLiveDVRPartRecordingState {
                 == staged.key.mediaSequenceNumber
                 && part.duration == staged.duration
                 && part.isIndependent == staged.isIndependent
+                && part.initializationSegment.map(
+                    HLSLiveDVRRecoveryIdentity
+                        .initializationSegmentIdentity
+                ) == staged.initializationSourceIdentity
                 && !part.isGap
         }
     }

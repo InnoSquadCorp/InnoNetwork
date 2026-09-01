@@ -51,23 +51,27 @@ struct HLSLiveDVRResourceWriter: Sendable {
     }
 
     func retainInitializationIfNeeded(
+        for segment: HLSLiveSegment,
         state: inout HLSLiveDVRRecordingState,
         context: HLSLiveDVRResourceContext,
         preloadCoordinator: HLSLiveDVRPreloadCoordinator?
     ) async throws -> Bool {
         guard
             state.container == .fragmentedMP4,
-            state.initializationFileName == nil
+            let initialization = segment.initializationSegment,
+            state.initializationState.retained(for: initialization) == nil
         else {
             return true
         }
-        guard let initialization = state.initializationSegment else {
-            throw HLSLiveDVRError.unsupportedFeature(
-                .missingInitializationSegment
+        let baseName =
+            state.initializationState.records.isEmpty
+            ? "initialization"
+            : String(
+                format: "initialization-%05d",
+                state.initializationState.records.count
             )
-        }
         let path =
-            "resources/initialization."
+            "resources/\(baseName)."
             + HLSLiveDVRPlaylistWriter.fileExtension(
                 for: initialization.url,
                 fallback: "mp4"
@@ -87,6 +91,7 @@ struct HLSLiveDVRResourceWriter: Sendable {
                 contentsOf: destinationURL
             )
             try state.retainInitialization(
+                initialization,
                 fileName: path,
                 byteCount: byteCount,
                 contentSHA256: contentSHA256
@@ -108,6 +113,7 @@ struct HLSLiveDVRResourceWriter: Sendable {
                 contentsOf: destinationURL
             )
             try state.retainInitialization(
+                initialization,
                 fileName: path,
                 byteCount: byteCount,
                 contentSHA256: contentSHA256
@@ -196,6 +202,20 @@ struct HLSLiveDVRResourceWriter: Sendable {
         case .totalLimitReached:
             return false
         }
+    }
+
+    func discardUnreferencedInitialization(
+        for segment: HLSLiveSegment,
+        state: inout HLSLiveDVRRecordingState
+    ) throws {
+        guard let initialization = segment.initializationSegment,
+            let path = try state.removeUnreferencedInitialization(
+                initialization
+            )
+        else {
+            return
+        }
+        try discard([path], workspace: state.workspace)
     }
 
     func stage(
@@ -325,27 +345,33 @@ struct HLSLiveDVRResourceWriter: Sendable {
     }
 
     func retainRenditionInitializationIfNeeded(
+        for segment: HLSLiveSegment,
         at index: Int,
         state: inout HLSLiveDVRRecordingState,
         context: HLSLiveDVRResourceContext
     ) async throws -> Bool {
         guard
             try state.renditionContainer(at: index) == .fragmentedMP4,
-            state.renditionInitializationFileName(at: index) == nil
+            let initialization = segment.initializationSegment,
+            state.retainedRenditionInitialization(
+                for: initialization,
+                at: index
+            ) == nil
         else {
             return true
         }
-        guard
-            let initialization = state.renditionInitializationSegment(
-                at: index
+        let initializationCount = state.renditionInitializationCount(
+            at: index
+        )
+        let baseName =
+            initializationCount == 0
+            ? "initialization"
+            : String(
+                format: "initialization-%05d",
+                initializationCount
             )
-        else {
-            throw HLSLiveDVRError.unsupportedFeature(
-                .missingInitializationSegment
-            )
-        }
         let fileName =
-            "resources/initialization."
+            "resources/\(baseName)."
             + HLSLiveDVRPlaylistWriter.fileExtension(
                 for: initialization.url,
                 fallback: "mp4"
@@ -371,6 +397,7 @@ struct HLSLiveDVRResourceWriter: Sendable {
                 contentsOf: destinationURL
             )
             try state.retainRenditionInitialization(
+                initialization,
                 at: index,
                 fileName: fileName,
                 byteCount: byteCount,

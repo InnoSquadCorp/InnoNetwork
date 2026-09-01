@@ -19,8 +19,6 @@ extension HLSLiveDVRRecordingState {
         do {
             playlist = try HLSLiveDVRPlaylistWriter.make(
                 container: container,
-                initializationFileName:
-                    initializationFileName,
                 segments: segments,
                 dateRanges: try packageDateRanges()
             )
@@ -47,8 +45,6 @@ extension HLSLiveDVRRecordingState {
                 }
                 let renditionPlaylist = try HLSLiveDVRPlaylistWriter.make(
                     container: renditionContainer,
-                    initializationFileName:
-                        renditionState.initializationFileName,
                     segments: renditionState.segments
                 )
                 let playlistURL = workspace.directoryURL

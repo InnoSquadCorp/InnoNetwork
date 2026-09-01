@@ -710,7 +710,7 @@ extension HLSLivePlaylistClientTests {
         )
     }
 
-    @Test("resuming retains external rendition files without collisions")
+    @Test("resuming preserves external fMP4 map rotation without collisions")
     func resumesExternalAudioRendition() async throws {
         let masterURL = try url(
             "https://media.example/rendition-recovery.m3u8?token=old"
@@ -734,13 +734,22 @@ extension HLSLivePlaylistClientTests {
             "https://media.example/video-10.ts?token=old"
         )
         let oldAudioURL = try url(
-            "https://media.example/audio-10.aac?token=old"
+            "https://media.example/audio-10.m4s?token=old"
         )
         let newVideoURL = try url(
             "https://media.example/video-11.ts?token=new"
         )
         let newAudioURL = try url(
-            "https://media.example/audio-11.aac?token=new"
+            "https://media.example/audio-11.m4s?token=new"
+        )
+        let oldAudioMapURL = try url(
+            "https://media.example/audio-init-a.mp4?token=old"
+        )
+        let resumedAudioMapURL = try url(
+            "https://media.example/audio-init-a.mp4?token=new"
+        )
+        let rotatedAudioMapURL = try url(
+            "https://media.example/audio-init-b.mp4?token=new"
         )
         let fixture = try makeFixture()
         defer {
@@ -776,6 +785,29 @@ extension HLSLivePlaylistClientTests {
             #EXT-X-ENDLIST
             """
         }
+        let firstAudioPlaylist = """
+            #EXTM3U
+            #EXT-X-VERSION:7
+            #EXT-X-TARGETDURATION:60
+            #EXT-X-MEDIA-SEQUENCE:10
+            #EXT-X-MAP:URI="audio-init-a.mp4?token=old"
+            #EXTINF:4,
+            audio-10.m4s?token=old
+            """
+        let resumedAudioPlaylist = """
+            #EXTM3U
+            #EXT-X-VERSION:7
+            #EXT-X-TARGETDURATION:4
+            #EXT-X-MEDIA-SEQUENCE:10
+            #EXT-X-MAP:URI="audio-init-a.mp4?token=new"
+            #EXTINF:4,
+            audio-10.m4s?token=new
+            #EXT-X-DISCONTINUITY
+            #EXT-X-MAP:URI="audio-init-b.mp4?token=new"
+            #EXTINF:4,
+            audio-11.m4s?token=new
+            #EXT-X-ENDLIST
+            """
         HLSLiveURLProtocol.register(
             playlistResponse(master("old")),
             for: masterURL
@@ -785,8 +817,12 @@ extension HLSLivePlaylistClientTests {
             for: oldVideoPlaylistURL
         )
         HLSLiveURLProtocol.register(
-            playlistResponse(firstPlaylist("audio-10.aac?token=old")),
+            playlistResponse(firstAudioPlaylist),
             for: oldAudioPlaylistURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("old audio map".utf8)),
+            for: oldAudioMapURL
         )
         HLSLiveURLProtocol.register(
             mediaResponse(Data("old video".utf8)),
@@ -822,13 +858,12 @@ extension HLSLivePlaylistClientTests {
             for: newVideoPlaylistURL
         )
         HLSLiveURLProtocol.register(
-            playlistResponse(
-                resumedPlaylist(
-                    "audio-10.aac?token=new",
-                    "audio-11.aac?token=new"
-                )
-            ),
+            playlistResponse(resumedAudioPlaylist),
             for: newAudioPlaylistURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("rotated audio map".utf8)),
+            for: rotatedAudioMapURL
         )
         HLSLiveURLProtocol.register(
             mediaResponse(Data("new video".utf8)),
@@ -851,6 +886,26 @@ extension HLSLivePlaylistClientTests {
         #expect(requests.count { $0 == oldAudioURL } == 1)
         #expect(requests.count { $0 == newVideoURL } == 1)
         #expect(requests.count { $0 == newAudioURL } == 1)
+        #expect(requests.count { $0 == oldAudioMapURL } == 1)
+        #expect(requests.count { $0 == resumedAudioMapURL } == 0)
+        #expect(requests.count { $0 == rotatedAudioMapURL } == 1)
+        let audioTrack = try #require(
+            receipt.tracks.first { $0.kind == .audio }
+        )
+        let audioPlaylist = try String(
+            contentsOf: receipt.directoryURL.appendingPathComponent(
+                audioTrack.relativePlaylistPath
+            ),
+            encoding: .utf8
+        )
+        #expect(
+            audioPlaylist.split(separator: "\n").filter {
+                $0.hasPrefix("#EXT-X-MAP:")
+            } == [
+                "#EXT-X-MAP:URI=\"resources/initialization.mp4\"",
+                "#EXT-X-MAP:URI=\"resources/initialization-00001.mp4\"",
+            ]
+        )
     }
 
     @Test("resuming AES-128 media refetches rather than persists keys")
@@ -1165,6 +1220,479 @@ extension HLSLivePlaylistClientTests {
             )
         )
         #expect(!playlist.contains(initializationURL.absoluteString))
+    }
+
+    @Test("fragmented MP4 preserves initialization map rotation")
+    func recordsFragmentedMP4MapRotation() async throws {
+        let sourceURL = try url("https://media.example/map-rotation.m3u8")
+        let firstMapURL = try url("https://media.example/init-a.mp4")
+        let secondMapURL = try url("https://media.example/init-b.mp4")
+        let segmentURLs = try [1, 2, 3].map {
+            try url("https://media.example/\($0).m4s")
+        }
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-VERSION:7
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:1
+                #EXT-X-MAP:URI="init-a.mp4"
+                #EXTINF:4,
+                1.m4s
+                #EXT-X-DISCONTINUITY
+                #EXT-X-MAP:URI="init-b.mp4"
+                #EXTINF:4,
+                2.m4s
+                #EXT-X-DISCONTINUITY
+                #EXT-X-MAP:URI="init-a.mp4"
+                #EXTINF:4,
+                3.m4s
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("map-a".utf8)),
+            for: firstMapURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("map-b".utf8)),
+            for: secondMapURL
+        )
+        for (index, segmentURL) in segmentURLs.enumerated() {
+            HLSLiveURLProtocol.register(
+                mediaResponse(Data("segment-\(index + 1)".utf8)),
+                for: segmentURL
+            )
+        }
+
+        let receipt = try await recorder(
+            session: fixture.session,
+            startPosition: .currentWindow
+        ).record(from: sourceURL, to: fixture.destinationURL)
+
+        #expect(receipt.segmentCount == 3)
+        let requests = HLSLiveURLProtocol.capturedRequests().compactMap(\.url)
+        #expect(requests.count { $0 == firstMapURL } == 1)
+        #expect(requests.count { $0 == secondMapURL } == 1)
+        let playlist = try String(
+            contentsOf: receipt.playlistURL,
+            encoding: .utf8
+        )
+        let mapLines = playlist.split(separator: "\n").filter {
+            $0.hasPrefix("#EXT-X-MAP:")
+        }
+        #expect(
+            mapLines == [
+                "#EXT-X-MAP:URI=\"resources/initialization.mp4\"",
+                "#EXT-X-MAP:URI=\"resources/initialization-00001.mp4\"",
+                "#EXT-X-MAP:URI=\"resources/initialization.mp4\"",
+            ]
+        )
+        #expect(!playlist.contains("media.example"))
+    }
+
+    @Test("resumable DVR accepts a new map after checkpointed media")
+    func resumesAfterInitializationMapRotation() async throws {
+        let sourceURL = try url("https://media.example/map-resume.m3u8")
+        let resumedSourceURL = try url(
+            "https://media.example/map-resume.m3u8?resume=1"
+        )
+        let firstMapURL = try url("https://media.example/resume-a.mp4")
+        let secondMapURL = try url("https://media.example/resume-b.mp4")
+        let firstSegmentURL = try url(
+            "https://media.example/map-resume-10.m4s"
+        )
+        let secondSegmentURL = try url(
+            "https://media.example/map-resume-11.m4s"
+        )
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-VERSION:7
+                #EXT-X-TARGETDURATION:60
+                #EXT-X-MEDIA-SEQUENCE:10
+                #EXT-X-MAP:URI="resume-a.mp4"
+                #EXTINF:4,
+                map-resume-10.m4s
+                """
+            ),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("resume-a".utf8)),
+            for: firstMapURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("first".utf8)),
+            for: firstSegmentURL
+        )
+        let recorder = recoveryRecorder(session: fixture.session)
+        let recording = recorder.startRecording(
+            from: sourceURL,
+            to: fixture.destinationURL
+        )
+        var events = recording.events.makeAsyncIterator()
+        guard case .progress = try await events.next() else {
+            Issue.record("Expected checkpointed fragmented MP4 media")
+            return
+        }
+        await recording.interrupt()
+
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-VERSION:7
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:10
+                #EXT-X-MAP:URI="resume-a.mp4"
+                #EXTINF:4,
+                map-resume-10.m4s
+                #EXT-X-DISCONTINUITY
+                #EXT-X-MAP:URI="resume-b.mp4"
+                #EXTINF:4,
+                map-resume-11.m4s
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: resumedSourceURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("resume-b".utf8)),
+            for: secondMapURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("second".utf8)),
+            for: secondSegmentURL
+        )
+
+        let receipt = try await recorder.resume(
+            from: resumedSourceURL,
+            to: fixture.destinationURL
+        )
+
+        #expect(receipt.segmentCount == 2)
+        let requests = HLSLiveURLProtocol.capturedRequests().compactMap(\.url)
+        #expect(requests.count { $0 == firstMapURL } == 1)
+        #expect(requests.count { $0 == secondMapURL } == 1)
+        let playlist = try String(
+            contentsOf: receipt.playlistURL,
+            encoding: .utf8
+        )
+        #expect(
+            playlist.contains(
+                "#EXT-X-MAP:URI=\"resources/initialization-00001.mp4\""
+            )
+        )
+    }
+
+    @Test("an unreferenced rotated map is removed at the byte limit")
+    func removesUnreferencedMapAtByteLimit() async throws {
+        let sourceURL = try url(
+            "https://media.example/map-byte-limit.m3u8"
+        )
+        let firstMapURL = try url("https://media.example/limit-a.mp4")
+        let secondMapURL = try url("https://media.example/limit-b.mp4")
+        let firstSegmentURL = try url(
+            "https://media.example/map-limit-1.m4s"
+        )
+        let secondSegmentURL = try url(
+            "https://media.example/map-limit-2.m4s"
+        )
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-VERSION:7
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:1
+                #EXT-X-MAP:URI="limit-a.mp4"
+                #EXTINF:4,
+                map-limit-1.m4s
+                #EXT-X-MAP:URI="limit-b.mp4"
+                #EXTINF:4,
+                map-limit-2.m4s
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("a".utf8)),
+            for: firstMapURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("b".utf8)),
+            for: secondMapURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("1".utf8)),
+            for: firstSegmentURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("segment-two".utf8)),
+            for: secondSegmentURL
+        )
+        let configuration = HLSLiveDVRConfiguration.advanced(
+            limits: HLSLiveDVRLimitPack(
+                maximumDuration: 60,
+                maximumSegmentCount: 20,
+                maximumMediaResourceBytes: 1_024,
+                maximumTotalMediaBytes: 3
+            ),
+            startPosition: .currentWindow
+        )
+
+        let receipt = try await HLSLiveDVRRecorder(
+            client: HLSLivePlaylistClient(session: fixture.session),
+            configuration: configuration
+        ).record(from: sourceURL, to: fixture.destinationURL)
+
+        #expect(receipt.segmentCount == 1)
+        #expect(receipt.mediaByteCount == 2)
+        #expect(
+            !FileManager.default.fileExists(
+                atPath: receipt.directoryURL.appendingPathComponent(
+                    "resources/initialization-00001.mp4"
+                ).path
+            )
+        )
+        let playlist = try String(
+            contentsOf: receipt.playlistURL,
+            encoding: .utf8
+        )
+        #expect(
+            playlist.split(separator: "\n").count {
+                $0.hasPrefix("#EXT-X-MAP:")
+            } == 1
+        )
+        let requests = HLSLiveURLProtocol.capturedRequests().compactMap(\.url)
+        #expect(requests.contains(secondMapURL))
+        #expect(!requests.contains(secondSegmentURL))
+    }
+
+    @Test("LL-HLS parts do not promote across a map rotation")
+    func rejectsPartPromotionAcrossMapRotation() async throws {
+        let sourceURL = try url("https://media.example/part-map.m3u8")
+        let reloadURL = try url(
+            "https://media.example/part-map.m3u8?_HLS_msn=11&_HLS_part=2"
+        )
+        let firstMapURL = try url("https://media.example/part-map-a.mp4")
+        let secondMapURL = try url("https://media.example/part-map-b.mp4")
+        let firstPartURL = try url("https://media.example/11.0.m4s")
+        let secondPartURL = try url("https://media.example/11.1.m4s")
+        let parentURL = try url("https://media.example/11.m4s")
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-VERSION:10
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:10
+                #EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES,PART-HOLD-BACK=4
+                #EXT-X-PART-INF:PART-TARGET=2
+                #EXT-X-MAP:URI="part-map-a.mp4"
+                #EXTINF:4,
+                10.m4s
+                #EXT-X-PART:DURATION=2,URI="11.0.m4s",INDEPENDENT=YES
+                #EXT-X-PART:DURATION=2,URI="11.1.m4s"
+                """
+            ),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-VERSION:10
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:10
+                #EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES,PART-HOLD-BACK=4
+                #EXT-X-PART-INF:PART-TARGET=2
+                #EXT-X-MAP:URI="part-map-a.mp4"
+                #EXTINF:4,
+                10.m4s
+                #EXT-X-PART:DURATION=2,URI="11.0.m4s",INDEPENDENT=YES
+                #EXT-X-PART:DURATION=2,URI="11.1.m4s"
+                #EXT-X-DISCONTINUITY
+                #EXT-X-MAP:URI="part-map-b.mp4"
+                #EXTINF:4,
+                11.m4s
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: reloadURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("one".utf8)),
+            for: firstPartURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("two".utf8)),
+            for: secondPartURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("map-b".utf8)),
+            for: secondMapURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("parent".utf8)),
+            for: parentURL
+        )
+
+        let receipt = try await recorder(
+            session: fixture.session,
+            startPosition: .nextCompletedSegment,
+            parts: HLSLiveDVRPartPack(policy: .independent)
+        ).record(from: sourceURL, to: fixture.destinationURL)
+
+        #expect(receipt.promotedPartCount == 0)
+        let requests = HLSLiveURLProtocol.capturedRequests().compactMap(\.url)
+        #expect(!requests.contains(firstMapURL))
+        #expect(requests.contains(secondMapURL))
+        #expect(requests.contains(parentURL))
+    }
+
+    @Test("legacy single-map checkpoints remain resumable")
+    func resumesLegacySingleMapCheckpoint() async throws {
+        let sourceURL = try url(
+            "https://media.example/legacy-map-checkpoint.m3u8"
+        )
+        let resumedSourceURL = try url(
+            "https://media.example/legacy-map-checkpoint.m3u8?resume=1"
+        )
+        let mapURL = try url("https://media.example/legacy-map.mp4")
+        let firstSegmentURL = try url(
+            "https://media.example/legacy-map-10.m4s"
+        )
+        let secondSegmentURL = try url(
+            "https://media.example/legacy-map-11.m4s"
+        )
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-VERSION:7
+                #EXT-X-TARGETDURATION:60
+                #EXT-X-MEDIA-SEQUENCE:10
+                #EXT-X-MAP:URI="legacy-map.mp4"
+                #EXTINF:4,
+                legacy-map-10.m4s
+                """
+            ),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("legacy-map".utf8)),
+            for: mapURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("first".utf8)),
+            for: firstSegmentURL
+        )
+        let recorder = recoveryRecorder(session: fixture.session)
+        let recording = recorder.startRecording(
+            from: sourceURL,
+            to: fixture.destinationURL
+        )
+        var events = recording.events.makeAsyncIterator()
+        guard case .progress = try await events.next() else {
+            Issue.record("Expected checkpointed fragmented MP4 media")
+            return
+        }
+        await recording.interrupt()
+
+        let checkpointURL = HLSLiveDVRCheckpointStore(
+            destinationURL: fixture.destinationURL
+        ).rootURL.appendingPathComponent("checkpoint.json")
+        let checkpointData = try Data(contentsOf: checkpointURL)
+        var checkpoint = try #require(
+            JSONSerialization.jsonObject(with: checkpointData)
+                as? [String: Any]
+        )
+        var primary = try #require(
+            checkpoint["primary"] as? [String: Any]
+        )
+        primary.removeValue(forKey: "initializations")
+        var segments = try #require(
+            primary["segments"] as? [[String: Any]]
+        )
+        for index in segments.indices {
+            segments[index].removeValue(
+                forKey: "initializationSourceIdentity"
+            )
+            segments[index].removeValue(
+                forKey: "initializationPlaylistPath"
+            )
+        }
+        primary["segments"] = segments
+        checkpoint["primary"] = primary
+        try JSONSerialization.data(
+            withJSONObject: checkpoint,
+            options: [.sortedKeys]
+        ).write(to: checkpointURL, options: .atomic)
+
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-VERSION:7
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:10
+                #EXT-X-MAP:URI="legacy-map.mp4"
+                #EXTINF:4,
+                legacy-map-10.m4s
+                #EXTINF:4,
+                legacy-map-11.m4s
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: resumedSourceURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("second".utf8)),
+            for: secondSegmentURL
+        )
+
+        let receipt = try await recorder.resume(
+            from: resumedSourceURL,
+            to: fixture.destinationURL
+        )
+
+        #expect(receipt.segmentCount == 2)
+        let requests = HLSLiveURLProtocol.capturedRequests().compactMap(\.url)
+        #expect(requests.count { $0 == mapURL } == 1)
+        #expect(requests.count { $0 == firstSegmentURL } == 1)
+        #expect(requests.count { $0 == secondSegmentURL } == 1)
     }
 
     @Test("segment count stops recording before another media request")
@@ -1694,17 +2222,27 @@ extension HLSLivePlaylistClientTests {
         #expect(requests.count { $0 == secondKeyURL } == 1)
     }
 
-    @Test("encrypted fragmented MP4 decrypts its map and media")
+    @Test("encrypted fragmented MP4 decrypts rotated maps and media")
     func recordsEncryptedFragmentedMP4() async throws {
         let sourceURL = try url("https://media.example/encrypted-fmp4.m3u8")
         let keyURL = try url("https://media.example/fmp4.key")
-        let initializationURL = try url("https://media.example/init.mp4")
-        let segmentURL = try url("https://media.example/1.m4s")
+        let initializationURLs = try [1, 2].map {
+            try url("https://media.example/init-\($0).mp4")
+        }
+        let segmentURLs = try [1, 2].map {
+            try url("https://media.example/encrypted-\($0).m4s")
+        }
         let key = Data(repeating: 0x31, count: 16)
         let initializationVector =
             Data(repeating: 0, count: 15) + Data([3])
-        let initializationPlaintext = Data("encrypted init".utf8)
-        let mediaPlaintext = Data("encrypted fragment".utf8)
+        let initializationPlaintexts = [
+            Data("encrypted init one".utf8),
+            Data("encrypted init two".utf8),
+        ]
+        let mediaPlaintexts = [
+            Data("encrypted fragment one".utf8),
+            Data("encrypted fragment two".utf8),
+        ]
         let fixture = try makeFixture()
         defer {
             fixture.cleanup()
@@ -1717,35 +2255,46 @@ extension HLSLivePlaylistClientTests {
                 #EXT-X-VERSION:7
                 #EXT-X-TARGETDURATION:4
                 #EXT-X-KEY:METHOD=AES-128,URI="fmp4.key",IV=0x00000000000000000000000000000003
-                #EXT-X-MAP:URI="init.mp4"
+                #EXT-X-MAP:URI="init-1.mp4"
                 #EXTINF:4,
-                1.m4s
+                encrypted-1.m4s
+                #EXT-X-DISCONTINUITY
+                #EXT-X-MAP:URI="init-2.mp4"
+                #EXTINF:4,
+                encrypted-2.m4s
                 #EXT-X-ENDLIST
                 """
             ),
             for: sourceURL
         )
         HLSLiveURLProtocol.register(mediaResponse(key), for: keyURL)
-        HLSLiveURLProtocol.register(
-            mediaResponse(
-                try aes128Encrypt(
-                    initializationPlaintext,
-                    key: key,
-                    initializationVector: initializationVector
-                )
-            ),
-            for: initializationURL
-        )
-        HLSLiveURLProtocol.register(
-            mediaResponse(
-                try aes128Encrypt(
-                    mediaPlaintext,
-                    key: key,
-                    initializationVector: initializationVector
-                )
-            ),
-            for: segmentURL
-        )
+        for (url, plaintext) in zip(
+            initializationURLs,
+            initializationPlaintexts
+        ) {
+            HLSLiveURLProtocol.register(
+                mediaResponse(
+                    try aes128Encrypt(
+                        plaintext,
+                        key: key,
+                        initializationVector: initializationVector
+                    )
+                ),
+                for: url
+            )
+        }
+        for (url, plaintext) in zip(segmentURLs, mediaPlaintexts) {
+            HLSLiveURLProtocol.register(
+                mediaResponse(
+                    try aes128Encrypt(
+                        plaintext,
+                        key: key,
+                        initializationVector: initializationVector
+                    )
+                ),
+                for: url
+            )
+        }
 
         let receipt = try await recorder(
             session: fixture.session,
@@ -1757,13 +2306,32 @@ extension HLSLivePlaylistClientTests {
                 contentsOf: receipt.directoryURL.appendingPathComponent(
                     "resources/initialization.mp4"
                 )
-            ) == initializationPlaintext
+            ) == initializationPlaintexts[0]
         )
         #expect(
             try Data(
-                contentsOf: receipt.directoryURL
-                    .appendingPathComponent("resources/00000.m4s")
-            ) == mediaPlaintext
+                contentsOf: receipt.directoryURL.appendingPathComponent(
+                    "resources/initialization-00001.mp4"
+                )
+            ) == initializationPlaintexts[1]
+        )
+        #expect(
+            try Data(
+                contentsOf: receipt.directoryURL.appendingPathComponent(
+                    "resources/00000.m4s"
+                )
+            ) == mediaPlaintexts[0]
+        )
+        #expect(
+            try Data(
+                contentsOf: receipt.directoryURL.appendingPathComponent(
+                    "resources/00001.m4s"
+                )
+            ) == mediaPlaintexts[1]
+        )
+        #expect(
+            HLSLiveURLProtocol.capturedRequests().compactMap(\.url)
+                .count { $0 == keyURL } == 1
         )
     }
 
@@ -1959,6 +2527,129 @@ extension HLSLivePlaylistClientTests {
                     videoSegmentURL,
                 ]
         )
+    }
+
+    @Test("external fMP4 renditions preserve initialization map rotation")
+    func recordsRenditionInitializationMapRotation() async throws {
+        let masterURL = try url(
+            "https://media.example/rendition-map-master.m3u8"
+        )
+        let videoPlaylistURL = try url(
+            "https://media.example/rendition-map-video.m3u8"
+        )
+        let audioPlaylistURL = try url(
+            "https://media.example/rendition-map-audio.m3u8"
+        )
+        let firstMapURL = try url(
+            "https://media.example/rendition-map-a.mp4"
+        )
+        let secondMapURL = try url(
+            "https://media.example/rendition-map-b.mp4"
+        )
+        let videoURLs = try [1, 2].map {
+            try url("https://media.example/rendition-video-\($0).ts")
+        }
+        let audioURLs = try [1, 2].map {
+            try url("https://media.example/rendition-audio-\($0).m4s")
+        }
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="Stereo",DEFAULT=YES,URI="rendition-map-audio.m3u8"
+                #EXT-X-STREAM-INF:BANDWIDTH=1000,AUDIO="audio"
+                rendition-map-video.m3u8
+                """
+            ),
+            for: masterURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:1
+                #EXTINF:4,
+                rendition-video-1.ts
+                #EXTINF:4,
+                rendition-video-2.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: videoPlaylistURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-VERSION:7
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:1
+                #EXT-X-MAP:URI="rendition-map-a.mp4"
+                #EXTINF:4,
+                rendition-audio-1.m4s
+                #EXT-X-DISCONTINUITY
+                #EXT-X-MAP:URI="rendition-map-b.mp4"
+                #EXTINF:4,
+                rendition-audio-2.m4s
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: audioPlaylistURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("map-a".utf8)),
+            for: firstMapURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("map-b".utf8)),
+            for: secondMapURL
+        )
+        for (index, audioURL) in audioURLs.enumerated() {
+            HLSLiveURLProtocol.register(
+                mediaResponse(Data("audio-\(index + 1)".utf8)),
+                for: audioURL
+            )
+        }
+        for (index, videoURL) in videoURLs.enumerated() {
+            HLSLiveURLProtocol.register(
+                mediaResponse(Data("video-\(index + 1)".utf8)),
+                for: videoURL
+            )
+        }
+
+        let receipt = try await recorder(
+            session: fixture.session,
+            startPosition: .currentWindow
+        ).record(from: masterURL, to: fixture.destinationURL)
+
+        let audioTrack = try #require(
+            receipt.tracks.first { $0.kind == .audio }
+        )
+        let audioPlaylist = try String(
+            contentsOf: receipt.directoryURL.appendingPathComponent(
+                audioTrack.relativePlaylistPath
+            ),
+            encoding: .utf8
+        )
+        let mapLines = audioPlaylist.split(separator: "\n").filter {
+            $0.hasPrefix("#EXT-X-MAP:")
+        }
+        #expect(
+            mapLines == [
+                "#EXT-X-MAP:URI=\"resources/initialization.mp4\"",
+                "#EXT-X-MAP:URI=\"resources/initialization-00001.mp4\"",
+            ]
+        )
+        let requests = HLSLiveURLProtocol.capturedRequests().compactMap(\.url)
+        #expect(requests.count { $0 == firstMapURL } == 1)
+        #expect(requests.count { $0 == secondMapURL } == 1)
+        #expect(!audioPlaylist.contains("media.example"))
     }
 
     @Test("primary and external renditions share the in-memory AES key cache")

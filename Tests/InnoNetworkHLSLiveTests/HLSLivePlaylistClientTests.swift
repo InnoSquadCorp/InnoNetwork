@@ -213,6 +213,85 @@ struct HLSLivePlaylistClientTests {
         )
     }
 
+    @Test("delta date inference preserves a rotated initialization map")
+    func preservesMapDuringDeltaDateInference() async throws {
+        let sourceURL = try #require(
+            URL(string: "https://media.example/delta-map.m3u8")
+        )
+        let reloadURL = try #require(
+            URL(
+                string:
+                    "https://media.example/delta-map.m3u8?_HLS_msn=12&_HLS_skip=YES"
+            )
+        )
+        let firstMapURL = try #require(
+            URL(string: "https://media.example/delta-map-a.mp4")
+        )
+        let secondMapURL = try #require(
+            URL(string: "https://media.example/delta-map-b.mp4")
+        )
+        let session = makeSession()
+        defer {
+            session.invalidateAndCancel()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            response(
+                """
+                #EXTM3U
+                #EXT-X-VERSION:9
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:10
+                #EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES,CAN-SKIP-UNTIL=24
+                #EXT-X-MAP:URI="delta-map-a.mp4"
+                #EXT-X-PROGRAM-DATE-TIME:2026-09-01T00:00:00.000Z
+                #EXTINF:4,
+                10.m4s
+                #EXTINF:4,
+                11.m4s
+                """
+            ),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(
+            response(
+                """
+                #EXTM3U
+                #EXT-X-VERSION:9
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:10
+                #EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES,CAN-SKIP-UNTIL=24
+                #EXT-X-SKIP:SKIPPED-SEGMENTS=2
+                #EXT-X-MAP:URI="delta-map-b.mp4"
+                #EXTINF:4,
+                12.m4s
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: reloadURL
+        )
+        let client = HLSLivePlaylistClient(session: session)
+
+        var snapshots: [HLSLivePlaylistSnapshot] = []
+        for try await snapshot in client.snapshots(from: sourceURL) {
+            snapshots.append(snapshot)
+        }
+
+        #expect(snapshots.count == 2)
+        #expect(
+            snapshots[1].segments.map {
+                $0.initializationSegment?.url
+            } == [firstMapURL, firstMapURL, secondMapURL]
+        )
+        let firstProgramDate = try #require(
+            snapshots[0].segments.first?.programDateTime
+        )
+        #expect(
+            snapshots[1].segments.last?.programDateTime
+                == firstProgramDate.addingTimeInterval(8)
+        )
+    }
+
     @Test("partial live edge drives the next msn and part")
     func buildsPartialBlockingPosition() throws {
         let sourceURL = try #require(

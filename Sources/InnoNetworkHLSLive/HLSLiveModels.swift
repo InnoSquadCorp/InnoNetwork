@@ -33,6 +33,7 @@ public struct HLSLiveSegment: Equatable, Sendable {
 
     let programDateTime: Date?
     let encryption: HLSLiveAES128Encryption?
+    let initializationSegment: HLSLiveInitializationSegment?
 
     init(record: HLSLiveSegmentRecord) {
         self.sequenceNumber = record.sequenceNumber
@@ -45,6 +46,9 @@ public struct HLSLiveSegment: Equatable, Sendable {
         self.encryption = record.encryption.map(
             HLSLiveAES128Encryption.init(record:)
         )
+        self.initializationSegment = record.initializationSegment.map(
+            HLSLiveInitializationSegment.init(record:)
+        )
     }
 
     init(
@@ -55,7 +59,8 @@ public struct HLSLiveSegment: Equatable, Sendable {
         beginsDiscontinuity: Bool,
         isGap: Bool,
         programDateTime: Date? = nil,
-        encryption: HLSLiveAES128Encryption? = nil
+        encryption: HLSLiveAES128Encryption? = nil,
+        initializationSegment: HLSLiveInitializationSegment? = nil
     ) {
         self.sequenceNumber = sequenceNumber
         self.duration = duration
@@ -65,6 +70,7 @@ public struct HLSLiveSegment: Equatable, Sendable {
         self.isGap = isGap
         self.programDateTime = programDateTime
         self.encryption = encryption
+        self.initializationSegment = initializationSegment
     }
 }
 
@@ -79,6 +85,12 @@ struct HLSLiveInitializationSegment: Equatable, Sendable {
         self.encryption = record.encryption.map(
             HLSLiveAES128Encryption.init(record:)
         )
+    }
+
+    init(resource: HLSLowLatencyResourceIdentity) {
+        self.url = resource.url
+        self.byteRange = resource.byteRange
+        self.encryption = nil
     }
 }
 
@@ -106,6 +118,12 @@ public struct HLSLivePartialSegment: Equatable, Sendable {
     public let isGap: Bool
 
     let resourceContext: HLSLowLatencyResourceContext?
+
+    var initializationSegment: HLSLiveInitializationSegment? {
+        resourceContext?.initializationMap.map(
+            HLSLiveInitializationSegment.init(resource:)
+        )
+    }
 
     public static func == (
         lhs: HLSLivePartialSegment,

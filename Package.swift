@@ -424,6 +424,7 @@ let package = Package(
             dependencies: [
                 "InnoNetwork",
                 "InnoNetworkHLS",
+                "InnoNetworkHLSLive",
                 "InnoNetworkHLSAVFoundation",
             ],
             path: "Tests/InnoNetworkHLSAVFoundationTests",

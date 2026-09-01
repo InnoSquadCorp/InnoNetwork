@@ -49,41 +49,47 @@ extension HLSLiveDVRRecordingState {
             )
         }
 
-        guard snapshot.initializationSegments.count <= 1 else {
-            throw HLSLiveDVRError.unsupportedFeature(
-                .changingInitializationSegment
-            )
-        }
-        let candidate = snapshot.initializationSegments.first
         switch snapshotContainer {
         case .mpegTransportStream:
-            guard candidate == nil else {
+            guard snapshot.initializationSegments.isEmpty,
+                snapshot.segments.allSatisfy({
+                    $0.initializationSegment == nil
+                })
+            else {
                 throw HLSLiveDVRError.unsupportedFeature(
                     .changingInitializationSegment
                 )
             }
         case .fragmentedMP4:
-            guard let candidate else {
-                if snapshot.segments.isEmpty,
-                    snapshot.playlist.lowLatency?.preloadHints
-                        .contains(where: {
-                            $0.type == .initializationMap
-                        }) == true
-                {
-                    return
+            if snapshot.segments.isEmpty {
+                guard
+                    !snapshot.initializationSegments.isEmpty
+                        || snapshot.playlist.lowLatency?.preloadHints
+                            .contains(where: {
+                                $0.type == .initializationMap
+                            }) == true
+                else {
+                    throw HLSLiveDVRError.unsupportedFeature(
+                        .missingInitializationSegment
+                    )
                 }
+            } else if !snapshot.segments.allSatisfy({
+                $0.initializationSegment != nil
+            }) {
                 throw HLSLiveDVRError.unsupportedFeature(
                     .missingInitializationSegment
                 )
             }
-            if let initializationSegment,
-                initializationSegment != candidate
-            {
-                throw HLSLiveDVRError.unsupportedFeature(
-                    .changingInitializationSegment
-                )
-            }
-            initializationSegment = candidate
+        }
+        guard
+            Self.matchesOverlappingInitializations(
+                segments,
+                snapshot: snapshot
+            )
+        else {
+            throw HLSLiveDVRError.unsupportedFeature(
+                .changingInitializationSegment
+            )
         }
     }
 
@@ -143,18 +149,69 @@ extension HLSLiveDVRRecordingState {
         guard !segment.isGap else {
             throw HLSLiveDVRError.unsupportedFeature(.gap)
         }
+        switch container {
+        case .mpegTransportStream:
+            guard segment.initializationSegment == nil else {
+                throw HLSLiveDVRError.unsupportedFeature(
+                    .changingInitializationSegment
+                )
+            }
+        case .fragmentedMP4:
+            guard segment.initializationSegment != nil else {
+                throw HLSLiveDVRError.unsupportedFeature(
+                    .missingInitializationSegment
+                )
+            }
+        case nil:
+            throw HLSLiveDVRError.unsupportedFeature(
+                .unknownMediaContainer
+            )
+        }
     }
 
     mutating func retainInitialization(
+        _ source: HLSLiveInitializationSegment,
         fileName: String,
         byteCount: Int64,
         contentSHA256: String
     ) throws {
         try addMediaBytes(byteCount)
-        initializationFileName = fileName
-        initializationByteCount = byteCount
-        initializationContentSHA256 = contentSHA256
+        try initializationState.retain(
+            source,
+            fileName: fileName,
+            byteCount: byteCount,
+            contentSHA256: contentSHA256
+        )
         nextResourceIndex += 1
+    }
+
+    mutating func removeUnreferencedInitialization(
+        _ source: HLSLiveInitializationSegment
+    ) throws -> String? {
+        let sourceIdentity =
+            HLSLiveDVRRecoveryIdentity
+            .initializationSegmentIdentity(source)
+        guard
+            !segments.contains(where: {
+                $0.initializationSourceIdentity == sourceIdentity
+            }),
+            let retained = initializationState.retained(for: source),
+            initializationState.records.last == retained,
+            mediaByteCount >= retained.byteCount,
+            nextResourceIndex > 0
+        else {
+            return nil
+        }
+        guard
+            let removed = initializationState.removeLast(
+                matching: source
+            )
+        else {
+            throw HLSLiveDVRError.storageFailed
+        }
+        mediaByteCount -= retained.byteCount
+        nextResourceIndex -= 1
+        return removed.fileName
     }
 
     mutating func retain(
@@ -168,7 +225,7 @@ extension HLSLiveDVRRecordingState {
             throw HLSLiveDVRError.storageFailed
         }
         try addMediaBytes(byteCount)
-        append(
+        try append(
             segment,
             fileName: fileName,
             byteCount: byteCount,

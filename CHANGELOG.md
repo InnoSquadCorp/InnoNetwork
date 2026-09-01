@@ -94,9 +94,13 @@ Versioning.
   Progress and committed receipts expose separate, value-redacted preload
   request, completion, confirmation, reuse, miss, failure, cancellation,
   discard, and byte counters for partial segments and initialization maps.
+  Fragmented MP4 DVR now preserves initialization-map rotation across primary
+  and external rendition tracks, deduplicates repeated maps, emits local map
+  boundaries per segment, and resumes both legacy single-map and new multi-map
+  checkpoints.
   Encrypted media, gaps, external renditions or timeline resources,
-  missing/changing initialization maps, and lost live-window history fail
-  explicitly without exposing a partial package.
+  missing or retroactively changed initialization maps, and lost live-window
+  history fail explicitly without exposing a partial package.
 - `HLSExternalResourceResolver` resolves inline or bounded remote
   `EXT-X-SESSION-DATA` plus Apple interstitial `ASSETS` JSON. Typed request
   purposes let authentication distinguish Session Data from asset lists;

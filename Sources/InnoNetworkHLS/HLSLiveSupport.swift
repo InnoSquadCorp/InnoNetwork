@@ -18,6 +18,7 @@ package struct HLSLiveSegmentRecord: Equatable, Sendable {
     package let isGap: Bool
     package let programDateTime: Date?
     package let encryption: HLSLiveAES128EncryptionRecord?
+    package let initializationSegment: HLSLiveInitializationSegmentRecord?
 }
 
 package struct HLSLiveInitializationSegmentRecord: Equatable, Sendable {
@@ -192,7 +193,23 @@ package extension PlaylistResolver {
         var listedSegmentIndex = 0
         var nextProgramDate: Date?
         var segments: [HLSLiveSegmentRecord] = []
-        for resource in media.resources where resource.kind == .segment {
+        var currentInitializationSegment: HLSLiveInitializationSegmentRecord?
+        for resource in media.resources {
+            if resource.kind == .initialization {
+                currentInitializationSegment =
+                    HLSLiveInitializationSegmentRecord(
+                        url: resource.url,
+                        byteRange: resource.byteRange,
+                        encryption: resource.encryption.map {
+                            HLSLiveAES128EncryptionRecord(
+                                keyURL: $0.keyURL,
+                                initializationVector:
+                                    $0.initializationVector
+                            )
+                        }
+                    )
+                continue
+            }
             guard let duration = resource.duration else {
                 throw HLSDownloadError.invalidPlaylist
             }
@@ -224,7 +241,9 @@ package extension PlaylistResolver {
                             initializationVector:
                                 $0.initializationVector
                         )
-                    }
+                    },
+                    initializationSegment:
+                        currentInitializationSegment
                 )
             )
             if let programDateTime {

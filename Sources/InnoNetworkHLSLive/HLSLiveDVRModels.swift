@@ -15,7 +15,8 @@ public enum HLSLiveDVRUnsupportedFeature: Equatable, Sendable {
     /// A fragmented MP4 presentation omitted its initialization map.
     case missingInitializationSegment
 
-    /// The initialization map changed while recording was in progress.
+    /// A retained segment's map changed, or a transport-stream segment
+    /// unexpectedly declared an initialization map.
     case changingInitializationSegment
 
     /// The selected variant requires a separately stored rendition playlist.
@@ -209,7 +210,7 @@ private extension HLSLiveDVRUnsupportedFeature {
         case .missingInitializationSegment:
             return "missing initialization segment"
         case .changingInitializationSegment:
-            return "changing initialization segment"
+            return "incompatible initialization-map history"
         case .externalRendition:
             return "external rendition"
         case .externalTimelineResource:

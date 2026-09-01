@@ -145,7 +145,9 @@ enum HLSLivePlaylistMerger {
                 beginsDiscontinuity: segment.beginsDiscontinuity,
                 isGap: segment.isGap,
                 programDateTime: resolvedDate,
-                encryption: segment.encryption
+                encryption: segment.encryption,
+                initializationSegment:
+                    segment.initializationSegment
             )
         }
     }

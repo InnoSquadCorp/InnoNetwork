@@ -445,6 +445,7 @@ public struct HLSLiveDVRRecorder: Sendable {
                         guard
                             try await resourceWriter
                                 .retainRenditionInitializationIfNeeded(
+                                    for: segment,
                                     at: request.index,
                                     state: &state,
                                     context: resourceContext
@@ -470,6 +471,7 @@ public struct HLSLiveDVRRecorder: Sendable {
                     guard
                         try await resourceWriter
                             .retainInitializationIfNeeded(
+                                for: segment,
                                 state: &state,
                                 context: resourceContext,
                                 preloadCoordinator:
@@ -478,13 +480,17 @@ public struct HLSLiveDVRRecorder: Sendable {
                     else {
                         break recordingLoop
                     }
-                    guard
-                        try await resourceWriter.retain(
-                            segment,
-                            state: &state,
-                            context: resourceContext
-                        )
-                    else {
+                    let didRetain = try await resourceWriter.retain(
+                        segment,
+                        state: &state,
+                        context: resourceContext
+                    )
+                    guard didRetain else {
+                        try resourceWriter
+                            .discardUnreferencedInitialization(
+                                for: segment,
+                                state: &state
+                            )
                         break recordingLoop
                     }
                     if let statistics = await preloadCoordinator?
