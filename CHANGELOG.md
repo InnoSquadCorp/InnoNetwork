@@ -135,6 +135,11 @@ Versioning.
   purposes let authentication distinguish Session Data from asset lists;
   finite byte, asset-count, and timeout boundaries precede JSON validation,
   while direct interstitial assets require no network request.
+- Apple `com.apple.hls.chapters` Session Data now resolves into bounded typed
+  chapters, localized titles, admitted image references, and recursive
+  metadata values. Omitted durations follow source order, image references use
+  the final redirected JSON URL, and explicit chapter/entry/depth limits reject
+  malformed or excessive documents before they reach application code.
 - Date Range preload resources and `com.apple.hls.daterange-schedule` JSON are
   typed and opt-in. Matching preloaded bytes avoid a duplicate schedule
   request; nested schedules preserve server order while enforcing parent

@@ -386,16 +386,18 @@ key bytes. These normal playlist models can contain source values and resolved
 URLs; value-redaction applies to ``HLSPlaylistDiagnostic`` and Content
 Steering events, not to the requested inspection result.
 
-Remote Session Data, Custom Media Selection Schemes, Apple interstitial asset
-lists, Date Range preload resources, and Date Range Schedules stay opt-in. Use
-``HLSExternalResourceResolver`` to apply the same URL admission, redirect,
-request-policy, and bounded-body pipeline:
+Remote Session Data, Custom Media Selection Schemes, Apple JSON chapters,
+interstitial asset lists, Date Range preload resources, and Date Range
+Schedules stay opt-in. Use ``HLSExternalResourceResolver`` to apply the same
+URL admission, redirect, request-policy, and bounded-body pipeline:
 
 ```swift
 let resources = HLSExternalResourceResolver(
     configuration: HLSExternalResourcePack(
         maximumSessionDataBytes: 256 * 1_024,
         maximumCustomMediaSelectionEntryCount: 256,
+        maximumChapterCount: 256,
+        maximumChapterEntryCount: 1_000,
         maximumInterstitialAssetCount: 100,
         maximumDateRangeResourceBytes: 256 * 1_024,
         maximumScheduledDateRangeCount: 100
@@ -405,6 +407,7 @@ let value = try await resources.resolveSessionData(sessionData)
 let customScheme = try await resources.resolveCustomMediaSelection(
     in: playlist
 )
+let chapters = try await resources.resolveChapterCatalog(in: playlist)
 let resolvedInterstitial = try await resources.resolveInterstitial(interstitial)
 let preloaded = try await resources.preloadDateRangeResource(preloadRange)
 let schedule = try await resources.resolveDateRangeSchedule(
@@ -415,8 +418,13 @@ let schedule = try await resources.resolveDateRangeSchedule(
 ```
 
 JSON Session Data is validated while preserving its original bytes. Apple
-asset-list JSON requires the case-sensitive `ASSETS`, `URI`, and `DURATION`
-members; entries remain in declaration order. ``HLSInterstitial`` also exposes
+chapter JSON preserves chapter and child-array order, infers an omitted
+duration from the next source entry, and bounds chapters, child entries, and
+nested metadata. Relative image references follow the final redirected JSON
+response URL, while non-HTTP(S), credential-bearing, and HTTPS-downgraded image
+URLs fail validation. Apple asset-list JSON requires the case-sensitive
+`ASSETS`, `URI`, and `DURATION` members; entries remain in declaration order.
+``HLSInterstitial`` also exposes
 typed timeline occupancy/style, navigation restrictions, and skip-control
 metadata for custom player UI. Missing or future timeline values use the HLS
 defaults of point occupancy and highlighted style; unsupported restriction
@@ -695,6 +703,12 @@ so adding an HLS target cannot silently leave it outside release validation.
 - ``HLSExternalResourceResolver``
 - ``HLSExternalResourcePack``
 - ``HLSExternalResourceError``
+- ``HLSChapterCatalog``
+- ``HLSChapter``
+- ``HLSChapterTitle``
+- ``HLSChapterImage``
+- ``HLSChapterMetadata``
+- ``HLSChapterMetadataValue``
 - ``HLSInterstitialAsset``
 - ``HLSSessionData``
 - ``HLSSessionDataContent``

@@ -406,8 +406,8 @@ types and members in addition to top-level declarations. The grouped ledger
 below keeps the high-level compatibility classification readable for the
 5.x release line.
 
-The machine-checked snapshot currently partitions all 2,907 declarations into
-305 Stable consumer declarations, 2,569 Provisionally Stable consumer
+The machine-checked snapshot currently partitions all 2,943 declarations into
+305 Stable consumer declarations, 2,605 Provisionally Stable consumer
 declarations, and 33 opt-in SPI declarations. The three sets are disjoint and
 exhaustive. `Scripts/symbols/stable-rules.tsv` maps the Stable ledger to symbol
 paths, while the compiler-authored SPI flag is snapshotted in
@@ -512,9 +512,11 @@ Stable.
   `HLSRenditionReport`, `HLSServerControl`, `HLSSessionData`,
   `HLSSessionDataContent`, `HLSSessionDataFormat`, `HLSSessionDataValue`, and
   `HLSSessionKey`.
-- External resources: `HLSExternalResourceError`,
-  `HLSExternalResourcePack`, `HLSExternalResourceResolver`, and
-  `HLSInterstitialAsset`, `HLSInterstitialAssetResolution`. The resolver's
+- External resources: `HLSChapter`, `HLSChapterCatalog`, `HLSChapterImage`,
+  `HLSChapterMetadata`, `HLSChapterMetadataValue`, `HLSChapterTitle`,
+  `HLSExternalResourceError`, `HLSExternalResourcePack`,
+  `HLSExternalResourceResolver`, `HLSInterstitialAsset`, and
+  `HLSInterstitialAssetResolution`. The resolver's
   public Date Range operations load
   bounded preload bytes and resolve nested schedules with explicit collision,
   depth, and entry-count boundaries.

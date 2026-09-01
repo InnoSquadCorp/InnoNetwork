@@ -134,6 +134,42 @@ public struct HLSExternalResourceResolver: Sendable {
         )
     }
 
+    /// Resolves the playlist's Apple HLS JSON chapter metadata.
+    ///
+    /// Returns `nil` when the reserved Session Data identifier is absent.
+    /// Chapters and nested values remain bounded and preserve source order;
+    /// relative image URLs follow the final redirected JSON response URL.
+    public func resolveChapterCatalog(
+        in playlist: HLSPlaylist
+    ) async throws -> HLSChapterCatalog? {
+        let declarations = playlist.sessionData.filter {
+            $0.dataID == HLSChapterCatalog.sessionDataID
+        }
+        guard !declarations.isEmpty else {
+            return nil
+        }
+        guard
+            declarations.count == 1,
+            let declaration = declarations.first,
+            declaration.language == nil,
+            case .remote(let url, format: .json) = declaration.content
+        else {
+            throw HLSExternalResourceError.invalidChapterDeclaration
+        }
+        let resource = try await loader.loadResource(
+            from: url,
+            purpose: .chapterData,
+            accept: "application/json",
+            maximumBytes: settings.maximumSessionDataBytes
+        )
+        return try HLSChapterDecoder.decode(
+            resource.data,
+            relativeTo: resource.finalURL,
+            maximumChapterCount: settings.maximumChapterCount,
+            maximumEntryCount: settings.maximumChapterEntryCount
+        )
+    }
+
     /// Resolves a direct interstitial asset or Apple's `ASSETS` JSON list.
     public func resolveInterstitialAssets(
         _ interstitial: HLSInterstitial

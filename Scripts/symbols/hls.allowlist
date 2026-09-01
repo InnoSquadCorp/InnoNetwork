@@ -1,3 +1,4 @@
+InnoNetworkHLS	swift.enum	HLSChapterMetadataValue
 InnoNetworkHLS	swift.enum	HLSClosedCaptionReference
 InnoNetworkHLS	swift.enum	HLSContentSteeringEvent
 InnoNetworkHLS	swift.enum	HLSContentSteeringPathwayAvailability
@@ -45,6 +46,12 @@ InnoNetworkHLS	swift.enum	HLSUnsupportedMediaFeature
 InnoNetworkHLS	swift.enum	HLSVariantSelectionPolicy
 InnoNetworkHLS	swift.enum	HLSVideoChannelLayout
 InnoNetworkHLS	swift.enum	HLSVideoProjection
+InnoNetworkHLS	swift.enum.case	HLSChapterMetadataValue.array(_:)
+InnoNetworkHLS	swift.enum.case	HLSChapterMetadataValue.boolean(_:)
+InnoNetworkHLS	swift.enum.case	HLSChapterMetadataValue.null
+InnoNetworkHLS	swift.enum.case	HLSChapterMetadataValue.number(_:)
+InnoNetworkHLS	swift.enum.case	HLSChapterMetadataValue.object(_:)
+InnoNetworkHLS	swift.enum.case	HLSChapterMetadataValue.string(_:)
 InnoNetworkHLS	swift.enum.case	HLSClosedCaptionReference.explicitlyNone
 InnoNetworkHLS	swift.enum.case	HLSClosedCaptionReference.group(_:)
 InnoNetworkHLS	swift.enum.case	HLSContentSteeringEvent.pathwayAttempt(pathwayID:phase:resourceIndex:)
@@ -125,9 +132,12 @@ InnoNetworkHLS	swift.enum.case	HLSDownloadEvent.cancelled
 InnoNetworkHLS	swift.enum.case	HLSDownloadEvent.completed(_:)
 InnoNetworkHLS	swift.enum.case	HLSDownloadEvent.failed(_:)
 InnoNetworkHLS	swift.enum.case	HLSDownloadEvent.progress(_:)
+InnoNetworkHLS	swift.enum.case	HLSExternalResourceError.chapterMetadataDepthExceeded(limit:)
 InnoNetworkHLS	swift.enum.case	HLSExternalResourceError.dateRangeScheduleCycle
 InnoNetworkHLS	swift.enum.case	HLSExternalResourceError.dateRangeScheduleDepthExceeded(limit:)
 InnoNetworkHLS	swift.enum.case	HLSExternalResourceError.duplicateScheduledDateRangeIdentifier
+InnoNetworkHLS	swift.enum.case	HLSExternalResourceError.invalidChapterData
+InnoNetworkHLS	swift.enum.case	HLSExternalResourceError.invalidChapterDeclaration
 InnoNetworkHLS	swift.enum.case	HLSExternalResourceError.invalidCustomMediaSelectionDeclaration
 InnoNetworkHLS	swift.enum.case	HLSExternalResourceError.invalidCustomMediaSelectionScheme
 InnoNetworkHLS	swift.enum.case	HLSExternalResourceError.invalidDateRangePreload
@@ -137,6 +147,8 @@ InnoNetworkHLS	swift.enum.case	HLSExternalResourceError.invalidInterstitialAsset
 InnoNetworkHLS	swift.enum.case	HLSExternalResourceError.invalidResponseStatus(_:)
 InnoNetworkHLS	swift.enum.case	HLSExternalResourceError.invalidSessionDataJSON
 InnoNetworkHLS	swift.enum.case	HLSExternalResourceError.responseTooLarge(limit:)
+InnoNetworkHLS	swift.enum.case	HLSExternalResourceError.tooManyChapterEntries(limit:)
+InnoNetworkHLS	swift.enum.case	HLSExternalResourceError.tooManyChapters(limit:)
 InnoNetworkHLS	swift.enum.case	HLSExternalResourceError.tooManyCustomMediaSelectionEntries(limit:)
 InnoNetworkHLS	swift.enum.case	HLSExternalResourceError.tooManyInterstitialAssets(limit:)
 InnoNetworkHLS	swift.enum.case	HLSExternalResourceError.tooManyScheduledDateRanges(limit:)
@@ -259,6 +271,7 @@ InnoNetworkHLS	swift.enum.case	HLSRequestFailure.adaptation
 InnoNetworkHLS	swift.enum.case	HLSRequestFailure.cancellation
 InnoNetworkHLS	swift.enum.case	HLSRequestFailure.transport
 InnoNetworkHLS	swift.enum.case	HLSRequestFailure.urlAdmission
+InnoNetworkHLS	swift.enum.case	HLSRequestPurpose.chapterData
 InnoNetworkHLS	swift.enum.case	HLSRequestPurpose.contentSteeringManifest
 InnoNetworkHLS	swift.enum.case	HLSRequestPurpose.customMediaSelectionScheme
 InnoNetworkHLS	swift.enum.case	HLSRequestPurpose.dateRangePreloadResource
@@ -312,7 +325,7 @@ InnoNetworkHLS	swift.init	HLSDownloader.init()
 InnoNetworkHLS	swift.init	HLSDownloader.init(configuration:)
 InnoNetworkHLS	swift.init	HLSDownloader.init(session:configuration:requestContext:requestAdapter:)
 InnoNetworkHLS	swift.init	HLSDownloader.init(session:configuration:requestContext:requestPolicy:)
-InnoNetworkHLS	swift.init	HLSExternalResourcePack.init(maximumSessionDataBytes:maximumCustomMediaSelectionEntryCount:maximumInterstitialAssetListBytes:maximumInterstitialAssetCount:maximumDateRangeResourceBytes:maximumScheduledDateRangeCount:maximumDateRangeScheduleDepth:requestTimeout:)
+InnoNetworkHLS	swift.init	HLSExternalResourcePack.init(maximumSessionDataBytes:maximumCustomMediaSelectionEntryCount:maximumChapterCount:maximumChapterEntryCount:maximumInterstitialAssetListBytes:maximumInterstitialAssetCount:maximumDateRangeResourceBytes:maximumScheduledDateRangeCount:maximumDateRangeScheduleDepth:requestTimeout:)
 InnoNetworkHLS	swift.init	HLSExternalResourceResolver.init(configuration:)
 InnoNetworkHLS	swift.init	HLSExternalResourceResolver.init(session:configuration:requestContext:requestPolicy:)
 InnoNetworkHLS	swift.init	HLSInterstitial.init(source:resumeOffset:playoutLimit:contentVariability:timelineOccupancy:timelineStyle:navigationRestrictions:skipControl:)
@@ -353,6 +366,7 @@ InnoNetworkHLS	swift.method	HLSDownloader.downloadFile(sourceURL:destinationURL:
 InnoNetworkHLS	swift.method	HLSDownloader.downloadReceipt(sourceURL:destinationURL:)
 InnoNetworkHLS	swift.method	HLSDownloader.prepare(sourceURL:)
 InnoNetworkHLS	swift.method	HLSExternalResourceResolver.preloadDateRangeResource(_:)
+InnoNetworkHLS	swift.method	HLSExternalResourceResolver.resolveChapterCatalog(in:)
 InnoNetworkHLS	swift.method	HLSExternalResourceResolver.resolveCustomMediaSelection(in:)
 InnoNetworkHLS	swift.method	HLSExternalResourceResolver.resolveDateRangeSchedule(_:preloadedResource:startOffset:occupiedDateRangeIDs:)
 InnoNetworkHLS	swift.method	HLSExternalResourceResolver.resolveInterstitial(_:)
@@ -383,6 +397,22 @@ InnoNetworkHLS	swift.property	HLSAllowedContentProtectionConfiguration.keyFormat
 InnoNetworkHLS	swift.property	HLSAllowedContentProtectionConfiguration.labels
 InnoNetworkHLS	swift.property	HLSByteRange.length
 InnoNetworkHLS	swift.property	HLSByteRange.offset
+InnoNetworkHLS	swift.property	HLSChapter.chapterNumber
+InnoNetworkHLS	swift.property	HLSChapter.duration
+InnoNetworkHLS	swift.property	HLSChapter.images
+InnoNetworkHLS	swift.property	HLSChapter.metadata
+InnoNetworkHLS	swift.property	HLSChapter.startTime
+InnoNetworkHLS	swift.property	HLSChapter.titles
+InnoNetworkHLS	swift.property	HLSChapterCatalog.chapters
+InnoNetworkHLS	swift.property	HLSChapterImage.category
+InnoNetworkHLS	swift.property	HLSChapterImage.pixelHeight
+InnoNetworkHLS	swift.property	HLSChapterImage.pixelWidth
+InnoNetworkHLS	swift.property	HLSChapterImage.url
+InnoNetworkHLS	swift.property	HLSChapterMetadata.key
+InnoNetworkHLS	swift.property	HLSChapterMetadata.language
+InnoNetworkHLS	swift.property	HLSChapterMetadata.value
+InnoNetworkHLS	swift.property	HLSChapterTitle.language
+InnoNetworkHLS	swift.property	HLSChapterTitle.title
 InnoNetworkHLS	swift.property	HLSContentSteering.initialPathwayID
 InnoNetworkHLS	swift.property	HLSContentSteering.serverURL
 InnoNetworkHLS	swift.property	HLSContentSteeringPathwaySnapshot.attemptCount
@@ -656,6 +686,11 @@ InnoNetworkHLS	swift.protocol	HLSRequestEventObserving
 InnoNetworkHLS	swift.struct	CustomMediaSelector
 InnoNetworkHLS	swift.struct	HLSAllowedContentProtectionConfiguration
 InnoNetworkHLS	swift.struct	HLSByteRange
+InnoNetworkHLS	swift.struct	HLSChapter
+InnoNetworkHLS	swift.struct	HLSChapterCatalog
+InnoNetworkHLS	swift.struct	HLSChapterImage
+InnoNetworkHLS	swift.struct	HLSChapterMetadata
+InnoNetworkHLS	swift.struct	HLSChapterTitle
 InnoNetworkHLS	swift.struct	HLSContentSteering
 InnoNetworkHLS	swift.struct	HLSContentSteeringHealthPolicy
 InnoNetworkHLS	swift.struct	HLSContentSteeringPack
@@ -732,6 +767,7 @@ InnoNetworkHLS	swift.type.method	HLSOfflinePackageConfiguration.advanced(storage
 InnoNetworkHLS	swift.type.method	HLSOfflinePackageConfiguration.safeDefaults()
 InnoNetworkHLS	swift.type.method	HLSPresentationInspectionPack.advanced(limits:revision:)
 InnoNetworkHLS	swift.type.method	HLSPresentationInspectionPack.safeDefaults()
+InnoNetworkHLS	swift.type.property	HLSChapterCatalog.sessionDataID
 InnoNetworkHLS	swift.type.property	HLSContentSteeringPack.disabled
 InnoNetworkHLS	swift.type.property	HLSCustomMediaSelectionScheme.sessionDataID
 InnoNetworkHLS	swift.type.property	HLSDownloadError.errorCodeUserInfoKey

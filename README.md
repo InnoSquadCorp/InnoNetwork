@@ -467,12 +467,15 @@ for await event in await manager.events(for: task) {
   event delivery through `NetworkRequestContext`
 - caller-injected sessions plus purpose-aware request policy for entry/media
   playlists, live reloads, media payloads, AES keys, Steering manifests,
-  Session Data, and interstitial asset lists; typed HLS
+  Session Data, chapter documents, interstitial asset lists, Date Range
+  preloads, and schedules; typed HLS
   request events are value-redacted by construction, while the existing
   untyped authentication adapter remains source-compatible
 - opt-in `HLSExternalResourceResolver` for inline or bounded JSON/raw Session
-  Data and ordered Apple interstitial asset lists, with explicit byte,
-  asset-count, timeout, schema, and HTTP-status failures
+  Data, typed Apple JSON chapters, and ordered Apple interstitial asset lists,
+  with explicit byte, chapter/entry/asset-count, timeout, schema, and
+  HTTP-status failures; chapter image references resolve from the final JSON
+  response URL without HTTPS downgrade or URL credentials
 - typed interstitial coordinated-playback variability, timeline
   occupancy/style, navigation restrictions, and skip-control presentation
   metadata, including bounded asset-list overrides for custom player UI

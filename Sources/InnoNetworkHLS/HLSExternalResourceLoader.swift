@@ -22,6 +22,20 @@ struct HLSExternalResourceLoader: Sendable {
         accept: String,
         maximumBytes: Int
     ) async throws -> Data {
+        try await loadResource(
+            from: url,
+            purpose: purpose,
+            accept: accept,
+            maximumBytes: maximumBytes
+        ).data
+    }
+
+    func loadResource(
+        from url: URL,
+        purpose: HLSRequestPurpose,
+        accept: String,
+        maximumBytes: Int
+    ) async throws -> HLSLoadedExternalResource {
         var request = URLRequest(url: url)
         request.timeoutInterval = requestTimeout
         request.setValue(accept, forHTTPHeaderField: "Accept")
@@ -67,7 +81,10 @@ struct HLSExternalResourceLoader: Sendable {
         } catch {
             throw Self.map(error, maximumBytes: maximumBytes)
         }
-        return data
+        return HLSLoadedExternalResource(
+            data: data,
+            finalURL: transfer.finalURL
+        )
     }
 
     private static func map(
@@ -84,4 +101,9 @@ struct HLSExternalResourceLoader: Sendable {
         }
         return error
     }
+}
+
+struct HLSLoadedExternalResource: Sendable {
+    let data: Data
+    let finalURL: URL
 }

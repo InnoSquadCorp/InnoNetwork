@@ -4,6 +4,8 @@ import Foundation
 public struct HLSExternalResourcePack: Sendable {
     private let maximumSessionDataBytes: Int
     private let maximumCustomMediaSelectionEntryCount: Int
+    private let maximumChapterCount: Int
+    private let maximumChapterEntryCount: Int
     private let maximumInterstitialAssetListBytes: Int
     private let maximumInterstitialAssetCount: Int
     private let maximumDateRangeResourceBytes: Int
@@ -13,12 +15,14 @@ public struct HLSExternalResourcePack: Sendable {
 
     /// Creates finite resource limits.
     ///
-    /// Byte limits are clamped to `1...2 MiB`, entry counts to `1...1,000`,
-    /// schedule depth to `1...3`, and the request timeout to `1...300`
-    /// seconds.
+    /// Byte limits are clamped to `1...2 MiB`, primary entry counts to
+    /// `1...1,000`, nested chapter entries to `1...10,000`, schedule depth to
+    /// `1...3`, and the request timeout to `1...300` seconds.
     public init(
         maximumSessionDataBytes: Int = 256 * 1_024,
         maximumCustomMediaSelectionEntryCount: Int = 256,
+        maximumChapterCount: Int = 256,
+        maximumChapterEntryCount: Int = 1_000,
         maximumInterstitialAssetListBytes: Int = 256 * 1_024,
         maximumInterstitialAssetCount: Int = 100,
         maximumDateRangeResourceBytes: Int = 256 * 1_024,
@@ -29,6 +33,8 @@ public struct HLSExternalResourcePack: Sendable {
         self.maximumSessionDataBytes = maximumSessionDataBytes
         self.maximumCustomMediaSelectionEntryCount =
             maximumCustomMediaSelectionEntryCount
+        self.maximumChapterCount = maximumChapterCount
+        self.maximumChapterEntryCount = maximumChapterEntryCount
         self.maximumInterstitialAssetListBytes =
             maximumInterstitialAssetListBytes
         self.maximumInterstitialAssetCount =
@@ -50,6 +56,14 @@ public struct HLSExternalResourcePack: Sendable {
             maximumCustomMediaSelectionEntryCount: min(
                 1_000,
                 max(1, maximumCustomMediaSelectionEntryCount)
+            ),
+            maximumChapterCount: min(
+                1_000,
+                max(1, maximumChapterCount)
+            ),
+            maximumChapterEntryCount: min(
+                10_000,
+                max(1, maximumChapterEntryCount)
             ),
             maximumInterstitialAssetListBytes: Self.boundedBytes(
                 maximumInterstitialAssetListBytes
@@ -90,6 +104,8 @@ public struct HLSExternalResourcePack: Sendable {
 struct HLSExternalResourceSettings: Sendable {
     let maximumSessionDataBytes: Int
     let maximumCustomMediaSelectionEntryCount: Int
+    let maximumChapterCount: Int
+    let maximumChapterEntryCount: Int
     let maximumInterstitialAssetListBytes: Int
     let maximumInterstitialAssetCount: Int
     let maximumDateRangeResourceBytes: Int
@@ -162,6 +178,21 @@ public enum HLSExternalResourceError: Error, Equatable, Sendable {
     /// A Custom Media Selection Scheme exceeded its configured entry limit.
     case tooManyCustomMediaSelectionEntries(limit: Int)
 
+    /// The reserved HLS chapter Session Data declaration was malformed.
+    case invalidChapterDeclaration
+
+    /// An HLS chapter JSON document did not match Apple's schema.
+    case invalidChapterData
+
+    /// A chapter document exceeded its configured chapter boundary.
+    case tooManyChapters(limit: Int)
+
+    /// A chapter document exceeded its configured nested entry boundary.
+    case tooManyChapterEntries(limit: Int)
+
+    /// A chapter metadata value exceeded its fixed nesting boundary.
+    case chapterMetadataDepthExceeded(limit: Int)
+
     /// An interstitial asset list did not match Apple's schema.
     case invalidInterstitialAssetList
 
@@ -205,6 +236,16 @@ extension HLSExternalResourceError: LocalizedError {
             return "The HLS Custom Media Selection Scheme is malformed."
         case .tooManyCustomMediaSelectionEntries(let limit):
             return "The HLS Custom Media Selection Scheme exceeds the \(limit)-entry limit."
+        case .invalidChapterDeclaration:
+            return "The HLS chapter Session Data declaration is invalid."
+        case .invalidChapterData:
+            return "The HLS chapter JSON document is malformed."
+        case .tooManyChapters(let limit):
+            return "The HLS chapter document exceeds the \(limit)-chapter limit."
+        case .tooManyChapterEntries(let limit):
+            return "The HLS chapter document exceeds the \(limit)-entry limit."
+        case .chapterMetadataDepthExceeded(let limit):
+            return "The HLS chapter metadata exceeds the \(limit)-level nesting limit."
         case .invalidInterstitialAssetList:
             return "The HLS interstitial asset list is malformed."
         case .tooManyInterstitialAssets(let limit):

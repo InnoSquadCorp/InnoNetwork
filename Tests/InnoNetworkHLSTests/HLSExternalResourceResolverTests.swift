@@ -399,6 +399,8 @@ extension HLSDownloaderTests {
         let settings = HLSExternalResourcePack(
             maximumSessionDataBytes: .max,
             maximumCustomMediaSelectionEntryCount: .max,
+            maximumChapterCount: .max,
+            maximumChapterEntryCount: .max,
             maximumInterstitialAssetListBytes: .max,
             maximumInterstitialAssetCount: .max,
             maximumDateRangeResourceBytes: .max,
@@ -412,6 +414,8 @@ extension HLSDownloaderTests {
             settings.maximumCustomMediaSelectionEntryCount
                 == 1_000
         )
+        #expect(settings.maximumChapterCount == 1_000)
+        #expect(settings.maximumChapterEntryCount == 10_000)
         #expect(
             settings.maximumInterstitialAssetListBytes
                 == 2 * 1_024 * 1_024

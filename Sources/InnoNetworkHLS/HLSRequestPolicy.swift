@@ -36,6 +36,9 @@ public enum HLSRequestPurpose: Equatable, Sendable {
     /// An Apple Custom Media Selection Scheme JSON resource.
     case customMediaSelectionScheme
 
+    /// An Apple HLS JSON chapter metadata resource.
+    case chapterData
+
     /// An Apple HLS interstitial asset-list JSON resource.
     case interstitialAssetList
 
