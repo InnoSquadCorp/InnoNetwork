@@ -475,7 +475,9 @@ for await event in await manager.events(for: task) {
   Data, typed Apple JSON chapters, and ordered Apple interstitial asset lists,
   with explicit byte, chapter/entry/asset-count, timeout, schema, and
   HTTP-status failures; chapter image references resolve from the final JSON
-  response URL without HTTPS downgrade or URL credentials
+  response URL without HTTPS downgrade or URL credentials, while bounded
+  catalogs expose preferred-language titles, image-category lookup, available
+  title languages, and overlap-aware active chapters for custom player UI
 - typed interstitial coordinated-playback variability, timeline
   occupancy/style, navigation restrictions, and skip-control presentation
   metadata, including bounded asset-list overrides for custom player UI

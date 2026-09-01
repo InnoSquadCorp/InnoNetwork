@@ -298,7 +298,8 @@ InnoNetwork 기반 클라이언트를 출시하기 전에 점검해야 할 운�
 - **HLS 외부 메타데이터.** `HLSExternalResourceResolver` 는 inline/remote Session Data와
   Apple JSON chapter, interstitial asset list를 명시적인 byte·chapter·entry·asset 수·timeout
   경계 안에서 해석합니다. Chapter image의 상대 URL은 redirect가 끝난 JSON URL을 기준으로
-  해석하며 credential URL과 HTTPS downgrade를 거부합니다.
+  해석하며 credential URL과 HTTPS downgrade를 거부합니다. Catalog는 선호 언어 title,
+  image category, 사용 가능한 title 언어, 중첩을 보존한 현재 chapter 조회를 제공합니다.
 
 ### 회복탄력성
 

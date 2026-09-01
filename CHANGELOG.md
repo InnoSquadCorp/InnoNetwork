@@ -139,7 +139,9 @@ Versioning.
   chapters, localized titles, admitted image references, and recursive
   metadata values. Omitted durations follow source order, image references use
   the final redirected JSON URL, and explicit chapter/entry/depth limits reject
-  malformed or excessive documents before they reach application code.
+  malformed or excessive documents before they reach application code. The
+  catalog also exposes authored title languages, preferred-language title and
+  image-category selection, and overlap-aware active chapters for player UI.
 - Date Range preload resources and `com.apple.hls.daterange-schedule` JSON are
   typed and opt-in. Matching preloaded bytes avoid a duplicate schedule
   request; nested schedules preserve server order while enforcing parent

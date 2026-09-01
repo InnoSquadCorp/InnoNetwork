@@ -358,6 +358,9 @@ InnoNetworkHLS	swift.init	PlaylistResolver.init(session:requestContext:requestPo
 InnoNetworkHLS	swift.init	RenditionSelector.init()
 InnoNetworkHLS	swift.init	VariantSelector.init()
 InnoNetworkHLS	swift.method	CustomMediaSelector.select(in:groupID:kind:scheme:preferences:)
+InnoNetworkHLS	swift.method	HLSChapter.image(category:)
+InnoNetworkHLS	swift.method	HLSChapter.localizedTitle(preferredLanguages:)
+InnoNetworkHLS	swift.method	HLSChapterCatalog.chapters(at:)
 InnoNetworkHLS	swift.method	HLSContentSteeringEventObserving.contentSteeringDidEmit(_:)
 InnoNetworkHLS	swift.method	HLSCustomMediaSelectionScheme.presentation(for:)
 InnoNetworkHLS	swift.method	HLSDateRangePreload.matches(_:)
@@ -403,6 +406,7 @@ InnoNetworkHLS	swift.property	HLSChapter.images
 InnoNetworkHLS	swift.property	HLSChapter.metadata
 InnoNetworkHLS	swift.property	HLSChapter.startTime
 InnoNetworkHLS	swift.property	HLSChapter.titles
+InnoNetworkHLS	swift.property	HLSChapterCatalog.availableTitleLanguages
 InnoNetworkHLS	swift.property	HLSChapterCatalog.chapters
 InnoNetworkHLS	swift.property	HLSChapterImage.category
 InnoNetworkHLS	swift.property	HLSChapterImage.pixelHeight

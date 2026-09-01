@@ -151,37 +151,10 @@ private enum HLSLocalizedDisplayNameResolver {
         preferredLanguages: [String]
     ) -> String? {
         let entries = displayNames.sorted { $0.key < $1.key }
-        for preferredLanguage in preferredLanguages {
-            let normalized = normalize(preferredLanguage)
-            if let exact = entries.first(where: {
-                normalize($0.key) == normalized
-            }) {
-                return exact.value
-            }
-            if let compatible = entries.first(where: {
-                languagesMatch(normalize($0.key), normalized)
-            }) {
-                return compatible.value
-            }
-        }
-        return entries.first?.value
-    }
-
-    private static func normalize(_ language: String) -> String {
-        language
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: "_", with: "-")
-            .lowercased()
-    }
-
-    private static func languagesMatch(
-        _ available: String,
-        _ preferred: String
-    ) -> Bool {
-        guard !available.isEmpty, !preferred.isEmpty else {
-            return false
-        }
-        return available.hasPrefix(preferred + "-")
-            || preferred.hasPrefix(available + "-")
+        return HLSPreferredLanguageResolver.resolve(
+            entries,
+            preferredLanguages: preferredLanguages,
+            language: { $0.key }
+        )?.value ?? entries.first?.value
     }
 }

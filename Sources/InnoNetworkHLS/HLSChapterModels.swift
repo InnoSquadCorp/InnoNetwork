@@ -8,6 +8,39 @@ public struct HLSChapterCatalog: Equatable, Sendable {
     /// Chapters in JSON source order.
     public let chapters: [HLSChapter]
 
+    /// Unique authored title languages in first-appearance order.
+    public var availableTitleLanguages: [String] {
+        var identities: Set<String> = []
+        return chapters.flatMap(\.titles).compactMap { title in
+            let identity = HLSPreferredLanguageResolver.normalize(
+                title.language
+            )
+            return identities.insert(identity).inserted
+                ? title.language
+                : nil
+        }
+    }
+
+    /// Returns every chapter active at a nonnegative finite media time.
+    ///
+    /// Results retain JSON source order because Apple's format permits
+    /// explicitly timed chapters to overlap or nest. A final chapter whose
+    /// duration is absent remains active after its start time.
+    public func chapters(at time: TimeInterval) -> [HLSChapter] {
+        guard time.isFinite, time >= 0 else {
+            return []
+        }
+        return chapters.filter { chapter in
+            guard chapter.startTime <= time else {
+                return false
+            }
+            guard let duration = chapter.duration else {
+                return true
+            }
+            return time < chapter.startTime + duration
+        }
+    }
+
     init(chapters: [HLSChapter]) {
         self.chapters = chapters
     }
@@ -35,6 +68,28 @@ public struct HLSChapter: Equatable, Sendable {
 
     /// Application-defined metadata in JSON source order.
     public let metadata: [HLSChapterMetadata]
+
+    /// Selects a localized title using ordered BCP 47 preferences.
+    ///
+    /// Exact matches precede compatible BCP 47 tag-prefix matches. A
+    /// language-neutral `und` title is the deterministic fallback, followed
+    /// by the first title in JSON source order.
+    public func localizedTitle(
+        preferredLanguages: [String]
+    ) -> HLSChapterTitle? {
+        HLSPreferredLanguageResolver.resolve(
+            titles,
+            preferredLanguages: preferredLanguages,
+            language: \.language
+        ) ?? titles.first(where: {
+            HLSPreferredLanguageResolver.normalize($0.language) == "und"
+        }) ?? titles.first
+    }
+
+    /// Returns the first image in source order for an exact authored category.
+    public func image(category: String) -> HLSChapterImage? {
+        images.first { $0.category == category }
+    }
 
     init(
         chapterNumber: Double?,

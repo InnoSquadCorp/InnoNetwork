@@ -281,6 +281,66 @@ extension HLSDownloaderTests {
         }
     }
 
+    @Test("chapter presentation helpers preserve authored semantics")
+    func chapterPresentationHelpers() throws {
+        let documentURL = try #require(
+            URL(string: "https://media.example/chapters.json")
+        )
+        let catalog = try HLSChapterDecoder.decode(
+            Data(
+                """
+                [
+                  {
+                    "start-time":0,
+                    "duration":10,
+                    "titles":[
+                      {"language":"ko","title":"시작"},
+                      {"language":"und","title":"1"}
+                    ],
+                    "images":[
+                      {"image-category":"thumbnail","pixel-width":1,"pixel-height":1,"url":"one.jpg"}
+                    ]
+                  },
+                  {
+                    "start-time":5,
+                    "duration":2,
+                    "titles":[{"language":"en-US","title":"Nested"}]
+                  },
+                  {
+                    "start-time":10,
+                    "titles":[{"language":"KO","title":"끝"}]
+                  }
+                ]
+                """.utf8
+            ),
+            relativeTo: documentURL,
+            maximumChapterCount: 10,
+            maximumEntryCount: 100
+        )
+
+        #expect(catalog.availableTitleLanguages == ["ko", "und", "en-US"])
+        #expect(
+            catalog.chapters[0].localizedTitle(
+                preferredLanguages: ["ko-KR"]
+            )?.title == "시작"
+        )
+        #expect(
+            catalog.chapters[0].localizedTitle(
+                preferredLanguages: ["fr"]
+            )?.title == "1"
+        )
+        #expect(
+            catalog.chapters[0].image(category: "thumbnail")?.url
+                == URL(string: "https://media.example/one.jpg")
+        )
+        #expect(catalog.chapters(at: 5).count == 2)
+        #expect(catalog.chapters(at: 7).count == 1)
+        #expect(catalog.chapters(at: 10).map(\.startTime) == [10])
+        #expect(catalog.chapters(at: 12).map(\.startTime) == [10])
+        #expect(catalog.chapters(at: .infinity).isEmpty)
+        #expect(catalog.chapters(at: -1).isEmpty)
+    }
+
     private func makeSession() -> URLSession {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [HLSURLProtocol.self]

@@ -408,6 +408,10 @@ let customScheme = try await resources.resolveCustomMediaSelection(
     in: playlist
 )
 let chapters = try await resources.resolveChapterCatalog(in: playlist)
+let title = chapters?.chapters.first?.localizedTitle(
+    preferredLanguages: Locale.preferredLanguages
+)
+let activeChapters = chapters?.chapters(at: 30)
 let resolvedInterstitial = try await resources.resolveInterstitial(interstitial)
 let preloaded = try await resources.preloadDateRangeResource(preloadRange)
 let schedule = try await resources.resolveDateRangeSchedule(
