@@ -25,7 +25,7 @@ extension HLSLiveDVRRecordingState {
                 track: track
             )
         }
-        return HLSLiveDVRCheckpoint(
+        var checkpoint = HLSLiveDVRCheckpoint(
             schemaVersion: HLSLiveDVRCheckpoint.schemaVersion,
             sourceURLSHA256:
                 HLSLiveDVRRecoveryIdentity.sourceURLSHA256(
@@ -42,12 +42,48 @@ extension HLSLiveDVRRecordingState {
             ),
             promotedPartCount: promotedPartCount
         )
+        checkpoint.retentionPolicy =
+            switch configuration.limits.retentionPolicy {
+            case .stopAtLimit:
+                "stopAtLimit"
+            case .rollingWindow:
+                "rollingWindow"
+            }
+        checkpoint.retentionStatistics =
+            HLSLiveDVRCheckpoint.RetentionStatistics(
+                retentionStatistics
+            )
+        return checkpoint
     }
 
     mutating func restore(
         _ checkpoint: HLSLiveDVRCheckpoint,
         in snapshot: HLSLivePlaylistSnapshot
     ) throws {
+        let restoredRetentionPolicy: HLSLiveDVRRetentionPolicy
+        switch checkpoint.retentionPolicy ?? "stopAtLimit" {
+        case "stopAtLimit":
+            restoredRetentionPolicy = .stopAtLimit
+        case "rollingWindow":
+            restoredRetentionPolicy = .rollingWindow
+        default:
+            throw HLSLiveDVRError.recoveryCorrupted
+        }
+        guard
+            restoredRetentionPolicy
+                == configuration.limits.retentionPolicy
+        else {
+            throw HLSLiveDVRError.recoveryMismatch
+        }
+        let restoredRetentionStatistics: HLSLiveDVRRetentionStatistics
+        if let persisted = checkpoint.retentionStatistics {
+            guard let model = persisted.model else {
+                throw HLSLiveDVRError.recoveryCorrupted
+            }
+            restoredRetentionStatistics = model
+        } else {
+            restoredRetentionStatistics = HLSLiveDVRRetentionStatistics()
+        }
         guard checkpoint.promotedPartCount >= 0,
             checkpoint.primary.segments.count
                 <= configuration.limits.maximumSegmentCount,
@@ -194,6 +230,8 @@ extension HLSLiveDVRRecordingState {
             pack: configuration.parts,
             promotedPartCount: checkpoint.promotedPartCount
         )
+        retentionStatistics = restoredRetentionStatistics
+        pendingEvictionFilePaths = []
         didConfigureRenditions = true
         initialPathwayID = snapshot.pathwayID
     }

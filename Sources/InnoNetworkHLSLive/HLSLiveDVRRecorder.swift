@@ -36,7 +36,8 @@ public struct HLSLiveDVRRecorder: Sendable {
         self.configuration = configuration
     }
 
-    /// Records until a duration, segment-count, or byte limit is reached.
+    /// Records until the source ends or the configured retention policy
+    /// finishes the recording at a duration, segment-count, or byte limit.
     ///
     /// Only the atomically committed package becomes visible at
     /// `destinationDirectoryURL`. The default removes staging after
@@ -323,6 +324,8 @@ public struct HLSLiveDVRRecorder: Sendable {
             configuration: configuration,
             workspace: workspace
         )
+        let usesRollingRetention =
+            configuration.limits.retentionPolicy == .rollingWindow
         let resourceContext = resourceWriter.makeContext(
             workspace: workspace
         )
@@ -421,11 +424,17 @@ public struct HLSLiveDVRRecorder: Sendable {
                     )
                 }
                 for (request, renditionSnapshot) in renditionSnapshots {
-                    let renditionCandidates =
+                    let availableRenditionCandidates =
                         try state
                         .renditionCandidates(
                             in: renditionSnapshot,
                             at: request.index
+                        )
+                    let renditionCandidates =
+                        rollingRenditionCandidates(
+                            availableRenditionCandidates,
+                            primaryCandidates: candidates,
+                            usesRollingRetention: usesRollingRetention
                         )
                     for segment in renditionCandidates {
                         guard
@@ -463,8 +472,12 @@ public struct HLSLiveDVRRecorder: Sendable {
                         }
                     }
                 }
+                var didRetainPrimarySegment = false
                 for segment in candidates {
                     guard state.canRetain(segment) else {
+                        if usesRollingRetention {
+                            throw HLSLiveDVRError.storageFailed
+                        }
                         break recordingLoop
                     }
                     try state.validate(segment)
@@ -478,6 +491,9 @@ public struct HLSLiveDVRRecorder: Sendable {
                                     preloadCoordinator
                             )
                     else {
+                        if usesRollingRetention {
+                            throw HLSLiveDVRError.storageFailed
+                        }
                         break recordingLoop
                     }
                     let didRetain = try await resourceWriter.retain(
@@ -491,41 +507,52 @@ public struct HLSLiveDVRRecorder: Sendable {
                                 for: segment,
                                 state: &state
                             )
+                        if usesRollingRetention {
+                            throw HLSLiveDVRError.storageFailed
+                        }
                         break recordingLoop
                     }
+                    didRetainPrimarySegment = true
                     if let statistics = await preloadCoordinator?
                         .statisticsSnapshot()
                     {
                         state.preloadStatistics = statistics
                     }
-                    if let checkpointStore {
-                        try resourceWriter.discardAllStagedParts(
+                    if !usesRollingRetention {
+                        try persistRetainedBoundary(
+                            sourceURL: sourceURL,
+                            checkpointStore: checkpointStore,
+                            checkpointedFilePaths:
+                                &checkpointedFilePaths,
+                            preservesRecovery: &preservesRecovery,
                             state: &state
                         )
-                        let checkpoint = try state.checkpoint(
-                            sourceURL: sourceURL
-                        )
-                        let newFiles = checkpoint.files.filter {
-                            !checkpointedFilePaths.contains(
-                                $0.relativePath
-                            )
-                        }
-                        try checkpointStore.save(
-                            checkpoint,
-                            synchronizing: newFiles
-                        )
-                        checkpointedFilePaths.formUnion(
-                            newFiles.map(\.relativePath)
-                        )
-                        preservesRecovery = true
                     }
+                    if !usesRollingRetention {
+                        onProgress(state.progress)
+                        if let control,
+                            await control.shouldStopAndCommit
+                        {
+                            break recordingLoop
+                        }
+                        if state.reachedLimit {
+                            break recordingLoop
+                        }
+                    }
+                }
+                if usesRollingRetention, didRetainPrimarySegment {
+                    try state.finalizeRollingPresentation()
+                    try persistRetainedBoundary(
+                        sourceURL: sourceURL,
+                        checkpointStore: checkpointStore,
+                        checkpointedFilePaths: &checkpointedFilePaths,
+                        preservesRecovery: &preservesRecovery,
+                        state: &state
+                    )
                     onProgress(state.progress)
                     if let control,
                         await control.shouldStopAndCommit
                     {
-                        break recordingLoop
-                    }
-                    if state.reachedLimit {
                         break recordingLoop
                     }
                 }
@@ -570,12 +597,85 @@ public struct HLSLiveDVRRecorder: Sendable {
         }
         try Task.checkCancellation()
         try resourceWriter.discardAllStagedParts(state: &state)
+        try resourceWriter.discard(
+            state.takePendingEvictionFilePaths(),
+            workspace: state.workspace
+        )
         let receipt = try state.commit(
             to: destinationDirectoryURL
         )
         committed = true
         try? checkpointStore?.cleanup()
         return receipt
+    }
+
+    private func persistRetainedBoundary(
+        sourceURL: URL,
+        checkpointStore: HLSLiveDVRCheckpointStore?,
+        checkpointedFilePaths: inout Set<String>,
+        preservesRecovery: inout Bool,
+        state: inout HLSLiveDVRRecordingState
+    ) throws {
+        if let checkpointStore {
+            try resourceWriter.discardAllStagedParts(state: &state)
+            let checkpoint = try state.checkpoint(sourceURL: sourceURL)
+            let newFiles = checkpoint.files.filter {
+                !checkpointedFilePaths.contains($0.relativePath)
+            }
+            try checkpointStore.save(
+                checkpoint,
+                synchronizing: newFiles
+            )
+            checkpointedFilePaths = Set(
+                checkpoint.files.map(\.relativePath)
+            )
+            preservesRecovery = true
+        }
+        try resourceWriter.discard(
+            state.takePendingEvictionFilePaths(),
+            workspace: state.workspace
+        )
+    }
+
+    private func rollingRenditionCandidates(
+        _ candidates: [HLSLiveSegment],
+        primaryCandidates: [HLSLiveSegment],
+        usesRollingRetention: Bool
+    ) -> [HLSLiveSegment] {
+        guard usesRollingRetention else {
+            return candidates
+        }
+        guard let lastPrimary = primaryCandidates.last else {
+            return []
+        }
+        if let primaryStart = lastPrimary.programDateTime {
+            let primaryEnd = primaryStart.addingTimeInterval(
+                lastPrimary.duration
+            )
+            let datedPrefix = candidates.prefix { candidate in
+                guard let candidateStart = candidate.programDateTime else {
+                    return false
+                }
+                return candidateStart
+                    < primaryEnd.addingTimeInterval(0.5)
+            }
+            if candidates.contains(where: {
+                $0.programDateTime != nil
+            }) {
+                return Array(datedPrefix)
+            }
+        }
+        let primarySequences = Set(
+            primaryCandidates.map(\.sequenceNumber)
+        )
+        if candidates.contains(where: {
+            primarySequences.contains($0.sequenceNumber)
+        }) {
+            return candidates.filter {
+                $0.sequenceNumber <= lastPrimary.sequenceNumber
+            }
+        }
+        return candidates
     }
 
     private func stageParts(

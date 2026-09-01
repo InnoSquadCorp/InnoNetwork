@@ -56,8 +56,19 @@ public enum HLSLiveDVRRecoveryPolicy: Equatable, Sendable {
     /// Removes staging after ordinary interruption and does not allow resume.
     case disabled
 
-    /// Persists an owned checkpoint after each complete primary segment.
+    /// Persists an owned checkpoint at each coherent complete-segment
+    /// boundary. Rolling multi-track recordings publish after the current
+    /// snapshot's retained tracks have been aligned.
     case resumable
+}
+
+/// Controls what happens when a live DVR recording reaches its limits.
+public enum HLSLiveDVRRetentionPolicy: Equatable, Sendable {
+    /// Commits the retained prefix when any configured limit is reached.
+    case stopAtLimit
+
+    /// Evicts the oldest complete presentation data and keeps recording.
+    case rollingWindow
 }
 
 /// Groups live DVR interruption-recovery behavior.
@@ -236,6 +247,9 @@ public struct HLSLiveDVRLimitPack: Sendable {
     /// Destination-volume capacity validation applied while staging media.
     public let diskCapacityPolicy: HLSDiskCapacityPolicy
 
+    /// The behavior applied when retained media reaches a configured limit.
+    public let retentionPolicy: HLSLiveDVRRetentionPolicy
+
     /// Creates bounded live DVR limits.
     ///
     /// Duration is clamped to `1...86,400` seconds, segment count to
@@ -252,6 +266,33 @@ public struct HLSLiveDVRLimitPack: Sendable {
         diskCapacityPolicy: HLSDiskCapacityPolicy = .required(
             minimumAvailableCapacity: 512 * 1_024 * 1_024
         )
+    ) {
+        self.init(
+            maximumDuration: maximumDuration,
+            maximumSegmentCount: maximumSegmentCount,
+            maximumMediaResourceBytes: maximumMediaResourceBytes,
+            maximumTotalMediaBytes: maximumTotalMediaBytes,
+            requestTimeout: requestTimeout,
+            diskCapacityPolicy: diskCapacityPolicy,
+            retentionPolicy: .stopAtLimit
+        )
+    }
+
+    /// Creates bounded live DVR limits with explicit retention behavior.
+    ///
+    /// Rolling retention keeps at least the newest complete segment. A single
+    /// media resource must still fit both the per-resource and total byte
+    /// limits.
+    public init(
+        maximumDuration: TimeInterval = 30 * 60,
+        maximumSegmentCount: Int = 900,
+        maximumMediaResourceBytes: Int = 128 * 1_024 * 1_024,
+        maximumTotalMediaBytes: Int64 = 8 * 1_024 * 1_024 * 1_024,
+        requestTimeout: TimeInterval = 60,
+        diskCapacityPolicy: HLSDiskCapacityPolicy = .required(
+            minimumAvailableCapacity: 512 * 1_024 * 1_024
+        ),
+        retentionPolicy: HLSLiveDVRRetentionPolicy
     ) {
         self.maximumDuration = Self.normalized(
             maximumDuration,
@@ -276,6 +317,7 @@ public struct HLSLiveDVRLimitPack: Sendable {
             maximum: Self.maximumRequestTimeout
         )
         self.diskCapacityPolicy = diskCapacityPolicy
+        self.retentionPolicy = retentionPolicy
     }
 
     private static func normalized(

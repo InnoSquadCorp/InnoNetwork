@@ -132,6 +132,7 @@ extension HLSLiveDVRRecordingState {
             mediaByteCount: mediaByteCount,
             promotedPartCount: promotedPartCount,
             preloadStatistics: preloadStatistics,
+            retentionStatistics: retentionStatistics,
             firstMediaSequence: first.sequenceNumber,
             lastMediaSequence: last.sequenceNumber
         )

@@ -4,6 +4,7 @@ InnoNetworkHLSLive	swift.enum	HLSLiveDVREvent
 InnoNetworkHLSLive	swift.enum	HLSLiveDVRPartCapturePolicy
 InnoNetworkHLSLive	swift.enum	HLSLiveDVRPreloadPolicy
 InnoNetworkHLSLive	swift.enum	HLSLiveDVRRecoveryPolicy
+InnoNetworkHLSLive	swift.enum	HLSLiveDVRRetentionPolicy
 InnoNetworkHLSLive	swift.enum	HLSLiveDVRRenditionSelectionPolicy
 InnoNetworkHLSLive	swift.enum	HLSLiveDVRStartPosition
 InnoNetworkHLSLive	swift.enum	HLSLiveDVRTrackKind
@@ -42,6 +43,8 @@ InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRPreloadPolicy.disabled
 InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRPreloadPolicy.unencryptedMedia
 InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRRecoveryPolicy.disabled
 InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRRecoveryPolicy.resumable
+InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRRetentionPolicy.rollingWindow
+InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRRetentionPolicy.stopAtLimit
 InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRRenditionSelectionPolicy.all
 InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRRenditionSelectionPolicy.defaultOrFirst
 InnoNetworkHLSLive	swift.enum.case	HLSLiveDVRRenditionSelectionPolicy.disabled
@@ -84,6 +87,7 @@ InnoNetworkHLSLive	swift.enum.case	HLSLiveReloadMode.fullReloadRecovery
 InnoNetworkHLSLive	swift.enum.case	HLSLiveReloadMode.initial
 InnoNetworkHLSLive	swift.enum.case	HLSLiveReloadMode.polling
 InnoNetworkHLSLive	swift.init	HLSLiveDVRLimitPack.init(maximumDuration:maximumSegmentCount:maximumMediaResourceBytes:maximumTotalMediaBytes:requestTimeout:diskCapacityPolicy:)
+InnoNetworkHLSLive	swift.init	HLSLiveDVRLimitPack.init(maximumDuration:maximumSegmentCount:maximumMediaResourceBytes:maximumTotalMediaBytes:requestTimeout:diskCapacityPolicy:retentionPolicy:)
 InnoNetworkHLSLive	swift.init	HLSLiveDVRPartPack.init(policy:maximumStagedPartCount:maximumStagedPartBytes:)
 InnoNetworkHLSLive	swift.init	HLSLiveDVRPreloadPack.init(policy:maximumResourceBytes:maximumTotalBytes:)
 InnoNetworkHLSLive	swift.init	HLSLiveDVRRecorder.init(client:configuration:)
@@ -118,6 +122,7 @@ InnoNetworkHLSLive	swift.property	HLSLiveDVRLimitPack.maximumMediaResourceBytes
 InnoNetworkHLSLive	swift.property	HLSLiveDVRLimitPack.maximumSegmentCount
 InnoNetworkHLSLive	swift.property	HLSLiveDVRLimitPack.maximumTotalMediaBytes
 InnoNetworkHLSLive	swift.property	HLSLiveDVRLimitPack.requestTimeout
+InnoNetworkHLSLive	swift.property	HLSLiveDVRLimitPack.retentionPolicy
 InnoNetworkHLSLive	swift.property	HLSLiveDVRPreloadResourceStatistics.cancellationCount
 InnoNetworkHLSLive	swift.property	HLSLiveDVRPreloadResourceStatistics.completedCount
 InnoNetworkHLSLive	swift.property	HLSLiveDVRPreloadResourceStatistics.confirmedCount
@@ -136,6 +141,7 @@ InnoNetworkHLSLive	swift.property	HLSLiveDVRProgress.mediaByteCount
 InnoNetworkHLSLive	swift.property	HLSLiveDVRProgress.preloadStatistics
 InnoNetworkHLSLive	swift.property	HLSLiveDVRProgress.promotedPartCount
 InnoNetworkHLSLive	swift.property	HLSLiveDVRProgress.recordedDuration
+InnoNetworkHLSLive	swift.property	HLSLiveDVRProgress.retentionStatistics
 InnoNetworkHLSLive	swift.property	HLSLiveDVRProgress.segmentCount
 InnoNetworkHLSLive	swift.property	HLSLiveDVRProgress.stagedPartByteCount
 InnoNetworkHLSLive	swift.property	HLSLiveDVRProgress.stagedPartCount
@@ -151,9 +157,13 @@ InnoNetworkHLSLive	swift.property	HLSLiveDVRReceipt.playlistURL
 InnoNetworkHLSLive	swift.property	HLSLiveDVRReceipt.preloadStatistics
 InnoNetworkHLSLive	swift.property	HLSLiveDVRReceipt.promotedPartCount
 InnoNetworkHLSLive	swift.property	HLSLiveDVRReceipt.recordedDuration
+InnoNetworkHLSLive	swift.property	HLSLiveDVRReceipt.retentionStatistics
 InnoNetworkHLSLive	swift.property	HLSLiveDVRReceipt.segmentCount
 InnoNetworkHLSLive	swift.property	HLSLiveDVRReceipt.tracks
 InnoNetworkHLSLive	swift.property	HLSLiveDVRRecording.events
+InnoNetworkHLSLive	swift.property	HLSLiveDVRRetentionStatistics.evictedMediaByteCount
+InnoNetworkHLSLive	swift.property	HLSLiveDVRRetentionStatistics.evictedPrimaryDuration
+InnoNetworkHLSLive	swift.property	HLSLiveDVRRetentionStatistics.evictedPrimarySegmentCount
 InnoNetworkHLSLive	swift.property	HLSLiveDVRTrack.characteristics
 InnoNetworkHLSLive	swift.property	HLSLiveDVRTrack.isMachineGenerated
 InnoNetworkHLSLive	swift.property	HLSLiveDVRTrack.isTranslated
@@ -234,6 +244,7 @@ InnoNetworkHLSLive	swift.struct	HLSLiveDVRReceipt
 InnoNetworkHLSLive	swift.struct	HLSLiveDVRRecorder
 InnoNetworkHLSLive	swift.struct	HLSLiveDVRRecoveryPack
 InnoNetworkHLSLive	swift.struct	HLSLiveDVRRenditionPack
+InnoNetworkHLSLive	swift.struct	HLSLiveDVRRetentionStatistics
 InnoNetworkHLSLive	swift.struct	HLSLiveDVRTrack
 InnoNetworkHLSLive	swift.struct	HLSLiveEdgePosition
 InnoNetworkHLSLive	swift.struct	HLSLiveHTTPFreshness

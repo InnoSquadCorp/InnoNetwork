@@ -101,7 +101,13 @@ Versioning.
   Complete `EXT-X-GAP` entries now retain primary and external-rendition
   timelines without requesting or synthesizing unavailable media. Primary
   progress and receipts expose a gap count, recovery checkpoints preserve gap
-  state, and retroactive availability changes fail explicitly. Encrypted
+  state, and retroactive availability changes fail explicitly.
+  `HLSLiveDVRRetentionPolicy` now offers opt-in rolling-window retention with
+  complete-prefix eviction across primary media, external renditions, gaps,
+  and rotated fMP4 maps. Durable checkpoints publish the replacement suffix
+  before old files are reclaimed, recovery preserves cumulative typed eviction
+  statistics, and the existing stop-at-limit behavior remains the default.
+  Encrypted
   media, external timeline resources, missing or retroactively changed
   initialization maps, and lost live-window history still fail without
   exposing a partial package.

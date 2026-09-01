@@ -297,6 +297,55 @@ public struct HLSLiveDVRTrack: Equatable, Sendable {
     }
 }
 
+/// Cumulative media removed by rolling live DVR retention.
+public struct HLSLiveDVRRetentionStatistics: Equatable, Sendable {
+    /// The number of evicted primary-track segments, including gaps.
+    public let evictedPrimarySegmentCount: Int
+
+    /// The evicted primary-track playback duration in seconds.
+    public let evictedPrimaryDuration: TimeInterval
+
+    /// Bytes removed across primary, rendition, and initialization media.
+    public let evictedMediaByteCount: Int64
+
+    init(
+        evictedPrimarySegmentCount: Int = 0,
+        evictedPrimaryDuration: TimeInterval = 0,
+        evictedMediaByteCount: Int64 = 0
+    ) {
+        self.evictedPrimarySegmentCount = evictedPrimarySegmentCount
+        self.evictedPrimaryDuration = evictedPrimaryDuration
+        self.evictedMediaByteCount = evictedMediaByteCount
+    }
+
+    func adding(
+        primarySegmentCount: Int = 0,
+        primaryDuration: TimeInterval = 0,
+        mediaByteCount: Int64 = 0
+    ) throws -> HLSLiveDVRRetentionStatistics {
+        let (segmentCount, segmentOverflow) =
+            evictedPrimarySegmentCount.addingReportingOverflow(
+                primarySegmentCount
+            )
+        let duration = evictedPrimaryDuration + primaryDuration
+        let (byteCount, byteOverflow) =
+            evictedMediaByteCount.addingReportingOverflow(
+                mediaByteCount
+            )
+        guard !segmentOverflow,
+            duration.isFinite,
+            !byteOverflow
+        else {
+            throw HLSLiveDVRError.storageFailed
+        }
+        return HLSLiveDVRRetentionStatistics(
+            evictedPrimarySegmentCount: segmentCount,
+            evictedPrimaryDuration: duration,
+            evictedMediaByteCount: byteCount
+        )
+    }
+}
+
 /// A bounded live DVR progress snapshot.
 public struct HLSLiveDVRProgress: Equatable, Sendable {
     /// The number of retained complete segments, including declared gaps.
@@ -326,6 +375,9 @@ public struct HLSLiveDVRProgress: Equatable, Sendable {
     /// Value-redacted LL-HLS preload counters for this recording session.
     public let preloadStatistics: HLSLiveDVRPreloadStatistics
 
+    /// Cumulative media removed by rolling retention.
+    public let retentionStatistics: HLSLiveDVRRetentionStatistics
+
     init(
         segmentCount: Int,
         gapCount: Int = 0,
@@ -336,7 +388,9 @@ public struct HLSLiveDVRProgress: Equatable, Sendable {
         stagedPartByteCount: Int64 = 0,
         promotedPartCount: Int = 0,
         preloadStatistics: HLSLiveDVRPreloadStatistics =
-            HLSLiveDVRPreloadStatistics()
+            HLSLiveDVRPreloadStatistics(),
+        retentionStatistics: HLSLiveDVRRetentionStatistics =
+            HLSLiveDVRRetentionStatistics()
     ) {
         self.segmentCount = segmentCount
         self.gapCount = gapCount
@@ -347,6 +401,7 @@ public struct HLSLiveDVRProgress: Equatable, Sendable {
         self.stagedPartByteCount = stagedPartByteCount
         self.promotedPartCount = promotedPartCount
         self.preloadStatistics = preloadStatistics
+        self.retentionStatistics = retentionStatistics
     }
 }
 
@@ -402,6 +457,9 @@ public struct HLSLiveDVRReceipt: Equatable, Sendable {
     /// Value-redacted LL-HLS preload counters for this recording session.
     public let preloadStatistics: HLSLiveDVRPreloadStatistics
 
+    /// Cumulative media removed by rolling retention.
+    public let retentionStatistics: HLSLiveDVRRetentionStatistics
+
     /// The first retained media-sequence number.
     public let firstMediaSequence: Int64
 
@@ -420,6 +478,8 @@ public struct HLSLiveDVRReceipt: Equatable, Sendable {
         promotedPartCount: Int = 0,
         preloadStatistics: HLSLiveDVRPreloadStatistics =
             HLSLiveDVRPreloadStatistics(),
+        retentionStatistics: HLSLiveDVRRetentionStatistics =
+            HLSLiveDVRRetentionStatistics(),
         firstMediaSequence: Int64,
         lastMediaSequence: Int64
     ) {
@@ -433,6 +493,7 @@ public struct HLSLiveDVRReceipt: Equatable, Sendable {
         self.mediaByteCount = mediaByteCount
         self.promotedPartCount = promotedPartCount
         self.preloadStatistics = preloadStatistics
+        self.retentionStatistics = retentionStatistics
         self.firstMediaSequence = firstMediaSequence
         self.lastMediaSequence = lastMediaSequence
     }

@@ -21,6 +21,8 @@ struct HLSLiveDVRRecordingState {
     var dateRanges: [HLSDateRange] = []
     var partState: HLSLiveDVRPartRecordingState
     var preloadStatistics = HLSLiveDVRPreloadStatistics()
+    var retentionStatistics = HLSLiveDVRRetentionStatistics()
+    var pendingEvictionFilePaths: Set<String> = []
     var didConfigureRenditions = false
     var initialPathwayID: String?
 
@@ -40,7 +42,10 @@ struct HLSLiveDVRRecordingState {
     }
 
     var reachedLimit: Bool {
-        segments.count >= configuration.limits.maximumSegmentCount
+        guard configuration.limits.retentionPolicy == .stopAtLimit else {
+            return false
+        }
+        return segments.count >= configuration.limits.maximumSegmentCount
             || recordedDuration
                 >= configuration.limits.maximumDuration
             || mediaByteCount
@@ -57,7 +62,8 @@ struct HLSLiveDVRRecordingState {
             stagedPartDuration: partState.stagedPartDuration,
             stagedPartByteCount: partState.stagedPartByteCount,
             promotedPartCount: partState.promotedPartCount,
-            preloadStatistics: preloadStatistics
+            preloadStatistics: preloadStatistics,
+            retentionStatistics: retentionStatistics
         )
     }
 
@@ -76,6 +82,12 @@ struct HLSLiveDVRRecordingState {
     }
 
     func availableMediaByteCount() -> Int64 {
+        if configuration.limits.retentionPolicy == .rollingWindow {
+            return min(
+                Int64(configuration.limits.maximumMediaResourceBytes),
+                configuration.limits.maximumTotalMediaBytes
+            )
+        }
         let (retainedAndStaged, overflow) =
             mediaByteCount.addingReportingOverflow(
                 partState.stagedPartByteCount
@@ -125,8 +137,11 @@ struct HLSLiveDVRRecordingState {
             )
         guard nextDuration.isFinite,
             !byteOverflow,
-            nextBytes
-                <= configuration.limits.maximumTotalMediaBytes
+            promotion.byteCount
+                <= configuration.limits.maximumTotalMediaBytes,
+            configuration.limits.retentionPolicy == .rollingWindow
+                || nextBytes
+                    <= configuration.limits.maximumTotalMediaBytes
         else {
             throw HLSLiveDVRError.storageFailed
         }
@@ -139,6 +154,7 @@ struct HLSLiveDVRRecordingState {
             contentSHA256: contentSHA256,
             nextDuration: nextDuration
         )
+        try applyRollingRetentionAfterPrimarySegment()
     }
 
     mutating func discardStagedParts(
@@ -170,11 +186,14 @@ struct HLSLiveDVRRecordingState {
             nextBytes.addingReportingOverflow(
                 partState.stagedPartByteCount
             )
-        guard
-            !overflow,
-            !totalOverflow,
-            totalBytes
+        let respectsTotalLimit =
+            configuration.limits.retentionPolicy == .rollingWindow
+            || totalBytes
                 <= configuration.limits.maximumTotalMediaBytes
+        guard !overflow,
+            !totalOverflow,
+            byteCount <= configuration.limits.maximumTotalMediaBytes,
+            respectsTotalLimit
         else {
             throw HLSLiveDVRError.storageFailed
         }
@@ -239,6 +258,7 @@ struct HLSLiveDVRRecordingState {
         recordedDuration = nextDuration
         gapCount += 1
         lastObservedSequence = segment.sequenceNumber
+        try applyRollingRetentionAfterPrimarySegment()
     }
 
     private func storedInitialization(

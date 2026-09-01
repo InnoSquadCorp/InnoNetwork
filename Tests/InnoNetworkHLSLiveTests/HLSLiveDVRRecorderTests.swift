@@ -21,6 +21,12 @@ extension HLSLivePlaylistClientTests {
         #expect(limits.maximumMediaResourceBytes == 1)
         #expect(limits.maximumTotalMediaBytes == 1)
         #expect(limits.requestTimeout == 60)
+        #expect(limits.retentionPolicy == .stopAtLimit)
+
+        let rollingLimits = HLSLiveDVRLimitPack(
+            retentionPolicy: .rollingWindow
+        )
+        #expect(rollingLimits.retentionPolicy == .rollingWindow)
 
         let parts = HLSLiveDVRPartPack(
             policy: .independent,
@@ -1999,6 +2005,8 @@ extension HLSLivePlaylistClientTests {
             JSONSerialization.jsonObject(with: checkpointData)
                 as? [String: Any]
         )
+        checkpoint.removeValue(forKey: "retentionPolicy")
+        checkpoint.removeValue(forKey: "retentionStatistics")
         var primary = try #require(
             checkpoint["primary"] as? [String: Any]
         )
@@ -2110,6 +2118,754 @@ extension HLSLivePlaylistClientTests {
                 .compactMap(\.url)
                 == [sourceURL, firstURL]
         )
+    }
+
+    @Test("rolling retention keeps the newest complete segments")
+    func rollingRetentionKeepsNewestSegments() async throws {
+        let sourceURL = try url("https://media.example/rolling.m3u8")
+        let segmentURLs = try (1...4).map {
+            try url("https://media.example/rolling-\($0).ts")
+        }
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:1
+                #EXTINF:4,
+                rolling-1.ts
+                #EXTINF:4,
+                rolling-2.ts
+                #EXTINF:4,
+                rolling-3.ts
+                #EXTINF:4,
+                rolling-4.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: sourceURL
+        )
+        for (index, segmentURL) in segmentURLs.enumerated() {
+            HLSLiveURLProtocol.register(
+                mediaResponse(Data("media-\(index + 1)".utf8)),
+                for: segmentURL
+            )
+        }
+
+        var progress: HLSLiveDVRProgress?
+        var completedReceipt: HLSLiveDVRReceipt?
+        for try await event in rollingRecorder(
+            session: fixture.session,
+            maximumSegmentCount: 2
+        ).events(from: sourceURL, to: fixture.destinationURL) {
+            switch event {
+            case .progress(let snapshot):
+                progress = snapshot
+            case .completed(let receipt):
+                completedReceipt = receipt
+            }
+        }
+        let receipt = try #require(completedReceipt)
+
+        #expect(receipt.segmentCount == 2)
+        #expect(receipt.recordedDuration == 8)
+        #expect(receipt.firstMediaSequence == 3)
+        #expect(receipt.lastMediaSequence == 4)
+        #expect(
+            receipt.retentionStatistics
+                == HLSLiveDVRRetentionStatistics(
+                    evictedPrimarySegmentCount: 2,
+                    evictedPrimaryDuration: 8,
+                    evictedMediaByteCount: 14
+                )
+        )
+        #expect(progress?.retentionStatistics == receipt.retentionStatistics)
+        let playlist = try String(
+            contentsOf: receipt.playlistURL,
+            encoding: .utf8
+        )
+        #expect(playlist.contains("#EXT-X-MEDIA-SEQUENCE:3"))
+        #expect(playlist.contains("resources/sequence-3.ts"))
+        #expect(playlist.contains("resources/sequence-4.ts"))
+        #expect(!playlist.contains("sequence-1.ts"))
+        #expect(!playlist.contains("sequence-2.ts"))
+        #expect(
+            !FileManager.default.fileExists(
+                atPath: receipt.directoryURL.appendingPathComponent(
+                    "resources/sequence-1.ts"
+                ).path
+            )
+        )
+    }
+
+    @Test("rolling duration retention evicts a complete prefix")
+    func rollingDurationRetentionKeepsCompleteSuffix() async throws {
+        let sourceURL = try url(
+            "https://media.example/rolling-duration.m3u8"
+        )
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:20
+                #EXTINF:2,
+                duration-20.ts
+                #EXTINF:3,
+                duration-21.ts
+                #EXTINF:4,
+                duration-22.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: sourceURL
+        )
+        for sequence in 20...22 {
+            HLSLiveURLProtocol.register(
+                mediaResponse(Data("\(sequence)".utf8)),
+                for: try url(
+                    "https://media.example/duration-\(sequence).ts"
+                )
+            )
+        }
+
+        let receipt = try await rollingRecorder(
+            session: fixture.session,
+            maximumDuration: 5,
+            maximumSegmentCount: 20
+        ).record(from: sourceURL, to: fixture.destinationURL)
+
+        #expect(receipt.segmentCount == 1)
+        #expect(receipt.recordedDuration == 4)
+        #expect(receipt.firstMediaSequence == 22)
+        #expect(
+            receipt.retentionStatistics.evictedPrimarySegmentCount == 2
+        )
+        #expect(receipt.retentionStatistics.evictedPrimaryDuration == 5)
+    }
+
+    @Test("rolling byte retention reclaims old media")
+    func rollingByteRetentionReclaimsOldMedia() async throws {
+        let sourceURL = try url(
+            "https://media.example/rolling-bytes.m3u8"
+        )
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:30
+                #EXTINF:4,
+                bytes-30.ts
+                #EXTINF:4,
+                bytes-31.ts
+                #EXTINF:4,
+                bytes-32.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: sourceURL
+        )
+        for sequence in 30...32 {
+            HLSLiveURLProtocol.register(
+                mediaResponse(Data(repeating: UInt8(sequence), count: 4)),
+                for: try url(
+                    "https://media.example/bytes-\(sequence).ts"
+                )
+            )
+        }
+
+        let receipt = try await rollingRecorder(
+            session: fixture.session,
+            maximumSegmentCount: 20,
+            maximumTotalMediaBytes: 8
+        ).record(from: sourceURL, to: fixture.destinationURL)
+
+        #expect(receipt.segmentCount == 2)
+        #expect(receipt.mediaByteCount == 8)
+        #expect(receipt.firstMediaSequence == 31)
+        #expect(receipt.retentionStatistics.evictedMediaByteCount == 4)
+        #expect(
+            !FileManager.default.fileExists(
+                atPath: receipt.directoryURL.appendingPathComponent(
+                    "resources/sequence-30.ts"
+                ).path
+            )
+        )
+    }
+
+    @Test("rolling retention removes an expired declared gap")
+    func rollingRetentionEvictsDeclaredGap() async throws {
+        let sourceURL = try url(
+            "https://media.example/rolling-gap.m3u8"
+        )
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:40
+                #EXT-X-GAP
+                #EXTINF:4,
+                gap-40.ts
+                #EXTINF:4,
+                gap-41.ts
+                #EXTINF:4,
+                gap-42.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: sourceURL
+        )
+        for sequence in 41...42 {
+            HLSLiveURLProtocol.register(
+                mediaResponse(Data("\(sequence)".utf8)),
+                for: try url("https://media.example/gap-\(sequence).ts")
+            )
+        }
+
+        let receipt = try await rollingRecorder(
+            session: fixture.session,
+            maximumSegmentCount: 2
+        ).record(from: sourceURL, to: fixture.destinationURL)
+
+        #expect(receipt.segmentCount == 2)
+        #expect(receipt.gapCount == 0)
+        #expect(receipt.firstMediaSequence == 41)
+        #expect(
+            receipt.retentionStatistics
+                == HLSLiveDVRRetentionStatistics(
+                    evictedPrimarySegmentCount: 1,
+                    evictedPrimaryDuration: 4,
+                    evictedMediaByteCount: 0
+                )
+        )
+        let playlist = try String(
+            contentsOf: receipt.playlistURL,
+            encoding: .utf8
+        )
+        #expect(!playlist.contains("#EXT-X-GAP"))
+    }
+
+    @Test("rolling fMP4 retention prunes and safely reloads maps")
+    func rollingRetentionReintroducesInitializationMap() async throws {
+        let sourceURL = try url(
+            "https://media.example/rolling-map.m3u8"
+        )
+        let firstMapURL = try url("https://media.example/map-a.mp4")
+        let secondMapURL = try url("https://media.example/map-b.mp4")
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-VERSION:7
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:50
+                #EXT-X-MAP:URI="map-a.mp4"
+                #EXTINF:4,
+                map-50.m4s
+                #EXT-X-MAP:URI="map-b.mp4"
+                #EXTINF:4,
+                map-51.m4s
+                #EXT-X-MAP:URI="map-a.mp4"
+                #EXTINF:4,
+                map-52.m4s
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("map-a".utf8)),
+            for: firstMapURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("map-a".utf8)),
+            for: firstMapURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("map-b".utf8)),
+            for: secondMapURL
+        )
+        for sequence in 50...52 {
+            HLSLiveURLProtocol.register(
+                mediaResponse(Data("segment-\(sequence)".utf8)),
+                for: try url(
+                    "https://media.example/map-\(sequence).m4s"
+                )
+            )
+        }
+
+        let receipt = try await rollingRecorder(
+            session: fixture.session,
+            maximumSegmentCount: 1
+        ).record(from: sourceURL, to: fixture.destinationURL)
+
+        #expect(receipt.segmentCount == 1)
+        #expect(receipt.firstMediaSequence == 52)
+        #expect(
+            receipt.retentionStatistics.evictedPrimarySegmentCount == 2
+        )
+        let playlist = try String(
+            contentsOf: receipt.playlistURL,
+            encoding: .utf8
+        )
+        #expect(playlist.contains("#EXT-X-MAP:"))
+        #expect(playlist.contains("-52.mp4"))
+        #expect(playlist.contains("resources/sequence-52.m4s"))
+        let resourceNames = try packageFileURLs(
+            receipt.directoryURL.appendingPathComponent("resources")
+        ).map(\.lastPathComponent)
+        #expect(resourceNames.count == 2)
+        #expect(resourceNames.contains("sequence-52.m4s"))
+        let requests = HLSLiveURLProtocol.capturedRequests().compactMap(\.url)
+        #expect(requests.count { $0 == firstMapURL } == 2)
+        #expect(requests.count { $0 == secondMapURL } == 1)
+    }
+
+    @Test("rolling retention keeps external audio aligned")
+    func rollingRetentionKeepsExternalAudioAligned() async throws {
+        let masterURL = try url(
+            "https://media.example/rolling-master.m3u8"
+        )
+        let videoPlaylistURL = try url(
+            "https://media.example/rolling-video.m3u8"
+        )
+        let audioPlaylistURL = try url(
+            "https://media.example/rolling-audio.m3u8"
+        )
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="Stereo",DEFAULT=YES,URI="rolling-audio.m3u8"
+                #EXT-X-STREAM-INF:BANDWIDTH=1000,AUDIO="audio"
+                rolling-video.m3u8
+                """
+            ),
+            for: masterURL
+        )
+        let mediaPlaylist: (String, String) -> String = { prefix, suffix in
+            """
+            #EXTM3U
+            #EXT-X-TARGETDURATION:4
+            #EXT-X-MEDIA-SEQUENCE:60
+            #EXTINF:4,
+            \(prefix)-60.\(suffix)
+            #EXTINF:4,
+            \(prefix)-61.\(suffix)
+            #EXTINF:4,
+            \(prefix)-62.\(suffix)
+            #EXT-X-ENDLIST
+            """
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(mediaPlaylist("video", "ts")),
+            for: videoPlaylistURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(mediaPlaylist("audio", "aac")),
+            for: audioPlaylistURL
+        )
+        for sequence in 60...62 {
+            HLSLiveURLProtocol.register(
+                mediaResponse(Data("video-\(sequence)".utf8)),
+                for: try url(
+                    "https://media.example/video-\(sequence).ts"
+                )
+            )
+            HLSLiveURLProtocol.register(
+                mediaResponse(Data("audio-\(sequence)".utf8)),
+                for: try url(
+                    "https://media.example/audio-\(sequence).aac"
+                )
+            )
+        }
+
+        let receipt = try await rollingRecorder(
+            session: fixture.session,
+            maximumDuration: 5,
+            maximumSegmentCount: 20
+        ).record(from: masterURL, to: fixture.destinationURL)
+
+        #expect(receipt.firstMediaSequence == 62)
+        let audioTrack = try #require(
+            receipt.tracks.first { $0.kind == .audio }
+        )
+        let audioDirectory = receipt.directoryURL.appendingPathComponent(
+            audioTrack.relativePlaylistPath
+        ).deletingLastPathComponent()
+        let audioPlaylist = try String(
+            contentsOf: audioDirectory.appendingPathComponent("index.m3u8"),
+            encoding: .utf8
+        )
+        #expect(audioPlaylist.contains("#EXT-X-MEDIA-SEQUENCE:62"))
+        #expect(audioPlaylist.contains("resources/sequence-62.aac"))
+        #expect(
+            !FileManager.default.fileExists(
+                atPath: audioDirectory.appendingPathComponent(
+                    "resources/sequence-60.aac"
+                ).path
+            )
+        )
+        #expect(
+            !FileManager.default.fileExists(
+                atPath: audioDirectory.appendingPathComponent(
+                    "resources/sequence-61.aac"
+                ).path
+            )
+        )
+    }
+
+    @Test("rolling retention does not prefetch future external media")
+    func rollingRetentionDoesNotPrefetchFutureExternalMedia() async throws {
+        let masterURL = try url(
+            "https://media.example/rolling-future-master.m3u8"
+        )
+        let videoPlaylistURL = try url(
+            "https://media.example/rolling-future-video.m3u8"
+        )
+        let audioPlaylistURL = try url(
+            "https://media.example/rolling-future-audio.m3u8"
+        )
+        let videoURL = try url(
+            "https://media.example/rolling-future-video.ts"
+        )
+        let audioURL = try url(
+            "https://media.example/rolling-future-audio.aac"
+        )
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="Stereo",DEFAULT=YES,URI="rolling-future-audio.m3u8"
+                #EXT-X-STREAM-INF:BANDWIDTH=1000,AUDIO="audio"
+                rolling-future-video.m3u8
+                """
+            ),
+            for: masterURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:100
+                #EXT-X-PROGRAM-DATE-TIME:2026-01-01T00:00:00Z
+                #EXTINF:4,
+                rolling-future-video.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: videoPlaylistURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:200
+                #EXT-X-PROGRAM-DATE-TIME:2026-01-01T00:01:00Z
+                #EXTINF:4,
+                rolling-future-audio.aac
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: audioPlaylistURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("video".utf8)),
+            for: videoURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("audio".utf8)),
+            for: audioURL
+        )
+
+        await #expect(
+            throws: HLSLiveDVRError.unsupportedFeature(
+                .incompleteExternalRendition
+            )
+        ) {
+            try await rollingRecorder(
+                session: fixture.session,
+                maximumSegmentCount: 2
+            ).record(from: masterURL, to: fixture.destinationURL)
+        }
+        #expect(
+            !HLSLiveURLProtocol.capturedRequests().compactMap(\.url)
+                .contains(audioURL)
+        )
+    }
+
+    @Test("rolling recovery checkpoints only the retained suffix")
+    func rollingRecoveryResumesRetainedSuffix() async throws {
+        let sourceURL = try url(
+            "https://media.example/rolling-recovery.m3u8?token=old"
+        )
+        let resumedSourceURL = try url(
+            "https://media.example/rolling-recovery.m3u8?token=new"
+        )
+        let segmentURLs = try (70...73).map {
+            try url("https://media.example/recovery-\($0).ts")
+        }
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:60
+                #EXT-X-MEDIA-SEQUENCE:70
+                #EXTINF:4,
+                recovery-70.ts
+                #EXTINF:4,
+                recovery-71.ts
+                #EXTINF:4,
+                recovery-72.ts
+                """
+            ),
+            for: sourceURL
+        )
+        for (index, segmentURL) in segmentURLs.dropLast().enumerated() {
+            HLSLiveURLProtocol.register(
+                mediaResponse(Data("media-\(index)".utf8)),
+                for: segmentURL
+            )
+        }
+        let recorder = rollingRecorder(
+            session: fixture.session,
+            maximumSegmentCount: 2,
+            recovery: HLSLiveDVRRecoveryPack(policy: .resumable)
+        )
+        let recording = recorder.startRecording(
+            from: sourceURL,
+            to: fixture.destinationURL
+        )
+        var events = recording.events.makeAsyncIterator()
+        var observedEviction = false
+        while case .progress(let progress) = try await events.next() {
+            if progress.retentionStatistics.evictedPrimarySegmentCount == 1 {
+                observedEviction = true
+                break
+            }
+        }
+        #expect(observedEviction)
+        await recording.interrupt()
+
+        let recoveryRoot = HLSLiveDVRCheckpointStore(
+            destinationURL: fixture.destinationURL
+        ).rootURL
+        let recoveryPackage = recoveryRoot.appendingPathComponent(
+            "package",
+            isDirectory: true
+        )
+        #expect(
+            !FileManager.default.fileExists(
+                atPath: recoveryPackage.appendingPathComponent(
+                    "resources/sequence-70.ts"
+                ).path
+            )
+        )
+        #expect(
+            FileManager.default.fileExists(
+                atPath: recoveryPackage.appendingPathComponent(
+                    "resources/sequence-71.ts"
+                ).path
+            )
+        )
+        let checkpoint = try JSONDecoder().decode(
+            HLSLiveDVRCheckpoint.self,
+            from: Data(
+                contentsOf: recoveryRoot.appendingPathComponent(
+                    "checkpoint.json"
+                )
+            )
+        )
+        #expect(checkpoint.retentionPolicy == "rollingWindow")
+        #expect(
+            checkpoint.retentionStatistics?
+                .evictedPrimarySegmentCount == 1
+        )
+        #expect(
+            checkpoint.primary.segments.map(\.sequenceNumber) == [71, 72]
+        )
+
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:71
+                #EXTINF:4,
+                recovery-71.ts
+                #EXTINF:4,
+                recovery-72.ts
+                #EXTINF:4,
+                recovery-73.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: resumedSourceURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(
+                """
+                #EXTM3U
+                #EXT-X-TARGETDURATION:4
+                #EXT-X-MEDIA-SEQUENCE:71
+                #EXTINF:4,
+                recovery-71.ts
+                #EXTINF:4,
+                recovery-72.ts
+                #EXTINF:4,
+                recovery-73.ts
+                #EXT-X-ENDLIST
+                """
+            ),
+            for: resumedSourceURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("media-3".utf8)),
+            for: segmentURLs[3]
+        )
+
+        let stopAtLimitRecorder = self.recorder(
+            session: fixture.session,
+            startPosition: .currentWindow,
+            recovery: HLSLiveDVRRecoveryPack(policy: .resumable)
+        )
+        await #expect(throws: HLSLiveDVRError.recoveryMismatch) {
+            try await stopAtLimitRecorder.resume(
+                from: resumedSourceURL,
+                to: fixture.destinationURL
+            )
+        }
+
+        let receipt = try await recorder.resume(
+            from: resumedSourceURL,
+            to: fixture.destinationURL
+        )
+
+        #expect(receipt.firstMediaSequence == 72)
+        #expect(receipt.lastMediaSequence == 73)
+        #expect(
+            receipt.retentionStatistics.evictedPrimarySegmentCount == 2
+        )
+        #expect(receipt.retentionStatistics.evictedPrimaryDuration == 8)
+        let mediaRequests = HLSLiveURLProtocol.capturedRequests()
+            .compactMap(\.url)
+            .filter { $0.pathExtension == "ts" }
+        #expect(mediaRequests == segmentURLs)
+    }
+
+    @Test("rolling retention reclaims a segment replaced by LL-HLS parts")
+    func rollingRetentionEvictsBeforePartPromotion() async throws {
+        let sourceURL = try url(
+            "https://media.example/rolling-parts.m3u8"
+        )
+        let reloadURL = try url(
+            "https://media.example/rolling-parts.m3u8?_HLS_msn=11&_HLS_part=2"
+        )
+        let firstSegmentURL = try url("https://media.example/10.ts")
+        let firstPartURL = try url("https://media.example/11.0.ts")
+        let secondPartURL = try url("https://media.example/11.1.ts")
+        let parentURL = try url("https://media.example/11.ts")
+        let fixture = try makeFixture()
+        defer {
+            fixture.cleanup()
+            HLSLiveURLProtocol.reset()
+        }
+        HLSLiveURLProtocol.register(
+            playlistResponse(partialPlaylist()),
+            for: sourceURL
+        )
+        HLSLiveURLProtocol.register(
+            playlistResponse(completedPartialPlaylist()),
+            for: reloadURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("ten".utf8)),
+            for: firstSegmentURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("one".utf8)),
+            for: firstPartURL
+        )
+        HLSLiveURLProtocol.register(
+            mediaResponse(Data("two".utf8)),
+            for: secondPartURL
+        )
+
+        let receipt = try await rollingRecorder(
+            session: fixture.session,
+            maximumSegmentCount: 1,
+            parts: HLSLiveDVRPartPack(policy: .independent)
+        ).record(from: sourceURL, to: fixture.destinationURL)
+
+        #expect(receipt.segmentCount == 1)
+        #expect(receipt.firstMediaSequence == 11)
+        #expect(receipt.promotedPartCount == 2)
+        #expect(receipt.mediaByteCount == 6)
+        #expect(
+            receipt.retentionStatistics.evictedPrimarySegmentCount == 1
+        )
+        #expect(receipt.retentionStatistics.evictedMediaByteCount == 3)
+        #expect(
+            try Data(
+                contentsOf: receipt.directoryURL.appendingPathComponent(
+                    "resources/sequence-11.ts"
+                )
+            ) == Data("onetwo".utf8)
+        )
+        #expect(
+            !FileManager.default.fileExists(
+                atPath: receipt.directoryURL.appendingPathComponent(
+                    "resources/sequence-10.ts"
+                ).path
+            )
+        )
+        let requests = HLSLiveURLProtocol.capturedRequests().compactMap(\.url)
+        #expect(requests.contains(firstSegmentURL))
+        #expect(!requests.contains(parentURL))
     }
 
     @Test("event streams emit bounded progress and a terminal receipt")
@@ -5392,6 +6148,31 @@ extension HLSLivePlaylistClientTests {
                 renditions: renditions,
                 parts: parts,
                 preloading: preloading,
+                recovery: recovery
+            )
+        )
+    }
+
+    private func rollingRecorder(
+        session: URLSession,
+        maximumDuration: TimeInterval = 60,
+        maximumSegmentCount: Int,
+        maximumTotalMediaBytes: Int64 = 4_096,
+        recovery: HLSLiveDVRRecoveryPack = HLSLiveDVRRecoveryPack(),
+        parts: HLSLiveDVRPartPack = HLSLiveDVRPartPack()
+    ) -> HLSLiveDVRRecorder {
+        HLSLiveDVRRecorder(
+            client: HLSLivePlaylistClient(session: session),
+            configuration: .advanced(
+                limits: HLSLiveDVRLimitPack(
+                    maximumDuration: maximumDuration,
+                    maximumSegmentCount: maximumSegmentCount,
+                    maximumMediaResourceBytes: 1_024,
+                    maximumTotalMediaBytes: maximumTotalMediaBytes,
+                    retentionPolicy: .rollingWindow
+                ),
+                startPosition: .currentWindow,
+                parts: parts,
                 recovery: recovery
             )
         )

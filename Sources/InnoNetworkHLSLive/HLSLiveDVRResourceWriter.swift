@@ -63,13 +63,22 @@ struct HLSLiveDVRResourceWriter: Sendable {
         else {
             return true
         }
-        let baseName =
-            state.initializationState.records.isEmpty
-            ? "initialization"
-            : String(
-                format: "initialization-%05d",
-                state.initializationState.records.count
-            )
+        let baseName: String
+        if configuration.limits.retentionPolicy == .rollingWindow {
+            let identity =
+                HLSLiveDVRRecoveryIdentity
+                .initializationSegmentIdentity(initialization)
+            baseName =
+                "initialization-\(identity)-\(segment.sequenceNumber)"
+        } else {
+            baseName =
+                state.initializationState.records.isEmpty
+                ? "initialization"
+                : String(
+                    format: "initialization-%05d",
+                    state.initializationState.records.count
+                )
+        }
         let path =
             "resources/\(baseName)."
             + HLSLiveDVRPlaylistWriter.fileExtension(
@@ -140,18 +149,27 @@ struct HLSLiveDVRResourceWriter: Sendable {
                 .unknownMediaContainer
             )
         }
-        let pathFormat =
-            segment.isGap
-            ? "resources/gap-%05d.%@"
-            : "resources/%05d.%@"
-        let path = String(
-            format: pathFormat,
-            state.segments.count,
-            HLSLiveDVRPlaylistWriter.fileExtension(
-                for: segment.url,
-                fallback: fallbackExtension
-            )
+        let fileExtension = HLSLiveDVRPlaylistWriter.fileExtension(
+            for: segment.url,
+            fallback: fallbackExtension
         )
+        let path: String
+        if configuration.limits.retentionPolicy == .rollingWindow {
+            let baseName = segment.isGap ? "gap" : "sequence"
+            path =
+                "resources/\(baseName)-\(segment.sequenceNumber)."
+                + fileExtension
+        } else {
+            let pathFormat =
+                segment.isGap
+                ? "resources/gap-%05d.%@"
+                : "resources/%05d.%@"
+            path = String(
+                format: pathFormat,
+                state.segments.count,
+                fileExtension
+            )
+        }
         if segment.isGap {
             try discard(
                 state.discardStagedParts(
@@ -374,16 +392,25 @@ struct HLSLiveDVRResourceWriter: Sendable {
         else {
             return true
         }
-        let initializationCount = state.renditionInitializationCount(
-            at: index
-        )
-        let baseName =
-            initializationCount == 0
-            ? "initialization"
-            : String(
-                format: "initialization-%05d",
-                initializationCount
+        let baseName: String
+        if configuration.limits.retentionPolicy == .rollingWindow {
+            let identity =
+                HLSLiveDVRRecoveryIdentity
+                .initializationSegmentIdentity(initialization)
+            baseName =
+                "initialization-\(identity)-\(segment.sequenceNumber)"
+        } else {
+            let initializationCount = state.renditionInitializationCount(
+                at: index
             )
+            baseName =
+                initializationCount == 0
+                ? "initialization"
+                : String(
+                    format: "initialization-%05d",
+                    initializationCount
+                )
+        }
         let fileName =
             "resources/\(baseName)."
             + HLSLiveDVRPlaylistWriter.fileExtension(
@@ -436,18 +463,27 @@ struct HLSLiveDVRResourceWriter: Sendable {
         case .fragmentedMP4:
             fallbackExtension = "m4s"
         }
-        let fileNameFormat =
-            segment.isGap
-            ? "resources/gap-%05d.%@"
-            : "resources/%05d.%@"
-        let fileName = String(
-            format: fileNameFormat,
-            state.renditionSegmentCount(at: index),
-            HLSLiveDVRPlaylistWriter.fileExtension(
-                for: segment.url,
-                fallback: fallbackExtension
-            )
+        let fileExtension = HLSLiveDVRPlaylistWriter.fileExtension(
+            for: segment.url,
+            fallback: fallbackExtension
         )
+        let fileName: String
+        if configuration.limits.retentionPolicy == .rollingWindow {
+            let baseName = segment.isGap ? "gap" : "sequence"
+            fileName =
+                "resources/\(baseName)-\(segment.sequenceNumber)."
+                + fileExtension
+        } else {
+            let fileNameFormat =
+                segment.isGap
+                ? "resources/gap-%05d.%@"
+                : "resources/%05d.%@"
+            fileName = String(
+                format: fileNameFormat,
+                state.renditionSegmentCount(at: index),
+                fileExtension
+            )
+        }
         if segment.isGap {
             try state.retainRenditionGap(
                 segment,

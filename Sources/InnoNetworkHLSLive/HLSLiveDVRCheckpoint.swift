@@ -12,11 +12,41 @@ struct HLSLiveDVRCheckpoint: Codable, Sendable {
     let inBandClosedCaptionIdentities: [String]
     let dateRanges: [DateRange]
     let promotedPartCount: Int
+    var retentionPolicy: String? = nil
+    var retentionStatistics: RetentionStatistics? = nil
 
     struct FileRecord: Codable, Sendable {
         let relativePath: String
         let byteCount: Int64
         let contentSHA256: String
+    }
+
+    struct RetentionStatistics: Codable, Sendable {
+        let evictedPrimarySegmentCount: Int
+        let evictedPrimaryDuration: TimeInterval
+        let evictedMediaByteCount: Int64
+
+        init(_ statistics: HLSLiveDVRRetentionStatistics) {
+            evictedPrimarySegmentCount =
+                statistics.evictedPrimarySegmentCount
+            evictedPrimaryDuration = statistics.evictedPrimaryDuration
+            evictedMediaByteCount = statistics.evictedMediaByteCount
+        }
+
+        var model: HLSLiveDVRRetentionStatistics? {
+            guard evictedPrimarySegmentCount >= 0,
+                evictedPrimaryDuration.isFinite,
+                evictedPrimaryDuration >= 0,
+                evictedMediaByteCount >= 0
+            else {
+                return nil
+            }
+            return HLSLiveDVRRetentionStatistics(
+                evictedPrimarySegmentCount: evictedPrimarySegmentCount,
+                evictedPrimaryDuration: evictedPrimaryDuration,
+                evictedMediaByteCount: evictedMediaByteCount
+            )
+        }
     }
 
     struct Initialization: Codable, Sendable {

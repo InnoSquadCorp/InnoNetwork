@@ -578,6 +578,11 @@ for await event in await manager.events(for: task) {
   unavailable media is never requested or synthesized, local playlists retain
   the timeline with safe placeholder paths, and primary progress plus receipts
   expose a typed gap count
+- opt-in rolling DVR retention that evicts a complete oldest presentation
+  prefix while recording continues; sequence-stable local names prevent reuse,
+  unreferenced fMP4 maps and aligned rendition resources are reclaimed only
+  after a replacement checkpoint is durable, and progress plus receipts expose
+  cumulative primary count, duration, and all-track byte eviction statistics
 - bounded external audio, alternate-video, and subtitle selection by default,
   preferred languages, exact names, or all referenced renditions; URL-free
   local master playlists expose one package entry point plus typed local-track
@@ -587,8 +592,9 @@ for await event in await manager.events(for: task) {
   external timeline resources, or an incomplete rendition cannot be preserved
 - configurable destination-capacity enforcement plus typed key status,
   key-length, decryption, and storage failures
-- opt-in, URL-free recovery checkpoints at complete primary-segment
-  boundaries; signed query values may rotate while source path, selected
+- opt-in, URL-free recovery checkpoints at coherent complete-segment
+  boundaries; rolling multi-track snapshots align before publication, and
+  signed query values may rotate while source path, selected
   variant, renditions, per-segment initialization-map assignments, file sizes,
   and SHA-256 digests are revalidated before resume, and AES-128 keys are always
   fetched again

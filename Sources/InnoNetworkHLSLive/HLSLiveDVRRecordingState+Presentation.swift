@@ -138,6 +138,12 @@ extension HLSLiveDVRRecordingState {
     }
 
     func canRetain(_ segment: HLSLiveSegment) -> Bool {
+        if configuration.limits.retentionPolicy == .rollingWindow {
+            return segment.duration.isFinite
+                && segment.duration > 0
+                && segment.duration
+                    <= configuration.limits.maximumDuration
+        }
         guard
             segments.count
                 < configuration.limits.maximumSegmentCount
@@ -238,6 +244,7 @@ extension HLSLiveDVRRecordingState {
             nextDuration: nextDuration
         )
         nextResourceIndex += 1
+        try applyRollingRetentionAfterPrimarySegment()
     }
 
     private func validateSequence(

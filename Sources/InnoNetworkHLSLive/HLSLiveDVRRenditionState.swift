@@ -212,6 +212,11 @@ struct HLSLiveDVRRenditionRecordingState {
         _ segment: HLSLiveSegment,
         limits: HLSLiveDVRLimitPack
     ) -> Bool {
+        if limits.retentionPolicy == .rollingWindow {
+            return segment.duration.isFinite
+                && segment.duration > 0
+                && segment.duration <= limits.maximumDuration
+        }
         guard segments.count < limits.maximumSegmentCount else {
             return false
         }
@@ -303,6 +308,29 @@ struct HLSLiveDVRRenditionRecordingState {
         )
         recordedDuration = nextDuration
         lastObservedSequence = segment.sequenceNumber
+    }
+
+    mutating func evictOldestSegment()
+        -> HLSLiveDVRStoredSegment?
+    {
+        guard segments.count > 1 else {
+            return nil
+        }
+        let removed = segments.removeFirst()
+        recordedDuration = max(0, recordedDuration - removed.duration)
+        return removed
+    }
+
+    mutating func removeUnreferencedInitializations()
+        -> [HLSLiveDVRStoredInitialization]
+    {
+        initializationState.removeUnreferenced(
+            retaining: Set(
+                segments.compactMap(
+                    \.initializationSourceIdentity
+                )
+            )
+        )
     }
 
     private func storedInitialization(

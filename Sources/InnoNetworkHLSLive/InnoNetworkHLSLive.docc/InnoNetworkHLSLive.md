@@ -125,7 +125,8 @@ let recorder = HLSLiveDVRRecorder(
         limits: HLSLiveDVRLimitPack(
             maximumDuration: 15 * 60,
             maximumSegmentCount: 300,
-            maximumTotalMediaBytes: 2 * 1_024 * 1_024 * 1_024
+            maximumTotalMediaBytes: 2 * 1_024 * 1_024 * 1_024,
+            retentionPolicy: .rollingWindow
         ),
         startPosition: .nextCompletedSegment,
         renditions: HLSLiveDVRRenditionPack(
@@ -211,10 +212,23 @@ contributes duration and segment count but no media bytes. Duration, segment
 count, per-resource bytes, total media bytes, external renditions per kind,
 request timeout, destination free capacity, and event buffering are bounded.
 ``HLSLiveDVRLimitPack/diskCapacityPolicy`` uses the same required,
-best-effort, or disabled capacity contract as VOD storage. When the duration,
-count, or total-byte boundary is reached, the recorder finishes at the last
-complete segment. Exact `206` and `Content-Range` validation localizes
-byte-range segments as complete files.
+best-effort, or disabled capacity contract as VOD storage. The default
+``HLSLiveDVRRetentionPolicy/stopAtLimit`` behavior finishes at the last
+complete segment when the duration, count, or total-byte boundary is reached.
+With ``HLSLiveDVRRetentionPolicy/rollingWindow``, the recorder instead removes
+a complete oldest prefix and continues until the source ends or the caller
+stops it. It retains at least the newest primary segment and fails if that
+segment plus its required presentation resources cannot fit the configured
+byte limit. Exact `206` and `Content-Range` validation localizes byte-range
+segments as complete files.
+
+Rolling packages use media-sequence-stable segment names, prune unreferenced
+fMP4 maps, and keep selected rendition suffixes aligned with the primary
+window. ``HLSLiveDVRProgress/retentionStatistics`` and
+``HLSLiveDVRReceipt/retentionStatistics`` expose cumulative evicted primary
+count and duration plus bytes reclaimed across primary, rendition, and
+initialization media. Retained count, duration, bytes, and gap count continue
+to describe only the current playable window.
 
 LL-HLS part capture is disabled by default. The `.independent` policy may
 temporarily stage one incomplete parent sequence only when part zero is
@@ -307,8 +321,11 @@ The destination is reserved in-process and across cooperating processes.
 Staging is a hidden sibling directory, and the complete package becomes
 visible through one atomic directory move. Recovery is disabled by default,
 which preserves legacy cleanup. The resumable policy atomically replaces a
-bounded URL-free checkpoint after each retained complete primary segment and
-keeps the owned hidden directory after ordinary interruption. Resume verifies
+bounded URL-free checkpoint at coherent complete-segment boundaries and keeps
+the owned hidden directory after ordinary interruption. Rolling multi-track
+recordings publish only after the current snapshot's retained tracks are
+aligned; the new checkpoint becomes durable before obsolete files are removed.
+Resume verifies
 the query-free source identity, selected variant and renditions, initialization
 map identity, exact file sizes, SHA-256 content digests, path confinement, and
 configured limits before reuse. Gap entries are checkpointed without a file
@@ -358,6 +375,8 @@ instead of resuming it.
 - ``HLSLiveDVRRecording``
 - ``HLSLiveDVRConfiguration``
 - ``HLSLiveDVRLimitPack``
+- ``HLSLiveDVRRetentionPolicy``
+- ``HLSLiveDVRRetentionStatistics``
 - ``HLSLiveDVRRenditionPack``
 - ``HLSLiveDVRRenditionSelectionPolicy``
 - ``HLSLiveDVRPartPack``

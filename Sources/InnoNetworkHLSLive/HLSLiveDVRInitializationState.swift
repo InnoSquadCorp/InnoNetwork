@@ -70,4 +70,16 @@ struct HLSLiveDVRInitializationRecordingState: Sendable {
         }
         return records.removeLast()
     }
+
+    mutating func removeUnreferenced(
+        retaining sourceIdentities: Set<String>
+    ) -> [HLSLiveDVRStoredInitialization] {
+        let removed = records.filter {
+            !sourceIdentities.contains($0.sourceIdentity)
+        }
+        records.removeAll {
+            !sourceIdentities.contains($0.sourceIdentity)
+        }
+        return removed
+    }
 }
