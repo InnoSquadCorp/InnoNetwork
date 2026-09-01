@@ -119,6 +119,7 @@ run_release_script_fixtures() {
   python3 Scripts/tests/test_check_apple_platform_build_contract.py
   bash Scripts/tests/test_check_docc_archives.sh
   bash Scripts/tests/test_validate_hls_with_apple_tools.sh
+  bash Scripts/tests/test_run_fairplay_acceptance.sh
   python3 Scripts/check_release_workflow_contract.py
   python3 Scripts/tests/test_check_release_workflow_contract.py
 }

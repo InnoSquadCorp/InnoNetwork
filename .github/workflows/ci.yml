@@ -526,6 +526,7 @@ jobs:
         run: |
           bash Scripts/tests/test_run_local_release_preflight.sh
           bash Scripts/tests/test_validate_hls_with_apple_tools.sh
+          bash Scripts/tests/test_run_fairplay_acceptance.sh
 
       - name: Verify release workflow contract
         run: |

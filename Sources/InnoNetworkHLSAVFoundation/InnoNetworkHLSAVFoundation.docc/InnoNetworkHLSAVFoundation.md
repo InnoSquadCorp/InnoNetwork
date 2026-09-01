@@ -537,6 +537,63 @@ is only AVFoundation's expired-session-report directory; it is not a key
 store. Use `AVContentKeySession`, not the deprecated
 `AVAssetResourceLoader` key-loading path.
 
+### Streaming-key workflow
+
+``HLSFairPlayStreamingKeyWorkflow`` uses the same application-owned
+``HLSFairPlayLicenseTransporting`` boundary for both initial and renewing
+streaming keys:
+
+```swift
+let streamingKeys = HLSFairPlayStreamingKeyWorkflow(
+    transport: appLicenseTransport
+)
+
+func contentKeySession(
+    _ session: AVContentKeySession,
+    didProvide request: AVContentKeyRequest
+) {
+    Task {
+        try await streamingKeys.fulfill(
+            request,
+            keyID: appKeyID(for: request),
+            acquisition: acquisitionInputs(for: request),
+            purpose: .initial
+        )
+    }
+}
+
+func contentKeySession(
+    _ session: AVContentKeySession,
+    didProvideRenewingContentKeyRequest request: AVContentKeyRequest
+) {
+    Task {
+        try await streamingKeys.fulfill(
+            request,
+            keyID: appKeyID(for: request),
+            acquisition: acquisitionInputs(for: request),
+            purpose: .renewal
+        )
+    }
+}
+```
+
+A successful return emits
+``HLSFairPlayContentKeyEvent/responseSubmitted(_:)`` because AVFoundation has
+received, but not necessarily accepted, the CKC. Emit
+``HLSFairPlayContentKeyEvent/responseAccepted(_:)`` only from
+`contentKeySession(_:contentKeyRequestDidSucceed:)`. Map retry and terminal
+delegate callbacks through ``HLSFairPlayContentKeyRetryReason`` and
+``HLSFairPlayContentKeyFailureReason`` so diagnostics do not retain response
+data, identifiers, or underlying error payloads.
+
+The workflow defaults to protocol version `1`. Protocol version `3` requires
+an SDK 26 application certificate and a matching KSM that has passed Apple's
+test vectors. The opt-in physical-device gate is documented in
+`Tests/FairPlayAcceptance/README.md` and runs through
+`Scripts/run_fairplay_acceptance.sh`. Its HTTPS KSM adapter receives raw SPC
+bytes and must return raw CKC bytes; this operational bridge is intentionally
+not a library transport policy.
+
 ### Persistent-key workflow
 
 ``HLSFairPlayPersistentKeyWorkflow`` coordinates the request-specific
@@ -604,6 +661,12 @@ license credentials, or log key identifiers or material. The app remains
 responsible for access control, data protection, atomic storage, entitlement
 expiry, deletion, and server-side invalidation.
 
+For offline playback, create a validated ``HLSStoredAsset`` from the
+AVFoundation-delivered package URL, recreate the application delegate and
+secure key store, then attach the package with
+``HLSFairPlaySession/makeAsset(storedAsset:)`` before creating the player item.
+Use ``HLSOfflineAssetInspector`` first when the UI needs a readiness decision.
+
 ## Topics
 
 ### Session
@@ -640,6 +703,15 @@ expiry, deletion, and server-side invalidation.
 
 - ``HLSFairPlaySession``
 - ``HLSFairPlaySessionError``
+- ``HLSFairPlayStreamingKeyWorkflow``
+- ``HLSFairPlayStreamingKeyConfiguration``
+- ``HLSFairPlayStreamingKeyLimitPack``
+- ``HLSFairPlayStreamingKeyAcquisition``
+- ``HLSFairPlayStreamingKeyError``
+- ``HLSFairPlayLicenseRequestPurpose``
+- ``HLSFairPlayContentKeyEvent``
+- ``HLSFairPlayContentKeyRetryReason``
+- ``HLSFairPlayContentKeyFailureReason``
 - ``HLSFairPlayPersistentKeyWorkflow``
 - ``HLSFairPlayPersistentKeyConfiguration``
 - ``HLSFairPlayPersistentKeyLimitPack``

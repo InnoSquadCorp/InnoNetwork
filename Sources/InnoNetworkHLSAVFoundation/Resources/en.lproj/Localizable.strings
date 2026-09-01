@@ -75,6 +75,17 @@
 "HLSFairPlayPersistentKeyError.recovery.checkFairPlayInputs" = "Verify the application certificate and content identifier, then request a new key.";
 "HLSFairPlayPersistentKeyError.recovery.checkLicenseTransport" = "Check the app-owned license transport and its bounded CKC response.";
 "HLSFairPlayPersistentKeyError.recovery.requestNewKey" = "Discard the invalid stored value according to app policy and request a new key.";
+"HLSFairPlayStreamingKeyError.invalidApplicationCertificate" = "The FairPlay application certificate is empty or exceeds its byte limit.";
+"HLSFairPlayStreamingKeyError.invalidContentIdentifier" = "The FairPlay content identifier is empty or exceeds its byte limit.";
+"HLSFairPlayStreamingKeyError.invalidProtocolVersions" = "The FairPlay protocol-version list is empty or malformed.";
+"HLSFairPlayStreamingKeyError.spcGenerationFailed" = "AVFoundation could not generate a bounded FairPlay SPC.";
+"HLSFairPlayStreamingKeyError.licenseExchangeFailed" = "The application-owned FairPlay license exchange failed.";
+"HLSFairPlayStreamingKeyError.invalidLicenseResponse" = "The FairPlay license response is empty or exceeds its byte limit.";
+"HLSFairPlayStreamingKeyError.recovery.provideCertificate" = "Provide the bounded FairPlay application certificate for online playback.";
+"HLSFairPlayStreamingKeyError.recovery.provideContentIdentifier" = "Provide the bounded opaque content identifier for this key request.";
+"HLSFairPlayStreamingKeyError.recovery.chooseProtocolVersions" = "Advertise one to 16 unique positive versions supported by the application key server.";
+"HLSFairPlayStreamingKeyError.recovery.checkFairPlayInputs" = "Verify the application certificate and content identifier, then request a new key.";
+"HLSFairPlayStreamingKeyError.recovery.checkLicenseTransport" = "Check the app-owned license transport and its bounded CKC response.";
 
 "HLSPlaybackConfigurationError.conflictingMediaSelections" = "More than one HLS playback command targets the same AVFoundation media group.";
 "HLSPlaybackConfigurationError.emptyMediaPreference" = "The preferred HLS media command does not contain a language or presentation characteristic.";

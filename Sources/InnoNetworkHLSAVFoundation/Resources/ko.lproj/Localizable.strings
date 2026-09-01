@@ -75,6 +75,17 @@
 "HLSFairPlayPersistentKeyError.recovery.checkFairPlayInputs" = "앱 인증서와 콘텐츠 식별자를 확인한 뒤 새 키를 요청하세요.";
 "HLSFairPlayPersistentKeyError.recovery.checkLicenseTransport" = "앱 소유 라이선스 전송과 제한 범위 안의 CKC 응답을 확인하세요.";
 "HLSFairPlayPersistentKeyError.recovery.requestNewKey" = "앱 정책에 따라 잘못된 저장 값을 제거한 뒤 새 키를 요청하세요.";
+"HLSFairPlayStreamingKeyError.invalidApplicationCertificate" = "FairPlay 앱 인증서가 비어 있거나 바이트 제한을 초과했습니다.";
+"HLSFairPlayStreamingKeyError.invalidContentIdentifier" = "FairPlay 콘텐츠 식별자가 비어 있거나 바이트 제한을 초과했습니다.";
+"HLSFairPlayStreamingKeyError.invalidProtocolVersions" = "FairPlay 프로토콜 버전 목록이 비어 있거나 잘못되었습니다.";
+"HLSFairPlayStreamingKeyError.spcGenerationFailed" = "AVFoundation이 제한 범위 안의 FairPlay SPC를 만들지 못했습니다.";
+"HLSFairPlayStreamingKeyError.licenseExchangeFailed" = "앱이 소유한 FairPlay 라이선스 교환에 실패했습니다.";
+"HLSFairPlayStreamingKeyError.invalidLicenseResponse" = "FairPlay 라이선스 응답이 비어 있거나 바이트 제한을 초과했습니다.";
+"HLSFairPlayStreamingKeyError.recovery.provideCertificate" = "온라인 재생에 사용할 제한 범위 안의 FairPlay 앱 인증서를 제공하세요.";
+"HLSFairPlayStreamingKeyError.recovery.provideContentIdentifier" = "이 키 요청에 사용할 제한 범위 안의 불투명 콘텐츠 식별자를 제공하세요.";
+"HLSFairPlayStreamingKeyError.recovery.chooseProtocolVersions" = "앱 키 서버가 지원하는 고유한 양의 정수 버전을 1개에서 16개까지 제공하세요.";
+"HLSFairPlayStreamingKeyError.recovery.checkFairPlayInputs" = "앱 인증서와 콘텐츠 식별자를 확인한 뒤 새 키를 요청하세요.";
+"HLSFairPlayStreamingKeyError.recovery.checkLicenseTransport" = "앱 소유 라이선스 전송과 제한 범위 안의 CKC 응답을 확인하세요.";
 
 "HLSPlaybackConfigurationError.conflictingMediaSelections" = "둘 이상의 HLS 재생 명령이 동일한 AVFoundation 미디어 그룹을 대상으로 합니다.";
 "HLSPlaybackConfigurationError.emptyMediaPreference" = "선호 HLS 미디어 명령에 언어나 프레젠테이션 특성이 없습니다.";

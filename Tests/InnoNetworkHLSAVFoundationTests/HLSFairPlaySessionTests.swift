@@ -133,6 +133,30 @@ struct HLSFairPlaySessionTests {
         #expect(!error.localizedDescription.isEmpty)
         #expect(error.recoverySuggestion?.isEmpty == false)
     }
+
+    @MainActor
+    @Test("stored movpkg assets attach before offline playback")
+    func attachesStoredAsset() throws {
+        let delegate = ContentKeyDelegate()
+        let session = try HLSFairPlaySession(
+            delegate: delegate,
+            delegateQueue: DispatchQueue(
+                label: "com.innonetwork.tests.fairplay.offline"
+            )
+        )
+        let location = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("movpkg")
+        let storedAsset = try HLSStoredAsset(
+            id: "stored-fairplay-asset",
+            location: location
+        )
+
+        let asset = try session.makeAsset(storedAsset: storedAsset)
+
+        #expect(asset.url == location.standardizedFileURL)
+        try session.detach(asset)
+    }
 }
 
 private final class ContentKeyDelegate:

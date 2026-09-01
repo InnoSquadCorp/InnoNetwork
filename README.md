@@ -669,10 +669,17 @@ for await event in await manager.events(for: task) {
   shared container support
 - `HLSFairPlaySession` for delegate retention, HTTPS asset admission,
   pre-load `AVContentKeySession` recipient attachment, explicit detachment,
-  and normal expiration, plus a bounded restore-or-create persistent-key
-  workflow with app-injected SPC/CKC transport, secure storage, and opt-in
-  FairPlay protocol-version negotiation after KSM validation; credentials,
-  Keychain schema, key files, expiry, and deletion remain application-owned
+  downloaded `.movpkg` reattachment, and normal expiration, plus bounded
+  streaming-key initial/renewal and restore-or-create persistent-key workflows
+  with app-injected SPC/CKC transport, secure storage, typed redacted lifecycle
+  events, and opt-in FairPlay protocol-version negotiation after KSM
+  validation; credentials, Keychain schema, key files, expiry, and deletion
+  remain application-owned
+- an isolated, opt-in physical-iOS FairPlay acceptance gate that requires SPC
+  version 3, waits for AVFoundation acceptance of both initial and renewing
+  responses, then proves a protected system download reopens and advances from
+  its local package without another KSM request; no acceptance credentials or
+  key material are stored in the repository
 - HTTPS admission and bounded artwork input; AVFoundation remains responsible
   for media requests, redirects, trust, content keys, and the asset location
 - available on iOS, macOS, watchOS, and visionOS where

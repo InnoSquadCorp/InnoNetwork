@@ -71,6 +71,24 @@ public final class HLSFairPlaySession {
         return asset
     }
 
+    /// Creates and attaches a previously downloaded system-managed asset.
+    ///
+    /// Keep the referenced `.movpkg` at its AVFoundation-delivered location
+    /// for the lifetime of playback. Validate readiness with
+    /// ``HLSOfflineAssetInspector`` before presenting playback UI.
+    public func makeAsset(
+        storedAsset: HLSStoredAsset
+    ) throws -> AVURLAsset {
+        guard !isExpired else {
+            throw HLSFairPlaySessionError.sessionExpired
+        }
+
+        let asset = AVURLAsset(url: storedAsset.location)
+        contentKeySession.addContentKeyRecipient(asset)
+        attachedAssets[ObjectIdentifier(asset)] = asset
+        return asset
+    }
+
     /// Detaches an asset after download and playback have both finished.
     public func detach(
         _ asset: AVURLAsset

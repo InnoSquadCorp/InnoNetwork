@@ -406,8 +406,8 @@ types and members in addition to top-level declarations. The grouped ledger
 below keeps the high-level compatibility classification readable for the
 5.x release line.
 
-The machine-checked snapshot currently partitions all 2,805 declarations into
-305 Stable consumer declarations, 2,467 Provisionally Stable consumer
+The machine-checked snapshot currently partitions all 2,856 declarations into
+305 Stable consumer declarations, 2,518 Provisionally Stable consumer
 declarations, and 33 opt-in SPI declarations. The three sets are disjoint and
 exhaustive. `Scripts/symbols/stable-rules.tsv` maps the Stable ledger to symbol
 paths, while the compiler-authored SPI flag is snapshotted in
@@ -567,6 +567,15 @@ Stable.
   `HLSFairPlayPersistentKeyWorkflow`. The workflow coordinates bounded
   restore-or-create requests while transport, secure storage, expiry,
   invalidation, and deletion remain application-owned.
+- FairPlay streaming keys: `HLSFairPlayLicenseRequestPurpose`,
+  `HLSFairPlayStreamingKeyAcquisition`,
+  `HLSFairPlayStreamingKeyConfiguration`,
+  `HLSFairPlayStreamingKeyLimitPack`, `HLSFairPlayStreamingKeyWorkflow`,
+  `HLSFairPlayStreamingKeyError`, `HLSFairPlayContentKeyEvent`,
+  `HLSFairPlayContentKeyRetryReason`, and
+  `HLSFairPlayContentKeyFailureReason`. The workflow bounds SPC and CKC
+  material for initial and renewal requests while application code retains
+  transport, credentials, acceptance callbacks, and retry policy.
 - Playback configuration: `HLSCommonMediaClientDataPolicy`,
   `HLSCommonMediaClientDataStatus`, `HLSPlaybackAppliedMediaSelection`,
   `HLSPlaybackAssetConfigurator`,

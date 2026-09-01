@@ -9,6 +9,15 @@ Versioning.
 
 ### Added
 
+- `InnoNetworkHLSAVFoundation` adds a bounded streaming FairPlay key workflow
+  for both initial and renewing requests, with typed response-submitted,
+  response-accepted, retry, and value-redacted failure events. Downloaded
+  `.movpkg` references can now be attached to a recreated FairPlay session for
+  offline playback. An isolated, opt-in physical-iOS acceptance package
+  requires SPC v3, actual KSM responses, AVFoundation success callbacks, and a
+  protected download/reopen/playback cycle whose reopened store is paired with
+  a rejecting transport. Certificates, credentials, authorization, KSM
+  policy, and production key storage remain application-owned.
 - `HLSOfflineAssetInspector` distinguishes missing, invalid, unrecognized,
   incomplete, and offline-playable AVFoundation `.movpkg` references. Its
   bounded `Sendable` snapshot includes the media choices and safe language
