@@ -17,7 +17,7 @@ extension HLSLowLatencyParser {
         var discontinuitySequence = metadata.discontinuitySequence
         var initializationMap: HLSLowLatencyResourceIdentity?
         var anticipatedInitializationMap: HLSLowLatencyResourceIdentity?
-        var encryption: HLSLowLatencyEncryptionIdentity?
+        var encryptionState = HLSMediaEncryptionState()
         var previousSegment: HLSLowLatencyResourceIdentity?
         var pendingSegmentByteRange: String?
         var expectsSegmentURI = false
@@ -38,9 +38,11 @@ extension HLSLowLatencyParser {
                 continue
             }
             if line.hasPrefix("#EXT-X-KEY:") {
-                encryption = try parseEncryptionContext(
-                    line,
-                    relativeTo: sourceURL
+                encryptionState.apply(
+                    try HLSMediaKeyDirectiveParser.parse(
+                        line,
+                        relativeTo: sourceURL
+                    )
                 )
                 continue
             }
@@ -59,7 +61,9 @@ extension HLSLowLatencyParser {
                             discontinuitySequence:
                                 discontinuitySequence,
                             initializationMap: resource,
-                            encryption: encryption
+                            encryption: encryptionIdentity(
+                                from: encryptionState
+                            )
                         )
                     )
                 )
@@ -71,7 +75,9 @@ extension HLSLowLatencyParser {
                         discontinuitySequence:
                             discontinuitySequence,
                         initializationMap: initializationMap,
-                        encryption: encryption
+                        encryption: encryptionIdentity(
+                            from: encryptionState
+                        )
                     )
                 )
                 continue
@@ -152,7 +158,9 @@ extension HLSLowLatencyParser {
                     type == .partialSegment
                     ? anticipatedInitializationMap ?? initializationMap
                     : initializationMap,
-                encryption: encryption
+                encryption: encryptionIdentity(
+                    from: encryptionState
+                )
             )
         }
 
@@ -227,34 +235,18 @@ extension HLSLowLatencyParser {
         )
     }
 
-    private static func parseEncryptionContext(
-        _ line: String,
-        relativeTo sourceURL: URL
-    ) throws -> HLSLowLatencyEncryptionIdentity? {
-        let attributes = try HLSAttributeListParser.parse(
-            String(line.dropFirst("#EXT-X-KEY:".count))
-        )
-        guard let method = attributes["METHOD"] else {
-            throw HLSDownloadError.invalidPlaylist
-        }
-        guard method != "NONE" else {
-            return nil
-        }
-        let keyURL = attributes["URI"].flatMap {
-            URL(string: $0, relativeTo: sourceURL)?.absoluteURL
-        }
-        return HLSLowLatencyEncryptionIdentity(
-            method: method,
-            keyURL: keyURL,
-            keyFormat: attributes["KEYFORMAT"] ?? "identity",
-            keyFormatVersions:
-                try HLSKeyAttributeParser
-                .parseKeyFormatVersions(
-                    attributes["KEYFORMATVERSIONS"]
-                ),
-            initializationVector: try attributes["IV"].map(
-                HLSKeyAttributeParser.parseInitializationVector
+    private static func encryptionIdentity(
+        from state: HLSMediaEncryptionState
+    ) -> HLSLowLatencyEncryptionIdentity? {
+        state.selectedDeclaration.map {
+            HLSLowLatencyEncryptionIdentity(
+                method: $0.method,
+                keyURL: $0.keyURL,
+                keyFormat: $0.keyFormat,
+                keyFormatVersions: $0.keyFormatVersions,
+                initializationVector:
+                    $0.explicitInitializationVector
             )
-        )
+        }
     }
 }

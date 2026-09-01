@@ -489,8 +489,9 @@ for await event in await manager.events(for: task) {
 - identity-format AES-128-CBC/PKCS#7 decryption with exact 16-byte key
   validation, explicit or media-sequence IVs, post-adapter `no-store`
   memory-only key handling, and key-fingerprint-bound resume invalidation;
-  parallel `KEYFORMAT` declarations stay isolated and a usable identity
-  alternative wins independent of declaration order
+  parallel `KEYFORMAT` declarations stay isolated across complete and LL-HLS
+  resource contexts, and a usable identity alternative wins independent of
+  declaration order
 - typed rejection for live, SAMPLE-AES/FairPlay, separate-audio,
   discontinuous, gapped, I-frame-only, or multiple-initialization layouts
   during raw single-file assembly

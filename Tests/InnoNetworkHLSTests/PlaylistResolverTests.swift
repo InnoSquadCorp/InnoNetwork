@@ -903,6 +903,51 @@ struct PlaylistResolverTests {
         }
     }
 
+    @Test("a later declaration replaces the same key format")
+    func replacesSameKeyFormatDeclaration() throws {
+        let sourceURL = try #require(
+            URL(string: "https://cdn.example/media/index.m3u8")
+        )
+        let identityAES128 =
+            "#EXT-X-KEY:METHOD=AES-128,URI=\"key.bin\""
+        let identitySampleAES =
+            "#EXT-X-KEY:METHOD=SAMPLE-AES,URI=\"sample.key\",KEYFORMAT=\"identity\""
+
+        for (declarations, expectedMethod) in [
+            ("\(identityAES128)\n\(identitySampleAES)", "SAMPLE-AES"),
+            ("\(identitySampleAES)\n\(identityAES128)", nil),
+        ] {
+            let result = try PlaylistResolver().resolve(
+                """
+                #EXTM3U
+                \(declarations)
+                #EXTINF:1,
+                segment.ts
+                #EXT-X-ENDLIST
+                """,
+                relativeTo: sourceURL
+            )
+            let media = try #require(result.media)
+
+            #expect(media.unsupportedEncryptionMethod == expectedMethod)
+            if let expectedMethod {
+                #expect(media.resources.last?.encryption == nil)
+                #expect(
+                    throws:
+                        HLSDownloadError
+                        .encryptedPlaylistUnsupported(
+                            method: expectedMethod
+                        )
+                ) {
+                    try HLSMediaPlaylistValidator.validate(media)
+                }
+            } else {
+                #expect(media.resources.last?.encryption != nil)
+                try HLSMediaPlaylistValidator.validate(media)
+            }
+        }
+    }
+
     @Test("an earlier unsupported encrypted resource is not masked")
     func preservesEarlierUnsupportedEncryption() throws {
         let sourceURL = try #require(

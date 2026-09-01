@@ -320,6 +320,127 @@ struct HLSLowLatencyTests {
         )
     }
 
+    @Test("LL-HLS contexts prefer identity AES-128 across key formats")
+    func selectsIdentityEncryptionForResourceContexts() throws {
+        let sourceURL = try #require(
+            URL(string: "https://media.example/live/main.m3u8")
+        )
+        let fairPlay =
+            "#EXT-X-KEY:METHOD=SAMPLE-AES,URI=\"skd://asset\",KEYFORMAT=\"com.apple.streamingkeydelivery\""
+        let identity =
+            "#EXT-X-KEY:METHOD=AES-128,URI=\"key.bin\",IV=0x1"
+        let keyURL = try #require(
+            URL(string: "https://media.example/live/key.bin")
+        )
+
+        for declarations in [
+            "\(fairPlay)\n\(identity)",
+            "\(identity)\n\(fairPlay)",
+        ] {
+            let playlist = try PlaylistResolver().resolve(
+                """
+                #EXTM3U
+                #EXT-X-VERSION:10
+                #EXT-X-TARGETDURATION:2
+                #EXT-X-PART-INF:PART-TARGET=1
+                #EXT-X-SERVER-CONTROL:PART-HOLD-BACK=2
+                \(declarations)
+                #EXT-X-MAP:URI="init.mp4"
+                #EXT-X-PART:DURATION=1,URI="part.m4s",INDEPENDENT=YES
+                #EXT-X-PRELOAD-HINT:TYPE=PART,URI="next.m4s"
+                """,
+                relativeTo: sourceURL
+            )
+            let lowLatency = try #require(playlist.lowLatency)
+            let contexts = [
+                lowLatency.initializationMaps.first?.context,
+                lowLatency.partialSegments.first?.resourceContext,
+                lowLatency.preloadHints.first?.resourceContext,
+            ]
+
+            for context in contexts {
+                let encryption = try #require(context?.encryption)
+                #expect(encryption.method == "AES-128")
+                #expect(encryption.keyURL == keyURL)
+                #expect(encryption.keyFormat == "identity")
+                #expect(encryption.keyFormatVersions == [1])
+                #expect(
+                    encryption.initializationVector
+                        == Data(repeating: 0, count: 15) + Data([1])
+                )
+            }
+        }
+    }
+
+    @Test("LL-HLS contexts retain encryption at each resource boundary")
+    func retainsEncryptionAtResourceBoundaries() throws {
+        let sourceURL = try #require(
+            URL(string: "https://media.example/live/main.m3u8")
+        )
+        let playlist = try PlaylistResolver().resolve(
+            """
+            #EXTM3U
+            #EXT-X-VERSION:10
+            #EXT-X-TARGETDURATION:2
+            #EXT-X-PART-INF:PART-TARGET=1
+            #EXT-X-SERVER-CONTROL:PART-HOLD-BACK=2
+            #EXT-X-KEY:METHOD=SAMPLE-AES,URI="skd://asset",KEYFORMAT="com.apple.streamingkeydelivery"
+            #EXT-X-MAP:URI="init.mp4"
+            #EXT-X-KEY:METHOD=AES-128,URI="key.bin",IV=0x1
+            #EXT-X-PART:DURATION=1,URI="part.m4s",INDEPENDENT=YES
+            """,
+            relativeTo: sourceURL
+        )
+        let lowLatency = try #require(playlist.lowLatency)
+        let mapEncryption = try #require(
+            lowLatency.initializationMaps.first?.context.encryption
+        )
+        let partEncryption = try #require(
+            lowLatency.partialSegments.first?.resourceContext?
+                .encryption
+        )
+
+        #expect(mapEncryption.method == "SAMPLE-AES")
+        #expect(
+            mapEncryption.keyFormat
+                == "com.apple.streamingkeydelivery"
+        )
+        #expect(partEncryption.method == "AES-128")
+        #expect(partEncryption.keyFormat == "identity")
+    }
+
+    @Test("METHOD NONE clears every LL-HLS key format")
+    func clearsParallelKeyFormatsFromResourceContexts() throws {
+        let sourceURL = try #require(
+            URL(string: "https://media.example/live/main.m3u8")
+        )
+        let playlist = try PlaylistResolver().resolve(
+            """
+            #EXTM3U
+            #EXT-X-VERSION:10
+            #EXT-X-TARGETDURATION:2
+            #EXT-X-PART-INF:PART-TARGET=1
+            #EXT-X-SERVER-CONTROL:PART-HOLD-BACK=2
+            #EXT-X-KEY:METHOD=AES-128,URI="key.bin"
+            #EXT-X-KEY:METHOD=SAMPLE-AES,URI="skd://asset",KEYFORMAT="com.apple.streamingkeydelivery"
+            #EXT-X-KEY:METHOD=NONE
+            #EXT-X-PART:DURATION=1,URI="part.m4s",INDEPENDENT=YES
+            #EXT-X-PRELOAD-HINT:TYPE=PART,URI="next.m4s"
+            """,
+            relativeTo: sourceURL
+        )
+        let lowLatency = try #require(playlist.lowLatency)
+
+        #expect(
+            lowLatency.partialSegments.first?.resourceContext?
+                .encryption == nil
+        )
+        #expect(
+            lowLatency.preloadHints.first?.resourceContext?
+                .encryption == nil
+        )
+    }
+
     @Test("MAP context resolves an implicit range like the media parser")
     func resolvesImplicitMapRangeFromPreviousSegment() throws {
         let sourceURL = try #require(

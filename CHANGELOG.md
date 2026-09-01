@@ -109,6 +109,10 @@ Versioning.
   alternative appears before or after it, while resources that had only an
   unsupported format remain typed failures and `METHOD=NONE` clears every
   active alternative.
+- LL-HLS `PART`, `MAP`, and resource-preload contexts now use the same
+  `KEYFORMAT`-isolated key state as complete media resources. Identity AES-128
+  selection is declaration-order independent, while every context freezes the
+  active key at its own playlist boundary.
 - `HLSLiveDVRRecorder` captures complete live TS or fMP4 segments into a
   bounded, URL-free local VOD package. It supports record-from-now and
   current-window starts, exact byte-range validation, progress events,

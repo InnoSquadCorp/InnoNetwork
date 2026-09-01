@@ -119,101 +119,12 @@ enum HLSMediaPlaylistParser {
                 }
                 currentSegmentBitrate = value
             } else if line.hasPrefix("#EXT-X-KEY:") {
-                let attributes = try HLSAttributeListParser.parse(
-                    String(line.dropFirst("#EXT-X-KEY:".count))
-                )
-                try HLSPlaylistAttributeDecoder.requireQuotedAttributes(
-                    ["KEYFORMAT", "KEYFORMATVERSIONS", "URI"],
-                    in: attributes
-                )
-                try HLSPlaylistAttributeDecoder.requireUnquotedAttributes(
-                    ["IV", "METHOD"],
-                    in: attributes
-                )
-                guard
-                    let method = attributes["METHOD"],
-                    !method.isEmpty
-                else {
-                    throw HLSDownloadError.invalidPlaylist
-                }
-                let hasValidKeyFormat =
-                    attributes["KEYFORMAT"].map {
-                        !$0.isEmpty
-                    } ?? true
-                let keyFormat =
-                    attributes["KEYFORMAT"] ?? "identity"
-                let usesIdentityKeyFormat =
-                    keyFormat.caseInsensitiveCompare("identity")
-                    == .orderedSame
-                switch method {
-                case "NONE":
-                    guard attributes["URI"] == nil,
-                        attributes["IV"] == nil,
-                        attributes["KEYFORMAT"] == nil,
-                        attributes["KEYFORMATVERSIONS"] == nil
-                    else {
-                        throw HLSDownloadError.invalidPlaylist
-                    }
-                    encryptionState.clear()
-                case "AES-128" where usesIdentityKeyFormat:
-                    guard
-                        let uri = attributes["URI"],
-                        !uri.isEmpty,
-                        let keyURL = URL(
-                            string: uri,
-                            relativeTo: sourceURL
-                        )?.absoluteURL,
-                        hasValidKeyFormat,
-                        try HLSKeyAttributeParser
-                            .parseKeyFormatVersions(
-                                attributes["KEYFORMATVERSIONS"]
-                            ) == [1]
-                    else {
-                        throw HLSDownloadError.invalidPlaylist
-                    }
-                    let explicitInitializationVector =
-                        try attributes["IV"].map(
-                            HLSKeyAttributeParser
-                                .parseInitializationVector
-                        )
-                    encryptionState.selectAES128Identity(
-                        keyURL: keyURL,
-                        explicitInitializationVector:
-                            explicitInitializationVector
+                encryptionState.apply(
+                    try HLSMediaKeyDirectiveParser.parse(
+                        line,
+                        relativeTo: sourceURL
                     )
-                default:
-                    guard
-                        let uri = attributes["URI"],
-                        !uri.isEmpty,
-                        URL(
-                            string: uri,
-                            relativeTo: sourceURL
-                        )?.absoluteURL != nil,
-                        hasValidKeyFormat
-                    else {
-                        throw HLSDownloadError.invalidPlaylist
-                    }
-                    _ =
-                        try HLSKeyAttributeParser
-                        .parseKeyFormatVersions(
-                            attributes["KEYFORMATVERSIONS"]
-                        )
-                    let initializationVector =
-                        try attributes["IV"].map(
-                            HLSKeyAttributeParser
-                                .parseInitializationVector
-                        )
-                    if initializationVector != nil,
-                        method == "AES-256-GCM"
-                            || method == "SAMPLE-AES-CTR"
-                    {
-                        throw HLSDownloadError.invalidPlaylist
-                    }
-                    encryptionState.selectUnsupported(
-                        method: method,
-                        keyFormat: keyFormat
-                    )
-                }
+                )
             } else if line.hasPrefix("#EXT-X-BYTERANGE:") {
                 guard pendingSegmentByteRange == nil else {
                     throw HLSDownloadError.invalidPlaylist

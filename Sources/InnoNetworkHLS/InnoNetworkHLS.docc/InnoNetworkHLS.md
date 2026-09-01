@@ -374,6 +374,9 @@ per-segment values. ``HLSVariant/hdcpLevel``,
 exposing a raw attribute dictionary. A variant with an unrecognized
 `VIDEO-RANGE` or `REQ-VIDEO-LAYOUT` value is ineligible while other compatible
 variants remain available.
+LL-HLS `PART`, `MAP`, and resource-preload contexts share the complete-media
+key state: parallel formats remain independent, identity AES-128 selection is
+order independent, and each resource boundary retains its effective key.
 
 Multivariant session metadata is available through
 ``HLSPlaylist/sessionData`` and ``HLSPlaylist/sessionKeys``.

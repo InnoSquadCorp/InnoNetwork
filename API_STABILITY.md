@@ -512,6 +512,9 @@ Stable.
   `HLSRenditionReport`, `HLSServerControl`, `HLSSessionData`,
   `HLSSessionDataContent`, `HLSSessionDataFormat`, `HLSSessionDataValue`, and
   `HLSSessionKey`.
+  LL-HLS resource contexts follow the same parallel-key-format selection as
+  complete segments and retain the active selection at each PART, MAP, or
+  preload boundary.
 - External resources: `HLSChapter`, `HLSChapterCatalog`, `HLSChapterImage`,
   `HLSChapterMetadata`, `HLSChapterMetadataValue`, `HLSChapterTitle`,
   `HLSExternalResourceError`, `HLSExternalResourcePack`,
