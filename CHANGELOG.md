@@ -45,8 +45,12 @@ Versioning.
   sequence-restart metadata in typed `Sendable` samples, allows only one
   demand-driven read, and offers an optional non-prefetching sequence that
   paces read admission against the player-item clock with a bounded lead.
+  On macOS, iOS, tvOS, and visionOS it also offers an exclusive, preferred-
+  format full-mix processing tap with explicit real-time callbacks and safe,
+  terminal detachment that preserves an application replacement audio mix.
   Player ownership, audio conversion, processing, storage, UI, and protected-
-  content policy remain with the application.
+  content policy remain with the application; FairPlay audio is unavailable
+  to the system processing tap.
 - `HLSPlaybackAssetConfigurator` enables AVFoundation-managed CMCD request
   headers on caller-owned URL assets and reports unsupported operating systems
   (including watchOS, which has no asset resource-loader API) without exposing

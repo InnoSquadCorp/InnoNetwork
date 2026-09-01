@@ -3,6 +3,7 @@ import AVFoundation
 import CoreAudioTypes
 import CoreMedia
 import Foundation
+import Synchronization
 import Testing
 
 @testable import InnoNetworkHLSAudio
@@ -79,6 +80,86 @@ struct HLSDecodedAudioRuntimeTests {
         #expect(decodedFormat.mFormatID == kAudioFormatLinearPCM)
         #expect(decodedFormat.mSampleRate == 48_000)
         #expect(decodedFormat.mChannelsPerFrame == 1)
+    }
+}
+
+@Suite("HLS audio-mix processing runtime")
+struct HLSAudioMixProcessingRuntimeTests {
+    @Test(
+        "AVPlayer processes the complete HLS audio mix in place",
+        .timeLimit(.minutes(1))
+    )
+    @available(macOS 27, iOS 27, *)
+    @MainActor
+    func avPlayerProcessesAudioMix() async throws {
+        guard
+            let rawURL = ProcessInfo.processInfo.environment[
+                "INNONETWORK_HLS_RUNTIME_PLAYLIST_URL"
+            ],
+            let playlistURL = URL(string: rawURL)
+        else {
+            try Test.cancel()
+        }
+
+        let prepared = Atomic<Bool>(false)
+        let formatIsValid = Atomic<Bool>(false)
+        let processedFrameCount = Atomic<Int>(0)
+        let playerItem = AVPlayerItem(url: playlistURL)
+        let tap = try HLSAudioMixProcessingTap(
+            playerItem: playerItem,
+            preferredFormat: try .float32(
+                sampleRate: 48_000,
+                channelCount: 1,
+                interleaved: false
+            ),
+            callbacks: HLSAudioMixProcessingCallbacks(
+                prepare: { context in
+                    formatIsValid.store(
+                        context.maximumFrameCount > 0
+                            && context.processingFormat.mFormatID
+                                == kAudioFormatLinearPCM
+                            && context.processingFormat.mSampleRate
+                                == 48_000
+                            && context.processingFormat.mChannelsPerFrame
+                                == 1,
+                        ordering: .relaxed
+                    )
+                    prepared.store(true, ordering: .releasing)
+                },
+                process: { buffers, context in
+                    if context.frameCount > 0,
+                        buffers.first?.mData != nil,
+                        context.timeRange.start.isNumeric
+                    {
+                        processedFrameCount.wrappingAdd(
+                            context.frameCount,
+                            ordering: .relaxed
+                        )
+                    }
+                }
+            )
+        )
+        let player = AVPlayer(playerItem: playerItem)
+        defer {
+            player.pause()
+            tap.detach()
+            player.replaceCurrentItem(with: nil)
+        }
+
+        player.play()
+        for _ in 0..<500 {
+            if processedFrameCount.load(ordering: .acquiring) > 0 {
+                break
+            }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+
+        let didPrepare = prepared.load(ordering: .acquiring)
+        let receivedValidFormat = formatIsValid.load(ordering: .relaxed)
+        let frameCount = processedFrameCount.load(ordering: .acquiring)
+        #expect(didPrepare)
+        #expect(receivedValidFormat)
+        #expect(frameCount > 0)
     }
 }
 #endif

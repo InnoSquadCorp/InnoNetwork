@@ -22,8 +22,8 @@ InnoNetwork 는 Apple 플랫폼을 위한 타입 안전한 Swift 네트워킹 �
   라이브러리, 값이 제거된 재생 상태 분석, 앱 소유 라이선스 통신·보안
   저장소를 유지하는 FairPlay 영구 키 흐름
 - `InnoNetworkHLSAudio` — version 27 플랫폼에서 HLS player item의 decoded
-  PCM을 한 번에 하나씩 요청하고 marker 및 sequence restart를 보존하는
-  선택형 오디오 처리 companion
+  PCM을 한 번에 하나씩 요청하거나 지원 플랫폼의 전체 오디오 mix를
+  실시간·in-place로 처리하는 선택형 companion
 - `InnoNetworkWebSocket` — 연결 지향 실시간 흐름
 - `InnoNetworkPersistentCache` — 보수적인 디스크 응답 캐시
 - `InnoNetworkTrust` — 선택형 공개키 pinning 평가

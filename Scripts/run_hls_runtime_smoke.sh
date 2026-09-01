@@ -128,7 +128,7 @@ curl --fail --silent --show-error "$live_timeshift_url" \
 
 test_command=(
   xcrun swift test
-  --filter 'HLS(DecodedAudio|IntegratedTimeline|LocalPlayback|OfflineAsset|LiveDVRPreload|LiveDVRMapRotation|LiveDVRGap|LiveDVRTimeshift)RuntimeTests'
+  --filter 'HLS(AudioMixProcessing|DecodedAudio|IntegratedTimeline|LocalPlayback|OfflineAsset|LiveDVRPreload|LiveDVRMapRotation|LiveDVRGap|LiveDVRTimeshift)RuntimeTests'
 )
 if [[ "$skip_build" == true ]]; then
   test_command+=(--skip-build)
@@ -179,4 +179,4 @@ if state.get("gap_resource_requests") != 0:
     )
 PY
 
-echo "hls-runtime-smoke: OK (AVPlayer timeline/local bridge, paced decoded PCM, offline movpkg, LL-HLS DVR preloading, rotating fMP4 MAP playback, GAP skipping, and in-progress DVR timeshift playback)"
+echo "hls-runtime-smoke: OK (AVPlayer timeline/local bridge, paced decoded PCM, real-time audio-mix processing, offline movpkg, LL-HLS DVR preloading, rotating fMP4 MAP playback, GAP skipping, and in-progress DVR timeshift playback)"

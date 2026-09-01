@@ -190,7 +190,7 @@ expected_provisionally=(
 '`InnoNetworkHLS` companion product and its public playlist, variant selection, single-file download, offline package, event, and error symbols'
 '`InnoNetworkHLSLive` companion product and its public live reload, bounded DVR recording, snapshot, configuration, and error symbols'
 '`InnoNetworkHLSAVFoundation` companion product and its public download, offline readiness, playback configuration, timed metadata, playback metrics, playback health, interstitial and integrated-timeline observation, and FairPlay symbols'
-'`InnoNetworkHLSAudio` companion product and its public decoded PCM configuration, output lifecycle, pacing, sample, and error symbols'
+'`InnoNetworkHLSAudio` companion product and its public decoded PCM plus full-mix processing configuration, callback, lifecycle, pacing, sample, and error symbols'
 '`@APIDefinition(method:path:auth:)` and the default-enabled `Macros` package trait'
 '`PersistentResponseCache` statistics and telemetry surfaces'
 '`WebSocketError.unsupportedProtocolFeature`'
@@ -1776,7 +1776,7 @@ for symbol in "${expected_provisionally[@]}"; do
         "$repo_root/Sources/InnoNetworkHLSAVFoundation/InnoNetworkHLSAVFoundation.docc/InnoNetworkHLSAVFoundation.md"
       continue
       ;;
-    '`InnoNetworkHLSAudio` companion product and its public decoded PCM configuration, output lifecycle, pacing, sample, and error symbols')
+    '`InnoNetworkHLSAudio` companion product and its public decoded PCM plus full-mix processing configuration, callback, lifecycle, pacing, sample, and error symbols')
       require_contains 'name: "InnoNetworkHLSAudio"' "$repo_root/Package.swift"
       require_contains 'targets: ["InnoNetworkHLSAudio"]' "$repo_root/Package.swift"
       require_contains 'public struct HLSDecodedAudioConfiguration: Sendable' \

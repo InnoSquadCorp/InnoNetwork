@@ -67,6 +67,50 @@ Skip their PCM processing while using
 ``HLSDecodedAudioSample/sequenceWasRestarted`` to reset application-owned
 analysis state after a seek or sequence restart.
 
+## Process the complete audio mix
+
+On version 27 macOS, iOS, tvOS, and visionOS,
+``HLSAudioMixProcessingTap`` can modify the complete audio mix in place. The
+initializer rejects an existing application audio mix instead of overwriting
+it. MediaToolbox treats the preferred format as a request, so use the format
+delivered to the preparation callback as authoritative.
+
+```swift
+let tap = try HLSAudioMixProcessingTap(
+    playerItem: playerItem,
+    preferredFormat: try .float32(),
+    position: .postEffects,
+    callbacks: HLSAudioMixProcessingCallbacks(
+        prepare: { context in
+            prepareProcessor(
+                maximumFrameCount: context.maximumFrameCount,
+                format: context.processingFormat
+            )
+        },
+        unprepare: {
+            resetProcessor()
+        },
+        process: { buffers, context in
+            processInPlace(
+                buffers,
+                frameCount: context.frameCount,
+                format: context.processingFormat
+            )
+        }
+    )
+)
+
+tap.detach()
+```
+
+The processing callback runs on a real-time audio thread. It must not allocate,
+block, perform I/O, acquire contended locks, escape the supplied pointers, or
+change the frame count and buffer layout. Preparation and unpreparation may be
+paired more than once. Detachment is idempotent and removes only this tap's
+mix, preserving a replacement installed by the application. watchOS has no
+full-mix system API, and Apple does not supply FairPlay-protected audio to the
+tap.
+
 Playback, player lifetime, audio conversion, waveform storage, speech
 recognition, and accessibility UI remain application responsibilities. The
 bridge is not a DRM bypass and does not promise decoded samples for protected
@@ -86,3 +130,13 @@ AVFoundation on macOS 27, iOS 27, tvOS 27, watchOS 27, and visionOS 27.
 - ``HLSDecodedAudioSample``
 - ``HLSDecodedAudioPacingConfiguration``
 - ``HLSDecodedAudioPacedSequence``
+
+### Process a complete mix
+
+- ``HLSAudioMixProcessingTap``
+- ``HLSAudioMixProcessingCallbacks``
+- ``HLSAudioMixProcessingContext``
+- ``HLSAudioMixPreparationContext``
+- ``HLSAudioMixProcessingPosition``
+- ``HLSAudioMixStreamFlags``
+- ``HLSAudioMixProcessingError``
