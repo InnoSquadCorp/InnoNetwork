@@ -739,7 +739,15 @@ struct HLSMediaPlaylist: Equatable, Sendable {
     let playlistType: HLSMediaPlaylistType?
     let segmentBitrates: [HLSSegmentBitrate]
     let encryptionMethod: String?
+    let unsupportedEncryptionMethod: String?
     let unsupportedFeatures: [HLSUnsupportedMediaFeature]
+
+    var unsupportedEncryptionMethodForTransfer: String? {
+        unsupportedEncryptionMethod
+            ?? encryptionMethod.flatMap {
+                $0 == "AES-128" ? nil : $0
+            }
+    }
 
     var segmentCount: Int {
         resources.count { $0.kind == .segment }

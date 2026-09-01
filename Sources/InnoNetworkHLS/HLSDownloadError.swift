@@ -52,8 +52,8 @@ public enum HLSDownloadError: Error, Equatable, Sendable {
     /// Live playlists are unbounded and cannot be committed as one file.
     case livePlaylistUnsupported
 
-    /// An encryption method other than identity-format AES-128 requires a
-    /// specialized content-key integration.
+    /// An encrypted resource had no usable identity-format AES-128 path and
+    /// requires a specialized content-key integration.
     case encryptedPlaylistUnsupported(method: String)
 
     /// A legacy classification retained for source compatibility.

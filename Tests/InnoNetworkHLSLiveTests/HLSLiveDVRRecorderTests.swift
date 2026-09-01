@@ -3620,6 +3620,7 @@ extension HLSLivePlaylistClientTests {
                 #EXT-X-TARGETDURATION:4
                 #EXT-X-MEDIA-SEQUENCE:1
                 #EXT-X-KEY:METHOD=AES-128,URI="key.bin",IV=0x00000000000000000000000000000001
+                #EXT-X-KEY:METHOD=SAMPLE-AES,URI="skd://asset",KEYFORMAT="com.apple.streamingkeydelivery"
                 #EXTINF:4,
                 1.ts
                 #EXT-X-ENDLIST

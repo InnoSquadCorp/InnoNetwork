@@ -622,10 +622,13 @@ request adapter and transport policy as media. After adaptation, key requests
 are forced to `Cache-Control: no-store` with local cache bypass, and key bytes
 remain library-memory-only. Resume metadata stores only key, key-URL, and IV
 fingerprints, so a rotated key invalidates stale completed boundaries without
-persisting the secret.
-SAMPLE-AES, FairPlay key formats, live playlists, and variants with separate
-audio renditions are reported as typed failures. AES-CBC does not authenticate
-ciphertext, so HTTPS and trusted playlist origins remain required.
+persisting the secret. Parallel `EXT-X-KEY` declarations are tracked by
+`KEYFORMAT`; a supported identity AES-128 path is selected independent of
+declaration order, while an earlier resource that had only unsupported key
+formats remains a typed failure.
+SAMPLE-AES, FairPlay-only key formats, live playlists, and variants with
+separate audio renditions are reported as typed failures. AES-CBC does not
+authenticate ciphertext, so HTTPS and trusted playlist origins remain required.
 Discontinuities, gaps, I-frame-only media, and multiple initialization sections
 also fail before single-file media transfer because raw concatenation cannot
 preserve those timelines safely. The offline package path can instead retain

@@ -46,6 +46,7 @@ package struct HLSLiveResolvedDocument: Sendable {
     package let initializationSegments: [HLSLiveInitializationSegmentRecord]
     package let partialSegments: [HLSLivePartialSegmentRecord]
     package let encryptionMethod: String?
+    package let unsupportedEncryptionMethod: String?
     package let hasEndList: Bool
 }
 
@@ -341,6 +342,8 @@ package extension PlaylistResolver {
             initializationSegments: initializationSegments,
             partialSegments: partialSegments,
             encryptionMethod: media.encryptionMethod,
+            unsupportedEncryptionMethod:
+                media.unsupportedEncryptionMethod,
             hasEndList: media.hasEndList
         )
     }

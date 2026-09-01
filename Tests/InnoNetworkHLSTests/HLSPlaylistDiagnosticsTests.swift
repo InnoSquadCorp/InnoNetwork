@@ -156,6 +156,60 @@ struct HLSPlaylistDiagnosticsTests {
         #expect(codes.contains(.encryptionUnsupported))
     }
 
+    @Test("parallel key formats keep identity AES-128 downloadable")
+    func parallelKeyFormatsKeepIdentityDownloadable() throws {
+        let sourceURL = try #require(
+            URL(string: "https://media.example/vod.m3u8")
+        )
+        let inspection = PlaylistResolver().inspect(
+            """
+            #EXTM3U
+            #EXT-X-KEY:METHOD=AES-128,URI="key.bin"
+            #EXT-X-KEY:METHOD=SAMPLE-AES,URI="skd://asset",KEYFORMAT="com.apple.streamingkeydelivery"
+            #EXTINF:1,
+            segment.ts
+            #EXT-X-ENDLIST
+            """,
+            relativeTo: sourceURL
+        )
+
+        #expect(inspection.isValid)
+        #expect(inspection.canDownloadAsSingleFile)
+        #expect(inspection.canCreateOfflinePackage)
+        #expect(
+            !inspection.diagnostics.contains {
+                $0.code == .encryptionUnsupported
+            }
+        )
+    }
+
+    @Test("non-identity AES-128 remains operation scoped")
+    func nonIdentityAES128IsOperationScoped() throws {
+        let sourceURL = try #require(
+            URL(string: "https://media.example/vod.m3u8")
+        )
+        let inspection = PlaylistResolver().inspect(
+            """
+            #EXTM3U
+            #EXT-X-KEY:METHOD=AES-128,URI="packaged-key.bin",KEYFORMAT="com.example.wrapped-key"
+            #EXTINF:1,
+            segment.ts
+            #EXT-X-ENDLIST
+            """,
+            relativeTo: sourceURL
+        )
+
+        #expect(inspection.isValid)
+        #expect(!inspection.canDownloadAsSingleFile)
+        #expect(!inspection.canCreateOfflinePackage)
+        #expect(
+            inspection.diagnostics.filter {
+                $0.code == .encryptionUnsupported
+                    && $0.lineNumber == 2
+            }.count == 2
+        )
+    }
+
     @Test("raw size limit applies before removed definitions are parsed")
     func rawSizeLimitCannotBeBypassedByDefinitions() throws {
         let sourceURL = try #require(

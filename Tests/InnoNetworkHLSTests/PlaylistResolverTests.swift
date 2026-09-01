@@ -825,6 +825,214 @@ struct PlaylistResolverTests {
         )
     }
 
+    @Test("identity AES-128 wins across parallel key formats")
+    func selectsIdentityAES128AcrossParallelKeyFormats() throws {
+        let sourceURL = try #require(
+            URL(string: "https://cdn.example/media/index.m3u8")
+        )
+        let fairPlay =
+            "#EXT-X-KEY:METHOD=SAMPLE-AES,URI=\"skd://asset\",KEYFORMAT=\"com.apple.streamingkeydelivery\""
+        let packagedAES128 =
+            "#EXT-X-KEY:METHOD=AES-128,URI=\"packaged-key.bin\",KEYFORMAT=\"com.example.wrapped-key\""
+        let identity =
+            "#EXT-X-KEY:METHOD=AES-128,URI=\"key.bin\",IV=0x1"
+        let keyURL = try #require(
+            URL(string: "https://cdn.example/media/key.bin")
+        )
+
+        for alternative in [fairPlay, packagedAES128] {
+            for declarations in [
+                "\(alternative)\n\(identity)",
+                "\(identity)\n\(alternative)",
+            ] {
+                let result = try PlaylistResolver().resolve(
+                    """
+                    #EXTM3U
+                    \(declarations)
+                    #EXTINF:1,
+                    segment.ts
+                    #EXT-X-ENDLIST
+                    """,
+                    relativeTo: sourceURL
+                )
+                let encryption = try #require(
+                    result.media?.resources.last?.encryption
+                )
+
+                #expect(result.media?.encryptionMethod == "AES-128")
+                #expect(result.media?.unsupportedEncryptionMethod == nil)
+                #expect(encryption.keyURL == keyURL)
+                #expect(
+                    encryption.initializationVector
+                        == Data(repeating: 0, count: 15) + Data([1])
+                )
+                try HLSMediaPlaylistValidator.validate(
+                    try #require(result.media)
+                )
+            }
+        }
+    }
+
+    @Test("non-identity AES-128 remains typed unsupported")
+    func recognizesUnsupportedAES128KeyFormat() throws {
+        let sourceURL = try #require(
+            URL(string: "https://cdn.example/media/index.m3u8")
+        )
+        let result = try PlaylistResolver().resolve(
+            """
+            #EXTM3U
+            #EXT-X-KEY:METHOD=AES-128,URI="packaged-key.bin",KEYFORMAT="com.example.wrapped-key"
+            #EXTINF:1,
+            protected.ts
+            #EXT-X-ENDLIST
+            """,
+            relativeTo: sourceURL
+        )
+
+        #expect(result.media?.encryptionMethod == "AES-128")
+        #expect(result.media?.unsupportedEncryptionMethod == "AES-128")
+        #expect(result.media?.resources.last?.encryption == nil)
+        #expect(
+            throws: HLSDownloadError.encryptedPlaylistUnsupported(
+                method: "AES-128"
+            )
+        ) {
+            try HLSMediaPlaylistValidator.validate(
+                try #require(result.media)
+            )
+        }
+    }
+
+    @Test("an earlier unsupported encrypted resource is not masked")
+    func preservesEarlierUnsupportedEncryption() throws {
+        let sourceURL = try #require(
+            URL(string: "https://cdn.example/media/index.m3u8")
+        )
+        let result = try PlaylistResolver().resolve(
+            """
+            #EXTM3U
+            #EXT-X-KEY:METHOD=SAMPLE-AES,URI="skd://asset",KEYFORMAT="com.apple.streamingkeydelivery"
+            #EXTINF:1,
+            protected.ts
+            #EXT-X-KEY:METHOD=AES-128,URI="key.bin"
+            #EXTINF:1,
+            fallback.ts
+            #EXT-X-ENDLIST
+            """,
+            relativeTo: sourceURL
+        )
+
+        #expect(result.media?.encryptionMethod == "SAMPLE-AES")
+        #expect(result.media?.unsupportedEncryptionMethod == "SAMPLE-AES")
+        #expect(result.media?.resources.first?.encryption == nil)
+        #expect(result.media?.resources.last?.encryption != nil)
+        #expect(
+            throws: HLSDownloadError.encryptedPlaylistUnsupported(
+                method: "SAMPLE-AES"
+            )
+        ) {
+            try HLSMediaPlaylistValidator.validate(
+                try #require(result.media)
+            )
+        }
+    }
+
+    @Test("parallel key formats apply independently to initialization maps")
+    func appliesParallelKeyFormatsToInitializationMaps() throws {
+        let sourceURL = try #require(
+            URL(string: "https://cdn.example/media/index.m3u8")
+        )
+        let fairPlay =
+            "#EXT-X-KEY:METHOD=SAMPLE-AES,URI=\"skd://asset\",KEYFORMAT=\"com.apple.streamingkeydelivery\""
+        let identity =
+            "#EXT-X-KEY:METHOD=AES-128,URI=\"key.bin\",IV=0x1"
+        let keyURL = try #require(
+            URL(string: "https://cdn.example/media/key.bin")
+        )
+
+        for declarations in [
+            "\(fairPlay)\n\(identity)",
+            "\(identity)\n\(fairPlay)",
+        ] {
+            let result = try PlaylistResolver().resolve(
+                """
+                #EXTM3U
+                \(declarations)
+                #EXT-X-MAP:URI="init.mp4"
+                #EXTINF:1,
+                segment.m4s
+                #EXT-X-ENDLIST
+                """,
+                relativeTo: sourceURL
+            )
+            let media = try #require(result.media)
+            let mapEncryption = try #require(
+                media.resources.first?.encryption
+            )
+
+            #expect(mapEncryption.keyURL == keyURL)
+            #expect(
+                mapEncryption.initializationVector
+                    == Data(repeating: 0, count: 15) + Data([1])
+            )
+            #expect(media.unsupportedEncryptionMethod == nil)
+            try HLSMediaPlaylistValidator.validate(media)
+        }
+    }
+
+    @Test("an unsupported initialization map is not masked")
+    func preservesUnsupportedInitializationMapEncryption() throws {
+        let sourceURL = try #require(
+            URL(string: "https://cdn.example/media/index.m3u8")
+        )
+        let result = try PlaylistResolver().resolve(
+            """
+            #EXTM3U
+            #EXT-X-KEY:METHOD=SAMPLE-AES,URI="skd://asset",KEYFORMAT="com.apple.streamingkeydelivery"
+            #EXT-X-MAP:URI="init.mp4"
+            #EXT-X-KEY:METHOD=AES-128,URI="key.bin"
+            #EXTINF:1,
+            segment.m4s
+            #EXT-X-ENDLIST
+            """,
+            relativeTo: sourceURL
+        )
+        let media = try #require(result.media)
+
+        #expect(media.resources.first?.encryption == nil)
+        #expect(media.resources.last?.encryption != nil)
+        #expect(media.unsupportedEncryptionMethod == "SAMPLE-AES")
+        #expect(
+            throws: HLSDownloadError.encryptedPlaylistUnsupported(
+                method: "SAMPLE-AES"
+            )
+        ) {
+            try HLSMediaPlaylistValidator.validate(media)
+        }
+    }
+
+    @Test("METHOD NONE clears every parallel key format")
+    func clearsParallelKeyFormats() throws {
+        let sourceURL = try #require(
+            URL(string: "https://cdn.example/media/index.m3u8")
+        )
+        let result = try PlaylistResolver().resolve(
+            """
+            #EXTM3U
+            #EXT-X-KEY:METHOD=AES-128,URI="key.bin"
+            #EXT-X-KEY:METHOD=SAMPLE-AES,URI="skd://asset",KEYFORMAT="com.apple.streamingkeydelivery"
+            #EXT-X-KEY:METHOD=NONE
+            #EXTINF:1,
+            clear.ts
+            #EXT-X-ENDLIST
+            """,
+            relativeTo: sourceURL
+        )
+
+        #expect(result.media?.encryptionMethod == nil)
+        #expect(result.media?.resources.last?.encryption == nil)
+    }
+
     @Test("AES-128 initialization maps require an explicit IV")
     func encryptedInitializationMapRequiresIV() throws {
         let sourceURL = try #require(
@@ -846,19 +1054,12 @@ struct PlaylistResolverTests {
         }
     }
 
-    @Test("AES-128 rejects non-identity and duplicate key attributes")
+    @Test("AES-128 rejects malformed and duplicate key attributes")
     func rejectsInvalidAES128KeyAttributes() throws {
         let sourceURL = try #require(
             URL(string: "https://cdn.example/media/index.m3u8")
         )
         let invalidPlaylists = [
-            """
-            #EXTM3U
-            #EXT-X-KEY:METHOD=AES-128,URI="key.bin",KEYFORMAT="com.apple.streamingkeydelivery"
-            #EXTINF:1,
-            segment.ts
-            #EXT-X-ENDLIST
-            """,
             """
             #EXTM3U
             #EXT-X-KEY:METHOD=AES-128,METHOD=NONE,URI="key.bin"

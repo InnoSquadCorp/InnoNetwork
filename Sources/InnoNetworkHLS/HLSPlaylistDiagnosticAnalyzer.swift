@@ -337,7 +337,7 @@ enum HLSPlaylistDiagnosticAnalyzer {
                 )
             }
         }
-        if let method = media.encryptionMethod, method != "AES-128" {
+        if media.unsupportedEncryptionMethodForTransfer != nil {
             diagnostics.append(
                 contentsOf: operationErrors(
                     code: .encryptionUnsupported,

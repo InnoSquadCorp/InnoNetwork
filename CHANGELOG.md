@@ -104,6 +104,11 @@ Versioning.
   retaining other query items, and validates each response before replacing
   the latest snapshot. A
   dedicated pack bounds or disables the best-effort additional requests.
+- Media `EXT-X-KEY` state is now isolated by `KEYFORMAT`. Identity-format
+  AES-128 remains downloadable when FairPlay or another packaged-key
+  alternative appears before or after it, while resources that had only an
+  unsupported format remain typed failures and `METHOD=NONE` clears every
+  active alternative.
 - `HLSLiveDVRRecorder` captures complete live TS or fMP4 segments into a
   bounded, URL-free local VOD package. It supports record-from-now and
   current-window starts, exact byte-range validation, progress events,

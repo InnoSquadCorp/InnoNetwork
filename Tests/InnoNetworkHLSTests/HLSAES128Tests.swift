@@ -36,6 +36,7 @@ extension HLSDownloaderTests {
                     """
                     #EXTM3U
                     #EXT-X-KEY:METHOD=AES-128,URI="key.bin?token=secret",IV=0x101112131415161718191a1b1c1d1e1f
+                    #EXT-X-KEY:METHOD=SAMPLE-AES,URI="skd://asset",KEYFORMAT="com.apple.streamingkeydelivery"
                     #EXTINF:1,
                     segment.ts
                     #EXT-X-ENDLIST

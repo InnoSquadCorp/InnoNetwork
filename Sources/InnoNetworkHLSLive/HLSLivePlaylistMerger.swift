@@ -64,6 +64,8 @@ enum HLSLivePlaylistMerger {
                     HLSLiveInitializationSegment.init(record:)
                 ),
             encryptionMethod: document.encryptionMethod,
+            unsupportedEncryptionMethod:
+                document.unsupportedEncryptionMethod,
             multivariantVariables: multivariantVariables
         )
     }

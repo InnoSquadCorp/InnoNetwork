@@ -10,8 +10,10 @@ enum HLSMediaPlaylistParser {
         var resources: [HLSMediaResource] = []
         var currentInitializationResource: HLSMediaResource?
         var needsInitializationResource = false
-        var encryptionMethod: String?
-        var currentAES128Key: HLSAES128KeyDeclaration?
+        var encryptionState = HLSMediaEncryptionState()
+        var encounteredAES128Encryption = false
+        var encounteredUnsupportedEncryptionMethod: String?
+        var currentInitializationUnsupportedEncryptionMethod: String?
         var segmentIndex: Int64 = 0
         var expectsSegmentURI = false
         var pendingSegmentByteRange: HLSByteRangeSpecifier?
@@ -69,7 +71,9 @@ enum HLSMediaPlaylistParser {
                     )
                 }
                 let encryption: HLSAES128Encryption?
-                if let currentAES128Key {
+                if let currentAES128Key =
+                    encryptionState.aes128IdentityKey
+                {
                     guard
                         let initializationVector =
                             currentAES128Key.explicitInitializationVector
@@ -83,6 +87,8 @@ enum HLSMediaPlaylistParser {
                 } else {
                     encryption = nil
                 }
+                currentInitializationUnsupportedEncryptionMethod =
+                    encryptionState.unsupportedMethod
                 currentInitializationResource = .initialization(
                     initializationURL,
                     byteRange: initializationByteRange,
@@ -134,6 +140,11 @@ enum HLSMediaPlaylistParser {
                     attributes["KEYFORMAT"].map {
                         !$0.isEmpty
                     } ?? true
+                let keyFormat =
+                    attributes["KEYFORMAT"] ?? "identity"
+                let usesIdentityKeyFormat =
+                    keyFormat.caseInsensitiveCompare("identity")
+                    == .orderedSame
                 switch method {
                 case "NONE":
                     guard attributes["URI"] == nil,
@@ -143,8 +154,8 @@ enum HLSMediaPlaylistParser {
                     else {
                         throw HLSDownloadError.invalidPlaylist
                     }
-                    currentAES128Key = nil
-                case "AES-128":
+                    encryptionState.clear()
+                case "AES-128" where usesIdentityKeyFormat:
                     guard
                         let uri = attributes["URI"],
                         !uri.isEmpty,
@@ -153,8 +164,6 @@ enum HLSMediaPlaylistParser {
                             relativeTo: sourceURL
                         )?.absoluteURL,
                         hasValidKeyFormat,
-                        (attributes["KEYFORMAT"]?.lowercased()
-                            ?? "identity") == "identity",
                         try HLSKeyAttributeParser
                             .parseKeyFormatVersions(
                                 attributes["KEYFORMATVERSIONS"]
@@ -167,14 +176,11 @@ enum HLSMediaPlaylistParser {
                             HLSKeyAttributeParser
                                 .parseInitializationVector
                         )
-                    currentAES128Key = HLSAES128KeyDeclaration(
+                    encryptionState.selectAES128Identity(
                         keyURL: keyURL,
                         explicitInitializationVector:
                             explicitInitializationVector
                     )
-                    if encryptionMethod == nil {
-                        encryptionMethod = method
-                    }
                 default:
                     guard
                         let uri = attributes["URI"],
@@ -203,8 +209,10 @@ enum HLSMediaPlaylistParser {
                     {
                         throw HLSDownloadError.invalidPlaylist
                     }
-                    currentAES128Key = nil
-                    encryptionMethod = method
+                    encryptionState.selectUnsupported(
+                        method: method,
+                        keyFormat: keyFormat
+                    )
                 }
             } else if line.hasPrefix("#EXT-X-BYTERANGE:") {
                 guard pendingSegmentByteRange == nil else {
@@ -258,10 +266,20 @@ enum HLSMediaPlaylistParser {
                     let currentInitializationResource
                 {
                     resources.append(currentInitializationResource)
+                    if currentInitializationResource.encryption != nil {
+                        encounteredAES128Encryption = true
+                    } else if encounteredUnsupportedEncryptionMethod == nil,
+                        let method =
+                            currentInitializationUnsupportedEncryptionMethod
+                    {
+                        encounteredUnsupportedEncryptionMethod = method
+                    }
                     needsInitializationResource = false
                 }
                 let encryption: HLSAES128Encryption?
-                if let currentAES128Key {
+                if let currentAES128Key =
+                    encryptionState.aes128IdentityKey
+                {
                     let initializationVector: Data
                     if let explicit =
                         currentAES128Key.explicitInitializationVector
@@ -287,6 +305,13 @@ enum HLSMediaPlaylistParser {
                     )
                 } else {
                     encryption = nil
+                }
+                if encryption != nil {
+                    encounteredAES128Encryption = true
+                } else if encounteredUnsupportedEncryptionMethod == nil,
+                    let method = encryptionState.unsupportedMethod
+                {
+                    encounteredUnsupportedEncryptionMethod = method
                 }
                 let segmentResource = HLSMediaResource.segment(
                     segmentURL,
@@ -339,6 +364,9 @@ enum HLSMediaPlaylistParser {
             throw HLSDownloadError.invalidPlaylist
         }
 
+        let encryptionMethod =
+            encounteredUnsupportedEncryptionMethod
+            ?? (encounteredAES128Encryption ? "AES-128" : nil)
         return HLSMediaPlaylist(
             resources: resources,
             hasEndList: metadata.hasEndList,
@@ -348,6 +376,8 @@ enum HLSMediaPlaylistParser {
             playlistType: metadata.playlistType,
             segmentBitrates: segmentBitrates,
             encryptionMethod: encryptionMethod,
+            unsupportedEncryptionMethod:
+                encounteredUnsupportedEncryptionMethod,
             unsupportedFeatures: unsupportedFeatures
         )
     }
@@ -451,8 +481,4 @@ enum HLSMediaPlaylistParser {
         let offset: Int64?
     }
 
-    private struct HLSAES128KeyDeclaration {
-        let keyURL: URL
-        let explicitInitializationVector: Data?
-    }
 }

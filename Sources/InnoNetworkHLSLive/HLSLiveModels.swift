@@ -211,7 +211,15 @@ public struct HLSLivePlaylistSnapshot: Equatable, Sendable {
 
     let initializationSegments: [HLSLiveInitializationSegment]
     let encryptionMethod: String?
+    let unsupportedEncryptionMethod: String?
     let multivariantVariables: [String: String]
+
+    var unsupportedEncryptionMethodForRecording: String? {
+        unsupportedEncryptionMethod
+            ?? encryptionMethod.flatMap {
+                $0 == "AES-128" ? nil : $0
+            }
+    }
 
     init(
         playlist: HLSPlaylist,
@@ -228,6 +236,7 @@ public struct HLSLivePlaylistSnapshot: Equatable, Sendable {
         httpFreshness: HLSLiveHTTPFreshness? = nil,
         initializationSegments: [HLSLiveInitializationSegment] = [],
         encryptionMethod: String? = nil,
+        unsupportedEncryptionMethod: String? = nil,
         multivariantVariables: [String: String] = [:]
     ) {
         self.playlist = playlist
@@ -244,6 +253,7 @@ public struct HLSLivePlaylistSnapshot: Equatable, Sendable {
         self.httpFreshness = httpFreshness
         self.initializationSegments = initializationSegments
         self.encryptionMethod = encryptionMethod
+        self.unsupportedEncryptionMethod = unsupportedEncryptionMethod
         self.multivariantVariables = multivariantVariables
     }
 }

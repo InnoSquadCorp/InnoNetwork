@@ -529,6 +529,9 @@ Stable.
   `HLSDownloadEvent`, `HLSDownloadPreparation`, `HLSDownloadProgress`,
   `HLSDownloadReceipt`, `HLSPlaybackCapabilities`, `HLSResumePolicy`,
   `HLSStoragePack`, and `HLSTransferPack`.
+  Parallel media key formats remain independent: an identity AES-128
+  alternative is selected regardless of declaration order, and a resource
+  observed with only unsupported formats still fails typed.
 - Offline packages:
   `HLSLocalPlaybackSource`, `HLSLocalPlaybackSourceError`,
   `HLSOfflinePackageConfiguration`, `HLSOfflinePackageDownloader`,

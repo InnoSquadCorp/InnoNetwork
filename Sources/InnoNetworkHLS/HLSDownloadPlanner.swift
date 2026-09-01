@@ -131,8 +131,8 @@ enum HLSMediaPlaylistValidator {
         }) {
             throw HLSDownloadError.unsupportedMediaFeature(feature)
         }
-        if let encryptionMethod = media.encryptionMethod,
-            encryptionMethod != "AES-128"
+        if let encryptionMethod =
+            media.unsupportedEncryptionMethodForTransfer
         {
             throw HLSDownloadError.encryptedPlaylistUnsupported(
                 method: encryptionMethod

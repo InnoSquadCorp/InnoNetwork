@@ -40,9 +40,7 @@ extension HLSLiveDVRRecordingState {
         }
         container = snapshotContainer
 
-        if let encryptionMethod = snapshot.encryptionMethod,
-            encryptionMethod != "AES-128"
-        {
+        if snapshot.unsupportedEncryptionMethodForRecording != nil {
             throw HLSLiveDVRError.unsupportedFeature(
                 .encryptedMedia
             )
