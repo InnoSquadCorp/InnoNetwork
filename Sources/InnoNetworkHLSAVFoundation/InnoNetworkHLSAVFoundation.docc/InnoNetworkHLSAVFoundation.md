@@ -515,6 +515,26 @@ The startup stream is an independent AVFoundation subscription rather than a
 second view over ``HLSPlaybackMetrics/events()``. Prefer one of the two streams
 unless the application intentionally needs both event shapes.
 
+Use ``HLSPlaybackMetrics/variantSwitchEvents()`` when ABR diagnosis needs
+source and destination bitrate context. On version 26 and later systems, the
+same metric includes URL-free stable IDs for the selected video, audio, and
+subtitle renditions:
+
+```swift
+for try await switchMetric in metrics.variantSwitchEvents() {
+    recordVariantSwitch(
+        phase: switchMetric.phase,
+        fromPeakBitrate: switchMetric.fromVariant?.peak,
+        toPeakBitrate: switchMetric.toVariant.peak,
+        audioStableID: switchMetric.renditions?.audioStableID
+    )
+}
+```
+
+Stable IDs that do not match the HLS identifier grammar or exceed 1,024 UTF-8
+bytes are omitted and set `didRedactStableIDs`. Variant and rendition playlist
+URLs never cross the bridge.
+
 ## Playback health analysis
 
 ``HLSPlaybackHealthAnalyzer`` is a pure value reducer for one playback
@@ -899,6 +919,9 @@ does not ship its package storage and readiness types.
 - ``HLSPlaybackMetricsError``
 - ``HLSPlaybackMetricEvent``
 - ``HLSPlaybackStartupMetric``
+- ``HLSPlaybackVariantSwitchMetric``
+- ``HLSPlaybackVariantBitrateMetric``
+- ``HLSPlaybackRenditionSelectionMetric``
 - ``HLSPlaybackMetricContext``
 - ``HLSPlaybackTransferMetric``
 - ``HLSPlaybackMetricSummary``

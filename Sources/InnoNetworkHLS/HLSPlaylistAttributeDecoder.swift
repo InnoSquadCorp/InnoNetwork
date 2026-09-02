@@ -332,22 +332,7 @@ enum HLSPlaylistAttributeDecoder {
         guard let value else {
             return nil
         }
-        guard
-            !value.isEmpty,
-            value.allSatisfy({ character in
-                guard character.isASCII else {
-                    return false
-                }
-                return character.isLetter
-                    || character.isNumber
-                    || character == "+"
-                    || character == "/"
-                    || character == "="
-                    || character == "."
-                    || character == "-"
-                    || character == "_"
-            })
-        else {
+        guard HLSStableIdentifierValidator.isValid(value) else {
             throw HLSDownloadError.invalidPlaylist
         }
         return value
@@ -462,4 +447,23 @@ enum HLSPlaylistAttributeDecoder {
         return (width, height)
     }
 
+}
+
+package enum HLSStableIdentifierValidator {
+    package static func isValid(_ value: String) -> Bool {
+        !value.isEmpty
+            && value.allSatisfy { character in
+                guard character.isASCII else {
+                    return false
+                }
+                return character.isLetter
+                    || character.isNumber
+                    || character == "+"
+                    || character == "/"
+                    || character == "="
+                    || character == "."
+                    || character == "-"
+                    || character == "_"
+            }
+    }
 }

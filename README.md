@@ -687,7 +687,8 @@ for await event in await manager.events(for: task) {
 - independently cancellable, URL-free playback metric streams plus an opt-in
   initial-startup view that correlates bounded chronological playlist,
   segment, and content-key request details while preserving exact request
-  counts
+  counts, and a detailed variant-switch view that exposes source/destination
+  bitrates plus validated stable rendition IDs on version 26 systems
 - reconnectable AVFoundation background HLS downloads with typed content
   selection, interstitial retention, bounded event replay, and version 26
   URL-free download-summary metrics with bounded selected-variant details

@@ -1778,6 +1778,10 @@ for symbol in "${expected_provisionally[@]}"; do
         "$repo_root/Sources/InnoNetworkHLSAVFoundation/HLSPlaybackStartupMetrics.swift"
       require_contains 'smokeHLSPlaybackStartupMetricsSurface' \
         "$repo_root/SmokeTests/InnoNetworkDocSmoke/main.swift"
+      require_contains 'public struct HLSPlaybackVariantSwitchMetric: Equatable, Sendable' \
+        "$repo_root/Sources/InnoNetworkHLSAVFoundation/HLSPlaybackVariantSwitchMetrics.swift"
+      require_contains 'smokeHLSPlaybackVariantSwitchMetricsSurface' \
+        "$repo_root/SmokeTests/InnoNetworkDocSmoke/main.swift"
       continue
       ;;
     '`InnoNetworkHLSAudio` companion product and its public decoded PCM plus full-mix processing configuration, callback, lifecycle, pacing, sample, and error symbols')

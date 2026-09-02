@@ -16,6 +16,11 @@ Versioning.
 
 ### Added
 
+- `HLSPlaybackMetrics.variantSwitchEvents()` adds URL-free source and
+  destination bitrate metrics for HLS variant switches. Version 26 systems
+  also expose bounded, grammar-validated `STABLE-RENDITION-ID` values for the
+  selected video, audio, and subtitle renditions without exposing their
+  playlist URLs; the existing general metric stream remains unchanged.
 - `HLSPlaybackMetrics.startupEvents()` exposes the URL-free playlist,
   media-segment, and content-key request events that AVFoundation correlates
   with initial likely-to-keep-up. Counts remain exact when chronological
