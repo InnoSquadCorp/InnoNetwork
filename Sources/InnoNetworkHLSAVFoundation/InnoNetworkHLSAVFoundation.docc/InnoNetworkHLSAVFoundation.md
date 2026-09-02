@@ -515,6 +515,25 @@ This detail stream excludes variant playlist URLs. It uses
 ``HLSPlaybackBufferMetric`` to preserve the exact native range count while
 retaining at most 256 valid ranges.
 
+Use ``HLSPlaybackMetrics/rateChangeEvents()`` when playback diagnostics need
+the selected bitrate and finite rate values around ordinary rate changes,
+stalls, and seek boundaries:
+
+```swift
+for try await change in metrics.rateChangeEvents() {
+    recordRateChange(
+        reason: change.reason,
+        previousRate: change.previousRate,
+        rate: change.rate,
+        selectedPeakBitrate: change.variant?.peak
+    )
+}
+```
+
+Seek completion distinguishes whether AVFoundation performed the seek inside
+the available buffer. Negative finite rates remain available for reverse
+playback; non-finite values become `nil`.
+
 For startup-specific diagnosis, use
 ``HLSPlaybackMetrics/startupEvents(maximumRetainedRequestCount:)``. It retains
 the chronological, URL-free playlist, segment, and content-key request details
@@ -944,6 +963,8 @@ does not ship its package storage and readiness types.
 - ``HLSPlaybackMetricsError``
 - ``HLSPlaybackMetricEvent``
 - ``HLSPlaybackBufferMetric``
+- ``HLSPlaybackRateChangeMetric``
+- ``HLSPlaybackRateChangeReason``
 - ``HLSPlaybackReadinessMetric``
 - ``HLSPlaybackStartupMetric``
 - ``HLSPlaybackVariantSwitchMetric``

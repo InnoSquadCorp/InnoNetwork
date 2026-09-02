@@ -16,6 +16,10 @@ Versioning.
 
 ### Added
 
+- `HLSPlaybackMetrics.rateChangeEvents()` preserves finite previous/current
+  rates, URL-free selected-variant bitrates, and typed rate-change, stall, seek
+  start, or seek-completion reasons without expanding the existing general
+  metric event shape.
 - `HLSPlaybackMetrics.readinessEvents()` exposes bounded, URL-free selected
   variant bitrates and loaded-buffer snapshots for both initial and subsequent
   likely-to-keep-up events, without expanding the existing general metric

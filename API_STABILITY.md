@@ -406,8 +406,8 @@ types and members in addition to top-level declarations. The grouped ledger
 below keeps the high-level compatibility classification readable for the
 5.x release line.
 
-The machine-checked snapshot currently partitions all 3,057 declarations into
-305 Stable consumer declarations, 2,719 Provisionally Stable consumer
+The machine-checked snapshot currently partitions all 3,069 declarations into
+305 Stable consumer declarations, 2,731 Provisionally Stable consumer
 declarations, and 33 opt-in SPI declarations. The three sets are disjoint and
 exhaustive. `Scripts/symbols/stable-rules.tsv` maps the Stable ledger to symbol
 paths, while the compiler-authored SPI flag is snapshotted in
@@ -625,6 +625,7 @@ Stable.
   `HLSPlaybackMetricMediaType`, `HLSPlaybackMetrics`,
   `HLSPlaybackMetricsError`, `HLSPlaybackMetricSummary`, `HLSPlaybackMode`,
   `HLSPlaybackBufferMetric`, `HLSPlaybackRenditionSelectionMetric`,
+  `HLSPlaybackRateChangeMetric`, `HLSPlaybackRateChangeReason`,
   `HLSPlaybackReadinessMetric`, `HLSPlaybackStartupMetric`,
   `HLSPlaybackTransferMetric`, `HLSPlaybackVariantBitrateMetric`,
   `HLSPlaybackVariantSwitchMetric`, and `HLSPlaybackVariantSwitchPhase`. The
@@ -632,10 +633,11 @@ Stable.
   transport identifiers, arbitrary errors, and non-finite numeric values.
   Startup diagnostics preserve exact request counts while bounding
   chronological request details. Readiness diagnostics cover both initial and
-  subsequent likely-to-keep-up events. Readiness, startup, and detailed switch
-  metrics retain at most 256 valid loaded time ranges; detailed switch metrics
-  expose only bitrate values and validated stable rendition IDs, never
-  playlist URLs.
+  subsequent likely-to-keep-up events. Rate-change diagnostics distinguish
+  ordinary changes, stalls, and seek boundaries while preserving selected
+  variant bitrates. Readiness, startup, and detailed switch metrics retain at
+  most 256 valid loaded time ranges; detailed switch metrics expose only
+  bitrate values and validated stable rendition IDs, never playlist URLs.
 - Playback health: `HLSPlaybackHealthAnalyzer`,
   `HLSPlaybackHealthConfiguration`, `HLSPlaybackHealthIssue`,
   `HLSPlaybackHealthSnapshot`, `HLSPlaybackHealthStatus`, and

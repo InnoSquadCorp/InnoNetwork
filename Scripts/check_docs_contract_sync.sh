@@ -1784,6 +1784,10 @@ for symbol in "${expected_provisionally[@]}"; do
         "$repo_root/Sources/InnoNetworkHLSAVFoundation/HLSPlaybackBufferMetric.swift"
       require_contains 'public struct HLSPlaybackReadinessMetric: Equatable, Sendable' \
         "$repo_root/Sources/InnoNetworkHLSAVFoundation/HLSPlaybackReadinessMetrics.swift"
+      require_contains 'public struct HLSPlaybackRateChangeMetric: Equatable, Sendable' \
+        "$repo_root/Sources/InnoNetworkHLSAVFoundation/HLSPlaybackRateChangeMetrics.swift"
+      require_contains 'smokeHLSPlaybackRateChangeMetricsSurface' \
+        "$repo_root/SmokeTests/InnoNetworkDocSmoke/main.swift"
       require_contains 'smokeHLSPlaybackVariantSwitchMetricsSurface' \
         "$repo_root/SmokeTests/InnoNetworkDocSmoke/main.swift"
       continue
