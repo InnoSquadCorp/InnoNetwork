@@ -117,6 +117,9 @@ public struct HLSFairPlayStreamingKeyConfiguration: Sendable {
 
 /// A value-redacted FairPlay content-key lifecycle event.
 public enum HLSFairPlayContentKeyEvent: Equatable, Sendable {
+    /// A cached advisory key fulfilled the request without license transport.
+    case fulfilledByAdvisoryKey(HLSFairPlayLicenseRequestPurpose)
+
     /// A bounded CKC was submitted to AVFoundation for validation.
     case responseSubmitted(HLSFairPlayLicenseRequestPurpose)
 

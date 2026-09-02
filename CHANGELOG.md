@@ -16,6 +16,12 @@ Versioning.
 
 ### Added
 
+- iOS 27 streaming-only `HLSFairPlaySession` instances can opt into FairPlay
+  advisory keys and create a policy-matched `HLSFairPlayStreamingKeyWorkflow`.
+  Cached advisory-key hits bypass license transport and response submission
+  with a typed `fulfilledByAdvisoryKey` event; existing sessions remain
+  non-advisory by default, and unsupported environments fail before delegate
+  installation.
 - `HLSFairPlaySession` can assign an opaque `HLSFairPlayAssetID` while it
   creates online or stored assets, then classify version 26 content-key
   requests as having no recipient, attached to a known asset, or initiated by

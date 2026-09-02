@@ -594,7 +594,8 @@ session.
 
 The supplied delegate still owns certificate loading, SPC-to-CKC transport,
 renewal, and secure persistable-content-key storage. The optional directory
-passed to ``HLSFairPlaySession/init(delegate:delegateQueue:storageDirectoryURL:)``
+passed to
+``HLSFairPlaySession/init(delegate:delegateQueue:storageDirectoryURL:advisoryKeyPolicy:)``
 is only AVFoundation's expired-session-report directory; it is not a key
 store. Use `AVContentKeySession`, not the deprecated
 `AVAssetResourceLoader` key-loading path.
@@ -639,7 +640,7 @@ func contentKeySession(
 }
 ```
 
-A successful return emits
+On the default non-advisory path, a successful return emits
 ``HLSFairPlayContentKeyEvent/responseSubmitted(_:)`` because AVFoundation has
 received, but not necessarily accepted, the CKC. Emit
 ``HLSFairPlayContentKeyEvent/responseAccepted(_:)`` only from
@@ -647,6 +648,32 @@ received, but not necessarily accepted, the CKC. Emit
 delegate callbacks through ``HLSFairPlayContentKeyRetryReason`` and
 ``HLSFairPlayContentKeyFailureReason`` so diagnostics do not retain response
 data, identifiers, or underlying error payloads.
+
+On iOS 27 or newer, a dedicated streaming-only session can opt into advisory
+keys that the key server supplied speculatively:
+
+```swift
+let advisorySession = try HLSFairPlaySession(
+    delegate: keyDelegate,
+    delegateQueue: keyQueue,
+    advisoryKeyPolicy: .enabledForStreamingOnly
+)
+let streamingKeys = advisorySession.makeStreamingKeyWorkflow(
+    transport: appLicenseTransport
+)
+keyDelegate.streamingKeys = streamingKeys
+```
+
+The session factory keeps AVFoundation's one-way `supportsAdvisoryKeys` setting
+and the workflow's SPC method aligned. When AVFoundation reports a cached hit,
+the workflow returns
+``HLSFairPlayContentKeyEvent/fulfilledByAdvisoryKey(_:)`` without contacting
+the license transport or submitting another response. A missing SPC that is
+not a confirmed advisory-key hit remains a typed generation failure. The
+default policy preserves the existing required-SPC path on every supported
+platform. Do not use an advisory-enabled session with
+``HLSFairPlayPersistentKeyWorkflow``; create a separate non-advisory session
+for downloads or other persistable-key acquisition.
 
 The workflow defaults to protocol version `1`. Protocol version `3` requires
 an SDK 26 application certificate and a matching KSM that has passed Apple's
@@ -798,6 +825,7 @@ does not ship its package storage and readiness types.
 
 ### FairPlay
 
+- ``HLSFairPlayAdvisoryKeyPolicy``
 - ``HLSFairPlayAssetID``
 - ``HLSFairPlayContentKeyRequestOrigin``
 - ``HLSFairPlayContentKeyRequestOriginResolver``

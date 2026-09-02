@@ -2,19 +2,25 @@
 import AVFoundation
 import Foundation
 
-/// Submits initial and renewing FairPlay streaming-key responses.
+/// Fulfills initial and renewing FairPlay streaming-key requests.
 ///
 /// The workflow retains application-owned license transport, but never owns or
-/// logs certificates, SPC, CKC, credentials, or content identifiers. A return
-/// value means that AVFoundation received the response; use its success
-/// delegate callback to emit a separate acceptance event.
+/// logs certificates, SPC, CKC, credentials, or content identifiers. A
+/// response-submitted result still requires AVFoundation's success delegate
+/// callback for acceptance. An advisory-key result means the system fulfilled
+/// the request from its cache without license transport or response submission.
 public struct HLSFairPlayStreamingKeyWorkflow: Sendable {
     private static let maximumProtocolVersionCount = 16
 
     private let transport: any HLSFairPlayLicenseTransporting
     private let configuration: HLSFairPlayStreamingKeyConfiguration
+    let advisoryKeyPolicy: HLSFairPlayAdvisoryKeyPolicy
 
-    /// Creates a workflow with application-owned license transport.
+    /// Creates a non-advisory workflow with application-owned license transport.
+    ///
+    /// For an advisory-enabled session, create the workflow through
+    /// ``HLSFairPlaySession/makeStreamingKeyWorkflow(transport:configuration:)``
+    /// so the session and SPC method cannot diverge.
     public init(
         transport: any HLSFairPlayLicenseTransporting,
         configuration: HLSFairPlayStreamingKeyConfiguration =
@@ -22,9 +28,20 @@ public struct HLSFairPlayStreamingKeyWorkflow: Sendable {
     ) {
         self.transport = transport
         self.configuration = configuration
+        self.advisoryKeyPolicy = .disabled
     }
 
-    /// Generates an SPC, exchanges it for a bounded CKC, and submits it.
+    init(
+        transport: any HLSFairPlayLicenseTransporting,
+        configuration: HLSFairPlayStreamingKeyConfiguration,
+        advisoryKeyPolicy: HLSFairPlayAdvisoryKeyPolicy
+    ) {
+        self.transport = transport
+        self.configuration = configuration
+        self.advisoryKeyPolicy = advisoryKeyPolicy
+    }
+
+    /// Fulfills a request from an advisory cache hit or a bounded SPC/CKC exchange.
     ///
     /// Call this from both the initial and renewing content-key delegate
     /// callbacks, passing the matching `purpose`. Once called, the method owns
@@ -36,7 +53,10 @@ public struct HLSFairPlayStreamingKeyWorkflow: Sendable {
         purpose: HLSFairPlayLicenseRequestPurpose = .initial
     ) async throws -> HLSFairPlayContentKeyEvent {
         try await fulfill(
-            HLSFairPlayStreamingRequestAdapter(request: request),
+            HLSFairPlayStreamingRequestAdapter(
+                request: request,
+                advisoryKeyPolicy: advisoryKeyPolicy
+            ),
             keyID: keyID,
             acquisition: acquisition,
             purpose: purpose
@@ -78,9 +98,9 @@ public struct HLSFairPlayStreamingKeyWorkflow: Sendable {
         purpose: HLSFairPlayLicenseRequestPurpose
     ) async throws -> HLSFairPlayContentKeyEvent {
         try validate(acquisition)
-        let spc: Data
+        let spcResult: HLSFairPlayStreamingSPCResult
         do {
-            spc = try await request.makeSPC(
+            spcResult = try await request.makeSPC(
                 applicationCertificate:
                     acquisition.applicationCertificate,
                 contentIdentifier: acquisition.contentIdentifier,
@@ -94,6 +114,9 @@ public struct HLSFairPlayStreamingKeyWorkflow: Sendable {
                 throw CancellationError()
             }
             throw HLSFairPlayStreamingKeyError.spcGenerationFailed
+        }
+        guard case .generated(let spc) = spcResult else {
+            return .fulfilledByAdvisoryKey(purpose)
         }
         guard
             !spc.isEmpty,

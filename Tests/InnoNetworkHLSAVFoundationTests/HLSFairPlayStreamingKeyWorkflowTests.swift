@@ -87,6 +87,36 @@ struct HLSFairPlayStreamingKeyWorkflowTests {
         )
     }
 
+    @Test("cached advisory keys bypass license transport and response submission")
+    func reusesCachedAdvisoryKey() async throws {
+        let transport = StreamingLicenseTransportDouble(
+            response: Data("unused".utf8)
+        )
+        let workflow = HLSFairPlayStreamingKeyWorkflow(
+            transport: transport,
+            configuration: .safeDefaults(),
+            advisoryKeyPolicy: .enabledForStreamingOnly
+        )
+        let request = StreamingKeyRequestDouble(
+            spcResult: .fulfilledByAdvisoryKey
+        )
+
+        let event = try await workflow.fulfill(
+            request,
+            keyID: HLSFairPlayKeyID("cached-advisory-key"),
+            acquisition: HLSFairPlayStreamingKeyAcquisition(
+                applicationCertificate: Data("certificate".utf8),
+                contentIdentifier: Data("content".utf8)
+            ),
+            purpose: .initial
+        )
+
+        #expect(event == .fulfilledByAdvisoryKey(.initial))
+        #expect(await transport.requests().isEmpty)
+        #expect(request.snapshot().processedKeys.isEmpty)
+        #expect(request.snapshot().failureCodes.isEmpty)
+    }
+
     @Test("invalid inputs fail before SPC or transport")
     func rejectsInvalidInputs() async throws {
         let keyID = try HLSFairPlayKeyID("invalid-streaming")
@@ -332,7 +362,8 @@ struct HLSFairPlayStreamingKeyWorkflowTests {
         #expect(throws: StreamingKeyTestError.failed) {
             try HLSFairPlayStreamingRequestAdapter.resolveSPC(
                 data: data,
-                error: StreamingKeyTestError.failed
+                error: StreamingKeyTestError.failed,
+                canBeFulfilledWithAdvisoryKey: true
             )
         }
         #expect(
@@ -340,14 +371,23 @@ struct HLSFairPlayStreamingKeyWorkflowTests {
         ) {
             try HLSFairPlayStreamingRequestAdapter.resolveSPC(
                 data: nil,
-                error: nil
+                error: nil,
+                canBeFulfilledWithAdvisoryKey: false
             )
         }
         #expect(
             try HLSFairPlayStreamingRequestAdapter.resolveSPC(
                 data: data,
-                error: nil
-            ) == data
+                error: nil,
+                canBeFulfilledWithAdvisoryKey: true
+            ) == .generated(data)
+        )
+        #expect(
+            try HLSFairPlayStreamingRequestAdapter.resolveSPC(
+                data: nil,
+                error: nil,
+                canBeFulfilledWithAdvisoryKey: true
+            ) == .fulfilledByAdvisoryKey
         )
     }
 
@@ -383,7 +423,7 @@ private final class StreamingKeyRequestDouble:
     }
 
     private let lock = NSLock()
-    private let spc: Data
+    private let spcResult: HLSFairPlayStreamingSPCResult
     private var applicationCertificate: Data?
     private var contentIdentifier: Data?
     private var supportedProtocolVersions: [Int]?
@@ -392,7 +432,11 @@ private final class StreamingKeyRequestDouble:
     private var failureCodes: [Int] = []
 
     init(spc: Data = Data("spc".utf8)) {
-        self.spc = spc
+        self.spcResult = .generated(spc)
+    }
+
+    init(spcResult: HLSFairPlayStreamingSPCResult) {
+        self.spcResult = spcResult
     }
 
     func makeSPC(
@@ -400,14 +444,14 @@ private final class StreamingKeyRequestDouble:
         contentIdentifier: Data,
         supportedProtocolVersions: [Int],
         deviceIdentifierPolicy: HLSFairPlayDeviceIdentifierPolicy
-    ) async throws -> Data {
+    ) async throws -> HLSFairPlayStreamingSPCResult {
         lock.withLock {
             self.applicationCertificate = applicationCertificate
             self.contentIdentifier = contentIdentifier
             self.supportedProtocolVersions = supportedProtocolVersions
             self.deviceIdentifierPolicy = deviceIdentifierPolicy
         }
-        return spc
+        return spcResult
     }
 
     func processStreamingKey(_ data: Data) {

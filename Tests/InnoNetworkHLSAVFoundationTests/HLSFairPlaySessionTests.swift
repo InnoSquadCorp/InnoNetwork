@@ -8,6 +8,40 @@ import Testing
 @Suite("AVFoundation HLS FairPlay session", .serialized)
 @MainActor
 struct HLSFairPlaySessionTests {
+    @Test("advisory-key policy fails closed outside its iOS 27 environment")
+    func advisoryKeyPolicyAvailability() throws {
+        #expect(
+            HLSFairPlayAdvisoryKeySupport.validationFailure(
+                for: .disabled,
+                isSupported: false
+            ) == nil
+        )
+        #expect(
+            HLSFairPlayAdvisoryKeySupport.validationFailure(
+                for: .enabledForStreamingOnly,
+                isSupported: false
+            ) == .unavailable
+        )
+        #expect(
+            HLSFairPlayAdvisoryKeySupport.validationFailure(
+                for: .enabledForStreamingOnly,
+                isSupported: true
+            ) == nil
+        )
+
+        #if !os(iOS) || targetEnvironment(macCatalyst)
+        #expect(throws: HLSFairPlaySessionError.advisoryKeysUnavailable) {
+            try HLSFairPlaySession(
+                delegate: ContentKeyDelegate(),
+                delegateQueue: DispatchQueue(
+                    label: "com.innonetwork.tests.fairplay.advisory"
+                ),
+                advisoryKeyPolicy: .enabledForStreamingOnly
+            )
+        }
+        #endif
+    }
+
     @Test("session validates, attaches, and detaches protected assets")
     func attachmentLifecycle() throws {
         let session = try HLSFairPlaySession(
@@ -26,6 +60,12 @@ struct HLSFairPlaySessionTests {
         #expect(
             session.contentKeySession.keySystem
                 == .fairPlayStreaming
+        )
+        #expect(session.advisoryKeyPolicy == .disabled)
+        #expect(
+            session.makeStreamingKeyWorkflow(
+                transport: UnusedLicenseTransport()
+            ).advisoryKeyPolicy == .disabled
         )
         #expect(
             session.contentKeySession.contentKeyRecipients
@@ -251,6 +291,11 @@ struct HLSFairPlaySessionTests {
         let error = HLSFairPlaySessionError.sessionExpired
         #expect(!error.localizedDescription.isEmpty)
         #expect(error.recoverySuggestion?.isEmpty == false)
+
+        let advisoryError =
+            HLSFairPlaySessionError.advisoryKeysUnavailable
+        #expect(advisoryError.localizedDescription.contains("27"))
+        #expect(advisoryError.recoverySuggestion?.isEmpty == false)
     }
 
     @MainActor
@@ -287,5 +332,13 @@ private final class ContentKeyDelegate:
         _ session: AVContentKeySession,
         didProvide keyRequest: AVContentKeyRequest
     ) {}
+}
+
+private struct UnusedLicenseTransport: HLSFairPlayLicenseTransporting {
+    func contentKeyContext(
+        for request: HLSFairPlayLicenseRequest
+    ) async throws -> Data {
+        Data()
+    }
 }
 #endif

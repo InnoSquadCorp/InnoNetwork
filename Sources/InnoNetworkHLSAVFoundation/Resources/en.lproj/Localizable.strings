@@ -49,11 +49,13 @@
 "HLSFairPlaySessionError.sessionExpired" = "The FairPlay content-key session has already expired.";
 "HLSFairPlaySessionError.foreignAsset" = "The HLS asset was not attached by this FairPlay session.";
 "HLSFairPlaySessionError.duplicateAssetIdentifier" = "Another HLS asset already uses this FairPlay asset identifier.";
+"HLSFairPlaySessionError.advisoryKeysUnavailable" = "FairPlay advisory keys require iOS 27 or newer and are unavailable in this environment.";
 "HLSFairPlaySessionError.recovery.useHTTPSURL" = "Provide an HTTPS URL without embedded credentials.";
 "HLSFairPlaySessionError.recovery.useRegularDirectory" = "Create a nonsymlink directory in the application container and pass its local URL.";
 "HLSFairPlaySessionError.recovery.createSession" = "Create a new FairPlay session and attach a new AVURLAsset before media loading begins.";
 "HLSFairPlaySessionError.recovery.useOwningSession" = "Detach the asset through the FairPlay session that created and attached it.";
 "HLSFairPlaySessionError.recovery.useUniqueAssetIdentifier" = "Use a unique FairPlay asset identifier or detach the earlier asset first.";
+"HLSFairPlaySessionError.recovery.disableAdvisoryKeys" = "Use the disabled policy here, or create a streaming-only FairPlay session on iOS 27 or newer.";
 "HLSFairPlayPersistentKeyError.invalidKeyIdentifier" = "The FairPlay persistent-key identifier is empty or unsafe.";
 "HLSFairPlayPersistentKeyError.invalidApplicationCertificate" = "The FairPlay application certificate is empty or exceeds its byte limit.";
 "HLSFairPlayPersistentKeyError.invalidContentIdentifier" = "The FairPlay content identifier is empty or exceeds its byte limit.";

@@ -17,6 +17,9 @@ public final class HLSFairPlaySession {
     public let requestOriginResolver =
         HLSFairPlayContentKeyRequestOriginResolver()
 
+    /// The session-wide advisory-key behavior selected at initialization.
+    public let advisoryKeyPolicy: HLSFairPlayAdvisoryKeyPolicy
+
     // Strong ownership is intentional: AVContentKeySession does not own its
     // delegate, while the wrapper promises delegate lifetime for the session.
     // periphery:ignore
@@ -35,12 +38,16 @@ public final class HLSFairPlaySession {
     /// `storageDirectoryURL` is AVFoundation's expired-session-report
     /// directory. Persistable content keys remain application-owned and
     /// should be stored separately with the protection appropriate for the
-    /// media entitlement.
+    /// media entitlement. The default advisory policy preserves required SPC
+    /// generation. Enabling it fails before delegate installation when the
+    /// current environment does not support advisory keys.
     public init(
         delegate: any AVContentKeySessionDelegate,
         delegateQueue: DispatchQueue,
-        storageDirectoryURL: URL? = nil
+        storageDirectoryURL: URL? = nil,
+        advisoryKeyPolicy: HLSFairPlayAdvisoryKeyPolicy = .disabled
     ) throws {
+        self.advisoryKeyPolicy = advisoryKeyPolicy
         if let storageDirectoryURL {
             try Self.validateStorageDirectory(storageDirectoryURL)
             self.contentKeySession = AVContentKeySession(
@@ -54,9 +61,30 @@ public final class HLSFairPlaySession {
             )
         }
         self.retainedDelegate = delegate
+        try HLSFairPlayAdvisoryKeySupport.configure(
+            advisoryKeyPolicy,
+            on: contentKeySession
+        )
         contentKeySession.setDelegate(
             delegate,
             queue: delegateQueue
+        )
+    }
+
+    /// Creates a streaming-key workflow matched to this session's policy.
+    ///
+    /// Use this factory instead of initializing the workflow directly when
+    /// ``advisoryKeyPolicy`` is
+    /// ``HLSFairPlayAdvisoryKeyPolicy/enabledForStreamingOnly``.
+    public func makeStreamingKeyWorkflow(
+        transport: any HLSFairPlayLicenseTransporting,
+        configuration: HLSFairPlayStreamingKeyConfiguration =
+            .safeDefaults()
+    ) -> HLSFairPlayStreamingKeyWorkflow {
+        HLSFairPlayStreamingKeyWorkflow(
+            transport: transport,
+            configuration: configuration,
+            advisoryKeyPolicy: advisoryKeyPolicy
         )
     }
 
@@ -217,6 +245,9 @@ public enum HLSFairPlaySessionError: Error, Equatable, Sendable {
 
     /// Another attached asset already uses the caller-provided identity.
     case duplicateAssetIdentifier
+
+    /// Advisory keys require iOS 27 or newer outside Mac Catalyst.
+    case advisoryKeysUnavailable
 }
 
 extension HLSFairPlaySessionError: LocalizedError {
@@ -247,6 +278,10 @@ extension HLSFairPlaySessionError: LocalizedError {
             return fairPlayLocalized(
                 "HLSFairPlaySessionError.duplicateAssetIdentifier"
             )
+        case .advisoryKeysUnavailable:
+            return fairPlayLocalized(
+                "HLSFairPlaySessionError.advisoryKeysUnavailable"
+            )
         }
     }
 
@@ -272,6 +307,10 @@ extension HLSFairPlaySessionError: LocalizedError {
         case .duplicateAssetIdentifier:
             return fairPlayLocalized(
                 "HLSFairPlaySessionError.recovery.useUniqueAssetIdentifier"
+            )
+        case .advisoryKeysUnavailable:
+            return fairPlayLocalized(
+                "HLSFairPlaySessionError.recovery.disableAdvisoryKeys"
             )
         }
     }
