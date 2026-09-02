@@ -12,7 +12,8 @@ This document defines the minimum completion criteria (DoC) for pull requests in
 
 `.github/required-status-checks.json` is the machine-readable merge-gate
 contract. It requires dependency review, formatting and dead-code checks, the
-pinned SwiftPM build/test and bounded-shard lanes, docs and consumer smoke,
+pinned Xcode 26 compatibility build/test and bounded-shard lanes, the Xcode 27
+full-surface build/test lane, docs and consumer smoke,
 benchmark smoke, all five declared Apple platform builds, and CodeQL.
 `Scripts/check_required_status_checks.py` validates both this policy and an
 exported live GitHub ruleset so remote protection cannot quietly fall back to a
@@ -48,8 +49,14 @@ The `CI` workflow must pass all of the following:
    checks out the exact trusted base verifier and revalidates the base/head
    lock transition, so an older persisted head snapshot cannot hide a
    same-version revision substitution after the PR base moves.
-3. `xcrun swift build`
-4. `xcrun swift test --no-parallel --enable-code-coverage`
+3. `xcrun swift build` on both Xcode 26.0.1 and Xcode 27
+4. `xcrun swift test --no-parallel --enable-code-coverage` on both toolchains;
+   Xcode 26 compiles the HLS-audio compatibility target, while Xcode 27
+   compiles and executes its SDK-only public surface.
+   The dead-code lane runs Periphery 3.8 on Xcode 27 so it sees that complete
+   surface. It passes `--build-system native` only to provide the index-store
+   layout Periphery currently requires; the product build and test lanes keep
+   Swift 6.4's default build system.
 5. A separate blocking `bash Scripts/run_bounded_parallel_tests.sh` job builds
    the suite once, then loads its test bundle in four concurrent, target-filtered
    Swift Testing processes without coverage instrumentation. Every process uses
@@ -57,6 +64,20 @@ The `CI` workflow must pass all of the following:
    four-process bound. Direct bundle loading avoids SwiftPM's shared `.build`
    lock; the script also proves that every discovered test belongs to exactly
    one shard.
+   The extensions shard includes `InnoNetworkHLSTests`,
+   `InnoNetworkHLSLiveTests`, and
+   `InnoNetworkHLSAVFoundationTests`, plus the HLS-audio compatibility test on
+   Xcode 26. The required Xcode 27 SwiftPM and docs lanes execute the actual
+   version 27-only `InnoNetworkHLSAudioTests` surface.
+   The canonical coverage lane also repeats the deterministic fixture,
+   mutation, scaling, and race subset through
+   `bash Scripts/run_hls_quality_gates.sh --skip-build`. That command also runs
+   the AVPlayer decoded-audio runtime smoke through an ephemeral loopback HTTP
+   fixture on macOS 27 or newer, and Apple's Media Stream Validator plus HLS
+   Report when their separate developer download is installed. Unsupported
+   hosts or missing Apple tools print `NOT RUN`. The full local release
+   preflight passes `--require-runtime-smoke` and `--require-apple-tools`, then
+   fails closed when the runtime or either binary is unavailable.
 6. `rg -n "@unchecked Sendable"` across production targets, including
    `Sources/InnoNetworkMacros`, returns no matches.
 7. `bash Scripts/check_shared_coders_mutation.sh` confirms the shared default
@@ -182,8 +203,18 @@ release artifacts are generated.
 Run the same commands locally:
 
 ```bash
+# Reproduce the backward-compatible package surface first.
 sudo xcode-select -s /Applications/Xcode_26.0.1.app
-# Preferred local entry point. The default fast mode runs the deterministic
+xcrun swift build
+xcrun swift test --no-parallel
+
+# Release preflight validates the complete HLS-audio surface and therefore
+# requires Xcode 27 / Swift 6.4. On the xcode-27 runner and standard local
+# installs, /Applications/Xcode.app resolves to that toolchain.
+sudo xcode-select -s /Applications/Xcode.app
+xcodebuild -version
+
+# The default fast mode runs the deterministic
 # contracts, all independent consumer packages, the OpenAPI generator suite,
 # and the same bounded root test shards used by CI.
 bash Scripts/run_local_release_preflight.sh
@@ -211,6 +242,9 @@ xcrun swift build
 # Match both blocking test lanes.
 bash Scripts/run_bounded_parallel_tests.sh
 xcrun swift test --no-parallel --enable-code-coverage
+bash Scripts/run_hls_quality_gates.sh --skip-build
+bash Scripts/run_hls_quality_gates.sh --skip-build \
+  --require-runtime-smoke --require-apple-tools
 rg -n "@unchecked Sendable" \
   Sources/InnoNetwork \
   Sources/InnoNetworkMacros \
@@ -261,6 +295,10 @@ bash Scripts/run_same_runner_benchmarks.sh \
   --output-dir .build/local-benchmark-comparison \
   --max-regression-percent 20
 ```
+
+The full preflight invokes package-owned Xcode schemes through an isolated
+package view when a generated `.xcodeproj` or `.xcworkspace` is present beside
+`Package.swift`; those local containers are neither selected nor modified.
 
 The base and candidate production sources are built separately on one runner,
 but both use the candidate benchmark harness. Three samples per revision are

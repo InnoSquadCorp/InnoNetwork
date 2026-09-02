@@ -229,7 +229,7 @@ struct RetryAfterParsingTests {
         #expect(policy.allowsRetry(for: trace))
     }
 
-    @Test("Retry-safe method matching preserves case-sensitive tokens", arguments: ["options", "trace"])
+    @Test("Retry-safe method matching preserves case-sensitive tokens", arguments: ["trace", "purge"])
     func retrySafeMethodMatchingIsCaseSensitive(method: String) {
         var preparedRequest = URLRequest(url: URL(string: "https://example.com/custom")!)
         preparedRequest.httpMethod = method
@@ -245,7 +245,7 @@ struct RetryAfterParsingTests {
         #expect(explicitlyConfigured.allowsRetry(for: request))
     }
 
-    @Test("Coordinator safety net does not promote lowercase custom methods", arguments: ["options", "trace"])
+    @Test("Coordinator safety net does not promote lowercase custom methods", arguments: ["trace", "purge"])
     func coordinatorSafetyNetPreservesMethodCase(method: String) async throws {
         struct AlwaysRetryPolicy: RetryPolicy {
             let maxRetries = 1

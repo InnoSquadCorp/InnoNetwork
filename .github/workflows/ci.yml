@@ -154,7 +154,7 @@ jobs:
 
   dead-code:
     name: Lint (Periphery)
-    runs-on: macos-15
+    runs-on: xcode-27
     timeout-minutes: 25
 
     steps:
@@ -163,12 +163,12 @@ jobs:
 
       - name: Select Xcode
         run: |
-          sudo xcode-select -s /Applications/Xcode_26.0.1.app
+          sudo xcode-select -s /Applications/Xcode.app
 
-      - name: Install Periphery 3.7.4
+      - name: Install Periphery 3.8.0
         env:
-          PERIPHERY_VERSION: "3.7.4"
-          PERIPHERY_SHA256: "f8283239a82c638a4d5cfb91c42519980462b7853299562f663eb33ce54c8dc6"
+          PERIPHERY_VERSION: "3.8.0"
+          PERIPHERY_SHA256: "07d4e286e31dd79164df39097e0b59f533c94badbe18158464a455ea88a166d7"
         run: |
           set -euo pipefail
 
@@ -199,11 +199,13 @@ jobs:
       - name: Run Periphery scan
         run: |
           set -eo pipefail
-          periphery scan --config .periphery.yml
+          # Periphery 3.8 still expects the native SwiftPM index-store layout;
+          # Swift 6.4's default SwiftBuild layout is not discoverable yet.
+          periphery scan --config .periphery.yml -- --build-system native
 
   build-and-test:
     name: Build and Test (SwiftPM) — Xcode ${{ matrix.xcode.label }}
-    runs-on: macos-15
+    runs-on: ${{ matrix.xcode.runner }}
     timeout-minutes: 45
     # Run the toolchain matrix in parallel so a green / red signal is
     # available per Xcode without serializing wall-clock time.
@@ -215,16 +217,16 @@ jobs:
           # build` reproducibility and the version benchmarked / signed
           # in the release workflow.
           - label: "26.0.1"
+            runner: macos-15
             path: /Applications/Xcode_26.0.1.app
             required: true
-          # Runner-default Xcode (symlinked at /Applications/Xcode.app).
-          # Treated as an early-warning channel — when GitHub bumps the
-          # default past 26.0.1 we want a build signal before adoption,
-          # not a surprise at upgrade time. Failures are non-blocking
-          # until the team pins the next canonical version.
-          - label: "runner-default"
+          # Xcode 27 owns the SDK-only HLS decoded-audio and full-mix APIs.
+          # Keep it blocking alongside the Swift 6.2 canonical toolchain so
+          # compatibility guards cannot hide regressions in the real surface.
+          - label: "27.0"
+            runner: xcode-27
             path: /Applications/Xcode.app
-            required: false
+            required: true
     continue-on-error: ${{ !matrix.xcode.required }}
 
     steps:
@@ -324,6 +326,10 @@ jobs:
           # polling tests do not starve under runner load.
           xcrun swift test --no-parallel --enable-code-coverage
           echo "✅ Tests completed successfully!"
+
+      - name: Repeat deterministic HLS quality gates
+        if: matrix.xcode.required == true && steps.toolchain-compatibility.outputs.compatible == 'true'
+        run: bash Scripts/run_hls_quality_gates.sh --skip-build
 
       - name: Generate runtime coverage report
         if: steps.toolchain-compatibility.outputs.compatible == 'true'
@@ -470,7 +476,7 @@ jobs:
 
   docs-contract-sync:
     name: Docs / Contract Sync
-    runs-on: macos-15
+    runs-on: xcode-27
     timeout-minutes: 30
 
     steps:
@@ -481,7 +487,7 @@ jobs:
 
       - name: Select Xcode
         run: |
-          sudo xcode-select -s /Applications/Xcode_26.0.1.app
+          sudo xcode-select -s /Applications/Xcode.app
 
       - name: Show Xcode and Swift versions
         run: |
@@ -519,7 +525,10 @@ jobs:
         run: bash Scripts/tests/test_generate_dependency_snapshot.sh
 
       - name: Verify local release preflight contract
-        run: bash Scripts/tests/test_run_local_release_preflight.sh
+        run: |
+          bash Scripts/tests/test_run_local_release_preflight.sh
+          bash Scripts/tests/test_validate_hls_with_apple_tools.sh
+          bash Scripts/tests/test_run_fairplay_acceptance.sh
 
       - name: Verify release workflow contract
         run: |
@@ -549,6 +558,9 @@ jobs:
 
       - name: Verify provisionally stable enum case ledger
         run: bash Scripts/check_provisional_enum_cases.sh
+
+      - name: Test Xcode 27 HLS audio surface
+        run: xcrun swift test --filter InnoNetworkHLSAudioTests
 
       - name: Build documentation smoke target
         run: xcrun swift build --target InnoNetworkDocSmoke

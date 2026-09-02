@@ -46,8 +46,8 @@ def main() -> int:
         lines.extend(
             [
                 "",
-                "| Benchmark | Delta | Spread (head/base) | Threshold | Current ops/s | Baseline ops/s |",
-                "|---|---:|---:|---:|---:|---:|",
+                "| Benchmark | Paired median delta | Pair spread | Spread (head/base) | Threshold | Current ops/s | Baseline ops/s |",
+                "|---|---:|---:|---:|---:|---:|---:|",
             ]
         )
         for item in ordered[:12]:
@@ -59,6 +59,10 @@ def main() -> int:
             baseline_ops = item.get("baselineOperationsPerSecond", 0.0)
             threshold = item.get("maxRegressionPercent")
             threshold_text = f"{threshold:.2f}%" if threshold is not None else "-"
+            paired_spread = item.get("pairedDeltaSpreadPercent")
+            paired_spread_text = (
+                f"{paired_spread:.1f}%" if paired_spread is not None else "-"
+            )
             head_spread = item.get("currentRelativeSpreadPercent")
             base_spread = item.get("baselineRelativeSpreadPercent")
             spread_text = (
@@ -68,7 +72,7 @@ def main() -> int:
             )
             guard = " (guard)" if item.get("isGuarded") else ""
             lines.append(
-                f"| `{name}`{guard} | {delta:+.2f}% | {spread_text} | {threshold_text} "
+                f"| `{name}`{guard} | {delta:+.2f}% | {paired_spread_text} | {spread_text} | {threshold_text} "
                 f"| {current:.2f} | {baseline_ops:.2f} |"
             )
 

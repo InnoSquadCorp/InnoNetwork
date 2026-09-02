@@ -25,6 +25,10 @@ def main() -> None:
         "InnoNetwork",
         "InnoNetworkAuthAWS",
         "InnoNetworkDownload",
+        "InnoNetworkHLS",
+        "InnoNetworkHLSLive",
+        "InnoNetworkHLSAVFoundation",
+        "InnoNetworkHLSAudio",
         "InnoNetworkOpenAPI",
         "InnoNetworkPersistentCache",
         "InnoNetworkTrust",
@@ -60,10 +64,19 @@ def main() -> None:
         if module not in included_modules:
             continue
         seen_modules.add(module)
+        # Xcode 27 can copy public declarations from an exported dependency
+        # into the importing module's symbol graph. Those rows describe the
+        # dependency's API, not a declaration owned by this product. Swift
+        # USRs encode the declaring module as `s:<length><module>`, which lets
+        # the snapshot remain stable across that toolchain behavior.
+        swift_usr_prefix = f"s:{len(module)}{module}"
         for symbol in data.get("symbols", []):
             if symbol.get("accessLevel") != "public":
                 continue
             if args.only_spi and symbol.get("spi") is not True:
+                continue
+            precise_identifier = symbol.get("identifier", {}).get("precise", "")
+            if not precise_identifier.startswith(swift_usr_prefix):
                 continue
             kind = symbol.get("kind", {}).get("identifier")
             if kind not in included_kinds:
@@ -76,6 +89,17 @@ def main() -> None:
     missing_modules = sorted(included_modules - seen_modules)
     if missing_modules:
         raise SystemExit(f"Missing required symbol graphs: {', '.join(missing_modules)}")
+
+    # Xcode 27 omits the public projection synthesized by `@TaskLocal` when
+    # `--skip-synthesized-members` is active, even though the projection is a
+    # documented consumer API. Preserve that explicit contract while still
+    # excluding unrelated synthesized members.
+    task_local_source = repo_root / "Sources/InnoNetwork/NetworkContext.swift"
+    if not args.only_spi and task_local_source.is_file():
+        source = task_local_source.read_text(encoding="utf-8")
+        current_row = "InnoNetwork\tswift.type.property\tNetworkContext.current"
+        if "@TaskLocal public static var current" in source and current_row in rows:
+            rows.add("InnoNetwork\tswift.type.property\tNetworkContext.$current")
 
     for row in sorted(rows):
         print(row)

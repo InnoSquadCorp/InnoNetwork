@@ -18,6 +18,10 @@
       "integration_id": 15368
     },
     {
+      "context": "Build and Test (SwiftPM) — Xcode 27.0",
+      "integration_id": 15368
+    },
+    {
       "context": "Test (Bounded Target Shards) — Xcode 26.0.1",
       "integration_id": 15368
     },

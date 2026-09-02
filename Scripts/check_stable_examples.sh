@@ -64,7 +64,7 @@ for example in "${stable_examples[@]}"; do
     done < <(find "$repo_root/$example" -name '*.swift' -type f | sort)
 
     manifest_products="${manifest_products}        .executable(name: \"$target_name\", targets: [\"$target_name\"]),"$'\n'
-    manifest_targets="${manifest_targets}        .executableTarget(name: \"$target_name\", dependencies: [.product(name: \"InnoNetwork\", package: \"InnoNetwork\")]),"$'\n'
+    manifest_targets="${manifest_targets}        .executableTarget(name: \"$target_name\", dependencies: [.product(name: \"InnoNetwork\", package: \"InnoNetwork\")], swiftSettings: [.unsafeFlags([\"-warnings-as-errors\"])]),"$'\n'
 done
 
 cat > "$smoke_root/Package.swift" <<EOF
@@ -94,7 +94,7 @@ EOF
 for example in "${stable_examples[@]}"; do
     example_name="$(basename "$example")"
     target_name="${example_name}Smoke"
-    xcrun swift build --package-path "$smoke_root" --target "$target_name" -Xswiftc -warnings-as-errors
+    xcrun swift build --package-path "$smoke_root" --target "$target_name"
 done
 
 echo "✅ Stable examples contract satisfied."

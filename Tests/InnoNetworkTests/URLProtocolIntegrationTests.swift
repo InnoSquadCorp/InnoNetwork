@@ -943,33 +943,34 @@ private final class RedirectReplayHTTPServer: @unchecked Sendable {
     }
 
     private func respond(to request: CapturedHTTPRequest, on connection: NWConnection) {
-        let response: Data
+        let responseText: String
         switch request.path {
         case "/upload":
-            response = Data(
-                ("HTTP/1.1 307 Temporary Redirect\r\n"
-                    + "Location: \(baseURL.appendingPathComponent("accepted").absoluteString)\r\n"
-                    + "Content-Length: 0\r\n"
-                    + "Connection: close\r\n"
-                    + "\r\n").utf8
+            let acceptedURL = baseURL.appendingPathComponent(
+                "accepted"
             )
+            responseText =
+                "HTTP/1.1 307 Temporary Redirect\r\n"
+                + "Location: \(acceptedURL.absoluteString)\r\n"
+                + "Content-Length: 0\r\n"
+                + "Connection: close\r\n"
+                + "\r\n"
         case "/accepted":
-            response = Data(
-                ("HTTP/1.1 200 OK\r\n"
-                    + "Content-Type: application/octet-stream\r\n"
-                    + "Content-Length: 8\r\n"
-                    + "Connection: close\r\n"
-                    + "\r\n"
-                    + "accepted").utf8
-            )
+            responseText =
+                "HTTP/1.1 200 OK\r\n"
+                + "Content-Type: application/octet-stream\r\n"
+                + "Content-Length: 8\r\n"
+                + "Connection: close\r\n"
+                + "\r\n"
+                + "accepted"
         default:
-            response = Data(
-                ("HTTP/1.1 404 Not Found\r\n"
-                    + "Content-Length: 0\r\n"
-                    + "Connection: close\r\n"
-                    + "\r\n").utf8
-            )
+            responseText =
+                "HTTP/1.1 404 Not Found\r\n"
+                + "Content-Length: 0\r\n"
+                + "Connection: close\r\n"
+                + "\r\n"
         }
+        let response = Data(responseText.utf8)
         connection.send(
             content: response,
             completion: .contentProcessed { _ in

@@ -90,10 +90,12 @@ Runner는 human-readable summary와 JSON summary를 모두 출력합니다. JSON
 - release와 scheduled/manual gate의 baseline 파일은
   [Baselines/default.json](Baselines/default.json)입니다.
 - PR gate는 같은 `macos-15` hosted runner에서 base SHA와 head SHA를 각각
-  세 번 측정하고 중앙값을 비교합니다. 실행 순서도 `base/head`, `head/base`,
-  `base/head`로 교차해 두 번째 실행에만 thermal/scheduling 편향이 몰리지
-  않게 합니다. 여섯 측정 모두 `--quick`을 생략한 긴 sample을 사용하므로,
-  서로 다른 runner나 과거 정적 측정치의 편차도 PR 판정에 섞이지 않습니다.
+  세 번 측정합니다. 실행 순서는 `base/head`, `head/base`, `base/head`이며,
+  각 인접 실행의 head/base 변화율을 먼저 구한 뒤 세 변화율의 중앙값을
+  비교합니다. 이 pairing은 thermal/scheduling phase가 양쪽 독립 중앙값에
+  비대칭으로 섞이는 것을 막습니다. 여섯 측정은 동일한 `--quick` harness와
+  multi-second guarded sample을 사용하므로 서로 다른 runner나 과거 정적
+  측정치의 편차도 PR 판정에 섞이지 않습니다.
 - 정적 baseline 수치는 scheduled/manual GitHub Actions run의 `--quick`
   결과를 기준으로 보정합니다. 로컬 개발 장비에서 더 빠르게 나오거나 느리게
   나오는 diff는 참고용입니다.
@@ -209,7 +211,9 @@ function dispatch.
 
 Guarded benchmark set:
 
-- `events/task-event-fanout-single`: event delivery의 최소 fan-out baseline.
+- `events/task-event-fanout-single`: single-listener admission-to-handler
+  delivery baseline. 각 이벤트의 delivery 완료를 기다려 burst backlog나
+  hosted-runner scheduling phase를 회귀 신호로 오인하지 않습니다.
 - `persistence/download-persistence-restore`: background download resume/restore 경로 baseline.
 - `persistence/append-log-compaction`: append-log snapshot compaction 경로 baseline.
 - `websocket/websocket-close-disposition-classify`: close callback마다 실행되는 분류 hot path.

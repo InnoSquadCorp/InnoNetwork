@@ -42,7 +42,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-InnoNetwork is a type-safe Swift network library shipped as **8 products**:
+InnoNetwork is a type-safe Swift network library shipped as **11 products**:
 
 **InnoNetwork (Core):**
 - Async/await + `typed throws` (`async throws(NetworkError)`)
@@ -53,10 +53,27 @@ InnoNetwork is a type-safe Swift network library shipped as **8 products**:
 - RFC 9111 cache adapter (`rfc9111Compliant(wrapping:)`)
 - Phantom-typed HTTP headers, observability/metrics/logger with redaction
 
+**InnoNetworkAuthAWS:**
+- AWS Signature Version 4 request interception
+- Bounded credential and service-region configuration
+
 **InnoNetworkDownload:**
 - Background `URLSession` with restoration barrier
 - Pause/resume + atomic file move + inactivity watchdog
 - AsyncSequence event streams + actor-based persistence
+
+**InnoNetworkHLS:**
+- Bounded HLS playlist resolution + deterministic variant selection
+- Browser-free VOD segment download and TS/fMP4 assembly
+- AsyncSequence progress, completion, failure, and cancellation events
+
+**InnoNetworkHLSLive:**
+- Blocking and delta live-playlist reloads with bounded snapshot delivery
+- Deterministic multivariant selection, Content Steering recovery, and DVR capture
+
+**InnoNetworkHLSAVFoundation:**
+- System-managed asset downloads, playback configuration, and metrics
+- Interstitial observation and application-owned FairPlay workflows
 
 **InnoNetworkWebSocket:**
 - Lifecycle reducer state machine + heartbeat + reconnect with jitter
@@ -99,7 +116,7 @@ swift test --list-tests
 
 ## Architecture
 
-전체 8개 product. 신규 기여 시 진입 파일과 책임만 빠르게 파악하세요.
+전체 11개 product. 신규 기여 시 진입 파일과 책임만 빠르게 파악하세요.
 
 ### Sources/InnoNetwork (Core)
 - `APIDefinition.swift` / `APIDefinition+Macro.swift` — endpoint 선언 프로토콜 + `@APIDefinition` 매크로
@@ -118,6 +135,10 @@ swift test --list-tests
 - `TrustPolicy.swift` — server trust evaluation (Trust 모듈과 연계)
 - `Resources/en.lproj/Localizable.strings` — 사용자 향 에러 메시지
 
+### Sources/InnoNetworkAuthAWS
+- `AWSSigV4Interceptor.swift` — AWS Signature Version 4 요청 서명
+- `AWSCredentials.swift` / `AWSServiceRegion.swift` — 자격 증명과 서비스·리전 계약
+
 ### Sources/InnoNetworkDownload
 - `DownloadManager.swift` — 메인 actor (async callbacks + AsyncSequence)
 - `DownloadTask.swift` — actor 기반 개별 작업
@@ -127,6 +148,23 @@ swift test --list-tests
 - `DownloadSessionDelegate.swift` — `URLSessionDelegate` bridge
 - `DownloadRuntimeRegistry.swift` — in-memory task ↔ identifier 매핑
 - `DownloadConfiguration.swift` / `DownloadState.swift`
+
+### Sources/InnoNetworkHLS
+- `PlaylistResolver.swift` — bounded UTF-8 playlist fetch + parser
+- `VariantSelector.swift` — deterministic configurable variant selection
+- `HLSHTTPClient.swift` — shared bounded chunk transport + request policy bridge
+- `HLSDownloader.swift` — per-resource-bounded VOD download + ordered assembly
+- `HLSModels.swift` — playlist, variant, progress, event, and stable error contracts
+
+### Sources/InnoNetworkHLSLive
+- `HLSLivePlaylistClient.swift` — blocking/delta reload와 bounded snapshot stream
+- `HLSLivePlaylistMerger.swift` — media-sequence 기반 delta reconstruction
+- `HLSLiveDVRRecorder.swift` — bounded live-window VOD package capture
+
+### Sources/InnoNetworkHLSAVFoundation
+- `HLSAssetDownloadSession.swift` — system-managed background asset downloads
+- `HLSPlaybackConfigurator.swift` / `HLSPlaybackMetrics.swift` — caller-owned playback bridge
+- `HLSFairPlaySession.swift` / `HLSFairPlayPersistentKeyWorkflow.swift` — app-owned FairPlay integration
 
 ### Sources/InnoNetworkWebSocket
 - `WebSocketManager.swift` — 메인 actor

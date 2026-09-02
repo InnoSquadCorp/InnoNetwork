@@ -14,6 +14,7 @@ MANDATORY_CONTEXTS = {
     "Lint (swift-format)",
     "Lint (Periphery)",
     "Build and Test (SwiftPM) — Xcode 26.0.1",
+    "Build and Test (SwiftPM) — Xcode 27.0",
     "Test (Bounded Target Shards) — Xcode 26.0.1",
     "Docs / Contract Sync",
     "Consumer Smoke",

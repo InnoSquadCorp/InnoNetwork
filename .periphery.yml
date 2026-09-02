@@ -12,6 +12,16 @@
 # Periphery's report stays focused on implementation-only declarations.
 retain_public: true
 
+# Persistence manifests are consumed through compiler-synthesized Codable
+# witnesses, which do not produce source-level reads for their stored fields.
+retain_codable_properties: true
+
+# Equality and hashing witnesses consume these fields even when no direct
+# source-level read exists. Retain them without suppressing unrelated
+# implementation-only properties.
+retain_equatable_properties: true
+retain_hashable_properties: true
+
 # Retain declarations that live in auxiliary trees (resources, examples, smoke
 # targets, benchmarks, and tests). Test targets remain in the analysis graph so
 # package-scoped production seams exercised only by tests are recognized as

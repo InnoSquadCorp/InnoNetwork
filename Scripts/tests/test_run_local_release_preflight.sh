@@ -24,6 +24,7 @@ documentation-smoke
 consumer-examples
 openapi-generator
 bounded-tests
+apple-hls-conformance
 runtime-coverage
 macro-coverage
 guarded-benchmarks
@@ -38,6 +39,19 @@ diff -u "$work_dir/expected-fast.txt" "$work_dir/actual-fast.txt"
 diff -u "$work_dir/expected-full.txt" "$work_dir/actual-full.txt"
 
 bash "$runner" --help | grep -Fq -- '--full'
+grep -Fq 'run_package_xcodebuild docbuild' "$runner"
+grep -Fq 'prepare_package_xcodebuild_view' "$runner"
+grep -Fq "grep -Eo 'Test run with [0-9]+ tests?'" \
+  "$repo_root/Scripts/run_bounded_parallel_tests.sh"
+summary_count="$({
+  printf '%s\n' 'Test run with 1 test in 1 suite passed.'
+  printf '%s\n' 'Test run with 2 tests in 1 suite passed.'
+} | grep -Eo 'Test run with [0-9]+ tests?' \
+  | awk '{ count += $4 } END { print count + 0 }')"
+if [[ "$summary_count" -ne 3 ]]; then
+  echo "Expected singular and plural Swift Testing summaries to total 3." >&2
+  exit 1
+fi
 
 set +e
 bash "$runner" --unknown > "$work_dir/unknown.stdout" 2> "$work_dir/unknown.stderr"

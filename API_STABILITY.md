@@ -156,6 +156,10 @@ acquiring a 5.x compatibility promise.
 - `MultipartResponseDecoder` buffered multipart response parsing surface
 - `MultipartStreamingResponseDecoder` streaming multipart response parsing surface
 - `InnoNetworkOpenAPI` companion product
+- `InnoNetworkHLS` companion product and its public playlist, variant selection, single-file download, offline package, event, and error symbols
+- `InnoNetworkHLSLive` companion product and its public live reload, bounded DVR recording, snapshot, configuration, and error symbols
+- `InnoNetworkHLSAVFoundation` companion product and its public download, offline readiness, playback configuration, timed metadata, playback metrics, playback health, interstitial and integrated-timeline observation, and FairPlay symbols
+- `InnoNetworkHLSAudio` companion product and its Xcode 27 / Swift 6.4 public decoded PCM plus full-mix processing configuration, callback, lifecycle, pacing, sample, and error symbols
 - `@APIDefinition(method:path:auth:)` and the default-enabled `Macros` package trait
 - `PersistentResponseCache` statistics and telemetry surfaces
 - `WebSocketError.unsupportedProtocolFeature`
@@ -402,8 +406,8 @@ types and members in addition to top-level declarations. The grouped ledger
 below keeps the high-level compatibility classification readable for the
 5.x release line.
 
-The machine-checked snapshot currently partitions all 1,208 declarations into
-305 Stable consumer declarations, 870 Provisionally Stable consumer
+The machine-checked snapshot currently partitions all 3,075 declarations into
+305 Stable consumer declarations, 2,737 Provisionally Stable consumer
 declarations, and 33 opt-in SPI declarations. The three sets are disjoint and
 exhaustive. `Scripts/symbols/stable-rules.tsv` maps the Stable ledger to symbol
 paths, while the compiler-authored SPI flag is snapshotted in
@@ -466,6 +470,258 @@ Stable.
 - `DownloadConfiguration`, `DownloadError`, `DownloadEvent`,
   `DownloadManager`, `DownloadManagerError`,
   `DownloadProgress`, `DownloadState`, and `DownloadTask`.
+
+### InnoNetworkHLS
+
+- Playlist and inspection: `HLSByteRange`, `HLSClosedCaptionReference`,
+  `HLSDateRange`, `HLSDateRangeCue`, `HLSDateRangePreload`,
+  `HLSDateRangeResource`, `HLSDateRangeSchedule`,
+  `HLSDateRangeScheduleEntry`, `HLSPreloadedDateRangeResource`,
+  `HLSInterstitial`, `HLSInterstitialContentVariability`,
+  `HLSInterstitialNavigationRestriction`,
+  `HLSInterstitialSkipControl`, `HLSInterstitialSource`,
+  `HLSInterstitialTimelineOccupancy`, `HLSInterstitialTimelineStyle`,
+  `HLSMediaCharacteristic`,
+  `HLSMediaCharacteristicPreference`, `HLSMediaContainer`,
+  `HLSMediaPlaylistType`, `HLSPlaylist`, `HLSPlaylistDiagnostic`,
+  `HLSPlaylistInspection`,
+  `HLSPlaylistInspectionPack`, `HLSPreferredStartPosition`,
+  `HLSPresentationConformanceRevision`, `HLSPresentationDiagnostic`,
+  `HLSPresentationGraphInspection`, `HLSPresentationInspectionError`,
+  `HLSPresentationInspectionLimitPack`, `HLSPresentationInspectionPack`,
+  `HLSPresentationPlaylistInspection`, `HLSPresentationPlaylistRole`,
+  `HLSProgramDateTime`, `HLSRendition`, `HLSRenditionKind`,
+  `HLSRenditionSelectionPolicy`, `HLSRequiredVideoLayout`,
+  `HLSSegmentBitrate`, `HLSSubtitleProvenancePolicy`,
+  `HLSUnsupportedMediaFeature`, `HLSVariant`,
+  `HLSVariantSelectionPolicy`, `HLSVideoChannelLayout`,
+  `HLSVideoProjection`, `CustomMediaSelector`, `PlaylistResolver`,
+  `RenditionSelector`, and `VariantSelector`.
+- Session, Low-Latency HLS, and Content Steering:
+  `HLSAllowedContentProtectionConfiguration`, `HLSContentSteering`,
+  `HLSContentSteeringEvent`,
+  `HLSContentSteeringEventObserving`, `HLSContentSteeringHealthPolicy`,
+  `HLSContentSteeringPack`, `HLSContentSteeringPathwayAvailability`,
+  `HLSContentSteeringPathwaySnapshot`, `HLSContentSteeringPhase`,
+  `HLSContentSteeringSelectionReason`, `HLSCustomMediaSelectionPreferences`,
+  `HLSCustomMediaSelectionScheme`, `HLSDeltaUpdate`,
+  `HLSEncryptionKeyPreload`, `HLSHDCPLevel`, `HLSLanguageDecoration`,
+  `HLSLowLatencyMetadata`, `HLSMediaPresentationSelector`,
+  `HLSMediaPresentationSetting`, `HLSMediaPresentationType`,
+  `HLSPartialSegment`, `HLSPreloadHint`, `HLSPreloadHintType`,
+  `HLSRenditionReport`, `HLSServerControl`, `HLSSessionData`,
+  `HLSSessionDataContent`, `HLSSessionDataFormat`, `HLSSessionDataValue`, and
+  `HLSSessionKey`.
+  LL-HLS resource contexts follow the same parallel-key-format selection as
+  complete segments and retain the active selection at each PART, MAP, or
+  preload boundary.
+- External resources: `HLSChapter`, `HLSChapterCatalog`, `HLSChapterImage`,
+  `HLSChapterMetadata`, `HLSChapterMetadataValue`, `HLSChapterTitle`,
+  `HLSExternalResourceError`, `HLSExternalResourcePack`,
+  `HLSExternalResourceResolver`, `HLSInterstitialAsset`,
+  `HLSInterstitialAssetResolution`, and
+  `HLSLocalizedRenditionNameCatalog`. The resolver's
+  public Date Range operations load
+  bounded preload bytes and resolve nested schedules with explicit collision,
+  depth, and entry-count boundaries.
+- Request policy and observation: `HLSRequestContext`, `HLSRequestEvent`,
+  `HLSRequestEventObserving`, `HLSRequestFailure`, `HLSRequestPolicy`, and
+  `HLSRequestPurpose`.
+- Single-file download: `HLSDiskCapacityPolicy`, `HLSDownloadConfiguration`,
+  `HLSDownloadError`, `HLSDownloadErrorCode`, `HLSDownloader`,
+  `HLSDownloadEvent`, `HLSDownloadPreparation`, `HLSDownloadProgress`,
+  `HLSDownloadReceipt`, `HLSPlaybackCapabilities`, `HLSResumePolicy`,
+  `HLSSessionKeyPreloadPolicy`, `HLSStoragePack`, and `HLSTransferPack`.
+  Parallel media key formats remain independent: an identity AES-128
+  alternative is selected regardless of declaration order, and a resource
+  observed with only unsupported formats still fails typed.
+  Opt-in session-key preloading starts at most four identity AES-128 requests
+  during media-playlist resolution, reuses only selected-media keys, and
+  performs no key I/O during preparation.
+- Offline packages:
+  `HLSLocalPlaybackSource`, `HLSLocalPlaybackSourceError`,
+  `HLSOfflinePackageConfiguration`, `HLSOfflinePackageDownloader`,
+  `HLSOfflinePackageEvent`, `HLSOfflinePackagePreparation`,
+  `HLSOfflinePackageReceipt`, `HLSOfflinePackageStore`,
+  `HLSOfflinePackageStoragePack`, `HLSOfflinePackageTrack`,
+  `HLSOfflinePackageTrackKind`,
+  `HLSOfflineRenditionPack`, and `HLSOfflineRenditionSelectionPolicy`.
+
+### InnoNetworkHLSAVFoundation
+
+- `HLSAssetDownload`, `HLSAssetDownloadContentPack`,
+  `HLSAssetDownloadEvent`, `HLSAssetDownloadEvictionPriority`,
+  `HLSAssetDownloadLibrary`, `HLSAssetDownloadLibraryError`,
+  `HLSAssetDownloadLibraryItem`, `HLSAssetDownloadRequest`,
+  `HLSAssetDownloadSession`, `HLSAssetDownloadSessionError`,
+  `HLSAssetDownloadSessionPack`, `HLSAssetDownloadStorage`,
+  `HLSAssetDownloadStorageError`, `HLSAssetDownloadStoragePolicy`,
+  `HLSAssetDownloadSummary`, `HLSAssetDownloadVariantSummary`,
+  `HLSAssetDownloadVariantSelection`,
+  `HLSFairPlayAdvisoryKeyPolicy`,
+  `HLSFairPlayAssetID`, `HLSFairPlayContentKeyRequestOrigin`,
+  `HLSFairPlayContentKeyRequestOriginResolver`,
+  `HLSFairPlaySession`, `HLSFairPlaySessionError`, `HLSStoredAsset`, and
+  `HLSStoredAssetAvailability`.
+- Offline readiness: `HLSOfflineAssetInspector`,
+  `HLSOfflineAssetReadinessSnapshot`, `HLSOfflineAssetReadinessState`,
+  `HLSOfflineCustomMediaSelectionCoverage`,
+  `HLSOfflineMediaSelectionGroupSnapshot`, and
+  `HLSOfflineMediaSelectionOptionSnapshot`. Inspection distinguishes package
+  presence from AVFoundation's offline-playable cache state and exposes only
+  bounded value snapshots while package bytes and FairPlay keys remain
+  application-owned.
+- Application-owned local playback: `HLSLocalPlaybackAsset` and
+  `HLSLocalPlaybackAssetError`. The main-actor owner exposes a caller-owned
+  AVURLAsset backed by a bounded loopback-only package bridge and must remain
+  alive for the player-item lifetime.
+- FairPlay persistent keys: `HLSFairPlayKeyID`,
+  `HLSFairPlayDeviceIdentifierPolicy`,
+  `HLSFairPlayLicenseRequest`, `HLSFairPlayLicenseTransporting`,
+  `HLSFairPlayPersistentKeyAcquisition`,
+  `HLSFairPlayPersistentKeyConfiguration`,
+  `HLSFairPlayPersistentKeyDisposition`, `HLSFairPlayPersistentKeyError`,
+  `HLSFairPlayPersistentKeyLimitPack`, `HLSFairPlayPersistentKeyStoring`, and
+  `HLSFairPlayPersistentKeyWorkflow`. The workflow coordinates bounded
+  restore-or-create requests while transport, secure storage, expiry,
+  invalidation, and deletion remain application-owned.
+- FairPlay streaming keys: `HLSFairPlayLicenseRequestPurpose`,
+  `HLSFairPlayAdvisoryKeyPolicy`,
+  `HLSFairPlayDeviceIdentifierPolicy`,
+  `HLSFairPlayStreamingKeyAcquisition`,
+  `HLSFairPlayStreamingKeyConfiguration`,
+  `HLSFairPlayStreamingKeyLimitPack`, `HLSFairPlayStreamingKeyWorkflow`,
+  `HLSFairPlayStreamingKeyError`, `HLSFairPlayContentKeyEvent`,
+  `HLSFairPlayContentKeyRetryReason`, and
+  `HLSFairPlayContentKeyFailureReason`. The workflow bounds SPC and CKC
+  material for initial and renewal requests while application code retains
+  transport, credentials, acceptance callbacks, and retry policy. iOS 27
+  streaming-only sessions can opt into advisory-key reuse through the session
+  factory; unsupported environments fail typed and persistent-key acquisition
+  remains isolated in a separate session.
+- Playback configuration: `HLSCommonMediaClientDataPolicy`,
+  `HLSCommonMediaClientDataStatus`, `HLSPlaybackAppliedMediaSelection`,
+  `HLSPlaybackAssetConfigurator`,
+  `HLSPlaybackConfiguration`, `HLSPlaybackConfigurationError`,
+  `HLSPlaybackConfigurationResult`, `HLSPlaybackConfigurator`,
+  `HLSPlaybackInterstitialPolicy`, `HLSPlaybackLivePack`,
+  `HLSPlaybackMediaKind`, `HLSPlaybackMediaPreference`,
+  `HLSPlaybackMediaSelection`, `HLSPlaybackMediaSelectionResolution`, and
+  `HLSPlaybackVariantPack`.
+- Legible media: `HLSLegibleMediaCatalog`, `HLSLegibleMediaFeature`,
+  `HLSLegibleMediaKind`, `HLSLegibleMediaOption`,
+  `HLSLegibleMediaOptionID`, `HLSLegibleMediaProvenance`, and
+  `HLSLegibleMediaSelection`. Catalogs expose value-only custom-player state;
+  opaque option identifiers remain asset-scoped and nonpersistent.
+- Timed metadata: `HLSTimedMetadataConfiguration`, `HLSTimedMetadataError`,
+  `HLSTimedMetadataEvent`, `HLSTimedMetadataField`,
+  `HLSTimedMetadataGroup`, `HLSTimedMetadataIdentifier`,
+  `HLSTimedMetadataItem`, `HLSTimedMetadataMonitor`,
+  `HLSTimedMetadataSource`, `HLSTimedMetadataValue`, and
+  `HLSTimedMetadataValueExposure`. The monitor requires an explicit identifier
+  allowlist, defaults to identifier-only events, bounds callback and
+  subscriber delivery, and excludes raw data, URL objects, and load errors.
+- Playback metrics: `HLSPlaybackMetricContext`, `HLSPlaybackMetricEvent`,
+  `HLSPlaybackMetricMediaType`, `HLSPlaybackMetrics`,
+  `HLSPlaybackMetricsError`, `HLSPlaybackMetricSummary`, `HLSPlaybackMode`,
+  `HLSPlaybackBufferMetric`, `HLSPlaybackMetricDelivery`,
+  `HLSPlaybackRenditionSelectionMetric`,
+  `HLSPlaybackRateChangeMetric`, `HLSPlaybackRateChangeReason`,
+  `HLSPlaybackReadinessMetric`, `HLSPlaybackStartupMetric`,
+  `HLSPlaybackTransferMetric`, `HLSPlaybackVariantBitrateMetric`,
+  `HLSPlaybackVariantSwitchMetric`, and `HLSPlaybackVariantSwitchPhase`. The
+  bridge emits bounded, independently cancellable streams and removes
+  transport identifiers, arbitrary errors, and non-finite numeric values.
+  Startup diagnostics preserve exact request counts while bounding
+  chronological request details. Readiness diagnostics cover both initial and
+  subsequent likely-to-keep-up events. Rate-change diagnostics distinguish
+  ordinary changes, stalls, and seek boundaries while preserving selected
+  variant bitrates. Sequenced delivery exposes bounded-buffer loss through
+  zero-based monotonically increasing positions, and the health analyzer
+  retains the cumulative loss count without interpreting diagnostic pressure
+  as playback impairment. Readiness, startup, and detailed switch metrics
+  retain at most 256 valid loaded time ranges; detailed switch metrics expose
+  only bitrate values and validated stable rendition IDs, never playlist URLs.
+- Playback health: `HLSPlaybackHealthAnalyzer`,
+  `HLSPlaybackHealthConfiguration`, `HLSPlaybackHealthIssue`,
+  `HLSPlaybackHealthSnapshot`, `HLSPlaybackHealthStatus`, and
+  `HLSPlaybackHealthThresholdPack`. The value reducer keeps rolling counts
+  bounded, reconciles delivered summaries, and leaves observation, UI, and
+  alerting policy with the application.
+- Interstitial playback: `HLSInterstitialAssetListStatus`,
+  `HLSInterstitialEventSnapshot`, `HLSInterstitialPlaybackMonitor`,
+  `HLSInterstitialRuntimeEvent`, and `HLSInterstitialSkippableState`. The
+  observation-only bridge emits bounded, value-redacted lifecycle streams
+  while AVFoundation owns scheduling and system skip controls.
+- Integrated timeline: `HLSIntegratedTimelineMonitor`,
+  `HLSIntegratedTimelineSegmentKind`,
+  `HLSIntegratedTimelineSegmentSnapshot`, `HLSIntegratedTimelineSnapshot`,
+  `HLSIntegratedTimelineUpdate`, and `HLSIntegratedTimelineUpdateReason`. The
+  version-gated, observation-only bridge emits bounded value snapshots of
+  primary and interstitial ranges while the application owns playback,
+  seeking, scheduling, and navigation policy.
+
+### InnoNetworkHLSAudio
+
+- The product remains present in the Swift 6.2 package graph so older
+  toolchains can validate the rest of InnoNetwork, but its public declarations
+  require the Xcode 27 SDK and Swift 6.4 compiler. Xcode 26 builds only the
+  empty compatibility module and exposes no HLS-audio symbols.
+- `HLSDecodedAudioConfiguration`, `HLSDecodedAudioError`,
+  `HLSDecodedAudioOutput`, `HLSDecodedAudioSample`,
+  `HLSDecodedAudioPacingConfiguration`, and
+  `HLSDecodedAudioPacedSequence`. This version 27-only bridge provides one
+  demand-driven decoded-PCM read at a time plus an optional non-prefetching,
+  player-clock-paced sequence while the application owns the player, format
+  conversion, processing, storage, UI, and protected-content policy.
+- `HLSAudioMixProcessingCallbacks`, `HLSAudioMixProcessingContext`,
+  `HLSAudioMixProcessingError`, `HLSAudioMixProcessingPosition`,
+  `HLSAudioMixPreparationContext`, `HLSAudioMixProcessingTap`, and
+  `HLSAudioMixStreamFlags`. On version 27 macOS, iOS, tvOS, and visionOS, the
+  tap installs an exclusive full-mix processor with a preferred PCM format,
+  reports the actual preparation format, and preserves replacement audio
+  mixes during terminal detachment. The application owns real-time callback
+  safety and protected-content policy; FairPlay audio is unavailable to the
+  system tap.
+
+### InnoNetworkHLSLive
+
+- `HLSLiveCDNTuneInPack`, `HLSLiveConfiguration`,
+  `HLSLiveEncryptionKeyPreloading`, `HLSLiveError`,
+  `HLSLiveHTTPFreshness`, `HLSLivePartialSegment`, `HLSLiveReloadMode`,
+  `HLSLiveEdgePosition`,
+  `HLSLiveHealthAnalyzer`, `HLSLiveHealthConfiguration`,
+  `HLSLiveHealthIssue`, `HLSLiveHealthSnapshot`, `HLSLiveHealthStatus`,
+  `HLSLiveHealthThresholdPack`, `HLSLiveDVRConfiguration`, `HLSLiveDVRError`,
+  `HLSLiveDVREvent`, `HLSLiveDVRInterstitialFailurePolicy`,
+  `HLSLiveDVRInterstitialPack`, `HLSLiveDVRInterstitialPolicy`,
+  `HLSLiveDVRInterstitialStatistics`, `HLSLiveDVRLimitPack`,
+  `HLSLiveDVRPartCapturePolicy`,
+  `HLSLiveDVRPartPack`, `HLSLiveDVRPreloadPack`, `HLSLiveDVRPreloadPolicy`,
+  `HLSLiveDVRPreloadResourceStatistics`, `HLSLiveDVRPreloadStatistics`,
+  `HLSLiveDVRProgress`, `HLSLiveDVRRecoveryPack`,
+  `HLSLiveDVRRecoveryPolicy`, `HLSLiveDVRRetentionPolicy`,
+  `HLSLiveDVRRetentionStatistics`,
+  `HLSLiveDVRReceipt`, `HLSLiveDVRRecorder`, `HLSLiveDVRRecording`,
+  `HLSLiveDVRRenditionPack`,
+  `HLSLiveDVRRenditionSelectionPolicy`, `HLSLiveDVRStartPosition`,
+  `HLSLiveDVRTrack`, `HLSLiveDVRTrackKind`, `HLSLiveDVRUnsupportedFeature`,
+  `HLSLivePlaylistClient`, `HLSLivePlaylistSnapshot`, `HLSLiveReloadPack`, and
+  `HLSLiveSegment`.
+- `HLSLiveCDNTuneInPack` bounds or disables the Appendix C initial freshness
+  requests. The client commits only fully parsed, mergeable responses and
+  otherwise retains the newest valid snapshot.
+- `HLSLiveDVRRecording.capturePlaybackSnapshot(to:)` publishes an immutable
+  local VOD package at the next coherent segment boundary. Its bounded request
+  lifecycle is represented by `HLSLiveDVRError.playbackSnapshotUnavailable`
+  and
+  `HLSLiveDVRError.playbackSnapshotRequestLimitExceeded(limit:)`; these symbols
+  remain in the companion product's Provisionally Stable tier.
+- `HLSLiveDVRConfiguration.advanced(...interstitials:)` preserves the existing
+  overload family while opting into bounded package-local Apple HLS
+  interstitial retention. Complete-event failure policy, retained statistics,
+  and the typed interstitial limit failures remain in the companion product's
+  Provisionally Stable tier.
 
 ### InnoNetworkWebSocket
 

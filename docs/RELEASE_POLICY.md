@@ -37,6 +37,8 @@
    tags, older or off-main commits, stale main refs, missing release notes,
    and non-ready release notes before build.
 5. Let the tag-triggered `Release` workflow run:
+   - Xcode 27 / Swift 6.4 full-surface validation, alongside the separate
+     Xcode 26 compatibility and minimum-platform CI gates
    - root tests in serial coverage mode and bounded target-sharded mode
    - root macro tests, negative compile fixtures, and fail-closed runtime/macro
      LCOV generation
@@ -59,8 +61,13 @@
    examples, symbol links, and docs-contract wording stay in sync.
 8. Run `bash Scripts/run_local_release_preflight.sh --full` before changing the
    release status to ready. It reproduces the pre-tag validation, coverage,
-   benchmark, SBOM, DocC, and five-platform build gates locally; tag identity,
-   signing, and publication remain GitHub-only responsibilities.
+   benchmark, SBOM, DocC, five-platform build, actual AVPlayer decoded-audio,
+   and official Apple HLS conformance gates locally. Run it on macOS 27 or
+   newer and install Apple's separate HTTP Live Streaming Tools download first;
+   the full preflight requires both
+   `mediastreamvalidator` and `hlsreport` and retains their reports below
+   `.build/local-release-preflight/`. Tag identity, signing, and publication
+   remain GitHub-only responsibilities.
 9. Before tagging, export the active repository ruleset and run
    `python3 Scripts/check_required_status_checks.py --ruleset-json <path>`.
    It must match `.github/required-status-checks.json`. Narrow or remove the

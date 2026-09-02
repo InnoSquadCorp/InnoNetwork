@@ -386,7 +386,10 @@ private enum InnoNetworkBenchmarks {
         var results: [BenchmarkResult] = []
         let encoderIterations = options.quick ? 2_000 : 20_000
         let eventIterations = options.quick ? 10_000 : 20_000
-        let guardedEventIterations = options.quick ? 300_000 : 600_000
+        // The guarded single-listener path waits for each delivery, so it
+        // measures the complete hub-to-handler hop without building a large
+        // scheduler-sensitive backlog on hosted runners.
+        let guardedEventIterations = options.quick ? 50_000 : 100_000
         let persistenceIterations = options.quick ? 300 : 3_000
         let restoreIterations = options.quick ? 1_000 : 2_000
         let cacheIterations = options.quick ? 10_000_000 : 20_000_000
@@ -420,9 +423,8 @@ private enum InnoNetworkBenchmarks {
             })
 
         results.append(
-            try await benchmarkTaskEventHubFanOut(
+            try await benchmarkTaskEventHubDelivery(
                 iterations: guardedEventIterations,
-                listeners: 1,
                 name: "task-event-fanout-single"))
         results.append(
             try await benchmarkTaskEventHubFanOut(
@@ -578,6 +580,26 @@ private enum InnoNetworkBenchmarks {
             }
             await counter.wait()
             await hub.finish(taskID: "fanout")
+        }
+    }
+
+    /// Measures a complete admission-to-handler delivery for every event.
+    ///
+    /// The burst fan-out benchmark above intentionally exercises buffered
+    /// throughput. Keeping this guarded single-listener benchmark synchronous
+    /// prevents executor backlog and runner scheduling from dominating the
+    /// regression signal.
+    private static func benchmarkTaskEventHubDelivery(
+        iterations: Int,
+        name: String
+    ) async throws -> BenchmarkResult {
+        try await measure(name: name, group: "events", iterations: iterations) { count in
+            let hub = TaskEventHub<String>()
+            _ = await hub.addListener(taskID: "delivery") { _ in }
+            for index in 0..<count {
+                await hub.publishAndWaitForDelivery("event-\(index)", for: "delivery")
+            }
+            await hub.finish(taskID: "delivery")
         }
     }
 

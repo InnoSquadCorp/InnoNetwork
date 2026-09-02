@@ -248,7 +248,7 @@ struct RedirectPolicyTests {
     func rejectsDifferentlyCasedSafeMethodTokens() {
         let policy = DefaultRedirectPolicy()
 
-        for method in ["options", "trace"] {
+        for method in ["trace", "purge"] {
             for statusCode in [307, 308] {
                 var original = URLRequest(url: URL(string: "https://api.example.com/source")!)
                 original.httpMethod = method

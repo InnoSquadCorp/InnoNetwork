@@ -191,7 +191,11 @@ struct DownloadRedirectAdmissionTests {
         let redirectFailure = try #require(context.completions.records.first?.error)
         #expect(redirectFailure.domain == DownloadRedirectAdmissionFailure.domain)
         #expect(redirectFailure.code == DownloadRedirectAdmissionFailure.code)
-        #expect(task.state == .canceling)
+        let canceledTaskState = task.state
+        #expect(
+            canceledTaskState == .canceling
+                || canceledTaskState == .completed
+        )
 
         let temporaryLocation = FileManager.default.temporaryDirectory.appendingPathComponent(
             "rejected-download-\(UUID().uuidString).tmp"

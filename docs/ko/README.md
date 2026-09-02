@@ -9,11 +9,22 @@
 > 우선합니다.
 
 InnoNetwork 는 Apple 플랫폼을 위한 타입 안전한 Swift 네트워킹 패키지입니다. root runtime package 는
-여덟 개의 공개 product 로 구성되어 있습니다.
+열두 개의 공개 product 로 구성되어 있습니다.
 
 - `InnoNetwork` — 요청/응답 API
 - `InnoNetworkAuthAWS` — body-aware AWS SigV4 reference signer
 - `InnoNetworkDownload` — 다운로드 생명주기 관리
+- `InnoNetworkHLS` — 값 노출 없는 Apple 저작 진단과 bounded presentation-graph 교차 검사, 타입화된 인터스티셜 동기 재생 변동성·타임라인·이동 제한·건너뛰기 표시 메타데이터, 요청 관측, 목적별 요청 정책, HLS 2nd Edition draft-22 선택·보호·비디오 레이아웃·세션·LL-HLS 메타데이터와 I-frame trick-play 해석, 완성·LL-HLS 리소스의 병렬 `KEYFORMAT`에서 identity를 선택하고 선택형 `EXT-X-SESSION-KEY` 선행 요청을 지원하는 AES-128 비 DRM VOD 조립, 외부 오디오·비디오·자막을 보존하는 로컬 오프라인 패키지
+- `InnoNetworkHLSLive` — blocking reload와 delta window 복구, raw 헤더를 노출하지 않는 타입형 HTTP freshness 진단, AES-128 평문 로컬 패키지, 선택형 URL-free 체크포인트 재개 및 원자적 bounded DVR을 제공하는 async media-playlist snapshot stream
+- `InnoNetworkHLSAVFoundation` — AVFoundation 기반 백그라운드 HLS 저장과
+  version 26의 URL-free 오프라인 다운로드 요약 메트릭,
+  값 기반 CMCD 활성화 상태(watchOS는 asset resource loader가 없어 미지원),
+  커스텀 자막 UI용 값 기반 미디어 카탈로그, 버전형 오프라인 에셋
+  라이브러리, 값이 제거된 재생 상태 분석, 앱 소유 라이선스 통신·보안
+  저장소를 유지하는 FairPlay 영구 키 흐름
+- `InnoNetworkHLSAudio` — version 27 플랫폼에서 HLS player item의 decoded
+  PCM을 한 번에 하나씩 요청하거나 지원 플랫폼의 전체 오디오 mix를
+  실시간·in-place로 처리하는 Xcode 27·Swift 6.4 전용 선택형 companion
 - `InnoNetworkWebSocket` — 연결 지향 실시간 흐름
 - `InnoNetworkPersistentCache` — 보수적인 디스크 응답 캐시
 - `InnoNetworkTrust` — 선택형 공개키 pinning 평가
@@ -279,6 +290,25 @@ InnoNetwork 기반 클라이언트를 출시하기 전에 점검해야 할 운�
   크래시 로그/분석에 남지 않도록 릴리즈 빌드에서는 비활성화 상태를 유지하세요.
 - **이벤트 옵저버 부착.** `NetworkEventObserving` 옵저버는 앱 시작 시 부착하고 로그아웃 / 계정
   전환 시 분리합니다. 사용자 취소 이후 발생하는 이벤트도 옵저버는 모두 받습니다.
+- **HLS 요청 경계.** `HLSRequestPolicy` 는 entry/media/live reload playlist, media resource,
+  AES key, Content Steering manifest, Session Data, chapter document,
+  localized rendition name, interstitial asset list, Date Range preload/schedule 을
+  URL 확장자 없이 구분합니다.
+  `HLSRequestEventObserving` 이벤트에는
+  request ID, 목적, resource/retry index, HTTP 상태와 안정된 실패 분류만 포함되며 URL, header,
+  query 값, body, 임의 오류 문자열은 포함되지 않습니다.
+- **HLS 외부 메타데이터.** `HLSExternalResourceResolver` 는 inline/remote Session Data,
+  localized rendition name, Apple JSON chapter, interstitial asset list를 명시적인
+  byte·entry·timeout 경계 안에서 해석합니다. Rendition name은 선호 locale을 순서대로
+  적용하고 번역이 없으면 원래 `EXT-X-MEDIA` name으로 돌아갑니다. Chapter image의 상대
+  URL은 redirect가 끝난 JSON URL을 기준으로 해석하며 credential URL과 HTTPS downgrade를
+  거부합니다. Catalog는 선호 언어 title, image category, 사용 가능한 title 언어,
+  중첩을 보존한 현재 chapter 조회를 제공합니다.
+- **LL-HLS CDN 진입.** `HLSLivePlaylistClient` 는 cache의 초기 `Age` 응답과
+  `TARGETDURATION`/`PART-TARGET`으로 더 최신 `_HLS_msn`/`_HLS_part`를 계산합니다.
+  첫 full 요청에서는 이전 `_HLS_*` reload 지시자만 제거하고 다른 caller query는 보존합니다.
+  추가 요청은 `HLSLiveCDNTuneInPack`으로 1~8회 안에서 제한하거나 비활성화할 수 있고,
+  실패하거나 합칠 수 없는 응답은 마지막 유효 snapshot을 덮어쓰지 않습니다.
 
 ### 회복탄력성
 
