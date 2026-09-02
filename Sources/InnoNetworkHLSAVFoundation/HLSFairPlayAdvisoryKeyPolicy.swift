@@ -23,7 +23,7 @@ enum HLSFairPlayAdvisoryKeyPolicyFailure: Equatable {
 
 enum HLSFairPlayAdvisoryKeySupport {
     static var isAvailable: Bool {
-        #if os(iOS) && !targetEnvironment(macCatalyst)
+        #if compiler(>=6.4) && os(iOS) && !targetEnvironment(macCatalyst)
         if #available(iOS 27, *) {
             return true
         }
@@ -60,7 +60,7 @@ enum HLSFairPlayAdvisoryKeySupport {
             return
         }
 
-        #if os(iOS) && !targetEnvironment(macCatalyst)
+        #if compiler(>=6.4) && os(iOS) && !targetEnvironment(macCatalyst)
         if #available(iOS 27, *) {
             session.supportsAdvisoryKeys = true
             return

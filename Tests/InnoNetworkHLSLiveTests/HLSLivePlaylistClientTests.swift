@@ -1102,7 +1102,7 @@ struct HLSLivePlaylistClientTests {
         #expect(recoveredHealth?.availability == .available)
         #expect(recoveredHealth?.failureCount == 1)
         #expect(recoveredHealth?.selectionCounts[.cooldownRecovery] == 1)
-        let fallbackHealth: HLSContentSteeringPathwaySnapshot? =
+        let fallbackSnapshots: [HLSContentSteeringPathwaySnapshot] =
             events.compactMap { event in
                 guard case .pathwayHealthChanged(let snapshot) = event,
                     snapshot.pathwayID == "B"
@@ -1110,7 +1110,8 @@ struct HLSLivePlaylistClientTests {
                     return nil
                 }
                 return snapshot
-            }.last
+            }
+        let fallbackHealth = fallbackSnapshots.last
         #expect(fallbackHealth?.attemptCount == 3)
         #expect(fallbackHealth?.successCount == 2)
         #expect(fallbackHealth?.failureCount == 1)

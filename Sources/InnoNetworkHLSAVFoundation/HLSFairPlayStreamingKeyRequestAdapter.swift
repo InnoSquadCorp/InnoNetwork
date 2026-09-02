@@ -82,7 +82,7 @@ struct HLSFairPlayStreamingRequestAdapter:
         contentIdentifier: Data,
         options: [String: Any]
     ) async throws -> HLSFairPlayStreamingSPCResult {
-        #if os(iOS) && !targetEnvironment(macCatalyst)
+        #if compiler(>=6.4) && os(iOS) && !targetEnvironment(macCatalyst)
         guard #available(iOS 27, *) else {
             throw HLSFairPlayStreamingKeyError.spcGenerationFailed
         }

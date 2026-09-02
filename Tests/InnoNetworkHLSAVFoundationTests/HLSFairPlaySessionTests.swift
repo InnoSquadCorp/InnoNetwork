@@ -29,7 +29,8 @@ struct HLSFairPlaySessionTests {
             ) == nil
         )
 
-        #if !os(iOS) || targetEnvironment(macCatalyst)
+        #if !compiler(>=6.4) || !os(iOS) || targetEnvironment(macCatalyst)
+        #expect(!HLSFairPlayAdvisoryKeySupport.isAvailable)
         #expect(throws: HLSFairPlaySessionError.advisoryKeysUnavailable) {
             try HLSFairPlaySession(
                 delegate: ContentKeyDelegate(),
