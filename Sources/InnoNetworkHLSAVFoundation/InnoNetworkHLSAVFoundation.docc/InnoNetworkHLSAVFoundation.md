@@ -614,11 +614,12 @@ var analyzer = HLSPlaybackHealthAnalyzer(
     )
 )
 
-for try await event in metrics.events() {
-    let health = analyzer.ingest(event)
+for try await delivery in metrics.sequencedEvents() {
+    let health = analyzer.ingest(delivery)
     updatePlaybackHealth(
         status: health.status,
-        issues: health.issues
+        issues: health.issues,
+        droppedMetricCount: health.droppedMetricEventCount
     )
 }
 ```
@@ -628,8 +629,9 @@ a bounded rolling window. Initial startup and terminal playback errors remain
 session-level signals until ``HLSPlaybackHealthAnalyzer/reset()``. A playback
 summary reconciles aggregate stall, recoverable-error, and variant-switch
 counts when an upstream bounded stream dropped older events. Snapshots retain
-only value-redacted counts and durations; they never introduce URLs, headers,
-session identifiers, or underlying errors.
+the cumulative sequenced-delivery loss count without changing playback health.
+They contain only value-redacted counts and durations; they never introduce
+URLs, headers, session identifiers, or underlying errors.
 
 ## FairPlay
 

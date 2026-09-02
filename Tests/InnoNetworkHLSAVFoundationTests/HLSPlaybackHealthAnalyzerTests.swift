@@ -147,6 +147,57 @@ struct HLSPlaybackHealthAnalyzerTests {
         )
     }
 
+    @Test("sequenced delivery reports diagnostic loss without degrading health")
+    func sequencedDeliveryReportsDiagnosticLoss() {
+        var analyzer = HLSPlaybackHealthAnalyzer()
+        let first = HLSPlaybackMetricDelivery(
+            sequenceNumber: 3,
+            event: .rateChanged(
+                context(at: 0),
+                previousRate: 0,
+                rate: 1
+            )
+        )
+        let second = HLSPlaybackMetricDelivery(
+            sequenceNumber: 5,
+            event: .rateChanged(
+                context(at: 1),
+                previousRate: 1,
+                rate: 0
+            )
+        )
+
+        _ = analyzer.ingest(first)
+        _ = analyzer.ingest(second)
+        _ = analyzer.ingest(
+            HLSPlaybackMetricDelivery(
+                sequenceNumber: 4,
+                event: .rateChanged(
+                    context(at: 2),
+                    previousRate: 0,
+                    rate: 1
+                )
+            )
+        )
+        let snapshot = analyzer.ingest(
+            HLSPlaybackMetricDelivery(
+                sequenceNumber: 6,
+                event: .rateChanged(
+                    context(at: 3),
+                    previousRate: 1,
+                    rate: 0
+                )
+            )
+        )
+
+        #expect(snapshot.status == .healthy)
+        #expect(snapshot.issues.isEmpty)
+        #expect(snapshot.droppedMetricEventCount == 4)
+
+        analyzer.reset()
+        #expect(analyzer.snapshot.droppedMetricEventCount == 0)
+    }
+
     @Test("failed media requests become critical at their threshold")
     func evaluatesMediaRequestFailures() {
         var analyzer = HLSPlaybackHealthAnalyzer(

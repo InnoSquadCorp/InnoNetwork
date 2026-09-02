@@ -1772,6 +1772,8 @@ for symbol in "${expected_provisionally[@]}"; do
         "$repo_root/Sources/InnoNetworkHLSAVFoundation/HLSPlaybackHealthAnalyzer.swift"
       require_contains 'public struct HLSPlaybackHealthSnapshot: Equatable, Sendable' \
         "$repo_root/Sources/InnoNetworkHLSAVFoundation/HLSPlaybackHealthModels.swift"
+      require_contains 'public let droppedMetricEventCount: UInt64' \
+        "$repo_root/Sources/InnoNetworkHLSAVFoundation/HLSPlaybackHealthModels.swift"
       require_contains '## Playback health analysis' \
         "$repo_root/Sources/InnoNetworkHLSAVFoundation/InnoNetworkHLSAVFoundation.docc/InnoNetworkHLSAVFoundation.md"
       require_contains 'public struct HLSPlaybackStartupMetric: Equatable, Sendable' \

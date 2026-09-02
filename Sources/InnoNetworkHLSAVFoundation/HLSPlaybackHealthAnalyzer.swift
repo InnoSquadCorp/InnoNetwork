@@ -4,13 +4,17 @@ import Foundation
 /// snapshots.
 ///
 /// The analyzer performs no observation or I/O. Give each playback session its
-/// own mutable analyzer and pass it events from ``HLSPlaybackMetrics/events()``.
+/// own mutable analyzer and pass it events from either
+/// ``HLSPlaybackMetrics/events()`` or
+/// ``HLSPlaybackMetrics/sequencedEvents()``.
 public struct HLSPlaybackHealthAnalyzer: Sendable {
     private let configuration: HLSPlaybackHealthConfiguration
     private var samples: [HLSPlaybackHealthSample] = []
     private var newestTimestamp: TimeInterval?
     private var initialStartupDuration: TimeInterval?
     private var hasTerminalPlaybackError = false
+    private var previousDeliverySequenceNumber: UInt64?
+    private var droppedMetricEventCount: UInt64 = 0
 
     /// Creates an empty playback-health analysis session.
     public init(
@@ -75,12 +79,38 @@ public struct HLSPlaybackHealthAnalyzer: Sendable {
         return makeSnapshot()
     }
 
+    /// Ingests one sequenced delivery and records diagnostic backpressure.
+    ///
+    /// Use deliveries from one ``HLSPlaybackMetrics/sequencedEvents()`` call
+    /// for each analyzer. Sequence gaps update
+    /// ``HLSPlaybackHealthSnapshot/droppedMetricEventCount`` without changing
+    /// the inferred playback status.
+    @discardableResult
+    public mutating func ingest(
+        _ delivery: HLSPlaybackMetricDelivery
+    ) -> HLSPlaybackHealthSnapshot {
+        let dropped = delivery.droppedEventCount(
+            afterSequenceNumber: previousDeliverySequenceNumber
+        )
+        let (nextDroppedCount, overflow) =
+            droppedMetricEventCount.addingReportingOverflow(dropped)
+        droppedMetricEventCount =
+            overflow ? .max : nextDroppedCount
+        previousDeliverySequenceNumber = max(
+            previousDeliverySequenceNumber ?? delivery.sequenceNumber,
+            delivery.sequenceNumber
+        )
+        return ingest(delivery.event)
+    }
+
     /// Removes all events and session-level health signals.
     public mutating func reset() {
         samples.removeAll(keepingCapacity: true)
         newestTimestamp = nil
         initialStartupDuration = nil
         hasTerminalPlaybackError = false
+        previousDeliverySequenceNumber = nil
+        droppedMetricEventCount = 0
     }
 
     private mutating func pruneSamples() {
@@ -112,6 +142,7 @@ public struct HLSPlaybackHealthAnalyzer: Sendable {
                     Date(timeIntervalSinceReferenceDate: $0)
                 },
                 retainedEventCount: 0,
+                droppedMetricEventCount: droppedMetricEventCount,
                 stallCount: 0,
                 recoverableErrorCount: 0,
                 mediaRequestFailureCount: 0,
@@ -181,6 +212,7 @@ public struct HLSPlaybackHealthAnalyzer: Sendable {
                 Date(timeIntervalSinceReferenceDate: $0)
             },
             retainedEventCount: samples.count,
+            droppedMetricEventCount: droppedMetricEventCount,
             stallCount: aggregate.stallCount,
             recoverableErrorCount:
                 aggregate.recoverableErrorCount,

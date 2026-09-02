@@ -692,7 +692,8 @@ for await event in await manager.events(for: task) {
   detailed views include bounded, URL-free loaded-buffer snapshots, while a
   readiness stream covers both initial and later likely-to-keep-up events and
   a rate-change stream correlates variant bitrate with stalls and seeks;
-  zero-based sequenced delivery makes bounded-buffer loss observable
+  zero-based sequenced delivery makes bounded-buffer loss observable and the
+  playback-health analyzer retains that diagnostic completeness count
 - reconnectable AVFoundation background HLS downloads with typed content
   selection, interstitial retention, bounded event replay, and version 26
   URL-free download-summary metrics with bounded selected-variant details

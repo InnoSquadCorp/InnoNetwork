@@ -264,11 +264,16 @@ private func smokeHLSPlaybackStartupMetricsSurface(
 @available(macOS 15, iOS 18, tvOS 18, watchOS 11, visionOS 2, *)
 private func smokeHLSPlaybackMetricDeliverySurface(
     playerItem: AVPlayerItem
-) {
+) async throws {
     let deliveries = HLSPlaybackMetrics(
         playerItem: playerItem
     ).sequencedEvents()
-    _ = deliveries
+    var analyzer = HLSPlaybackHealthAnalyzer()
+    for try await delivery in deliveries {
+        let health = analyzer.ingest(delivery)
+        _ = health.droppedMetricEventCount
+        break
+    }
     _ = smokeHLSPlaybackMetricDeliveryType
 }
 

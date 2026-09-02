@@ -27,13 +27,21 @@ public struct HLSPlaybackMetricDelivery: Equatable, Sendable {
     public func droppedEventCount(
         after previous: HLSPlaybackMetricDelivery?
     ) -> UInt64 {
+        droppedEventCount(
+            afterSequenceNumber: previous?.sequenceNumber
+        )
+    }
+
+    func droppedEventCount(
+        afterSequenceNumber previous: UInt64?
+    ) -> UInt64 {
         guard let previous else {
             return sequenceNumber
         }
-        guard sequenceNumber > previous.sequenceNumber else {
+        guard sequenceNumber > previous else {
             return 0
         }
-        return sequenceNumber - previous.sequenceNumber - 1
+        return sequenceNumber - previous - 1
     }
 }
 

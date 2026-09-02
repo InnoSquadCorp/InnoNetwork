@@ -187,6 +187,12 @@ public struct HLSPlaybackHealthSnapshot: Equatable, Sendable {
     /// Events retained inside the rolling observation window.
     public let retainedEventCount: Int
 
+    /// Playback metric events discarded by sequenced delivery.
+    ///
+    /// This session-level count saturates at `UInt64.max`. It does not change
+    /// ``status`` because diagnostic backpressure is not playback impairment.
+    public let droppedMetricEventCount: UInt64
+
     /// Stalls observed or reported inside the rolling window.
     public let stallCount: Int
 
@@ -213,6 +219,7 @@ public struct HLSPlaybackHealthSnapshot: Equatable, Sendable {
         issues: [HLSPlaybackHealthIssue],
         observedAt: Date?,
         retainedEventCount: Int,
+        droppedMetricEventCount: UInt64,
         stallCount: Int,
         recoverableErrorCount: Int,
         mediaRequestFailureCount: Int,
@@ -225,6 +232,7 @@ public struct HLSPlaybackHealthSnapshot: Equatable, Sendable {
         self.issues = issues
         self.observedAt = observedAt
         self.retainedEventCount = retainedEventCount
+        self.droppedMetricEventCount = droppedMetricEventCount
         self.stallCount = stallCount
         self.recoverableErrorCount = recoverableErrorCount
         self.mediaRequestFailureCount = mediaRequestFailureCount

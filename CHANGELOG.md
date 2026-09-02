@@ -16,6 +16,10 @@ Versioning.
 
 ### Added
 
+- `HLSPlaybackHealthAnalyzer.ingest(_:)` accepts sequenced metric deliveries
+  and reports their cumulative bounded-buffer loss through
+  `HLSPlaybackHealthSnapshot.droppedMetricEventCount` without treating
+  diagnostic backpressure as playback impairment.
 - `HLSPlaybackMetrics.sequencedEvents()` wraps the existing URL-free playback
   metrics in a zero-based delivery sequence, allowing bounded-stream consumers
   to measure initial and subsequent event loss without an unbounded side
