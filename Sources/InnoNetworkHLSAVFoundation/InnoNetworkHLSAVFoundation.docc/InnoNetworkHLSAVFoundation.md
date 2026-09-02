@@ -542,7 +542,11 @@ let fairPlay = try HLSFairPlaySession(
     delegateQueue: keyQueue,
     storageDirectoryURL: expiredSessionReportDirectory
 )
-let protectedAsset = try fairPlay.makeAsset(sourceURL: sourceURL)
+let protectedAssetID = HLSFairPlayAssetID()
+let protectedAsset = try fairPlay.makeAsset(
+    sourceURL: sourceURL,
+    assetID: protectedAssetID
+)
 let download = try assetDownloadSession.start(
     asset: protectedAsset,
     title: "Protected Episode"
@@ -555,6 +559,38 @@ loading begins, and accepts HTTPS sources through the same URL-admission rules
 as unprotected downloads. Detach an asset only after both download and
 playback finish, then call ``HLSFairPlaySession/expire()`` when the whole key
 session is done.
+
+On version 26 and newer, classify each delegate request against the same
+caller-known identity without retaining a URL or native recipient:
+
+```swift
+let origin = fairPlay.requestOriginResolver.origin(of: request)
+switch origin {
+case .attachedAsset(let assetID) where assetID == protectedAssetID:
+    recordPrimaryAssetKeyRequest()
+case .noRecipient:
+    recordPreloadedKeyRequest()
+case .unrecognizedRecipient:
+    recordUnregisteredRecipient()
+case .unavailable:
+    break
+case .attachedAsset:
+    recordOtherAttachedAssetKeyRequest()
+}
+```
+
+``HLSFairPlayContentKeyRequestOrigin/unavailable`` preserves the package's
+lower deployment targets. ``HLSFairPlayContentKeyRequestOrigin/noRecipient``
+means AVFoundation reported no originating recipient, which includes direct
+application requests, while
+``HLSFairPlayContentKeyRequestOrigin/unrecognizedRecipient`` means the native
+recipient was not created through this wrapper. Asset identifiers are opaque
+UUIDs and must be unique among currently attached assets; detaching an asset
+releases its identifier for reuse. The resolver is thread-safe and independent
+of the main actor, so a content-key delegate can retain only
+``HLSFairPlayContentKeyRequestOriginResolver`` and classify the request
+immediately on its delegate queue without creating a retain cycle back to the
+session.
 
 The supplied delegate still owns certificate loading, SPC-to-CKC transport,
 renewal, and secure persistable-content-key storage. The optional directory
@@ -762,6 +798,9 @@ does not ship its package storage and readiness types.
 
 ### FairPlay
 
+- ``HLSFairPlayAssetID``
+- ``HLSFairPlayContentKeyRequestOrigin``
+- ``HLSFairPlayContentKeyRequestOriginResolver``
 - ``HLSFairPlaySession``
 - ``HLSFairPlaySessionError``
 - ``HLSFairPlayDeviceIdentifierPolicy``

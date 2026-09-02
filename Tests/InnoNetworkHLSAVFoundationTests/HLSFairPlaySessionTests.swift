@@ -47,6 +47,125 @@ struct HLSFairPlaySessionTests {
         session.expire()
     }
 
+    @Test("caller-known asset identities stay unique and URL-free")
+    func assetIdentities() throws {
+        let session = try HLSFairPlaySession(
+            delegate: ContentKeyDelegate(),
+            delegateQueue: DispatchQueue(
+                label: "com.innonetwork.tests.fairplay.asset-id"
+            )
+        )
+        let rawID = try #require(
+            UUID(
+                uuidString:
+                    "A3F96E4F-785E-472E-81F4-6F423128CE40"
+            )
+        )
+        let assetID = HLSFairPlayAssetID(rawID)
+        let asset = try session.makeAsset(
+            sourceURL: #require(
+                URL(string: "https://media.example/primary.m3u8")
+            ),
+            assetID: assetID
+        )
+
+        #expect(assetID.rawValue == rawID)
+        #expect(
+            session.requestOriginResolver.origin(of: asset)
+                == .attachedAsset(assetID)
+        )
+        #expect(throws: HLSFairPlaySessionError.duplicateAssetIdentifier) {
+            try session.makeAsset(
+                sourceURL: #require(
+                    URL(string: "https://media.example/ad.m3u8")
+                ),
+                assetID: assetID
+            )
+        }
+
+        try session.detach(asset)
+        #expect(
+            session.requestOriginResolver.origin(of: asset)
+                == .unrecognizedRecipient
+        )
+        let replacement = try session.makeAsset(
+            sourceURL: #require(
+                URL(string: "https://media.example/ad.m3u8")
+            ),
+            assetID: assetID
+        )
+        try session.detach(replacement)
+    }
+
+    @Test("request origins map to registered opaque asset identities")
+    func requestOriginMapping() {
+        let attachedRecipient = NSObject()
+        let foreignRecipient = NSObject()
+        let assetID = HLSFairPlayAssetID()
+        let attachedAssets = [
+            ObjectIdentifier(attachedRecipient): assetID
+        ]
+
+        #expect(
+            HLSFairPlayContentKeyRequestOriginMapper.map(
+                nil
+            ) { attachedAssets[$0] } == .noRecipient
+        )
+        #expect(
+            HLSFairPlayContentKeyRequestOriginMapper.map(
+                attachedRecipient
+            ) { attachedAssets[$0] } == .attachedAsset(assetID)
+        )
+        #expect(
+            HLSFairPlayContentKeyRequestOriginMapper.map(
+                foreignRecipient
+            ) { attachedAssets[$0] } == .unrecognizedRecipient
+        )
+    }
+
+    @Test("request-origin resolver remains consistent across delegate queues")
+    func requestOriginResolverRaceSafety() async throws {
+        let resolver = HLSFairPlayContentKeyRequestOriginResolver()
+        let assets = try (0..<64).map { index in
+            AVURLAsset(
+                url: try #require(
+                    URL(
+                        string:
+                            "https://media.example/asset-\(index).m3u8"
+                    )
+                )
+            )
+        }
+        let assetIDs = assets.map { _ in HLSFairPlayAssetID() }
+
+        await withTaskGroup(of: Void.self) { group in
+            for index in assets.indices {
+                group.addTask {
+                    resolver.register(assets[index], id: assetIDs[index])
+                }
+            }
+        }
+        for index in assets.indices {
+            #expect(
+                resolver.origin(of: assets[index])
+                    == .attachedAsset(assetIDs[index])
+            )
+        }
+
+        await withTaskGroup(of: Void.self) { group in
+            for asset in assets {
+                group.addTask {
+                    resolver.unregister(asset)
+                }
+            }
+        }
+        for asset in assets {
+            #expect(
+                resolver.origin(of: asset) == .unrecognizedRecipient
+            )
+        }
+    }
+
     @Test("session rejects unsafe sources and post-expiration assets")
     func admissionAndExpiration() throws {
         let session = try HLSFairPlaySession(

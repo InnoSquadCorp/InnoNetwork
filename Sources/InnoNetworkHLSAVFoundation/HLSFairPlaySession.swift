@@ -13,11 +13,21 @@ public final class HLSFairPlaySession {
     /// The application-configured FairPlay content-key session.
     public let contentKeySession: AVContentKeySession
 
+    /// Thread-safe, URL-free request-origin correlation for this session.
+    public let requestOriginResolver =
+        HLSFairPlayContentKeyRequestOriginResolver()
+
     // Strong ownership is intentional: AVContentKeySession does not own its
     // delegate, while the wrapper promises delegate lifetime for the session.
     // periphery:ignore
     private let retainedDelegate: any AVContentKeySessionDelegate
-    private var attachedAssets: [ObjectIdentifier: AVURLAsset] = [:]
+    private struct AttachedAsset {
+        let asset: AVURLAsset
+        let id: HLSFairPlayAssetID
+    }
+
+    private var attachedAssets: [ObjectIdentifier: AttachedAsset] = [:]
+    private var attachedAssetIdentifiers: Set<HLSFairPlayAssetID> = []
     private var isExpired = false
 
     /// Creates a FairPlay session with an application-owned key delegate.
@@ -54,6 +64,20 @@ public final class HLSFairPlaySession {
     public func makeAsset(
         sourceURL: URL
     ) throws -> AVURLAsset {
+        try makeAsset(
+            sourceURL: sourceURL,
+            assetID: HLSFairPlayAssetID()
+        )
+    }
+
+    /// Creates and attaches an HTTPS asset with a caller-known identity.
+    ///
+    /// Retain `assetID` in application state when delegate handling needs to
+    /// correlate a later content-key request without inspecting an asset URL.
+    public func makeAsset(
+        sourceURL: URL,
+        assetID: HLSFairPlayAssetID
+    ) throws -> AVURLAsset {
         guard !isExpired else {
             throw HLSFairPlaySessionError.sessionExpired
         }
@@ -66,8 +90,7 @@ public final class HLSFairPlaySession {
         }
 
         let asset = AVURLAsset(url: sourceURL)
-        contentKeySession.addContentKeyRecipient(asset)
-        attachedAssets[ObjectIdentifier(asset)] = asset
+        try attach(asset, assetID: assetID)
         return asset
     }
 
@@ -80,13 +103,23 @@ public final class HLSFairPlaySession {
     public func makeAsset(
         storedAsset: HLSStoredAsset
     ) throws -> AVURLAsset {
+        try makeAsset(
+            storedAsset: storedAsset,
+            assetID: HLSFairPlayAssetID()
+        )
+    }
+
+    /// Creates and attaches a stored asset with a caller-known identity.
+    public func makeAsset(
+        storedAsset: HLSStoredAsset,
+        assetID: HLSFairPlayAssetID
+    ) throws -> AVURLAsset {
         guard !isExpired else {
             throw HLSFairPlaySessionError.sessionExpired
         }
 
         let asset = AVURLAsset(url: storedAsset.location)
-        contentKeySession.addContentKeyRecipient(asset)
-        attachedAssets[ObjectIdentifier(asset)] = asset
+        try attach(asset, assetID: assetID)
         return asset
     }
     #endif
@@ -96,12 +129,14 @@ public final class HLSFairPlaySession {
         _ asset: AVURLAsset
     ) throws {
         guard
-            attachedAssets.removeValue(
+            let attachment = attachedAssets.removeValue(
                 forKey: ObjectIdentifier(asset)
-            ) != nil
+            )
         else {
             throw HLSFairPlaySessionError.foreignAsset
         }
+        attachedAssetIdentifiers.remove(attachment.id)
+        requestOriginResolver.unregister(asset)
         contentKeySession.removeContentKeyRecipient(asset)
     }
 
@@ -114,7 +149,24 @@ public final class HLSFairPlaySession {
         }
         isExpired = true
         attachedAssets.removeAll(keepingCapacity: false)
+        attachedAssetIdentifiers.removeAll(keepingCapacity: false)
+        requestOriginResolver.removeAll()
         contentKeySession.expire()
+    }
+
+    private func attach(
+        _ asset: AVURLAsset,
+        assetID: HLSFairPlayAssetID
+    ) throws {
+        guard attachedAssetIdentifiers.insert(assetID).inserted else {
+            throw HLSFairPlaySessionError.duplicateAssetIdentifier
+        }
+        contentKeySession.addContentKeyRecipient(asset)
+        requestOriginResolver.register(asset, id: assetID)
+        attachedAssets[ObjectIdentifier(asset)] = AttachedAsset(
+            asset: asset,
+            id: assetID
+        )
     }
 
     private static func validateStorageDirectory(
@@ -162,6 +214,9 @@ public enum HLSFairPlaySessionError: Error, Equatable, Sendable {
 
     /// The asset was not attached by this FairPlay session.
     case foreignAsset
+
+    /// Another attached asset already uses the caller-provided identity.
+    case duplicateAssetIdentifier
 }
 
 extension HLSFairPlaySessionError: LocalizedError {
@@ -188,6 +243,10 @@ extension HLSFairPlaySessionError: LocalizedError {
             return fairPlayLocalized(
                 "HLSFairPlaySessionError.foreignAsset"
             )
+        case .duplicateAssetIdentifier:
+            return fairPlayLocalized(
+                "HLSFairPlaySessionError.duplicateAssetIdentifier"
+            )
         }
     }
 
@@ -209,6 +268,10 @@ extension HLSFairPlaySessionError: LocalizedError {
         case .foreignAsset:
             return fairPlayLocalized(
                 "HLSFairPlaySessionError.recovery.useOwningSession"
+            )
+        case .duplicateAssetIdentifier:
+            return fairPlayLocalized(
+                "HLSFairPlaySessionError.recovery.useUniqueAssetIdentifier"
             )
         }
     }

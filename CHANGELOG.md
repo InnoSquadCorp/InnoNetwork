@@ -16,6 +16,11 @@ Versioning.
 
 ### Added
 
+- `HLSFairPlaySession` can assign an opaque `HLSFairPlayAssetID` while it
+  creates online or stored assets, then classify version 26 content-key
+  requests as having no recipient, attached to a known asset, or initiated by
+  an unrecognized recipient. The mapping exposes neither native recipients
+  nor asset URLs and fails typed when an active identifier is reused.
 - `HLSAssetDownloadEvent.variantSelection` exposes AVFoundation's chosen
   download variants before transfer progress. The replayable snapshot retains
   at most 64 URL-free bitrate and media-kind summaries plus the pre-truncation

@@ -48,10 +48,12 @@
 "HLSFairPlaySessionError.invalidStorageDirectory" = "FairPlay 만료 세션 보고서 위치는 이미 존재하는 일반 로컬 디렉터리여야 합니다.";
 "HLSFairPlaySessionError.sessionExpired" = "FairPlay 콘텐츠 키 세션이 이미 만료되었습니다.";
 "HLSFairPlaySessionError.foreignAsset" = "HLS 에셋이 이 FairPlay 세션에서 연결되지 않았습니다.";
+"HLSFairPlaySessionError.duplicateAssetIdentifier" = "다른 HLS 에셋이 이미 이 FairPlay 에셋 식별자를 사용하고 있습니다.";
 "HLSFairPlaySessionError.recovery.useHTTPSURL" = "인증 정보가 포함되지 않은 HTTPS URL을 제공하세요.";
 "HLSFairPlaySessionError.recovery.useRegularDirectory" = "앱 컨테이너에 심볼릭 링크가 아닌 디렉터리를 만들고 해당 로컬 URL을 전달하세요.";
 "HLSFairPlaySessionError.recovery.createSession" = "새 FairPlay 세션을 만들고 미디어 로딩 전에 새 AVURLAsset을 연결하세요.";
 "HLSFairPlaySessionError.recovery.useOwningSession" = "에셋을 만들고 연결한 FairPlay 세션에서 해당 에셋을 분리하세요.";
+"HLSFairPlaySessionError.recovery.useUniqueAssetIdentifier" = "고유한 FairPlay 에셋 식별자를 사용하거나 기존 에셋 연결을 먼저 해제하세요.";
 "HLSFairPlayPersistentKeyError.invalidKeyIdentifier" = "FairPlay 영구 키 식별자가 비어 있거나 안전하지 않습니다.";
 "HLSFairPlayPersistentKeyError.invalidApplicationCertificate" = "FairPlay 앱 인증서가 비어 있거나 바이트 제한을 초과했습니다.";
 "HLSFairPlayPersistentKeyError.invalidContentIdentifier" = "FairPlay 콘텐츠 식별자가 비어 있거나 바이트 제한을 초과했습니다.";

@@ -708,7 +708,9 @@ for await event in await manager.events(for: task) {
   shared container support
 - `HLSFairPlaySession` for delegate retention, HTTPS asset admission,
   pre-load `AVContentKeySession` recipient attachment, explicit detachment,
-  downloaded `.movpkg` reattachment, and normal expiration, plus bounded
+  downloaded `.movpkg` reattachment, normal expiration, and version 26
+  URL-free request-origin correlation through caller-known opaque asset IDs,
+  plus bounded
   streaming-key initial/renewal and restore-or-create persistent-key workflows
   with app-injected SPC/CKC transport, secure storage, typed redacted lifecycle
   events, opt-in FairPlay protocol-version negotiation after KSM validation,
