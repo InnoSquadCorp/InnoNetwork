@@ -10,17 +10,13 @@ import os
 struct HLSOfflineAssetRuntimeTests {
     @Test(
         "a downloaded movpkg reports a complete offline rendition",
+        .hlsRuntimeURL("INNONETWORK_HLS_RUNTIME_PLAYLIST_URL"),
         .timeLimit(.minutes(1))
     )
     func downloadedPackageIsReady() async throws {
-        guard
-            let rawURL = ProcessInfo.processInfo.environment[
-                "INNONETWORK_HLS_RUNTIME_PLAYLIST_URL"
-            ],
-            let playlistURL = URL(string: rawURL)
-        else {
-            try Test.cancel()
-        }
+        let playlistURL = try hlsRuntimeURL(
+            environmentKey: "INNONETWORK_HLS_RUNTIME_PLAYLIST_URL"
+        )
 
         let delegate = HLSOfflineAssetDownloadProbe()
         let configuration = URLSessionConfiguration.background(

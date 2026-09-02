@@ -5,7 +5,6 @@ import Testing
 
 @testable import InnoNetworkHLSAVFoundation
 
-@MainActor
 @Suite("AVFoundation HLS timed metadata")
 struct HLSTimedMetadataTests {
     @Test("identifiers reject unsafe schema names")
@@ -363,6 +362,7 @@ struct HLSTimedMetadataTests {
     }
 
     @Test("monitor attaches and finishes subscribers on detach")
+    @MainActor
     func monitorAttachesAndFinishesOnDetach() async throws {
         let playerItem = AVPlayerItem(url: try sourceURL())
         let originalOutputCount = playerItem.outputs.count
@@ -384,6 +384,7 @@ struct HLSTimedMetadataTests {
     }
 
     @Test("monitor rejects an empty allowlist before AVFoundation")
+    @MainActor
     func monitorRejectsEmptyAllowlist() throws {
         let playerItem = AVPlayerItem(url: try sourceURL())
 

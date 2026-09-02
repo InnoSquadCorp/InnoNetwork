@@ -16,17 +16,13 @@ import FoundationNetworking
 struct HLSLiveDVRGapRuntimeTests {
     @Test(
         "recorded GAP skips unavailable media in AVPlayer",
+        .hlsRuntimeURL("INNONETWORK_HLS_LIVE_GAP_RUNTIME_URL"),
         .timeLimit(.minutes(1))
     )
     func recordsAndPlaysPastGap() async throws {
-        guard
-            let rawURL = ProcessInfo.processInfo.environment[
-                "INNONETWORK_HLS_LIVE_GAP_RUNTIME_URL"
-            ],
-            let playlistURL = URL(string: rawURL)
-        else {
-            try Test.cancel()
-        }
+        let playlistURL = try hlsRuntimeURL(
+            environmentKey: "INNONETWORK_HLS_LIVE_GAP_RUNTIME_URL"
+        )
 
         let destinationURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(

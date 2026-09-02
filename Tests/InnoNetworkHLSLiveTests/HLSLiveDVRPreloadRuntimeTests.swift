@@ -8,17 +8,13 @@ import Testing
 struct HLSLiveDVRPreloadRuntimeTests {
     @Test(
         "confirmed PART and MAP hints are reused over loopback HTTP",
+        .hlsRuntimeURL("INNONETWORK_HLS_LIVE_PRELOAD_RUNTIME_URL"),
         .timeLimit(.minutes(1))
     )
     func reusesConfirmedHints() async throws {
-        guard
-            let rawURL = ProcessInfo.processInfo.environment[
-                "INNONETWORK_HLS_LIVE_PRELOAD_RUNTIME_URL"
-            ],
-            let playlistURL = URL(string: rawURL)
-        else {
-            try Test.cancel()
-        }
+        let playlistURL = try hlsRuntimeURL(
+            environmentKey: "INNONETWORK_HLS_LIVE_PRELOAD_RUNTIME_URL"
+        )
 
         let destinationURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(

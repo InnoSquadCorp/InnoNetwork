@@ -16,17 +16,14 @@ import FoundationNetworking
 struct HLSLiveDVRMapRotationRuntimeTests {
     @Test(
         "recorded MAP rotations advance through AVPlayer",
+        .hlsRuntimeURL("INNONETWORK_HLS_LIVE_MAP_ROTATION_RUNTIME_URL"),
         .timeLimit(.minutes(1))
     )
     func recordsAndPlaysMapRotations() async throws {
-        guard
-            let rawURL = ProcessInfo.processInfo.environment[
+        let playlistURL = try hlsRuntimeURL(
+            environmentKey:
                 "INNONETWORK_HLS_LIVE_MAP_ROTATION_RUNTIME_URL"
-            ],
-            let playlistURL = URL(string: rawURL)
-        else {
-            try Test.cancel()
-        }
+        )
 
         let destinationURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(

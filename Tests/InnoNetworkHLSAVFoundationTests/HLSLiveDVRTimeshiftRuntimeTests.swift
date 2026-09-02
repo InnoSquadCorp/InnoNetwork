@@ -16,17 +16,14 @@ import FoundationNetworking
 struct HLSLiveDVRTimeshiftRuntimeTests {
     @Test(
         "an in-progress DVR snapshot advances through AVPlayer",
+        .hlsRuntimeURL("INNONETWORK_HLS_LIVE_TIMESHIFT_RUNTIME_URL"),
         .timeLimit(.minutes(1))
     )
     func capturesAndPlaysInProgressSnapshot() async throws {
-        guard
-            let rawURL = ProcessInfo.processInfo.environment[
+        let playlistURL = try hlsRuntimeURL(
+            environmentKey:
                 "INNONETWORK_HLS_LIVE_TIMESHIFT_RUNTIME_URL"
-            ],
-            let playlistURL = URL(string: rawURL)
-        else {
-            try Test.cancel()
-        }
+        )
 
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(

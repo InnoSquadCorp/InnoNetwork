@@ -11,17 +11,13 @@ struct HLSIntegratedTimelineRuntimeTests {
     @available(macOS 27, iOS 27, *)
     @Test(
         "AVPlayer advances a primary segment on the integrated timeline",
+        .hlsRuntimeURL("INNONETWORK_HLS_RUNTIME_PLAYLIST_URL"),
         .timeLimit(.minutes(1))
     )
     func avPlayerAdvancesIntegratedTimeline() async throws {
-        guard
-            let rawURL = ProcessInfo.processInfo.environment[
-                "INNONETWORK_HLS_RUNTIME_PLAYLIST_URL"
-            ],
-            let playlistURL = URL(string: rawURL)
-        else {
-            try Test.cancel()
-        }
+        let playlistURL = try hlsRuntimeURL(
+            environmentKey: "INNONETWORK_HLS_RUNTIME_PLAYLIST_URL"
+        )
 
         let playerItem = AVPlayerItem(url: playlistURL)
         let player = AVPlayer(playerItem: playerItem)
