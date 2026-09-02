@@ -406,8 +406,8 @@ types and members in addition to top-level declarations. The grouped ledger
 below keeps the high-level compatibility classification readable for the
 5.x release line.
 
-The machine-checked snapshot currently partitions all 3,018 declarations into
-305 Stable consumer declarations, 2,680 Provisionally Stable consumer
+The machine-checked snapshot currently partitions all 3,028 declarations into
+305 Stable consumer declarations, 2,690 Provisionally Stable consumer
 declarations, and 33 opt-in SPI declarations. The three sets are disjoint and
 exhaustive. `Scripts/symbols/stable-rules.tsv` maps the Stable ledger to symbol
 paths, while the compiler-authored SPI flag is snapshotted in
@@ -624,9 +624,11 @@ Stable.
 - Playback metrics: `HLSPlaybackMetricContext`, `HLSPlaybackMetricEvent`,
   `HLSPlaybackMetricMediaType`, `HLSPlaybackMetrics`,
   `HLSPlaybackMetricsError`, `HLSPlaybackMetricSummary`, `HLSPlaybackMode`,
-  `HLSPlaybackTransferMetric`, and `HLSPlaybackVariantSwitchPhase`. The bridge
-  emits bounded, independently cancellable streams and removes transport
-  identifiers, arbitrary errors, and non-finite numeric values.
+  `HLSPlaybackStartupMetric`, `HLSPlaybackTransferMetric`, and
+  `HLSPlaybackVariantSwitchPhase`. The bridge emits bounded, independently
+  cancellable streams and removes transport identifiers, arbitrary errors,
+  and non-finite numeric values. Startup diagnostics preserve exact request
+  counts while bounding chronological request details.
 - Playback health: `HLSPlaybackHealthAnalyzer`,
   `HLSPlaybackHealthConfiguration`, `HLSPlaybackHealthIssue`,
   `HLSPlaybackHealthSnapshot`, `HLSPlaybackHealthStatus`, and

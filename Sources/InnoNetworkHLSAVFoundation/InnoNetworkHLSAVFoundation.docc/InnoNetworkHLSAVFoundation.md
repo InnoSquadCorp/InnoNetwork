@@ -496,6 +496,25 @@ cancellation-safe AVFoundation subscription. The bounded buffer retains the
 newest events, so a slow consumer may miss older metrics. Create one stream per
 consumer and drain it promptly when complete event retention matters.
 
+For startup-specific diagnosis, use
+``HLSPlaybackMetrics/startupEvents(maximumRetainedRequestCount:)``. It retains
+the chronological, URL-free playlist, segment, and content-key request details
+that AVFoundation associates with the initial likely-to-keep-up event:
+
+```swift
+for try await startup in metrics.startupEvents() {
+    recordStartup(
+        duration: startup.timeTaken,
+        requestCount: startup.requestCount,
+        didTruncate: startup.didTruncateRequests
+    )
+}
+```
+
+The startup stream is an independent AVFoundation subscription rather than a
+second view over ``HLSPlaybackMetrics/events()``. Prefer one of the two streams
+unless the application intentionally needs both event shapes.
+
 ## Playback health analysis
 
 ``HLSPlaybackHealthAnalyzer`` is a pure value reducer for one playback
@@ -879,6 +898,7 @@ does not ship its package storage and readiness types.
 - ``HLSPlaybackMetrics``
 - ``HLSPlaybackMetricsError``
 - ``HLSPlaybackMetricEvent``
+- ``HLSPlaybackStartupMetric``
 - ``HLSPlaybackMetricContext``
 - ``HLSPlaybackTransferMetric``
 - ``HLSPlaybackMetricSummary``

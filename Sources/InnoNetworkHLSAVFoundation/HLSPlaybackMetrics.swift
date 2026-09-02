@@ -256,11 +256,16 @@ public struct HLSPlaybackMetrics: Sendable {
     public func events()
         -> AsyncThrowingStream<HLSPlaybackMetricEvent, Error>
     {
+        makeEventStream { metric in
+            HLSPlaybackMetricMapper.map(metric)
+        }
+    }
+
+    func makeEventStream<Output: Sendable>(
+        _ transform: @escaping @Sendable (AVMetricEvent) -> Output?
+    ) -> AsyncThrowingStream<Output, Error> {
         let (stream, continuation) =
-            AsyncThrowingStream<
-                HLSPlaybackMetricEvent,
-                Error
-            >.makeStream(
+            AsyncThrowingStream<Output, Error>.makeStream(
                 bufferingPolicy: .bufferingNewest(
                     maximumBufferedEventCount
                 )
@@ -269,9 +274,9 @@ public struct HLSPlaybackMetrics: Sendable {
         let task = Task {
             do {
                 for try await metric in playerItem.allMetrics() {
-                    continuation.yield(
-                        HLSPlaybackMetricMapper.map(metric)
-                    )
+                    if let output = transform(metric) {
+                        continuation.yield(output)
+                    }
                 }
                 continuation.finish()
             } catch is CancellationError {
@@ -385,7 +390,7 @@ enum HLSPlaybackMetricMapper {
         }
     }
 
-    private static func context(
+    static func context(
         _ metric: AVMetricEvent
     ) -> HLSPlaybackMetricContext {
         let seconds = metric.mediaTime.seconds
@@ -398,7 +403,7 @@ enum HLSPlaybackMetricMapper {
         )
     }
 
-    private static func transferMetric(
+    static func transferMetric(
         _ event: AVMetricMediaResourceRequestEvent
     ) -> HLSPlaybackTransferMetric {
         let error = event.errorEvent
@@ -461,7 +466,7 @@ enum HLSPlaybackMetricMapper {
         )
     }
 
-    private static func mediaType(
+    static func mediaType(
         _ type: AVMediaType
     ) -> HLSPlaybackMetricMediaType {
         switch type {
@@ -489,7 +494,7 @@ enum HLSPlaybackMetricMapper {
         finiteNonnegative(end.timeIntervalSince(start))
     }
 
-    private static func finiteNonnegative(
+    static func finiteNonnegative(
         _ value: TimeInterval
     ) -> TimeInterval? {
         guard value.isFinite, value >= 0 else {

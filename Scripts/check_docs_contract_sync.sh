@@ -1774,6 +1774,10 @@ for symbol in "${expected_provisionally[@]}"; do
         "$repo_root/Sources/InnoNetworkHLSAVFoundation/HLSPlaybackHealthModels.swift"
       require_contains '## Playback health analysis' \
         "$repo_root/Sources/InnoNetworkHLSAVFoundation/InnoNetworkHLSAVFoundation.docc/InnoNetworkHLSAVFoundation.md"
+      require_contains 'public struct HLSPlaybackStartupMetric: Equatable, Sendable' \
+        "$repo_root/Sources/InnoNetworkHLSAVFoundation/HLSPlaybackStartupMetrics.swift"
+      require_contains 'smokeHLSPlaybackStartupMetricsSurface' \
+        "$repo_root/SmokeTests/InnoNetworkDocSmoke/main.swift"
       continue
       ;;
     '`InnoNetworkHLSAudio` companion product and its public decoded PCM plus full-mix processing configuration, callback, lifecycle, pacing, sample, and error symbols')

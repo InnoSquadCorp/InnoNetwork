@@ -684,6 +684,10 @@ for await event in await manager.events(for: task) {
 - a pure, bounded playback-health analyzer that reduces delivered metric
   events into stable healthy/degraded/critical snapshots while applications
   retain UI, alerting, and policy ownership
+- independently cancellable, URL-free playback metric streams plus an opt-in
+  initial-startup view that correlates bounded chronological playlist,
+  segment, and content-key request details while preserving exact request
+  counts
 - reconnectable AVFoundation background HLS downloads with typed content
   selection, interstitial retention, bounded event replay, and version 26
   URL-free download-summary metrics with bounded selected-variant details

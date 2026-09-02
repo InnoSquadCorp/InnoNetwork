@@ -78,6 +78,8 @@ private let smokeHLSPlaybackHealthConfiguration =
             observationWindow: 60
         )
     )
+private let smokeHLSPlaybackStartupMetricType =
+    HLSPlaybackStartupMetric.self
 private let smokeHLSLegibleMediaCatalogType =
     HLSLegibleMediaCatalog.self
 private let smokeHLSLegibleMediaSelection =
@@ -229,6 +231,18 @@ private func smokeHLSIntegratedTimelineSurface(
         monitor.currentSnapshot,
         monitor.updates()
     )
+}
+
+@available(macOS 15, iOS 18, tvOS 18, watchOS 11, visionOS 2, *)
+private func smokeHLSPlaybackStartupMetricsSurface(
+    playerItem: AVPlayerItem
+) {
+    let metrics = HLSPlaybackMetrics(playerItem: playerItem)
+    let startupEvents = metrics.startupEvents(
+        maximumRetainedRequestCount: 128
+    )
+    _ = startupEvents
+    _ = smokeHLSPlaybackStartupMetricType
 }
 
 @MainActor

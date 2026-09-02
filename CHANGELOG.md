@@ -16,6 +16,11 @@ Versioning.
 
 ### Added
 
+- `HLSPlaybackMetrics.startupEvents()` exposes the URL-free playlist,
+  media-segment, and content-key request events that AVFoundation correlates
+  with initial likely-to-keep-up. Counts remain exact when chronological
+  request details exceed the caller-controlled bounded retention limit, and
+  the existing general metric stream remains behaviorally unchanged.
 - iOS 27 streaming-only `HLSFairPlaySession` instances can opt into FairPlay
   advisory keys and create a policy-matched `HLSFairPlayStreamingKeyWorkflow`.
   Cached advisory-key hits bypass license transport and response submission
