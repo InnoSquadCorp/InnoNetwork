@@ -44,23 +44,17 @@ public struct HLSPlaybackStartupMetric: Equatable, Sendable {
     public let didTruncateRequests: Bool
 
     init(
-        context: HLSPlaybackMetricContext,
-        timeTaken: TimeInterval,
-        variant: HLSPlaybackVariantBitrateMetric?,
-        buffer: HLSPlaybackBufferMetric,
+        readiness: HLSPlaybackReadinessMetric,
         playlistRequestCount: Int,
         mediaSegmentRequestCount: Int,
         contentKeyRequestCount: Int,
         requests: [HLSPlaybackMetricEvent],
         maximumRetainedRequestCount: Int
     ) {
-        self.context = context
-        self.timeTaken =
-            timeTaken.isFinite && timeTaken >= 0
-            ? timeTaken
-            : nil
-        self.variant = variant
-        self.buffer = buffer
+        context = readiness.context
+        timeTaken = readiness.timeTaken
+        variant = readiness.variant
+        buffer = readiness.buffer
         self.playlistRequestCount = max(0, playlistRequestCount)
         self.mediaSegmentRequestCount = max(
             0,
@@ -143,10 +137,10 @@ enum HLSPlaybackStartupMetricMapper {
         )
 
         return HLSPlaybackStartupMetric(
-            context: HLSPlaybackMetricMapper.context(event),
-            timeTaken: event.timeTaken,
-            variant: event.variant.map(HLSPlaybackVariantBitrateMetric.init),
-            buffer: HLSPlaybackBufferMetric(event.loadedTimeRanges),
+            readiness: HLSPlaybackReadinessMetricMapper.map(
+                event,
+                isInitial: true
+            ),
             playlistRequestCount: playlistRequests.count,
             mediaSegmentRequestCount: mediaSegmentRequests.count,
             contentKeyRequestCount: contentKeyRequests.count,

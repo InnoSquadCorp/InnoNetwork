@@ -5,10 +5,10 @@ core.allowlist	786
 download.allowlist	94
 hls.allowlist	797
 hls-live.allowlist	300
-hls-avfoundation.allowlist	680
+hls-avfoundation.allowlist	687
 hls-audio.allowlist	65
 openapi.allowlist	36
 testsupport.allowlist	84
 trust.allowlist	17
 websocket.allowlist	130
-TOTAL	3050
+TOTAL	3057

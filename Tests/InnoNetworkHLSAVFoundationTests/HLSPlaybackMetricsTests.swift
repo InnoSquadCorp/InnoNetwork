@@ -67,10 +67,13 @@ struct HLSPlaybackMetricsTests {
                 ),
             ])
         let metric = HLSPlaybackStartupMetric(
-            context: later,
-            timeTaken: 2,
-            variant: nil,
-            buffer: HLSPlaybackBufferMetric([]),
+            readiness: HLSPlaybackReadinessMetric(
+                context: later,
+                isInitial: true,
+                timeTaken: 2,
+                variant: nil,
+                buffer: HLSPlaybackBufferMetric([])
+            ),
             playlistRequestCount: 1,
             mediaSegmentRequestCount: 2,
             contentKeyRequestCount: 0,
@@ -106,10 +109,13 @@ struct HLSPlaybackMetricsTests {
             mediaTime: nil
         )
         let metric = HLSPlaybackStartupMetric(
-            context: context,
-            timeTaken: .nan,
-            variant: nil,
-            buffer: HLSPlaybackBufferMetric([]),
+            readiness: HLSPlaybackReadinessMetric(
+                context: context,
+                isInitial: true,
+                timeTaken: .nan,
+                variant: nil,
+                buffer: HLSPlaybackBufferMetric([])
+            ),
             playlistRequestCount: -1,
             mediaSegmentRequestCount: 0,
             contentKeyRequestCount: 0,

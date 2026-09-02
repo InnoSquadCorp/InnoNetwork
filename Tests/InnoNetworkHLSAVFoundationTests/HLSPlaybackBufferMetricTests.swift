@@ -85,10 +85,13 @@ struct HLSPlaybackBufferMetricTests {
             average: 3_000_000
         )
         let startup = HLSPlaybackStartupMetric(
-            context: context,
-            timeTaken: 2,
-            variant: variant,
-            buffer: buffer,
+            readiness: HLSPlaybackReadinessMetric(
+                context: context,
+                isInitial: true,
+                timeTaken: 2,
+                variant: variant,
+                buffer: buffer
+            ),
             playlistRequestCount: 0,
             mediaSegmentRequestCount: 0,
             contentKeyRequestCount: 0,

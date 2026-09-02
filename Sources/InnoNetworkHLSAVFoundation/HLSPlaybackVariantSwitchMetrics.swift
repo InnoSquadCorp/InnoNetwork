@@ -2,34 +2,6 @@ import AVFoundation
 import Foundation
 import InnoNetworkHLS
 
-/// URL-free bitrate attributes for one HLS playback variant.
-public struct HLSPlaybackVariantBitrateMetric: Equatable, Sendable {
-    /// Peak bitrate in bits per second, when finite and positive.
-    public let peak: Double?
-
-    /// Average bitrate in bits per second, when finite and positive.
-    public let average: Double?
-
-    init(peak: Double?, average: Double?) {
-        self.peak = Self.finitePositive(peak)
-        self.average = Self.finitePositive(average)
-    }
-
-    init(_ variant: AVAssetVariant) {
-        self.init(
-            peak: variant.peakBitRate,
-            average: variant.averageBitRate
-        )
-    }
-
-    private static func finitePositive(_ value: Double?) -> Double? {
-        guard let value, value.isFinite, value > 0 else {
-            return nil
-        }
-        return value
-    }
-}
-
 /// URL-free rendition identities associated with one HLS variant switch.
 public struct HLSPlaybackRenditionSelectionMetric: Equatable, Sendable {
     static let maximumStableIDUTF8ByteCount = 1_024

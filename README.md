@@ -689,7 +689,8 @@ for await event in await manager.events(for: task) {
   segment, and content-key request details while preserving exact request
   counts, and a detailed variant-switch view that exposes source/destination
   bitrates plus validated stable rendition IDs on version 26 systems; both
-  detailed views include bounded, URL-free loaded-buffer snapshots
+  detailed views include bounded, URL-free loaded-buffer snapshots, while a
+  readiness stream covers both initial and later likely-to-keep-up events
 - reconnectable AVFoundation background HLS downloads with typed content
   selection, interstitial retention, bounded event replay, and version 26
   URL-free download-summary metrics with bounded selected-variant details

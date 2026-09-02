@@ -82,6 +82,8 @@ private let smokeHLSPlaybackStartupMetricType =
     HLSPlaybackStartupMetric.self
 private let smokeHLSPlaybackBufferMetricType =
     HLSPlaybackBufferMetric.self
+private let smokeHLSPlaybackReadinessMetricType =
+    HLSPlaybackReadinessMetric.self
 private let smokeHLSPlaybackVariantSwitchMetricType =
     HLSPlaybackVariantSwitchMetric.self
 private let smokeHLSLegibleMediaCatalogType =
@@ -248,6 +250,9 @@ private func smokeHLSPlaybackStartupMetricsSurface(
     _ = startupEvents
     _ = smokeHLSPlaybackStartupMetricType
     _ = smokeHLSPlaybackBufferMetricType
+    let readinessEvents = metrics.readinessEvents()
+    _ = readinessEvents
+    _ = smokeHLSPlaybackReadinessMetricType
 }
 
 @available(macOS 15, iOS 18, tvOS 18, watchOS 11, visionOS 2, *)

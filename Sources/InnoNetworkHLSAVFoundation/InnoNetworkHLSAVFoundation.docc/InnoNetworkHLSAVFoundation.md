@@ -496,6 +496,25 @@ cancellation-safe AVFoundation subscription. The bounded buffer retains the
 newest events, so a slow consumer may miss older metrics. Create one stream per
 consumer and drain it promptly when complete event retention matters.
 
+Use ``HLSPlaybackMetrics/readinessEvents()`` when startup and rebuffering
+diagnostics need the selected bitrate and readily available media at every
+likely-to-keep-up boundary:
+
+```swift
+for try await readiness in metrics.readinessEvents() {
+    recordReadiness(
+        isInitial: readiness.isInitial,
+        timeTaken: readiness.timeTaken,
+        selectedPeakBitrate: readiness.variant?.peak,
+        loadedRangeCount: readiness.buffer.loadedTimeRanges.count
+    )
+}
+```
+
+This detail stream excludes variant playlist URLs. It uses
+``HLSPlaybackBufferMetric`` to preserve the exact native range count while
+retaining at most 256 valid ranges.
+
 For startup-specific diagnosis, use
 ``HLSPlaybackMetrics/startupEvents(maximumRetainedRequestCount:)``. It retains
 the chronological, URL-free playlist, segment, and content-key request details
@@ -925,6 +944,7 @@ does not ship its package storage and readiness types.
 - ``HLSPlaybackMetricsError``
 - ``HLSPlaybackMetricEvent``
 - ``HLSPlaybackBufferMetric``
+- ``HLSPlaybackReadinessMetric``
 - ``HLSPlaybackStartupMetric``
 - ``HLSPlaybackVariantSwitchMetric``
 - ``HLSPlaybackVariantBitrateMetric``

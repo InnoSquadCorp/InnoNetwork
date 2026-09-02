@@ -16,6 +16,10 @@ Versioning.
 
 ### Added
 
+- `HLSPlaybackMetrics.readinessEvents()` exposes bounded, URL-free selected
+  variant bitrates and loaded-buffer snapshots for both initial and subsequent
+  likely-to-keep-up events, without expanding the existing general metric
+  event shape.
 - `HLSPlaybackMetrics.variantSwitchEvents()` adds URL-free source and
   destination bitrate metrics for HLS variant switches. Version 26 systems
   also expose bounded, grammar-validated `STABLE-RENDITION-ID` values for the
