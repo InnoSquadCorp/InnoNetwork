@@ -200,7 +200,10 @@ for index in "${!shard_names[@]}"; do
     continue
   fi
 
-  summaries="$(grep -Eo 'Test run with [0-9]+ tests' "${logs[index]}" || true)"
+  # Swift Testing uses the singular `test` when a target contains exactly
+  # one test. Count both forms so a fully passing one-test target does not
+  # fail the shard's inventory check.
+  summaries="$(grep -Eo 'Test run with [0-9]+ tests?' "${logs[index]}" || true)"
   actual_count="$(awk '{ count += $4 } END { print count + 0 }' <<< "$summaries")"
   if [[ ! "$actual_count" =~ ^[0-9]+$ ]] || [[ "$actual_count" != "${expected_counts[index]}" ]]; then
     echo "bounded-tests: ${shard_names[index]} shard ran ${actual_count:-an unknown number of} tests; expected ${expected_counts[index]}" >&2
