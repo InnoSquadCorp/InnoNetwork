@@ -132,7 +132,7 @@ extract_single_5x_version() {
   local matches
   local match_count
 
-  matches="$(LC_ALL=C sed -n "$expression" "$file")"
+  matches="$(LC_ALL=C sed -En "$expression" "$file")"
   match_count="$(printf '%s\n' "$matches" | LC_ALL=C awk 'NF { count += 1 } END { print count + 0 }')"
   [[ "$match_count" == "1" ]] \
     || fail "expected exactly one $description in ${file#"$validation_root/"} (found $match_count)."
@@ -218,15 +218,15 @@ case "$release_state" in
 
     latest_version="$(extract_single_5x_version \
       '5.x latest-tagged-stable claim' \
-      's/.*`\(5\.[0-9][0-9]*\.[0-9][0-9]*\)` is the latest tagged stable release.*/\1/p' \
+      's/.*`(5\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*))` is the latest tagged stable release.*/\1/p' \
       "$readme")"
     readme_dependency_version="$(extract_single_5x_version \
       '5.x .upToNextMajor dependency version' \
-      's/.*\.upToNextMajor(from: "\(5\.[0-9][0-9]*\.[0-9][0-9]*\)").*/\1/p' \
+      's/.*\.upToNextMajor\(from: "(5\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*))"\).*/\1/p' \
       "$readme")"
     api_dependency_version="$(extract_single_5x_version \
       '5.x .upToNextMajor dependency version' \
-      's/.*\.upToNextMajor(from: "\(5\.[0-9][0-9]*\.[0-9][0-9]*\)").*/\1/p' \
+      's/.*\.upToNextMajor\(from: "(5\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*))"\).*/\1/p' \
       "$api_stability")"
     [[ "$readme_dependency_version" == "$latest_version" ]] \
       || fail "README dependency version '$readme_dependency_version' must match latest tagged stable release '$latest_version'."

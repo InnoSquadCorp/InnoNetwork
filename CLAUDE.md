@@ -120,7 +120,7 @@ swift test --list-tests
 
 ## Architecture
 
-전체 11개 product. 신규 기여 시 진입 파일과 책임만 빠르게 파악하세요.
+전체 12개 product. 신규 기여 시 진입 파일과 책임만 빠르게 파악하세요.
 
 ### Sources/InnoNetwork (Core)
 - `APIDefinition.swift` / `APIDefinition+Macro.swift` — endpoint 선언 프로토콜 + `@APIDefinition` 매크로

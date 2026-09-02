@@ -187,6 +187,22 @@ expect_failure "ready state rejects a malformed README dependency version" \
   "expected exactly one 5.x .upToNextMajor dependency version" \
   run_validator "$current_repo"
 
+new_fixture ready
+sed -i.bak 's/upToNextMajor(from: "5.1.0")/upToNextMajor(from: "5.01.0")/' \
+  "$current_repo/README.md"
+rm "$current_repo/README.md.bak"
+expect_failure "ready state rejects a leading-zero minor dependency version" \
+  "expected exactly one 5.x .upToNextMajor dependency version" \
+  run_validator "$current_repo"
+
+new_fixture ready
+sed -i.bak 's/upToNextMajor(from: "5.1.0")/upToNextMajor(from: "5.1.00")/' \
+  "$current_repo/API_STABILITY.md"
+rm "$current_repo/API_STABILITY.md.bak"
+expect_failure "ready state rejects a leading-zero patch dependency version" \
+  "expected exactly one 5.x .upToNextMajor dependency version" \
+  run_validator "$current_repo"
+
 new_fixture draft
 printf '\n<!-- release-status: ready -->\n' >> "$current_repo/docs/releases/5.0.0.md"
 expect_failure "duplicate status markers fail closed" "exactly one release-status marker" \
