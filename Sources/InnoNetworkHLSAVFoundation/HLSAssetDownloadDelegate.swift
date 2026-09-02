@@ -153,6 +153,8 @@ extension HLSAssetDownloadDelegate {
 
 @available(macOS 26.0, iOS 26.0, watchOS 26.0, visionOS 26.0, *)
 extension HLSAssetDownloadDelegate {
+    // AVFoundation invokes this optional delegate entry point dynamically.
+    // periphery:ignore
     func urlSession(
         _ session: URLSession,
         assetDownloadTask: AVAssetDownloadTask,

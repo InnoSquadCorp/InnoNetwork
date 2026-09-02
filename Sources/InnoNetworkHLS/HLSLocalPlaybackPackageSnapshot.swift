@@ -22,7 +22,6 @@ package struct HLSLocalPlaybackPackageSnapshot: Sendable {
 
     package let directoryURL: URL
     package let entryRelativePath: String
-    package let playlistDataByRelativePath: [String: Data]
     package let frozenResourceDataByRelativePath: [String: Data]
 
     package init(source: HLSLocalPlaybackSource) throws {
@@ -107,7 +106,6 @@ package struct HLSLocalPlaybackPackageSnapshot: Sendable {
         var pending = [entryURL]
         var visited: Set<String> = []
         var visitedAssetLists: Set<String> = []
-        var playlistDataByRelativePath: [String: Data] = [:]
         var frozenResourceDataByRelativePath: [String: Data] = [:]
         var totalByteCount = 0
 
@@ -242,13 +240,11 @@ package struct HLSLocalPlaybackPackageSnapshot: Sendable {
                     pending.append(referencedURL)
                 }
             }
-            playlistDataByRelativePath[relativePath] = data
             frozenResourceDataByRelativePath[relativePath] = data
         }
 
         self.directoryURL = directoryURL
         self.entryRelativePath = entryRelativePath
-        self.playlistDataByRelativePath = playlistDataByRelativePath
         self.frozenResourceDataByRelativePath =
             frozenResourceDataByRelativePath
     }

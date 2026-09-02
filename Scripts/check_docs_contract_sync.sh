@@ -1187,6 +1187,16 @@ validate_release_quality_gates() {
     "$repo_root/.github/workflows/ci.yml"
   require_contains 'python3 Scripts/tests/test_check_release_workflow_contract.py' \
     "$repo_root/.github/workflows/release.yml"
+  require_contains 'PERIPHERY_VERSION: "3.8.0"' \
+    "$repo_root/.github/workflows/ci.yml"
+  require_contains 'periphery scan --config .periphery.yml -- --build-system native' \
+    "$repo_root/.github/workflows/ci.yml"
+  require_contains 'retain_equatable_properties: true' \
+    "$repo_root/.periphery.yml"
+  require_contains 'retain_hashable_properties: true' \
+    "$repo_root/.periphery.yml"
+  require_contains 'Periphery 3.8 on Xcode 27' \
+    "$repo_root/docs/CI_DoC.md"
   require_contains 'workflow_dispatch:' "$repo_root/.github/workflows/release.yml"
   require_contains 'Scripts/validate_release_candidate.sh' \
     "$repo_root/docs/RELEASE_POLICY.md"

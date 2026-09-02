@@ -52,7 +52,11 @@ The `CI` workflow must pass all of the following:
 3. `xcrun swift build` on both Xcode 26.0.1 and Xcode 27
 4. `xcrun swift test --no-parallel --enable-code-coverage` on both toolchains;
    Xcode 26 compiles the HLS-audio compatibility target, while Xcode 27
-   compiles and executes its SDK-only public surface
+   compiles and executes its SDK-only public surface.
+   The dead-code lane runs Periphery 3.8 on Xcode 27 so it sees that complete
+   surface. It passes `--build-system native` only to provide the index-store
+   layout Periphery currently requires; the product build and test lanes keep
+   Swift 6.4's default build system.
 5. A separate blocking `bash Scripts/run_bounded_parallel_tests.sh` job builds
    the suite once, then loads its test bundle in four concurrent, target-filtered
    Swift Testing processes without coverage instrumentation. Every process uses

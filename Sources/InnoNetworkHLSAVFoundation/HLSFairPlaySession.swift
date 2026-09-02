@@ -25,6 +25,8 @@ public final class HLSFairPlaySession {
     // periphery:ignore
     private let retainedDelegate: any AVContentKeySessionDelegate
     private struct AttachedAsset {
+        // The value intentionally keeps each AVURLAsset alive while registered.
+        // periphery:ignore
         let asset: AVURLAsset
         let id: HLSFairPlayAssetID
     }
