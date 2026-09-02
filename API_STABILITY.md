@@ -406,8 +406,8 @@ types and members in addition to top-level declarations. The grouped ledger
 below keeps the high-level compatibility classification readable for the
 5.x release line.
 
-The machine-checked snapshot currently partitions all 2,982 declarations into
-305 Stable consumer declarations, 2,644 Provisionally Stable consumer
+The machine-checked snapshot currently partitions all 2,992 declarations into
+305 Stable consumer declarations, 2,654 Provisionally Stable consumer
 declarations, and 33 opt-in SPI declarations. The three sets are disjoint and
 exhaustive. `Scripts/symbols/stable-rules.tsv` maps the Stable ledger to symbol
 paths, while the compiler-authored SPI flag is snapshotted in
@@ -572,6 +572,7 @@ Stable.
   AVURLAsset backed by a bounded loopback-only package bridge and must remain
   alive for the player-item lifetime.
 - FairPlay persistent keys: `HLSFairPlayKeyID`,
+  `HLSFairPlayDeviceIdentifierPolicy`,
   `HLSFairPlayLicenseRequest`, `HLSFairPlayLicenseTransporting`,
   `HLSFairPlayPersistentKeyAcquisition`,
   `HLSFairPlayPersistentKeyConfiguration`,
@@ -581,6 +582,7 @@ Stable.
   restore-or-create requests while transport, secure storage, expiry,
   invalidation, and deletion remain application-owned.
 - FairPlay streaming keys: `HLSFairPlayLicenseRequestPurpose`,
+  `HLSFairPlayDeviceIdentifierPolicy`,
   `HLSFairPlayStreamingKeyAcquisition`,
   `HLSFairPlayStreamingKeyConfiguration`,
   `HLSFairPlayStreamingKeyLimitPack`, `HLSFairPlayStreamingKeyWorkflow`,

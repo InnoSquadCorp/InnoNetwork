@@ -85,7 +85,9 @@ public struct HLSFairPlayStreamingKeyWorkflow: Sendable {
                     acquisition.applicationCertificate,
                 contentIdentifier: acquisition.contentIdentifier,
                 supportedProtocolVersions:
-                    acquisition.supportedProtocolVersions
+                    acquisition.supportedProtocolVersions,
+                deviceIdentifierPolicy:
+                    acquisition.deviceIdentifierPolicy
             )
         } catch {
             if Self.isCancellation(error) {
@@ -156,6 +158,23 @@ public struct HLSFairPlayStreamingKeyWorkflow: Sendable {
         else {
             throw HLSFairPlayStreamingKeyError.invalidProtocolVersions
         }
+        if let failure =
+            HLSFairPlaySPCOptions.validationFailure(
+                for: acquisition.deviceIdentifierPolicy,
+                isRandomizationSupported:
+                    HLSFairPlaySPCOptions
+                    .supportsDeviceIdentifierRandomization
+            )
+        {
+            switch failure {
+            case .unavailable:
+                throw HLSFairPlayStreamingKeyError
+                    .deviceIdentifierRandomizationUnavailable
+            case .invalidSeed:
+                throw HLSFairPlayStreamingKeyError
+                    .invalidDeviceIdentifierSeed
+            }
+        }
     }
 
     private static func failureError(code: Int) -> NSError {
@@ -190,6 +209,10 @@ public struct HLSFairPlayStreamingKeyWorkflow: Sendable {
             return 12
         case .invalidProtocolVersions:
             return 22
+        case .deviceIdentifierRandomizationUnavailable:
+            return 23
+        case .invalidDeviceIdentifierSeed:
+            return 24
         case .spcGenerationFailed:
             return 17
         case .licenseExchangeFailed:

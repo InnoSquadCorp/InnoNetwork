@@ -56,6 +56,8 @@
 "HLSFairPlayPersistentKeyError.invalidApplicationCertificate" = "FairPlay 앱 인증서가 비어 있거나 바이트 제한을 초과했습니다.";
 "HLSFairPlayPersistentKeyError.invalidContentIdentifier" = "FairPlay 콘텐츠 식별자가 비어 있거나 바이트 제한을 초과했습니다.";
 "HLSFairPlayPersistentKeyError.invalidProtocolVersions" = "FairPlay 프로토콜 버전 목록이 비어 있거나 잘못되었습니다.";
+"HLSFairPlayPersistentKeyError.deviceIdentifierRandomizationUnavailable" = "FairPlay 기기 식별자 랜덤화에는 버전 26 이상이 필요합니다.";
+"HLSFairPlayPersistentKeyError.invalidDeviceIdentifierSeed" = "FairPlay 기기 식별자 랜덤화 시드는 정확히 16바이트여야 합니다.";
 "HLSFairPlayPersistentKeyError.persistableKeyUnavailable" = "저장된 FairPlay 키와 온라인 발급 입력이 모두 없습니다.";
 "HLSFairPlayPersistentKeyError.persistentRequestRejected" = "AVFoundation이 영구 FairPlay 키 요청을 만들지 못했습니다.";
 "HLSFairPlayPersistentKeyError.storageReadFailed" = "앱이 소유한 FairPlay 키 저장소를 읽지 못했습니다.";
@@ -69,6 +71,8 @@
 "HLSFairPlayPersistentKeyError.recovery.provideCertificate" = "온라인 발급을 허용할 때 제한 범위 안의 FairPlay 앱 인증서를 제공하세요.";
 "HLSFairPlayPersistentKeyError.recovery.provideContentIdentifier" = "이 키 요청에 사용할 제한 범위 안의 불투명 콘텐츠 식별자를 제공하세요.";
 "HLSFairPlayPersistentKeyError.recovery.chooseProtocolVersions" = "앱 키 서버가 지원하는 고유한 양의 정수 버전을 1개에서 16개까지 제공하세요.";
+"HLSFairPlayPersistentKeyError.recovery.useSupportedDeviceIdentifierPolicy" = "이전 시스템에서는 시스템 기본 기기 식별자를 사용하거나 버전 26 이상을 요구하세요.";
+"HLSFairPlayPersistentKeyError.recovery.provideDeviceIdentifierSeed" = "암호학적으로 안전한 앱 난수 소스에서 16바이트를 제공하거나 AVFoundation이 시드를 생성하게 하세요.";
 "HLSFairPlayPersistentKeyError.recovery.provideAcquisition" = "라이선스 서비스에 연결해 발급 입력을 제공하거나 앱 소유 저장소에서 키를 복원하세요.";
 "HLSFairPlayPersistentKeyError.recovery.handlePersistableDelegate" = "영구 키를 요청하기 전에 AVContentKeySession의 영구 요청 콜백을 구현하세요.";
 "HLSFairPlayPersistentKeyError.recovery.checkStorage" = "앱의 보안 키 저장소 가용성과 원자적 쓰기 동작을 확인하세요.";
@@ -78,12 +82,16 @@
 "HLSFairPlayStreamingKeyError.invalidApplicationCertificate" = "FairPlay 앱 인증서가 비어 있거나 바이트 제한을 초과했습니다.";
 "HLSFairPlayStreamingKeyError.invalidContentIdentifier" = "FairPlay 콘텐츠 식별자가 비어 있거나 바이트 제한을 초과했습니다.";
 "HLSFairPlayStreamingKeyError.invalidProtocolVersions" = "FairPlay 프로토콜 버전 목록이 비어 있거나 잘못되었습니다.";
+"HLSFairPlayStreamingKeyError.deviceIdentifierRandomizationUnavailable" = "FairPlay 기기 식별자 랜덤화에는 버전 26 이상이 필요합니다.";
+"HLSFairPlayStreamingKeyError.invalidDeviceIdentifierSeed" = "FairPlay 기기 식별자 랜덤화 시드는 정확히 16바이트여야 합니다.";
 "HLSFairPlayStreamingKeyError.spcGenerationFailed" = "AVFoundation이 제한 범위 안의 FairPlay SPC를 만들지 못했습니다.";
 "HLSFairPlayStreamingKeyError.licenseExchangeFailed" = "앱이 소유한 FairPlay 라이선스 교환에 실패했습니다.";
 "HLSFairPlayStreamingKeyError.invalidLicenseResponse" = "FairPlay 라이선스 응답이 비어 있거나 바이트 제한을 초과했습니다.";
 "HLSFairPlayStreamingKeyError.recovery.provideCertificate" = "온라인 재생에 사용할 제한 범위 안의 FairPlay 앱 인증서를 제공하세요.";
 "HLSFairPlayStreamingKeyError.recovery.provideContentIdentifier" = "이 키 요청에 사용할 제한 범위 안의 불투명 콘텐츠 식별자를 제공하세요.";
 "HLSFairPlayStreamingKeyError.recovery.chooseProtocolVersions" = "앱 키 서버가 지원하는 고유한 양의 정수 버전을 1개에서 16개까지 제공하세요.";
+"HLSFairPlayStreamingKeyError.recovery.useSupportedDeviceIdentifierPolicy" = "이전 시스템에서는 시스템 기본 기기 식별자를 사용하거나 버전 26 이상을 요구하세요.";
+"HLSFairPlayStreamingKeyError.recovery.provideDeviceIdentifierSeed" = "암호학적으로 안전한 앱 난수 소스에서 16바이트를 제공하거나 AVFoundation이 시드를 생성하게 하세요.";
 "HLSFairPlayStreamingKeyError.recovery.checkFairPlayInputs" = "앱 인증서와 콘텐츠 식별자를 확인한 뒤 새 키를 요청하세요.";
 "HLSFairPlayStreamingKeyError.recovery.checkLicenseTransport" = "앱 소유 라이선스 전송과 제한 범위 안의 CKC 응답을 확인하세요.";
 

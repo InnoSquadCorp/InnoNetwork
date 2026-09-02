@@ -606,6 +606,33 @@ test vectors. The opt-in physical-device gate is documented in
 bytes and must return raw CKC bytes; this operational bridge is intentionally
 not a library transport policy.
 
+On version 26 or newer, an acquisition can opt into randomizing the anonymized
+device identifier embedded in its SPC:
+
+```swift
+let acquisition = HLSFairPlayStreamingKeyAcquisition(
+    applicationCertificate: certificate,
+    contentIdentifier: contentID,
+    deviceIdentifierPolicy: .randomized
+)
+```
+
+``HLSFairPlayDeviceIdentifierPolicy/systemDefault`` preserves AVFoundation's
+existing behavior on every supported deployment target. Randomized policies
+fail with a typed error before SPC generation on earlier systems. Coordinate
+the policy with the application's KSM, entitlement rules, privacy disclosures,
+and tracking-consent obligations before enabling it. If the application needs
+``HLSFairPlayDeviceIdentifierPolicy/randomizedWithSeed(_:)``, generate the
+exactly 16-byte seed with a cryptographically secure random source and never
+log it; the library validates and forwards the seed but does not create,
+persist, or rotate it.
+
+The application and KSM must not retain or use FairPlay's anonymized device
+identifier for purposes other than enforcing playback business-rule limits.
+Use App Tracking Transparency when the application or its key service collects
+end-user data and shares it with another company for cross-app or cross-site
+tracking.
+
 ### Persistent-key workflow
 
 ``HLSFairPlayPersistentKeyWorkflow`` coordinates the request-specific
@@ -657,6 +684,9 @@ compatibility behavior. Set `supportedProtocolVersions` to a list such as
 `[3, 2, 1]` only after the application's KSM and credential set pass the
 matching Apple FairPlay Streaming Server SDK test vectors. Empty, duplicate,
 non-positive, or lists with more than 16 values fail before SPC creation.
+Persistent acquisition uses the same
+``HLSFairPlayDeviceIdentifierPolicy`` contract as streaming acquisition, and
+applies it only after a stored-key miss requires a new SPC.
 
 The workflow validates every material boundary, converts CKC bytes into a
 persistable key, requires the app store to commit it before fulfilling the
@@ -719,6 +749,7 @@ does not ship its package storage and readiness types.
 
 - ``HLSFairPlaySession``
 - ``HLSFairPlaySessionError``
+- ``HLSFairPlayDeviceIdentifierPolicy``
 - ``HLSFairPlayStreamingKeyWorkflow``
 - ``HLSFairPlayStreamingKeyConfiguration``
 - ``HLSFairPlayStreamingKeyLimitPack``

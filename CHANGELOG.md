@@ -16,6 +16,11 @@ Versioning.
 
 ### Added
 
+- FairPlay streaming and persistent-key acquisitions can opt into version 26
+  anonymized device-ID randomization through
+  `HLSFairPlayDeviceIdentifierPolicy`. The default preserves AVFoundation's
+  existing behavior; unsupported systems and non-16-byte app-generated seeds
+  fail with typed, localized errors before SPC generation.
 - `HLSAssetDownloadSummary` exposes AVFoundation's version 26 offline HLS
   download summary through the existing bounded task event stream. Counts,
   downloaded bytes, finite duration, error presence, and at most 64 selected

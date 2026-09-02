@@ -44,15 +44,25 @@ public struct HLSFairPlayPersistentKeyAcquisition: Sendable {
     /// test vectors. Supply one to 16 unique positive values.
     public let supportedProtocolVersions: [Int]
 
+    /// Whether SPC generation randomizes FairPlay's anonymized device ID.
+    ///
+    /// The default preserves AVFoundation behavior. Randomized policies require
+    /// version 26 or newer and apply only when a stored-key miss creates a new
+    /// SPC. Coordinate the policy with the application's KSM first.
+    public let deviceIdentifierPolicy: HLSFairPlayDeviceIdentifierPolicy
+
     /// Creates acquisition inputs for one key request.
     public init(
         applicationCertificate: Data,
         contentIdentifier: Data,
-        supportedProtocolVersions: [Int] = [1]
+        supportedProtocolVersions: [Int] = [1],
+        deviceIdentifierPolicy: HLSFairPlayDeviceIdentifierPolicy =
+            .systemDefault
     ) {
         self.applicationCertificate = applicationCertificate
         self.contentIdentifier = contentIdentifier
         self.supportedProtocolVersions = supportedProtocolVersions
+        self.deviceIdentifierPolicy = deviceIdentifierPolicy
     }
 }
 
@@ -201,6 +211,12 @@ public enum HLSFairPlayPersistentKeyError: Error, Equatable, Sendable {
     /// The supported FairPlay protocol-version list is empty or malformed.
     case invalidProtocolVersions
 
+    /// Device-ID randomization requires version 26 or newer.
+    case deviceIdentifierRandomizationUnavailable
+
+    /// An application-generated device-ID seed was not exactly 16 bytes.
+    case invalidDeviceIdentifierSeed
+
     /// No stored key or online acquisition inputs were available.
     case persistableKeyUnavailable
 
@@ -253,6 +269,10 @@ extension HLSFairPlayPersistentKeyError: LocalizedError {
             return "invalidContentIdentifier"
         case .invalidProtocolVersions:
             return "invalidProtocolVersions"
+        case .deviceIdentifierRandomizationUnavailable:
+            return "deviceIdentifierRandomizationUnavailable"
+        case .invalidDeviceIdentifierSeed:
+            return "invalidDeviceIdentifierSeed"
         case .persistableKeyUnavailable:
             return "persistableKeyUnavailable"
         case .persistentRequestRejected:
@@ -284,6 +304,10 @@ extension HLSFairPlayPersistentKeyError: LocalizedError {
             return "provideContentIdentifier"
         case .invalidProtocolVersions:
             return "chooseProtocolVersions"
+        case .deviceIdentifierRandomizationUnavailable:
+            return "useSupportedDeviceIdentifierPolicy"
+        case .invalidDeviceIdentifierSeed:
+            return "provideDeviceIdentifierSeed"
         case .persistableKeyUnavailable:
             return "provideAcquisition"
         case .persistentRequestRejected:

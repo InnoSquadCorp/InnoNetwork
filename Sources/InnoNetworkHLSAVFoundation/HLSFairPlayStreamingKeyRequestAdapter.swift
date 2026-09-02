@@ -6,7 +6,8 @@ protocol HLSFairPlayStreamingRequestHandling: Sendable {
     func makeSPC(
         applicationCertificate: Data,
         contentIdentifier: Data,
-        supportedProtocolVersions: [Int]
+        supportedProtocolVersions: [Int],
+        deviceIdentifierPolicy: HLSFairPlayDeviceIdentifierPolicy
     ) async throws -> Data
 
     func processStreamingKey(_ data: Data)
@@ -21,16 +22,18 @@ struct HLSFairPlayStreamingRequestAdapter:
     func makeSPC(
         applicationCertificate: Data,
         contentIdentifier: Data,
-        supportedProtocolVersions: [Int]
+        supportedProtocolVersions: [Int],
+        deviceIdentifierPolicy: HLSFairPlayDeviceIdentifierPolicy
     ) async throws -> Data {
-        try await withCheckedThrowingContinuation { continuation in
+        let options = try HLSFairPlaySPCOptions.make(
+            protocolVersions: supportedProtocolVersions,
+            deviceIdentifierPolicy: deviceIdentifierPolicy
+        )
+        return try await withCheckedThrowingContinuation { continuation in
             request.makeStreamingContentKeyRequestData(
                 forApp: applicationCertificate,
                 contentIdentifier: contentIdentifier,
-                options: [
-                    AVContentKeyRequestProtocolVersionsKey:
-                        supportedProtocolVersions
-                ]
+                options: options
             ) { data, error in
                 do {
                     continuation.resume(

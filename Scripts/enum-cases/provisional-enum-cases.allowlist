@@ -69,6 +69,10 @@ HLSAssetDownloadEvent.failed
 HLSAssetDownloadEvent.locationAvailable
 HLSAssetDownloadEvent.progress
 
+HLSFairPlayDeviceIdentifierPolicy.randomized
+HLSFairPlayDeviceIdentifierPolicy.randomizedWithSeed
+HLSFairPlayDeviceIdentifierPolicy.systemDefault
+
 TrustFailureReason.custom
 TrustFailureReason.hostNotPinned
 TrustFailureReason.missingServerTrust

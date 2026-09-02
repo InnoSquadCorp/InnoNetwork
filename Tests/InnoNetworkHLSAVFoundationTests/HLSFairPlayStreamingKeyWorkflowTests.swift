@@ -25,6 +25,7 @@ struct HLSFairPlayStreamingKeyWorkflowTests {
         #expect(limits.maximumSPCBytes == 16 * 1_024 * 1_024)
         #expect(limits.maximumLicenseResponseBytes == 1)
         #expect(acquisition.supportedProtocolVersions == [1])
+        #expect(acquisition.deviceIdentifierPolicy == .systemDefault)
     }
 
     @Test("initial and renewing requests retain typed purpose through transport")
@@ -70,6 +71,10 @@ struct HLSFairPlayStreamingKeyWorkflowTests {
                     == [3, 2, 1]
             )
             #expect(
+                request.snapshot().deviceIdentifierPolicy
+                    == .systemDefault
+            )
+            #expect(
                 request.snapshot().processedKeys
                     == [Data("ckc".utf8)]
             )
@@ -91,7 +96,7 @@ struct HLSFairPlayStreamingKeyWorkflowTests {
         let workflow = HLSFairPlayStreamingKeyWorkflow(
             transport: transport
         )
-        let cases:
+        var cases:
             [(
                 HLSFairPlayStreamingKeyAcquisition,
                 HLSFairPlayStreamingKeyError,
@@ -122,7 +127,31 @@ struct HLSFairPlayStreamingKeyWorkflowTests {
                     .invalidProtocolVersions,
                     22
                 ),
+                (
+                    HLSFairPlayStreamingKeyAcquisition(
+                        applicationCertificate: Data("certificate".utf8),
+                        contentIdentifier: Data("content".utf8),
+                        deviceIdentifierPolicy: .randomizedWithSeed(
+                            Data(repeating: 1, count: 15)
+                        )
+                    ),
+                    .invalidDeviceIdentifierSeed,
+                    24
+                ),
             ]
+        if !HLSFairPlaySPCOptions.supportsDeviceIdentifierRandomization {
+            cases.append(
+                (
+                    HLSFairPlayStreamingKeyAcquisition(
+                        applicationCertificate: Data("certificate".utf8),
+                        contentIdentifier: Data("content".utf8),
+                        deviceIdentifierPolicy: .randomized
+                    ),
+                    .deviceIdentifierRandomizationUnavailable,
+                    23
+                )
+            )
+        }
 
         for (acquisition, expectedError, failureCode) in cases {
             let request = StreamingKeyRequestDouble()
@@ -328,6 +357,11 @@ struct HLSFairPlayStreamingKeyWorkflowTests {
             HLSFairPlayStreamingKeyError.invalidProtocolVersions
         #expect(!error.localizedDescription.isEmpty)
         #expect(error.recoverySuggestion?.contains("16") == true)
+
+        let seedError =
+            HLSFairPlayStreamingKeyError.invalidDeviceIdentifierSeed
+        #expect(seedError.localizedDescription.contains("16"))
+        #expect(seedError.recoverySuggestion?.contains("16") == true)
     }
 }
 
@@ -343,6 +377,7 @@ private final class StreamingKeyRequestDouble:
         let applicationCertificate: Data?
         let contentIdentifier: Data?
         let supportedProtocolVersions: [Int]?
+        let deviceIdentifierPolicy: HLSFairPlayDeviceIdentifierPolicy?
         let processedKeys: [Data]
         let failureCodes: [Int]
     }
@@ -352,6 +387,7 @@ private final class StreamingKeyRequestDouble:
     private var applicationCertificate: Data?
     private var contentIdentifier: Data?
     private var supportedProtocolVersions: [Int]?
+    private var deviceIdentifierPolicy: HLSFairPlayDeviceIdentifierPolicy?
     private var processedKeys: [Data] = []
     private var failureCodes: [Int] = []
 
@@ -362,12 +398,14 @@ private final class StreamingKeyRequestDouble:
     func makeSPC(
         applicationCertificate: Data,
         contentIdentifier: Data,
-        supportedProtocolVersions: [Int]
+        supportedProtocolVersions: [Int],
+        deviceIdentifierPolicy: HLSFairPlayDeviceIdentifierPolicy
     ) async throws -> Data {
         lock.withLock {
             self.applicationCertificate = applicationCertificate
             self.contentIdentifier = contentIdentifier
             self.supportedProtocolVersions = supportedProtocolVersions
+            self.deviceIdentifierPolicy = deviceIdentifierPolicy
         }
         return spc
     }
@@ -390,6 +428,7 @@ private final class StreamingKeyRequestDouble:
                 applicationCertificate: applicationCertificate,
                 contentIdentifier: contentIdentifier,
                 supportedProtocolVersions: supportedProtocolVersions,
+                deviceIdentifierPolicy: deviceIdentifierPolicy,
                 processedKeys: processedKeys,
                 failureCodes: failureCodes
             )

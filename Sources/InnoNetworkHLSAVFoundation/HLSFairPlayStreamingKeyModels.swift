@@ -26,15 +26,25 @@ public struct HLSFairPlayStreamingKeyAcquisition: Sendable {
     /// Apple's test vectors and protected-content acceptance tests.
     public let supportedProtocolVersions: [Int]
 
+    /// Whether SPC generation randomizes FairPlay's anonymized device ID.
+    ///
+    /// The default preserves AVFoundation behavior. Randomized policies require
+    /// version 26 or newer and must be coordinated with the application's KSM
+    /// and playback business rules before use.
+    public let deviceIdentifierPolicy: HLSFairPlayDeviceIdentifierPolicy
+
     /// Creates acquisition inputs for one streaming-key request.
     public init(
         applicationCertificate: Data,
         contentIdentifier: Data,
-        supportedProtocolVersions: [Int] = [1]
+        supportedProtocolVersions: [Int] = [1],
+        deviceIdentifierPolicy: HLSFairPlayDeviceIdentifierPolicy =
+            .systemDefault
     ) {
         self.applicationCertificate = applicationCertificate
         self.contentIdentifier = contentIdentifier
         self.supportedProtocolVersions = supportedProtocolVersions
+        self.deviceIdentifierPolicy = deviceIdentifierPolicy
     }
 }
 
@@ -228,6 +238,12 @@ public enum HLSFairPlayStreamingKeyError: Error, Equatable, Sendable {
     /// The supported FairPlay protocol-version list is empty or malformed.
     case invalidProtocolVersions
 
+    /// Device-ID randomization requires version 26 or newer.
+    case deviceIdentifierRandomizationUnavailable
+
+    /// An application-generated device-ID seed was not exactly 16 bytes.
+    case invalidDeviceIdentifierSeed
+
     /// AVFoundation could not generate a bounded SPC.
     case spcGenerationFailed
 
@@ -260,6 +276,10 @@ extension HLSFairPlayStreamingKeyError: LocalizedError {
             return "invalidContentIdentifier"
         case .invalidProtocolVersions:
             return "invalidProtocolVersions"
+        case .deviceIdentifierRandomizationUnavailable:
+            return "deviceIdentifierRandomizationUnavailable"
+        case .invalidDeviceIdentifierSeed:
+            return "invalidDeviceIdentifierSeed"
         case .spcGenerationFailed:
             return "spcGenerationFailed"
         case .licenseExchangeFailed:
@@ -277,6 +297,10 @@ extension HLSFairPlayStreamingKeyError: LocalizedError {
             return "provideContentIdentifier"
         case .invalidProtocolVersions:
             return "chooseProtocolVersions"
+        case .deviceIdentifierRandomizationUnavailable:
+            return "useSupportedDeviceIdentifierPolicy"
+        case .invalidDeviceIdentifierSeed:
+            return "provideDeviceIdentifierSeed"
         case .spcGenerationFailed:
             return "checkFairPlayInputs"
         case .licenseExchangeFailed, .invalidLicenseResponse:

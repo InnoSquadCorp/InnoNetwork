@@ -165,7 +165,9 @@ public struct HLSFairPlayPersistentKeyWorkflow: Sendable {
                 contentIdentifier:
                     acquisition.contentIdentifier,
                 supportedProtocolVersions:
-                    acquisition.supportedProtocolVersions
+                    acquisition.supportedProtocolVersions,
+                deviceIdentifierPolicy:
+                    acquisition.deviceIdentifierPolicy
             )
         } catch {
             if Self.isCancellation(error) {
@@ -267,6 +269,23 @@ public struct HLSFairPlayPersistentKeyWorkflow: Sendable {
             throw HLSFairPlayPersistentKeyError
                 .invalidProtocolVersions
         }
+        if let failure =
+            HLSFairPlaySPCOptions.validationFailure(
+                for: acquisition.deviceIdentifierPolicy,
+                isRandomizationSupported:
+                    HLSFairPlaySPCOptions
+                    .supportsDeviceIdentifierRandomization
+            )
+        {
+            switch failure {
+            case .unavailable:
+                throw HLSFairPlayPersistentKeyError
+                    .deviceIdentifierRandomizationUnavailable
+            case .invalidSeed:
+                throw HLSFairPlayPersistentKeyError
+                    .invalidDeviceIdentifierSeed
+            }
+        }
     }
 
     private func isValidPersistableKey(_ data: Data) -> Bool {
@@ -310,6 +329,10 @@ public struct HLSFairPlayPersistentKeyWorkflow: Sendable {
             return 12
         case .invalidProtocolVersions:
             return 22
+        case .deviceIdentifierRandomizationUnavailable:
+            return 23
+        case .invalidDeviceIdentifierSeed:
+            return 24
         case .persistableKeyUnavailable:
             return 13
         case .persistentRequestRejected:

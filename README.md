@@ -710,9 +710,10 @@ for await event in await manager.events(for: task) {
   downloaded `.movpkg` reattachment, and normal expiration, plus bounded
   streaming-key initial/renewal and restore-or-create persistent-key workflows
   with app-injected SPC/CKC transport, secure storage, typed redacted lifecycle
-  events, and opt-in FairPlay protocol-version negotiation after KSM
-  validation; credentials, Keychain schema, key files, expiry, and deletion
-  remain application-owned
+  events, opt-in FairPlay protocol-version negotiation after KSM validation,
+  and version 26 anonymized device-ID randomization with typed availability and
+  seed validation; credentials, Keychain schema, key files, seed generation,
+  expiry, and deletion remain application-owned
 - an isolated, opt-in physical-iOS FairPlay acceptance gate that requires SPC
   version 3, waits for AVFoundation acceptance of both initial and renewing
   responses, then proves a protected system download reopens and advances from
