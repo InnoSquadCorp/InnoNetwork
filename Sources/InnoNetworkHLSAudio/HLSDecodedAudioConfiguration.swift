@@ -1,3 +1,4 @@
+#if compiler(>=6.4)
 import AVFoundation
 import CoreAudioTypes
 import CoreMedia
@@ -140,3 +141,4 @@ public struct HLSDecodedAudioConfiguration: Sendable {
             )?.pointee.mFormatID == kAudioFormatLinearPCM
     }
 }
+#endif

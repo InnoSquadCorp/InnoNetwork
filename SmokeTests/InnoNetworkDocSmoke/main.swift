@@ -5,11 +5,13 @@ import InnoNetworkAuthAWS
 import InnoNetworkDownload
 import InnoNetworkHLS
 import InnoNetworkHLSAVFoundation
-import InnoNetworkHLSAudio
 import InnoNetworkHLSLive
 import InnoNetworkOpenAPI
 import InnoNetworkPersistentCache
 import InnoNetworkWebSocket
+#if compiler(>=6.4)
+import InnoNetworkHLSAudio
+#endif
 
 private let smokeHLSResolver = PlaylistResolver()
 private let smokeHLSSelector = VariantSelector()
@@ -319,6 +321,7 @@ private func smokeHLSTimedMetadataSurface(
     monitor.detach()
 }
 
+#if compiler(>=6.4)
 @available(macOS 27, iOS 27, tvOS 27, watchOS 27, visionOS 27, *)
 @MainActor
 private func smokeHLSDecodedAudioSurface(
@@ -343,6 +346,7 @@ private func smokeHLSDecodedAudioSurface(
     )
     output.detach()
 }
+#endif
 
 private struct SmokeHLSRequestObserver: HLSRequestEventObserving {
     func hlsRequestDidEmit(_ event: HLSRequestEvent) async {

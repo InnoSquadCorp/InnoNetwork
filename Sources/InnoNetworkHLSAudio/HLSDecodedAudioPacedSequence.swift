@@ -1,3 +1,4 @@
+#if compiler(>=6.4)
 import AVFoundation
 import CoreMedia
 import Foundation
@@ -149,3 +150,4 @@ package struct HLSDecodedAudioPacingState: Sendable {
         deliveredBoundary = boundary.isNumeric ? boundary : start
     }
 }
+#endif

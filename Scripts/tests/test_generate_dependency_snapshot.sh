@@ -259,21 +259,24 @@ expect_snapshot_failure() {
     local stem="$2"
     local expected_message="$3"
     local input_mode="${4:-sbom}"
-    local generator_arguments=()
+    local generator_argument=""
     if [[ "$input_mode" == "package-resolved" ]]; then
-        generator_arguments+=(--package-resolved)
+        generator_argument="--package-resolved"
     fi
 
-    if env \
-        GITHUB_SHA="0123456789abcdef0123456789abcdef01234567" \
+    local command=(python3 "$generator")
+    if [[ -n "$generator_argument" ]]; then
+        command+=("$generator_argument")
+    fi
+    command+=("$input" "$test_root/$stem.json")
+
+    if GITHUB_SHA="0123456789abcdef0123456789abcdef01234567" \
         GITHUB_REF="refs/heads/main" \
         GITHUB_REPOSITORY="InnoSquadCorp/InnoNetwork" \
         GITHUB_SERVER_URL="https://github.com" \
         GITHUB_RUN_ID="123456" \
         GITHUB_RUN_ATTEMPT="1" \
-        python3 "$generator" "${generator_arguments[@]}" \
-            "$input" "$test_root/$stem.json" \
-            > "$test_root/$stem.log" 2>&1; then
+        "${command[@]}" > "$test_root/$stem.log" 2>&1; then
         printf 'Expected dependency snapshot fixture %s to fail.\n' "$stem" >&2
         exit 1
     fi

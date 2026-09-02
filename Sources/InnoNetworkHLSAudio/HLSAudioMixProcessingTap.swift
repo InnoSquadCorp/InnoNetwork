@@ -1,4 +1,4 @@
-#if !os(watchOS)
+#if compiler(>=6.4) && !os(watchOS)
 import AVFoundation
 import CoreAudioTypes
 import CoreMedia

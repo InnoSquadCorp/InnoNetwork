@@ -39,6 +39,8 @@ diff -u "$work_dir/expected-fast.txt" "$work_dir/actual-fast.txt"
 diff -u "$work_dir/expected-full.txt" "$work_dir/actual-full.txt"
 
 bash "$runner" --help | grep -Fq -- '--full'
+grep -Fq 'run_package_xcodebuild docbuild' "$runner"
+grep -Fq 'prepare_package_xcodebuild_view' "$runner"
 
 set +e
 bash "$runner" --unknown > "$work_dir/unknown.stdout" 2> "$work_dir/unknown.stderr"

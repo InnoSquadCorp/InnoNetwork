@@ -44,7 +44,7 @@ with tempfile.TemporaryDirectory() as temporary_directory:
     )
     result = run("--ruleset-json", str(ruleset_path))
     assert result.returncode == 0, result.stderr
-    assert "14 policy checks and live ruleset" in result.stdout
+    assert "15 policy checks and live ruleset" in result.stdout
 
     missing_ruleset = json.loads(ruleset_path.read_text())
     missing_ruleset["rules"][0]["parameters"]["required_status_checks"] = checks[:-1]

@@ -9,6 +9,13 @@ Versioning.
 
 ### Fixed
 
+- Xcode 26 once again builds and tests the package by compiling the
+  `InnoNetworkHLSAudio` product as an empty compatibility module;
+  the actual decoded-audio and full-mix declarations remain validated with
+  Xcode 27 and Swift 6.4 in required CI, release, and DocC lanes.
+- The local release preflight now isolates Swift-package `xcodebuild` actions
+  from co-located Xcode projects and workspaces so unrelated generated files
+  cannot shadow the `InnoNetwork-Package` scheme.
 - `HLSFairPlaySession` now compiles at the package's watchOS 9 floor by
   excluding its stored-asset overload together with the storage and offline
   readiness types that are intentionally unavailable on watchOS. Remote HTTPS

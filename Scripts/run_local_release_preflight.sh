@@ -15,7 +15,7 @@ Usage: bash Scripts/run_local_release_preflight.sh [--fast|--full] [--list]
 Run the release checks that can be reproduced before a tag exists.
 
   --fast  Run deterministic contracts, consumer builds, tools, and bounded tests.
-          This is the default.
+          This is the default. Xcode 27 and Swift 6.4 are required.
   --full  Also generate coverage and SBOMs, enforce same-runner benchmark guards,
           build all-product DocC, and build all five supported Apple platforms.
   --list  Print the selected gate names without running them.
@@ -88,6 +88,29 @@ for command_name in "${required_commands[@]}"; do
   fi
 done
 
+swift_version="$(
+  xcrun swift --version \
+    | sed -nE 's/^Apple Swift version ([0-9]+)\.([0-9]+).*/\1.\2/p' \
+    | head -n 1
+)"
+if [[ -z "$swift_version" ]]; then
+  echo "local-release-preflight: unable to determine the active Swift version" >&2
+  exit 69
+fi
+swift_major="${swift_version%%.*}"
+swift_minor="${swift_version##*.}"
+if (( swift_major < 6 || (swift_major == 6 && swift_minor < 4) )); then
+  echo "local-release-preflight: Xcode 27 with Swift 6.4 or newer is required; found Swift $swift_version" >&2
+  exit 69
+fi
+
+macos_sdk_version="$(xcrun --sdk macosx --show-sdk-version)"
+macos_sdk_major="${macos_sdk_version%%.*}"
+if [[ ! "$macos_sdk_major" =~ ^[0-9]+$ ]] || (( macos_sdk_major < 27 )); then
+  echo "local-release-preflight: the macOS 27 SDK or newer is required; found $macos_sdk_version" >&2
+  exit 69
+fi
+
 if [[ "$mode" == "full" ]]; then
   for sdk in macosx iphonesimulator appletvos watchos xros; do
     if ! xcrun --sdk "$sdk" --show-sdk-path >/dev/null 2>&1; then
@@ -99,6 +122,44 @@ fi
 
 artifacts_dir="$repo_root/.build/local-release-preflight"
 mkdir -p "$artifacts_dir"
+
+package_xcodebuild_root="$repo_root"
+package_xcodebuild_view=""
+
+cleanup_package_xcodebuild_view() {
+  if [[ -n "$package_xcodebuild_view" ]]; then
+    rm -rf "$package_xcodebuild_view"
+  fi
+}
+trap cleanup_package_xcodebuild_view EXIT
+
+prepare_package_xcodebuild_view() {
+  if [[ -n "$package_xcodebuild_view" ]]; then
+    return
+  fi
+  if [[ -z "$(find "$repo_root" -maxdepth 1 \( -name '*.xcodeproj' -o -name '*.xcworkspace' \) -print -quit)" ]]; then
+    return
+  fi
+
+  package_xcodebuild_view="$(mktemp -d "${TMPDIR:-/tmp}/innonetwork-package-view.XXXXXX")"
+  local package_entry
+  for package_entry in Package.swift Package.resolved Sources Tests SmokeTests Benchmarks; do
+    if [[ ! -e "$repo_root/$package_entry" ]]; then
+      echo "local-release-preflight: package entry is unavailable: $package_entry" >&2
+      exit 69
+    fi
+    ln -s "$repo_root/$package_entry" "$package_xcodebuild_view/$package_entry"
+  done
+  package_xcodebuild_root="$package_xcodebuild_view"
+}
+
+run_package_xcodebuild() {
+  prepare_package_xcodebuild_view
+  (
+    cd "$package_xcodebuild_root"
+    xcodebuild "$@"
+  )
+}
 
 run_release_script_fixtures() {
   bash Scripts/tests/test_validate_docs_release_state.sh
@@ -222,7 +283,7 @@ run_sbom_artifacts() {
 }
 
 run_all_product_docc() {
-  xcodebuild docbuild \
+  run_package_xcodebuild docbuild \
     -scheme InnoNetwork-Package \
     -destination 'generic/platform=macOS' \
     -skipMacroValidation \
@@ -231,14 +292,14 @@ run_all_product_docc() {
 }
 
 run_apple_platform_builds() {
-  xcodebuild \
+  run_package_xcodebuild \
     -scheme InnoNetwork-Package \
     -destination 'platform=macOS' \
     -skipMacroValidation \
     -derivedDataPath "$artifacts_dir/macos" \
     CODE_SIGNING_ALLOWED=NO \
     build
-  xcodebuild \
+  run_package_xcodebuild \
     -scheme InnoNetwork-Package \
     -destination 'generic/platform=iOS Simulator' \
     -skipMacroValidation \

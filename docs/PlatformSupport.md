@@ -15,6 +15,16 @@ modern Swift Concurrency semantics, strict Sendable checking, and the latest
 URLSession surface without compatibility shims. There is no Linux toolchain
 support and no plan to add one in 5.x.
 
+## Toolchain support
+
+The root package manifest requires Swift 6.2 and the canonical compatibility
+lane uses Xcode 26.0.1. `InnoNetworkHLSAudio` is the one narrower exception:
+its decoded-sample and preferred-format audio-mix APIs were added to the Xcode
+27 SDK, so those public declarations require Xcode 27 and Swift 6.4. Xcode 26
+still resolves and builds the product as a compatibility module, but exposes
+no HLS-audio symbols. Applications selecting that product must build with
+Xcode 27 and guard use with the declared version 27 runtime availability.
+
 ## Why no Linux
 
 The library leans on `URLSession`, `OSAllocatedUnfairLock`, `OSLog`,
@@ -42,9 +52,12 @@ ProductKit (Linux + Apple)         ← shared Decodable/Encodable models
 
 ## CI matrix
 
-The `.github/workflows/ci.yml` job runs on `macos-15` only. Adding a Linux
-build leg is intentionally out of scope; it would not catch any regression
-because the package does not compile on Linux.
+The canonical SwiftPM and bounded-shard compatibility lanes run on `macos-15`
+with Xcode 26.0.1. A second required SwiftPM lane, dead-code analysis, docs
+contract validation, and HLS-audio tests run on GitHub's `xcode-27` image so
+the SDK-only surface cannot be hidden by its compatibility guards. Adding a
+Linux build leg is intentionally out of scope; it would not catch a supported
+regression because the package does not compile on Linux.
 
 ## Supply-chain provenance
 

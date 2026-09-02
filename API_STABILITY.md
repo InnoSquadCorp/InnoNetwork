@@ -159,7 +159,7 @@ acquiring a 5.x compatibility promise.
 - `InnoNetworkHLS` companion product and its public playlist, variant selection, single-file download, offline package, event, and error symbols
 - `InnoNetworkHLSLive` companion product and its public live reload, bounded DVR recording, snapshot, configuration, and error symbols
 - `InnoNetworkHLSAVFoundation` companion product and its public download, offline readiness, playback configuration, timed metadata, playback metrics, playback health, interstitial and integrated-timeline observation, and FairPlay symbols
-- `InnoNetworkHLSAudio` companion product and its public decoded PCM plus full-mix processing configuration, callback, lifecycle, pacing, sample, and error symbols
+- `InnoNetworkHLSAudio` companion product and its Xcode 27 / Swift 6.4 public decoded PCM plus full-mix processing configuration, callback, lifecycle, pacing, sample, and error symbols
 - `@APIDefinition(method:path:auth:)` and the default-enabled `Macros` package trait
 - `PersistentResponseCache` statistics and telemetry surfaces
 - `WebSocketError.unsupportedProtocolFeature`
@@ -663,6 +663,10 @@ Stable.
 
 ### InnoNetworkHLSAudio
 
+- The product remains present in the Swift 6.2 package graph so older
+  toolchains can validate the rest of InnoNetwork, but its public declarations
+  require the Xcode 27 SDK and Swift 6.4 compiler. Xcode 26 builds only the
+  empty compatibility module and exposes no HLS-audio symbols.
 - `HLSDecodedAudioConfiguration`, `HLSDecodedAudioError`,
   `HLSDecodedAudioOutput`, `HLSDecodedAudioSample`,
   `HLSDecodedAudioPacingConfiguration`, and

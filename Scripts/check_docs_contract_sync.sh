@@ -190,7 +190,7 @@ expected_provisionally=(
 '`InnoNetworkHLS` companion product and its public playlist, variant selection, single-file download, offline package, event, and error symbols'
 '`InnoNetworkHLSLive` companion product and its public live reload, bounded DVR recording, snapshot, configuration, and error symbols'
 '`InnoNetworkHLSAVFoundation` companion product and its public download, offline readiness, playback configuration, timed metadata, playback metrics, playback health, interstitial and integrated-timeline observation, and FairPlay symbols'
-'`InnoNetworkHLSAudio` companion product and its public decoded PCM plus full-mix processing configuration, callback, lifecycle, pacing, sample, and error symbols'
+'`InnoNetworkHLSAudio` companion product and its Xcode 27 / Swift 6.4 public decoded PCM plus full-mix processing configuration, callback, lifecycle, pacing, sample, and error symbols'
 '`@APIDefinition(method:path:auth:)` and the default-enabled `Macros` package trait'
 '`PersistentResponseCache` statistics and telemetry surfaces'
 '`WebSocketError.unsupportedProtocolFeature`'
@@ -1192,7 +1192,7 @@ validate_release_quality_gates() {
     "$repo_root/docs/RELEASE_POLICY.md"
   require_contains 'Scripts/check_release_workflow_contract.py' \
     "$repo_root/docs/CI_DoC.md"
-  require_contains 'xcodebuild docbuild' \
+  require_contains 'run_package_xcodebuild docbuild' \
     "$repo_root/Scripts/run_local_release_preflight.sh"
   require_contains 'bash Scripts/check_docc_archives.sh' \
     "$repo_root/Scripts/run_local_release_preflight.sh"
@@ -1798,9 +1798,23 @@ for symbol in "${expected_provisionally[@]}"; do
         "$repo_root/SmokeTests/InnoNetworkDocSmoke/main.swift"
       continue
       ;;
-    '`InnoNetworkHLSAudio` companion product and its public decoded PCM plus full-mix processing configuration, callback, lifecycle, pacing, sample, and error symbols')
+    '`InnoNetworkHLSAudio` companion product and its Xcode 27 / Swift 6.4 public decoded PCM plus full-mix processing configuration, callback, lifecycle, pacing, sample, and error symbols')
       require_contains 'name: "InnoNetworkHLSAudio"' "$repo_root/Package.swift"
       require_contains 'targets: ["InnoNetworkHLSAudio"]' "$repo_root/Package.swift"
+      for hls_audio_source in \
+        "$repo_root"/Sources/InnoNetworkHLSAudio/*.swift \
+        "$repo_root"/Tests/InnoNetworkHLSAudioTests/HLSAudioMixProcessingTapTests.swift \
+        "$repo_root"/Tests/InnoNetworkHLSAudioTests/HLSDecodedAudioRuntimeTests.swift \
+        "$repo_root"/Tests/InnoNetworkHLSAudioTests/HLSDecodedAudioTests.swift; do
+        require_contains '#if compiler(>=6.4)' "$hls_audio_source"
+      done
+      require_contains '#if compiler(<6.4)' \
+        "$repo_root/Tests/InnoNetworkHLSAudioTests/HLSAudioToolchainCompatibilityTests.swift"
+      require_contains '- label: "27.0"' \
+        "$repo_root/.github/workflows/ci.yml"
+      require_contains 'runs-on: xcode-27' \
+        "$repo_root/.github/workflows/docc-pages.yml"
+      require_contains 'requires Xcode 27 and Swift 6.4' "$repo_root/README.md"
       require_contains 'public struct HLSDecodedAudioConfiguration: Sendable' \
         "$repo_root/Sources/InnoNetworkHLSAudio/HLSDecodedAudioConfiguration.swift"
       require_contains 'public final class HLSDecodedAudioOutput' \

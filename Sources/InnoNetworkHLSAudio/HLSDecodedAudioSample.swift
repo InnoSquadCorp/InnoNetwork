@@ -1,3 +1,4 @@
+#if compiler(>=6.4)
 import AVFoundation
 import CoreMedia
 
@@ -41,3 +42,4 @@ public struct HLSDecodedAudioSample: Sendable {
         }
     }
 }
+#endif

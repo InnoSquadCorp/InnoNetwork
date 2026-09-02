@@ -1,4 +1,4 @@
-#if canImport(AVFoundation)
+#if compiler(>=6.4) && canImport(AVFoundation)
 import AVFoundation
 import CoreMedia
 import Foundation

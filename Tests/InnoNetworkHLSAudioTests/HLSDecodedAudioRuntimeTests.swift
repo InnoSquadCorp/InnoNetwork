@@ -1,4 +1,4 @@
-#if canImport(AVFoundation) && (os(macOS) || os(iOS))
+#if compiler(>=6.4) && canImport(AVFoundation) && (os(macOS) || os(iOS))
 import AVFoundation
 import CoreAudioTypes
 import CoreMedia

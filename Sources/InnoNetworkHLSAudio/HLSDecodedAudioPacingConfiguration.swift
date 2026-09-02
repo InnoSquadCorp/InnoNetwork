@@ -1,3 +1,4 @@
+#if compiler(>=6.4)
 import Foundation
 
 /// Controls demand-driven pacing for decoded HLS audio samples.
@@ -52,3 +53,4 @@ public struct HLSDecodedAudioPacingConfiguration: Equatable, Sendable {
         return min(maximum, max(minimum, value))
     }
 }
+#endif

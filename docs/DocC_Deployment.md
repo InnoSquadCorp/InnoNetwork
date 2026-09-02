@@ -21,6 +21,9 @@ The workflow builds and publishes DocC archives for all public products:
 11. `InnoNetworkTrust`
 12. `InnoNetworkTestSupport`
 
+The build uses GitHub's `xcode-27` image because the HLS-audio catalog links
+SDK declarations that do not exist in Xcode 26.
+
 Each public product owns a same-named DocC catalog. This keeps the generated
 module landing page and curated topic groups from depending on DocC's
 symbol-only fallback behavior.

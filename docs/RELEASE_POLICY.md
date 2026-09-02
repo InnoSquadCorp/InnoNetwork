@@ -37,6 +37,8 @@
    tags, older or off-main commits, stale main refs, missing release notes,
    and non-ready release notes before build.
 5. Let the tag-triggered `Release` workflow run:
+   - Xcode 27 / Swift 6.4 full-surface validation, alongside the separate
+     Xcode 26 compatibility and minimum-platform CI gates
    - root tests in serial coverage mode and bounded target-sharded mode
    - root macro tests, negative compile fixtures, and fail-closed runtime/macro
      LCOV generation

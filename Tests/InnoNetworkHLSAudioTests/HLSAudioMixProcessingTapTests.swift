@@ -1,4 +1,4 @@
-#if canImport(AVFoundation) && !os(watchOS)
+#if compiler(>=6.4) && canImport(AVFoundation) && !os(watchOS)
 import AVFoundation
 import Foundation
 import Testing

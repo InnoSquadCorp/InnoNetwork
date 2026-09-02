@@ -1,3 +1,4 @@
+#if compiler(>=6.4)
 import AVFoundation
 
 /// Demand-driven decoded PCM access for one caller-owned HLS player item.
@@ -114,3 +115,4 @@ public final class HLSDecodedAudioOutput {
         return playerItem.currentTime()
     }
 }
+#endif

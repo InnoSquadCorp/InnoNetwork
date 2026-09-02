@@ -37,7 +37,7 @@ optional product selected only when that capability is required.
 | `InnoNetworkHLS` | You need bounded HLS playlist resolution, deterministic variant selection, browser-free non-DRM VOD assembly, or typed retry and recovery diagnostics. |
 | `InnoNetworkHLSLive` | You need blocking reloads, delta-window reconstruction, bounded snapshots, or atomic live DVR capture. |
 | `InnoNetworkHLSAVFoundation` | You need AVFoundation-managed background HLS persistence, media selections, a value-only integrated interstitial timeline, playback health, an app-owned FairPlay content-key setup, or system-download lifecycle diagnostics. |
-| `InnoNetworkHLSAudio` | You need demand-driven decoded PCM or in-place full-mix processing from an HLS player item on supported version 27 platforms. |
+| `InnoNetworkHLSAudio` | You need demand-driven decoded PCM or in-place full-mix processing from an HLS player item on supported version 27 platforms. This product requires Xcode 27 and Swift 6.4. |
 | `InnoNetworkWebSocket` | You need long-lived bidirectional connections with heartbeat, reconnect, close taxonomy, and event delivery. |
 | `InnoNetworkPersistentCache` | You want `ResponseCache` backed by disk with conservative RFC-aware storage guards and data protection. |
 | `InnoNetworkOpenAPI` | Use `OpenAPIRequest` when generated or hand-written operations should run through the full `DefaultNetworkClient` pipeline. Use `InnoNetworkClientTransport` when an OpenAPI Runtime client needs a thin URLSession-backed transport and the full pipeline is not required. |
@@ -742,6 +742,9 @@ for await event in await manager.events(for: task) {
 
 - a version 27-only HLS-audio companion isolated from the core network,
   raw HLS, live reload, and broader AVFoundation playback products
+- an explicit Xcode 27 and Swift 6.4 toolchain boundary; Xcode 26 continues to
+  build the package and compatibility test target but does not expose these
+  SDK-only declarations
 - validated custom linear PCM formats plus a concise Float32 convenience
   configuration for common waveform, level, speech, and assistance pipelines
 - one demand-driven async read at a time, with typed rejection of overlapping

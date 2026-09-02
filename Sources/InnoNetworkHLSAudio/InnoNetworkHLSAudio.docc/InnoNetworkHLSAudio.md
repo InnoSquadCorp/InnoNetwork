@@ -10,6 +10,11 @@ processing responsibility to the core networking or playback products.
 HLS `AVPlayerItem`, preserves Core Media's typed `Sendable` sample buffer, and
 allows only one outstanding read.
 
+This product's public declarations require Xcode 27 and Swift 6.4 in addition
+to the version 27 runtime availability shown on each API. Xcode 26 can build
+the overall package for compatibility, but cannot compile these newer SDK
+types into a consumer-visible surface.
+
 ```swift
 let configuration = try HLSDecodedAudioConfiguration.float32(
     sampleRate: 48_000,
