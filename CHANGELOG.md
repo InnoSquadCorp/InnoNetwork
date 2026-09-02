@@ -7,6 +7,8 @@ Versioning.
 
 ## [Unreleased]
 
+## [5.1.0] - 2026-09-03
+
 ### Fixed
 
 - Xcode 26 once again builds and tests the package by compiling the

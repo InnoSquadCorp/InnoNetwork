@@ -125,6 +125,20 @@ require_not_contains() {
   fi
 }
 
+extract_single_5x_version() {
+  local description="$1"
+  local expression="$2"
+  local file="$3"
+  local matches
+  local match_count
+
+  matches="$(LC_ALL=C sed -n "$expression" "$file")"
+  match_count="$(printf '%s\n' "$matches" | LC_ALL=C awk 'NF { count += 1 } END { print count + 0 }')"
+  [[ "$match_count" == "1" ]] \
+    || fail "expected exactly one $description in ${file#"$validation_root/"} (found $match_count)."
+  printf '%s\n' "$matches"
+}
+
 status_marker_count="$(LC_ALL=C awk '
   /<!--[[:space:]]*release-status[[:space:]]*:/ { count += 1 }
   END { print count + 0 }
@@ -193,16 +207,31 @@ case "$release_state" in
 
     require_line "# API Stability (5.x)" "$api_stability"
     require_contains '`5.0.0` is the public compatibility baseline for this contract.' "$api_stability"
-    require_contains '.upToNextMajor(from: "5.0.0")' "$api_stability"
     require_not_contains "# API Stability (5.0 Draft)" "$api_stability"
     require_not_contains 'No `5.0.0` tag exists yet' "$api_stability"
 
-    require_contains '`5.0.0` is the latest tagged stable release' "$readme"
-    require_contains '.upToNextMajor(from: "5.0.0")' "$readme"
+    require_contains '`5.0.0` remains the compatibility baseline' "$readme"
     require_contains '5.0 Release Notes: [docs/releases/5.0.0.md](docs/releases/5.0.0.md)' "$readme"
     require_not_contains '`4.0.0` is the latest tagged stable release' "$readme"
     require_not_contains 'no `5.0.0` tag exists yet' "$readme"
     require_not_contains 'Draft 5.0 Release Notes' "$readme"
+
+    latest_version="$(extract_single_5x_version \
+      '5.x latest-tagged-stable claim' \
+      's/.*`\(5\.[0-9][0-9]*\.[0-9][0-9]*\)` is the latest tagged stable release.*/\1/p' \
+      "$readme")"
+    readme_dependency_version="$(extract_single_5x_version \
+      '5.x .upToNextMajor dependency version' \
+      's/.*\.upToNextMajor(from: "\(5\.[0-9][0-9]*\.[0-9][0-9]*\)").*/\1/p' \
+      "$readme")"
+    api_dependency_version="$(extract_single_5x_version \
+      '5.x .upToNextMajor dependency version' \
+      's/.*\.upToNextMajor(from: "\(5\.[0-9][0-9]*\.[0-9][0-9]*\)").*/\1/p' \
+      "$api_stability")"
+    [[ "$readme_dependency_version" == "$latest_version" ]] \
+      || fail "README dependency version '$readme_dependency_version' must match latest tagged stable release '$latest_version'."
+    [[ "$api_dependency_version" == "$latest_version" ]] \
+      || fail "API stability dependency version '$api_dependency_version' must match latest tagged stable release '$latest_version'."
 
     require_line "## [Unreleased]" "$changelog"
     require_line "## [5.0.0] - $release_date" "$changelog"

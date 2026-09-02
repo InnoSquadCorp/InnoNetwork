@@ -23,7 +23,7 @@ Everything else—including Download, raw or system-managed HLS, WebSocket,
 persistent cache, OpenAPI, AWS signing, pinning, and test support—is an
 optional product selected only when that capability is required.
 
-> **Release status:** `5.0.0` is the latest tagged stable release and the
+> **Release status:** `5.1.0` is the latest tagged stable release and the
 > actively security-supported line. The API examples below describe the 5.x
 > contract and may not compile against 4.x.
 
@@ -158,7 +158,7 @@ For released applications, consume the tagged 5.x line:
 dependencies: [
     .package(
         url: "https://github.com/InnoSquadCorp/InnoNetwork.git",
-        .upToNextMajor(from: "5.0.0")
+        .upToNextMajor(from: "5.1.0")
     )
 ]
 ```
@@ -1153,8 +1153,9 @@ examples.
 
 ## Stability
 
-Public releases follow semantic versioning. `5.0.0` is the latest tagged
-compatibility baseline for the 5.x contract.
+Public releases follow semantic versioning. `5.1.0` is the latest tagged
+stable release; `5.0.0` remains the compatibility baseline for the 5.x
+contract.
 
 - Stable public API: [API_STABILITY.md](API_STABILITY.md)
 - Release rules and compatibility policy: [docs/RELEASE_POLICY.md](docs/RELEASE_POLICY.md)
@@ -1179,7 +1180,8 @@ offers unbounded or lossy delivery when that trade-off is intentional. To
 cancel every in-flight request and stream
 (for example, on logout or backgrounding), call
 `DefaultNetworkClient.cancelAll()`. See the
-[5.0 release notes](docs/releases/5.0.0.md) for release details and the
+[5.1 release notes](docs/releases/5.1.0.md) for the HLS companion products and
+the
 [5.0 migration guide](docs/Migration-5.0.0.md) for source changes.
 
 ## Benchmarks
@@ -1335,6 +1337,7 @@ Operational items to verify before shipping a client built on InnoNetwork.
 - Migration Policy: [docs/MIGRATION_POLICY.md](docs/MIGRATION_POLICY.md)
 - Migration Guides: [docs/MigrationGuides.md](docs/MigrationGuides.md)
 - 5.0 Migration Guide: [docs/Migration-5.0.0.md](docs/Migration-5.0.0.md)
+- 5.1 Release Notes: [docs/releases/5.1.0.md](docs/releases/5.1.0.md)
 - Alamofire Migration Cookbook: [docs/MigrationFromAlamofire.md](docs/MigrationFromAlamofire.md)
 - Moya Migration Cookbook: [docs/MigrationFromMoya.md](docs/MigrationFromMoya.md)
 - DocC Deployment: [docs/DocC_Deployment.md](docs/DocC_Deployment.md)
