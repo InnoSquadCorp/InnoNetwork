@@ -256,7 +256,7 @@ struct HLSFairPlayAcceptanceRuntimeTests {
                 throw FairPlayAcceptanceError.downloadFailed
             case .cancelled:
                 throw CancellationError()
-            case .progress, .locationAvailable:
+            case .progress, .downloadSummary, .locationAvailable:
                 continue
             }
         }

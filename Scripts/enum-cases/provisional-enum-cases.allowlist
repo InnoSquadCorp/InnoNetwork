@@ -62,6 +62,13 @@ StreamingBufferingPolicy.unbounded
 StreamingResumePolicy.disabled
 StreamingResumePolicy.lastEventID
 
+HLSAssetDownloadEvent.cancelled
+HLSAssetDownloadEvent.completed
+HLSAssetDownloadEvent.downloadSummary
+HLSAssetDownloadEvent.failed
+HLSAssetDownloadEvent.locationAvailable
+HLSAssetDownloadEvent.progress
+
 TrustFailureReason.custom
 TrustFailureReason.hostNotPinned
 TrustFailureReason.missingServerTrust

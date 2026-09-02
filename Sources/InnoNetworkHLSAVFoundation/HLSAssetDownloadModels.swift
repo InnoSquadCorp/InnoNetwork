@@ -107,6 +107,9 @@ public enum HLSAssetDownloadEvent: Sendable {
     /// A best-effort completion fraction between zero and one.
     case progress(Double)
 
+    /// A bounded, URL-free summary emitted by AVFoundation on OS 26 and newer.
+    case downloadSummary(HLSAssetDownloadSummary)
+
     /// The system-managed URL where the asset must remain.
     case locationAvailable(URL)
 

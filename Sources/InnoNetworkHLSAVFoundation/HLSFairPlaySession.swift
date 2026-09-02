@@ -71,6 +71,7 @@ public final class HLSFairPlaySession {
         return asset
     }
 
+    #if !os(watchOS)
     /// Creates and attaches a previously downloaded system-managed asset.
     ///
     /// Keep the referenced `.movpkg` at its AVFoundation-delivered location
@@ -88,6 +89,7 @@ public final class HLSFairPlaySession {
         attachedAssets[ObjectIdentifier(asset)] = asset
         return asset
     }
+    #endif
 
     /// Detaches an asset after download and playback have both finished.
     public func detach(

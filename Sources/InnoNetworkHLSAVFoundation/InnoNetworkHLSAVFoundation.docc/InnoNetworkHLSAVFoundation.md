@@ -31,6 +31,8 @@ let download = try await MainActor.run {
 
 for await event in session.events(for: download) {
     switch event {
+    case .downloadSummary(let summary):
+        recordDownloadSummary(summary)
     case .completed(let systemURL):
         let storedAsset = try download.storedAsset(at: systemURL)
         saveAssetReference(storedAsset)
@@ -41,6 +43,16 @@ for await event in session.events(for: download) {
     }
 }
 ```
+
+On version 26 and newer systems, AVFoundation emits one
+``HLSAssetDownloadEvent/downloadSummary(_:)`` near the end of a system-managed
+download. ``HLSAssetDownloadSummary`` retains non-negative request, byte, and
+error counts, a finite duration, and at most 64 URL-free selected-variant
+summaries. It does not retain task metrics, URLs, native objects, or underlying
+errors. Compare recoverable-error counts only within the same OS version,
+because AVFoundation's reporting can change between system updates. Older
+systems continue to emit the existing progress, location, and terminal events
+without a download summary.
 
 The configuration closure stays synchronous and main-actor isolated so
 AVFoundation's non-Sendable download configuration never crosses a concurrency
@@ -666,6 +678,8 @@ AVFoundation-delivered package URL, recreate the application delegate and
 secure key store, then attach the package with
 ``HLSFairPlaySession/makeAsset(storedAsset:)`` before creating the player item.
 Use ``HLSOfflineAssetInspector`` first when the UI needs a readiness decision.
+The stored-asset convenience is unavailable on watchOS, where this companion
+does not ship its package storage and readiness types.
 
 ## Topics
 
@@ -681,6 +695,8 @@ Use ``HLSOfflineAssetInspector`` first when the UI needs a readiness decision.
 - ``HLSAssetDownloadRequest``
 - ``HLSAssetDownloadContentPack``
 - ``HLSAssetDownloadEvent``
+- ``HLSAssetDownloadSummary``
+- ``HLSAssetDownloadVariantSummary``
 
 ### Stored assets
 

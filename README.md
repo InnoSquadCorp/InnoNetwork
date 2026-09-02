@@ -685,7 +685,8 @@ for await event in await manager.events(for: task) {
   events into stable healthy/degraded/critical snapshots while applications
   retain UI, alerting, and policy ownership
 - reconnectable AVFoundation background HLS downloads with typed content
-  selection, interstitial retention, and bounded event replay
+  selection, interstitial retention, bounded event replay, and version 26
+  URL-free download-summary metrics with bounded selected-variant details
 - persistable validated `.movpkg` references plus a cancellation-safe
   `AVAssetCache` readiness inspector that distinguishes missing, invalid,
   unrecognized, incomplete, and offline-playable packages; bounded snapshots

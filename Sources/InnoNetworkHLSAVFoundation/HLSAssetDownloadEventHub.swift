@@ -18,6 +18,7 @@ final class HLSAssetDownloadEventHub: Sendable {
         var observers: [Int: [Observer]] = [:]
         var locations: [Int: URL] = [:]
         var progress: [Int: Double] = [:]
+        var summaries: [Int: HLSAssetDownloadSummary] = [:]
         var terminalEvents: [Int: HLSAssetDownloadEvent] = [:]
         var terminalTaskOrder: [Int] = []
         var sessionFailure: HLSAssetDownloadEvent?
@@ -44,6 +45,9 @@ final class HLSAssetDownloadEventHub: Sendable {
                 }
                 if let location = state.locations[taskIdentifier] {
                     continuation.yield(.locationAvailable(location))
+                }
+                if let summary = state.summaries[taskIdentifier] {
+                    continuation.yield(.downloadSummary(summary))
                 }
                 if let terminal = state.terminalEvents[taskIdentifier] {
                     continuation.yield(terminal)
@@ -116,6 +120,32 @@ final class HLSAssetDownloadEventHub: Sendable {
         }
     }
 
+    func sendSummary(
+        _ summary: HLSAssetDownloadSummary,
+        taskIdentifier: Int
+    ) {
+        let continuations: [Continuation] = state.withLock { state in
+            guard state.terminalEvents[taskIdentifier] == nil,
+                state.sessionFailure == nil
+            else {
+                return []
+            }
+            let previous = state.summaries.updateValue(
+                summary,
+                forKey: taskIdentifier
+            )
+            guard previous != summary else {
+                return []
+            }
+            return state.observers[taskIdentifier, default: []].map(
+                \.continuation
+            )
+        }
+        continuations.forEach {
+            $0.yield(.downloadSummary(summary))
+        }
+    }
+
     func sendCompletion(taskIdentifier: Int) {
         let event = state.withLock { state -> HLSAssetDownloadEvent in
             guard let location = state.locations[taskIdentifier] else {
@@ -160,6 +190,9 @@ final class HLSAssetDownloadEventHub: Sendable {
                 state.progress.removeValue(
                     forKey: evictedTaskIdentifier
                 )
+                state.summaries.removeValue(
+                    forKey: evictedTaskIdentifier
+                )
             }
             state.progress.removeValue(forKey: taskIdentifier)
             return state.observers.removeValue(
@@ -194,6 +227,7 @@ final class HLSAssetDownloadEventHub: Sendable {
             state.observers.removeAll()
             state.locations.removeAll()
             state.progress.removeAll()
+            state.summaries.removeAll()
             state.terminalEvents.removeAll()
             state.terminalTaskOrder.removeAll()
             return continuations

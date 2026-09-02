@@ -7,8 +7,21 @@ Versioning.
 
 ## [Unreleased]
 
+### Fixed
+
+- `HLSFairPlaySession` now compiles at the package's watchOS 9 floor by
+  excluding its stored-asset overload together with the storage and offline
+  readiness types that are intentionally unavailable on watchOS. Remote HTTPS
+  FairPlay asset attachment remains available there.
+
 ### Added
 
+- `HLSAssetDownloadSummary` exposes AVFoundation's version 26 offline HLS
+  download summary through the existing bounded task event stream. Counts,
+  downloaded bytes, finite duration, error presence, and at most 64 selected
+  variant summaries cross the public boundary; URLs, task metrics, native
+  objects, and underlying errors remain private. Earlier systems retain the
+  existing event sequence without emitting a summary.
 - `InnoNetworkHLSAVFoundation` adds a bounded streaming FairPlay key workflow
   for both initial and renewing requests, with typed response-submitted,
   response-accepted, retry, and value-redacted failure events. Downloaded

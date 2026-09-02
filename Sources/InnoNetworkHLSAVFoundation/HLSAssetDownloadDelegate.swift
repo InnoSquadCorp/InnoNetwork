@@ -137,6 +137,25 @@ extension HLSAssetDownloadDelegate {
     }
 }
 
+@available(macOS 26.0, iOS 26.0, watchOS 26.0, visionOS 26.0, *)
+extension HLSAssetDownloadDelegate {
+    func urlSession(
+        _ session: URLSession,
+        assetDownloadTask: AVAssetDownloadTask,
+        didReceiveMetricEvent metricEvent: AVMetricEvent
+    ) {
+        guard
+            let summary = HLSAssetDownloadMetricMapper.map(metricEvent)
+        else {
+            return
+        }
+        eventHub.sendSummary(
+            summary,
+            taskIdentifier: assetDownloadTask.taskIdentifier
+        )
+    }
+}
+
 final class HLSAssetDownloadBackgroundCompletionStore: Sendable {
     private let completions = OSAllocatedUnfairLock<
         [@Sendable () -> Void]

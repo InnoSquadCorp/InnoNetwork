@@ -59,6 +59,51 @@ struct HLSAssetDownloadEventHubTests {
         #expect(events.count == 3)
     }
 
+    @Test("download summaries are delivered and replayed before completion")
+    func downloadSummaryReplay() async throws {
+        let hub = HLSAssetDownloadEventHub()
+        let taskIdentifier = 8
+        let location = FileManager.default.temporaryDirectory
+            .appendingPathComponent("summary.movpkg")
+        let summary = HLSAssetDownloadSummary(
+            date: Date(timeIntervalSince1970: 3_000),
+            recoverableErrorCount: 0,
+            mediaResourceRequestCount: 4,
+            bytesDownloaded: 8_192,
+            downloadDuration: 3,
+            variants: [],
+            hadError: false
+        )
+        let liveStream = hub.stream(taskIdentifier: taskIdentifier)
+        hub.sendLocation(location, taskIdentifier: taskIdentifier)
+        hub.sendSummary(summary, taskIdentifier: taskIdentifier)
+        hub.sendCompletion(taskIdentifier: taskIdentifier)
+
+        var liveEvents: [HLSAssetDownloadEvent] = []
+        for await event in liveStream {
+            liveEvents.append(event)
+        }
+        var replayedEvents: [HLSAssetDownloadEvent] = []
+        for await event in hub.stream(
+            taskIdentifier: taskIdentifier
+        ) {
+            replayedEvents.append(event)
+        }
+
+        for events in [liveEvents, replayedEvents] {
+            #expect(events.count == 3)
+            guard case .downloadSummary(summary) = events[1] else {
+                Issue.record("Expected a download summary.")
+                return
+            }
+            #expect(summary.bytesDownloaded == 8_192)
+            guard case .completed(location) = events[2] else {
+                Issue.record("Expected completion after the summary.")
+                return
+            }
+        }
+    }
+
     @Test("terminal replay storage stays bounded")
     func boundedTerminalReplayStorage() {
         let hub = HLSAssetDownloadEventHub()
