@@ -534,6 +534,23 @@ Seek completion distinguishes whether AVFoundation performed the seek inside
 the available buffer. Negative finite rates remain available for reverse
 playback; non-finite values become `nil`.
 
+The default newest-event buffer stays bounded under consumer backpressure. Use
+``HLSPlaybackMetrics/sequencedEvents()`` when diagnostics must measure that
+loss without retaining an unbounded side channel:
+
+```swift
+var previous: HLSPlaybackMetricDelivery?
+for try await delivery in metrics.sequencedEvents() {
+    let dropped = delivery.droppedEventCount(after: previous)
+    recordPlaybackMetric(delivery.event, droppedBefore: dropped)
+    previous = delivery
+}
+```
+
+Each independent subscription starts at sequence number zero. Therefore the
+first observed number reports any initial loss, while later gaps report loss
+between delivered events.
+
 For startup-specific diagnosis, use
 ``HLSPlaybackMetrics/startupEvents(maximumRetainedRequestCount:)``. It retains
 the chronological, URL-free playlist, segment, and content-key request details
@@ -962,6 +979,7 @@ does not ship its package storage and readiness types.
 - ``HLSPlaybackMetrics``
 - ``HLSPlaybackMetricsError``
 - ``HLSPlaybackMetricEvent``
+- ``HLSPlaybackMetricDelivery``
 - ``HLSPlaybackBufferMetric``
 - ``HLSPlaybackRateChangeMetric``
 - ``HLSPlaybackRateChangeReason``

@@ -264,6 +264,19 @@ public struct HLSPlaybackMetrics: Sendable {
     func makeEventStream<Output: Sendable>(
         _ transform: @escaping @Sendable (AVMetricEvent) -> Output?
     ) -> AsyncThrowingStream<Output, Error> {
+        makeEventStream(initialState: ()) { _, metric in
+            transform(metric)
+        }
+    }
+
+    func makeEventStream<State: Sendable, Output: Sendable>(
+        initialState: State,
+        _ transform:
+            @escaping @Sendable (
+                inout State,
+                AVMetricEvent
+            ) -> Output?
+    ) -> AsyncThrowingStream<Output, Error> {
         let (stream, continuation) =
             AsyncThrowingStream<Output, Error>.makeStream(
                 bufferingPolicy: .bufferingNewest(
@@ -272,9 +285,10 @@ public struct HLSPlaybackMetrics: Sendable {
             )
         let playerItem = playerItem
         let task = Task {
+            var state = initialState
             do {
                 for try await metric in playerItem.allMetrics() {
-                    if let output = transform(metric) {
+                    if let output = transform(&state, metric) {
                         continuation.yield(output)
                     }
                 }

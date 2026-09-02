@@ -16,6 +16,10 @@ Versioning.
 
 ### Added
 
+- `HLSPlaybackMetrics.sequencedEvents()` wraps the existing URL-free playback
+  metrics in a zero-based delivery sequence, allowing bounded-stream consumers
+  to measure initial and subsequent event loss without an unbounded side
+  channel.
 - `HLSPlaybackMetrics.rateChangeEvents()` preserves finite previous/current
   rates, URL-free selected-variant bitrates, and typed rate-change, stall, seek
   start, or seek-completion reasons without expanding the existing general

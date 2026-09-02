@@ -82,6 +82,8 @@ private let smokeHLSPlaybackStartupMetricType =
     HLSPlaybackStartupMetric.self
 private let smokeHLSPlaybackBufferMetricType =
     HLSPlaybackBufferMetric.self
+private let smokeHLSPlaybackMetricDeliveryType =
+    HLSPlaybackMetricDelivery.self
 private let smokeHLSPlaybackReadinessMetricType =
     HLSPlaybackReadinessMetric.self
 private let smokeHLSPlaybackRateChangeMetricType =
@@ -257,6 +259,17 @@ private func smokeHLSPlaybackStartupMetricsSurface(
     let readinessEvents = metrics.readinessEvents()
     _ = readinessEvents
     _ = smokeHLSPlaybackReadinessMetricType
+}
+
+@available(macOS 15, iOS 18, tvOS 18, watchOS 11, visionOS 2, *)
+private func smokeHLSPlaybackMetricDeliverySurface(
+    playerItem: AVPlayerItem
+) {
+    let deliveries = HLSPlaybackMetrics(
+        playerItem: playerItem
+    ).sequencedEvents()
+    _ = deliveries
+    _ = smokeHLSPlaybackMetricDeliveryType
 }
 
 @available(macOS 15, iOS 18, tvOS 18, watchOS 11, visionOS 2, *)
