@@ -702,7 +702,8 @@ for await event in await manager.events(for: task) {
 - main-actor configuration of AVFoundation media selections and variant
   qualifiers without crossing a non-`Sendable` boundary
 - task restoration, progress and terminal event streams, pause, resume, and
-  cancellation
+  cancellation, plus replayable URL-free variant-selection snapshots before
+  transfer progress
 - application-delegate background completion handoff and optional app-group
   shared container support
 - `HLSFairPlaySession` for delegate retention, HTTPS asset admission,

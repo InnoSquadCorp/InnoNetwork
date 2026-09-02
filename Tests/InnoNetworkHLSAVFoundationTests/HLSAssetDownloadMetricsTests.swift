@@ -69,6 +69,15 @@ struct HLSAssetDownloadMetricsTests {
         #expect(summary.didTruncateVariants)
         #expect(summary.variants.last?.peakBitRate == 64)
         #expect(!summary.hadError)
+
+        let selection = HLSAssetDownloadVariantSelection(
+            variants: Array(variants.prefix(64)),
+            variantCount: variants.count
+        )
+        #expect(selection.variantCount == 65)
+        #expect(selection.variants.count == 64)
+        #expect(selection.didTruncateVariants)
+        #expect(selection.variants.last?.peakBitRate == 64)
     }
 }
 #endif

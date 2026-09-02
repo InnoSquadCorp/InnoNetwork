@@ -31,6 +31,8 @@ let download = try await MainActor.run {
 
 for await event in session.events(for: download) {
     switch event {
+    case .variantSelection(let selection):
+        updateSelectedQuality(selection)
     case .downloadSummary(let summary):
         recordDownloadSummary(summary)
     case .completed(let systemURL):
@@ -43,6 +45,18 @@ for await event in session.events(for: download) {
     }
 }
 ```
+
+After AVFoundation completes environment-dependent variant selection,
+``HLSAssetDownloadEvent/variantSelection(_:)`` arrives before normal transfer
+progress on macOS 14, iOS 16, watchOS 10, visionOS 1, and newer systems.
+``HLSAssetDownloadVariantSelection`` retains the total selected count and at
+most 64 ``HLSAssetDownloadVariantSummary`` values. It is deduplicated and
+replayed to late observers, including after a terminal event, so a background
+session can reconnect after the delegate callback. Variant objects and their
+media-playlist URLs never cross the public boundary. The selection describes
+what AVFoundation chose for the environment when the download started; it is
+an observation, not a promise that application preference controls were fully
+satisfied.
 
 On version 26 and newer systems, AVFoundation emits one
 ``HLSAssetDownloadEvent/downloadSummary(_:)`` near the end of a system-managed
@@ -726,6 +740,7 @@ does not ship its package storage and readiness types.
 - ``HLSAssetDownloadContentPack``
 - ``HLSAssetDownloadEvent``
 - ``HLSAssetDownloadSummary``
+- ``HLSAssetDownloadVariantSelection``
 - ``HLSAssetDownloadVariantSummary``
 
 ### Stored assets

@@ -21,7 +21,7 @@ struct HLSAssetDownloadEventHubRaceTests {
                         switch event {
                         case .completed, .failed, .cancelled:
                             terminalCount += 1
-                        case .progress, .downloadSummary,
+                        case .variantSelection, .progress, .downloadSummary,
                             .locationAvailable:
                             break
                         }

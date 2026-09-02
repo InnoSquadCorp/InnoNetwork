@@ -123,6 +123,20 @@ final class HLSAssetDownloadDelegate: NSObject, AVAssetDownloadDelegate {
     }
 }
 
+@available(macOS 14.0, iOS 16.0, watchOS 10.0, visionOS 1.0, *)
+extension HLSAssetDownloadDelegate {
+    func urlSession(
+        _ session: URLSession,
+        assetDownloadTask: AVAssetDownloadTask,
+        willDownloadVariants variants: [AVAssetVariant]
+    ) {
+        eventHub.sendVariantSelection(
+            HLSAssetDownloadVariantSelection(variants),
+            taskIdentifier: assetDownloadTask.taskIdentifier
+        )
+    }
+}
+
 @available(macOS 14.0, iOS 18.0, watchOS 10.0, visionOS 1.0, *)
 extension HLSAssetDownloadDelegate {
     func urlSession(

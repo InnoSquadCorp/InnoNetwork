@@ -104,6 +104,74 @@ struct HLSAssetDownloadEventHubTests {
         }
     }
 
+    @Test("variant selection is deduplicated and replayed before progress")
+    func variantSelectionReplay() async throws {
+        let hub = HLSAssetDownloadEventHub()
+        let taskIdentifier = 9
+        let selection = HLSAssetDownloadVariantSelection(
+            variants: [
+                HLSAssetDownloadVariantSummary(
+                    peakBitRate: 4_000_000,
+                    averageBitRate: 3_000_000,
+                    hasVideo: true,
+                    hasAudio: true
+                )
+            ]
+        )
+        let liveStream = hub.stream(taskIdentifier: taskIdentifier)
+        hub.sendVariantSelection(
+            selection,
+            taskIdentifier: taskIdentifier
+        )
+        hub.sendVariantSelection(
+            selection,
+            taskIdentifier: taskIdentifier
+        )
+        hub.sendProgress(0.25, taskIdentifier: taskIdentifier)
+        hub.sendTerminal(
+            .cancelled,
+            taskIdentifier: taskIdentifier
+        )
+
+        var liveEvents: [HLSAssetDownloadEvent] = []
+        for await event in liveStream {
+            liveEvents.append(event)
+        }
+        var replayedEvents: [HLSAssetDownloadEvent] = []
+        for await event in hub.stream(taskIdentifier: taskIdentifier) {
+            replayedEvents.append(event)
+        }
+
+        #expect(liveEvents.count == 3)
+        guard case .variantSelection(let liveSelection) = liveEvents[0] else {
+            Issue.record("Expected live variant selection first.")
+            return
+        }
+        #expect(liveSelection == selection)
+        guard case .progress(0.25) = liveEvents[1] else {
+            Issue.record("Expected progress after live variant selection.")
+            return
+        }
+        guard case .cancelled = liveEvents[2] else {
+            Issue.record("Expected live terminal cancellation.")
+            return
+        }
+
+        #expect(replayedEvents.count == 2)
+        guard
+            case .variantSelection(let replayedSelection) =
+                replayedEvents[0]
+        else {
+            Issue.record("Expected replayed variant selection first.")
+            return
+        }
+        #expect(replayedSelection == selection)
+        guard case .cancelled = replayedEvents[1] else {
+            Issue.record("Expected replayed terminal cancellation.")
+            return
+        }
+    }
+
     @Test("terminal replay storage stays bounded")
     func boundedTerminalReplayStorage() {
         let hub = HLSAssetDownloadEventHub()

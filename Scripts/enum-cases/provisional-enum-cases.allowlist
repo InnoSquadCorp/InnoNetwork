@@ -68,6 +68,7 @@ HLSAssetDownloadEvent.downloadSummary
 HLSAssetDownloadEvent.failed
 HLSAssetDownloadEvent.locationAvailable
 HLSAssetDownloadEvent.progress
+HLSAssetDownloadEvent.variantSelection
 
 HLSFairPlayDeviceIdentifierPolicy.randomized
 HLSFairPlayDeviceIdentifierPolicy.randomizedWithSeed

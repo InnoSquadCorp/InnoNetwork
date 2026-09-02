@@ -16,6 +16,7 @@ final class HLSAssetDownloadEventHub: Sendable {
 
     private struct State {
         var observers: [Int: [Observer]] = [:]
+        var variantSelections: [Int: HLSAssetDownloadVariantSelection] = [:]
         var locations: [Int: URL] = [:]
         var progress: [Int: Double] = [:]
         var summaries: [Int: HLSAssetDownloadSummary] = [:]
@@ -39,6 +40,9 @@ final class HLSAssetDownloadEventHub: Sendable {
                 if let sessionFailure = state.sessionFailure {
                     continuation.yield(sessionFailure)
                     return true
+                }
+                if let selection = state.variantSelections[taskIdentifier] {
+                    continuation.yield(.variantSelection(selection))
                 }
                 if let progress = state.progress[taskIdentifier] {
                     continuation.yield(.progress(progress))
@@ -70,6 +74,32 @@ final class HLSAssetDownloadEventHub: Sendable {
                     taskIdentifier: taskIdentifier
                 )
             }
+        }
+    }
+
+    func sendVariantSelection(
+        _ selection: HLSAssetDownloadVariantSelection,
+        taskIdentifier: Int
+    ) {
+        let continuations: [Continuation] = state.withLock { state in
+            guard state.terminalEvents[taskIdentifier] == nil,
+                state.sessionFailure == nil
+            else {
+                return []
+            }
+            let previous = state.variantSelections.updateValue(
+                selection,
+                forKey: taskIdentifier
+            )
+            guard previous != selection else {
+                return []
+            }
+            return state.observers[taskIdentifier, default: []].map(
+                \.continuation
+            )
+        }
+        continuations.forEach {
+            $0.yield(.variantSelection(selection))
         }
     }
 
@@ -187,6 +217,9 @@ final class HLSAssetDownloadEventHub: Sendable {
                 state.locations.removeValue(
                     forKey: evictedTaskIdentifier
                 )
+                state.variantSelections.removeValue(
+                    forKey: evictedTaskIdentifier
+                )
                 state.progress.removeValue(
                     forKey: evictedTaskIdentifier
                 )
@@ -225,6 +258,7 @@ final class HLSAssetDownloadEventHub: Sendable {
                 .flatMap { $0 }
                 .map(\.continuation)
             state.observers.removeAll()
+            state.variantSelections.removeAll()
             state.locations.removeAll()
             state.progress.removeAll()
             state.summaries.removeAll()

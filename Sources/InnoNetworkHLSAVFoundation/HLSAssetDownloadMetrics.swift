@@ -37,10 +37,53 @@ public struct HLSAssetDownloadVariantSummary: Equatable, Sendable {
     }
 }
 
-/// Bounded, value-redacted metrics for one system-managed HLS download.
-public struct HLSAssetDownloadSummary: Equatable, Sendable {
+/// Bounded, URL-free variants selected for one AVFoundation HLS download.
+public struct HLSAssetDownloadVariantSelection: Equatable, Sendable {
     static let maximumRetainedVariantCount = 64
 
+    /// Total variants selected before bounded retention.
+    public let variantCount: Int
+
+    /// Details for at most 64 selected variants.
+    public let variants: [HLSAssetDownloadVariantSummary]
+
+    /// Whether selected-variant details exceeded the retention bound.
+    public let didTruncateVariants: Bool
+
+    init(
+        variants: [HLSAssetDownloadVariantSummary],
+        variantCount: Int? = nil
+    ) {
+        self.variantCount = max(
+            variants.count,
+            variantCount ?? variants.count
+        )
+        self.variants = Array(
+            variants.prefix(Self.maximumRetainedVariantCount)
+        )
+        self.didTruncateVariants = self.variantCount > self.variants.count
+    }
+
+    init(_ selectedVariants: [AVAssetVariant]) {
+        self.init(
+            variants:
+                selectedVariants
+                .prefix(Self.maximumRetainedVariantCount)
+                .map { variant in
+                    HLSAssetDownloadVariantSummary(
+                        peakBitRate: variant.peakBitRate,
+                        averageBitRate: variant.averageBitRate,
+                        hasVideo: variant.videoAttributes != nil,
+                        hasAudio: variant.audioAttributes != nil
+                    )
+                },
+            variantCount: selectedVariants.count
+        )
+    }
+}
+
+/// Bounded, value-redacted metrics for one system-managed HLS download.
+public struct HLSAssetDownloadSummary: Equatable, Sendable {
     /// The wall-clock time when AVFoundation emitted the summary.
     public let date: Date
 
@@ -92,14 +135,13 @@ public struct HLSAssetDownloadSummary: Equatable, Sendable {
             downloadDuration.isFinite && downloadDuration >= 0
             ? downloadDuration
             : nil
-        self.variantCount = max(
-            variants.count,
-            variantCount ?? variants.count
+        let selection = HLSAssetDownloadVariantSelection(
+            variants: variants,
+            variantCount: variantCount
         )
-        self.variants = Array(
-            variants.prefix(Self.maximumRetainedVariantCount)
-        )
-        self.didTruncateVariants = self.variantCount > self.variants.count
+        self.variantCount = selection.variantCount
+        self.variants = selection.variants
+        self.didTruncateVariants = selection.didTruncateVariants
         self.hadError = hadError
     }
 }
@@ -115,17 +157,7 @@ enum HLSAssetDownloadMetricMapper {
             return nil
         }
         let selectedVariants = event.variants
-        let variants =
-            selectedVariants
-            .prefix(HLSAssetDownloadSummary.maximumRetainedVariantCount)
-            .map { variant in
-                HLSAssetDownloadVariantSummary(
-                    peakBitRate: variant.peakBitRate,
-                    averageBitRate: variant.averageBitRate,
-                    hasVideo: variant.videoAttributes != nil,
-                    hasAudio: variant.audioAttributes != nil
-                )
-            }
+        let selection = HLSAssetDownloadVariantSelection(selectedVariants)
         return HLSAssetDownloadSummary(
             date: event.date,
             recoverableErrorCount: event.recoverableErrorCount,
@@ -133,8 +165,8 @@ enum HLSAssetDownloadMetricMapper {
                 event.mediaResourceRequestCount,
             bytesDownloaded: event.bytesDownloadedCount,
             downloadDuration: event.downloadDuration,
-            variants: variants,
-            variantCount: selectedVariants.count,
+            variants: selection.variants,
+            variantCount: selection.variantCount,
             hadError: event.errorEvent != nil
         )
     }

@@ -104,6 +104,9 @@ public struct HLSAssetDownload: Hashable, Sendable {
 
 /// Events emitted by a system-managed HLS asset download.
 public enum HLSAssetDownloadEvent: Sendable {
+    /// URL-free variants selected for the download's starting environment.
+    case variantSelection(HLSAssetDownloadVariantSelection)
+
     /// A best-effort completion fraction between zero and one.
     case progress(Double)
 

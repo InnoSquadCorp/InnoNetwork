@@ -16,6 +16,10 @@ Versioning.
 
 ### Added
 
+- `HLSAssetDownloadEvent.variantSelection` exposes AVFoundation's chosen
+  download variants before transfer progress. The replayable snapshot retains
+  at most 64 URL-free bitrate and media-kind summaries plus the pre-truncation
+  count; native variants and their media-playlist URLs remain private.
 - FairPlay streaming and persistent-key acquisitions can opt into version 26
   anonymized device-ID randomization through
   `HLSFairPlayDeviceIdentifierPolicy`. The default preserves AVFoundation's
