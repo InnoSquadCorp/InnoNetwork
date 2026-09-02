@@ -99,25 +99,26 @@ extension HLSRendition {
         case .closedCaptions:
             kindValue = "closedCaptions"
         }
-        let value = [
-            kindValue,
+        let sourceIdentity =
             stableID
-                ?? url.map(
-                    HLSLiveDVRRecoveryIdentity.sourceURLSHA256
-                ) ?? "",
-            groupID,
-            name,
-            language ?? "",
-            associatedLanguage ?? "",
-            instreamID ?? "",
-            characteristics.joined(separator: ","),
-            channels ?? "",
-            audioBitDepth.map(String.init) ?? "",
-            audioSampleRate.map(String.init) ?? "",
-            isDefault ? "1" : "0",
-            isAutoselect ? "1" : "0",
-            isForced ? "1" : "0",
-        ].joined(separator: "\u{1f}")
+            ?? url.map(HLSLiveDVRRecoveryIdentity.sourceURLSHA256)
+            ?? ""
+        var components: [String] = []
+        components.append(kindValue)
+        components.append(sourceIdentity)
+        components.append(groupID)
+        components.append(name)
+        components.append(language ?? "")
+        components.append(associatedLanguage ?? "")
+        components.append(instreamID ?? "")
+        components.append(characteristics.joined(separator: ","))
+        components.append(channels ?? "")
+        components.append(audioBitDepth.map(String.init) ?? "")
+        components.append(audioSampleRate.map(String.init) ?? "")
+        components.append(isDefault ? "1" : "0")
+        components.append(isAutoselect ? "1" : "0")
+        components.append(isForced ? "1" : "0")
+        let value = components.joined(separator: "\u{1f}")
         return HLSContentFingerprint.sha256(value)
     }
 }
