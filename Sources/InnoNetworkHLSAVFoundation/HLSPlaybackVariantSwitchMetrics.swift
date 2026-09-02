@@ -91,6 +91,9 @@ public struct HLSPlaybackVariantSwitchMetric: Equatable, Sendable {
     /// Bitrates for the requested or selected destination variant.
     public let toVariant: HLSPlaybackVariantBitrateMetric
 
+    /// Readily available media at the variant-switch boundary.
+    public let buffer: HLSPlaybackBufferMetric
+
     /// Selected rendition identities on version 26 and later systems.
     ///
     /// A `nil` value means the operating system did not provide rendition
@@ -133,6 +136,7 @@ enum HLSPlaybackVariantSwitchMetricMapper {
                 toVariant: HLSPlaybackVariantBitrateMetric(
                     event.toVariant
                 ),
+                buffer: HLSPlaybackBufferMetric(event.loadedTimeRanges),
                 renditions: renditionSelection(event)
             )
         case let event as AVMetricPlayerItemVariantSwitchEvent:
@@ -145,6 +149,7 @@ enum HLSPlaybackVariantSwitchMetricMapper {
                 toVariant: HLSPlaybackVariantBitrateMetric(
                     event.toVariant
                 ),
+                buffer: HLSPlaybackBufferMetric(event.loadedTimeRanges),
                 renditions: renditionSelection(event)
             )
         default:

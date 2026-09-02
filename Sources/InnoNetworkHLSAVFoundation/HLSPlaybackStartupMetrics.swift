@@ -1,7 +1,7 @@
 import AVFoundation
 import Foundation
 
-/// Bounded, value-redacted diagnostics for initial HLS startup.
+/// Bounded, URL-free diagnostics for initial HLS startup.
 public struct HLSPlaybackStartupMetric: Equatable, Sendable {
     static let maximumRetainedRequestCount = 1_024
 
@@ -11,6 +11,12 @@ public struct HLSPlaybackStartupMetric: Equatable, Sendable {
     /// Time AVFoundation needed to become likely to keep up, when finite and
     /// nonnegative.
     public let timeTaken: TimeInterval?
+
+    /// Bitrates for the selected startup variant, when supplied.
+    public let variant: HLSPlaybackVariantBitrateMetric?
+
+    /// Readily available media when startup became likely to keep up.
+    public let buffer: HLSPlaybackBufferMetric
 
     /// Playlist requests before bounded detail retention.
     public let playlistRequestCount: Int
@@ -40,6 +46,8 @@ public struct HLSPlaybackStartupMetric: Equatable, Sendable {
     init(
         context: HLSPlaybackMetricContext,
         timeTaken: TimeInterval,
+        variant: HLSPlaybackVariantBitrateMetric?,
+        buffer: HLSPlaybackBufferMetric,
         playlistRequestCount: Int,
         mediaSegmentRequestCount: Int,
         contentKeyRequestCount: Int,
@@ -51,6 +59,8 @@ public struct HLSPlaybackStartupMetric: Equatable, Sendable {
             timeTaken.isFinite && timeTaken >= 0
             ? timeTaken
             : nil
+        self.variant = variant
+        self.buffer = buffer
         self.playlistRequestCount = max(0, playlistRequestCount)
         self.mediaSegmentRequestCount = max(
             0,
@@ -135,6 +145,8 @@ enum HLSPlaybackStartupMetricMapper {
         return HLSPlaybackStartupMetric(
             context: HLSPlaybackMetricMapper.context(event),
             timeTaken: event.timeTaken,
+            variant: event.variant.map(HLSPlaybackVariantBitrateMetric.init),
+            buffer: HLSPlaybackBufferMetric(event.loadedTimeRanges),
             playlistRequestCount: playlistRequests.count,
             mediaSegmentRequestCount: mediaSegmentRequests.count,
             contentKeyRequestCount: contentKeyRequests.count,

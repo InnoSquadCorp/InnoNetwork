@@ -89,7 +89,7 @@ struct HLSIntegratedTimelineTests {
     @Test("time ranges reject invalid and unsafe values")
     func timeRangesRejectInvalidValues() {
         #expect(
-            HLSIntegratedTimelineMapper.timeRange(
+            HLSTimeRangeMapper.range(
                 CMTimeRange(
                     start: CMTime(seconds: 2, preferredTimescale: 600),
                     duration: CMTime(
@@ -100,17 +100,17 @@ struct HLSIntegratedTimelineTests {
             ) == 2..<5
         )
         #expect(
-            HLSIntegratedTimelineMapper.timeRange(
+            HLSTimeRangeMapper.range(
                 CMTimeRange(start: .zero, duration: .zero)
             ) == 0..<0
         )
         #expect(
-            HLSIntegratedTimelineMapper.timeRange(
+            HLSTimeRangeMapper.range(
                 CMTimeRange(start: .invalid, duration: .zero)
             ) == nil
         )
         #expect(
-            HLSIntegratedTimelineMapper.timeRange(
+            HLSTimeRangeMapper.range(
                 CMTimeRange(
                     start: .zero,
                     duration: CMTime(
@@ -121,7 +121,7 @@ struct HLSIntegratedTimelineTests {
             ) == nil
         )
         #expect(
-            HLSIntegratedTimelineMapper.timeRange(
+            HLSTimeRangeMapper.range(
                 CMTimeRange(start: .zero, duration: .indefinite)
             ) == nil
         )

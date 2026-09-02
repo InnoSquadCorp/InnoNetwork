@@ -505,6 +505,8 @@ that AVFoundation associates with the initial likely-to-keep-up event:
 for try await startup in metrics.startupEvents() {
     recordStartup(
         duration: startup.timeTaken,
+        selectedPeakBitrate: startup.variant?.peak,
+        loadedRangeCount: startup.buffer.loadedTimeRanges.count,
         requestCount: startup.requestCount,
         didTruncate: startup.didTruncateRequests
     )
@@ -513,7 +515,10 @@ for try await startup in metrics.startupEvents() {
 
 The startup stream is an independent AVFoundation subscription rather than a
 second view over ``HLSPlaybackMetrics/events()``. Prefer one of the two streams
-unless the application intentionally needs both event shapes.
+unless the application intentionally needs both event shapes. Its
+``HLSPlaybackBufferMetric`` preserves the exact native range count, retains at
+most 256 valid loaded ranges, and reports whether invalid or later ranges were
+omitted.
 
 Use ``HLSPlaybackMetrics/variantSwitchEvents()`` when ABR diagnosis needs
 source and destination bitrate context. On version 26 and later systems, the
@@ -526,6 +531,7 @@ for try await switchMetric in metrics.variantSwitchEvents() {
         phase: switchMetric.phase,
         fromPeakBitrate: switchMetric.fromVariant?.peak,
         toPeakBitrate: switchMetric.toVariant.peak,
+        loadedRangeCount: switchMetric.buffer.loadedTimeRanges.count,
         audioStableID: switchMetric.renditions?.audioStableID
     )
 }
@@ -918,6 +924,7 @@ does not ship its package storage and readiness types.
 - ``HLSPlaybackMetrics``
 - ``HLSPlaybackMetricsError``
 - ``HLSPlaybackMetricEvent``
+- ``HLSPlaybackBufferMetric``
 - ``HLSPlaybackStartupMetric``
 - ``HLSPlaybackVariantSwitchMetric``
 - ``HLSPlaybackVariantBitrateMetric``
