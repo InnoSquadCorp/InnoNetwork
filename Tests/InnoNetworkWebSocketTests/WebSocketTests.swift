@@ -1190,22 +1190,27 @@ private func waitForExplicitRetryReplacement(
 struct WebSocketListenerLifecycleTests {
     @Test("Reconnect runtime chain reaches max reconnect attempts")
     func reconnectRuntimeChainReachesMaxAttempts() async throws {
-        let manager = WebSocketManager(
-            configuration: WebSocketConfiguration(
-                connectionTimeout: 30,
-                heartbeatInterval: 0,
-                reconnectDelay: 0,
-                maxReconnectAttempts: 2,
-            )
+        let firstURLTask = StubWebSocketURLTask(taskIdentifier: 9_001)
+        let secondURLTask = StubWebSocketURLTask(taskIdentifier: 9_002)
+        let thirdURLTask = StubWebSocketURLTask(taskIdentifier: 9_003)
+        let harness = StubMessagingHarness(
+            heartbeatInterval: 0,
+            reconnectDelay: 0,
+            maxReconnectAttempts: 2,
+            stubTask: firstURLTask
         )
+        harness.stubSession.enqueue(secondURLTask)
+        harness.stubSession.enqueue(thirdURLTask)
+        let manager = harness.manager
         let recorder = WebSocketEventRecorder()
 
-        let task = await manager.connect(url: URL(string: "wss://192.0.2.1/socket")!)
+        let task = try await harness.connectAndReady()
         _ = await manager.addEventListener(for: task) { event in
             recorder.record(event)
         }
 
         let firstTaskIdentifier = try #require(await waitForRuntimeTaskIdentifier(manager: manager, task: task))
+        #expect(firstTaskIdentifier == firstURLTask.taskIdentifier)
         manager.handleError(taskIdentifier: firstTaskIdentifier, error: URLError(.cannotConnectToHost))
 
         let secondTaskIdentifier = try #require(
@@ -1216,6 +1221,7 @@ struct WebSocketListenerLifecycleTests {
                 timeout: 3.0
             )
         )
+        #expect(secondTaskIdentifier == secondURLTask.taskIdentifier)
         manager.handleError(taskIdentifier: secondTaskIdentifier, error: URLError(.cannotConnectToHost))
 
         let thirdTaskIdentifier = try #require(
@@ -1226,6 +1232,7 @@ struct WebSocketListenerLifecycleTests {
                 timeout: 3.0
             )
         )
+        #expect(thirdTaskIdentifier == thirdURLTask.taskIdentifier)
         manager.handleError(taskIdentifier: thirdTaskIdentifier, error: URLError(.cannotConnectToHost))
 
         #expect(
