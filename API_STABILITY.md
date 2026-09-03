@@ -138,9 +138,10 @@ part of the compatibility contract.
 
 ## Provisionally Stable
 
-Symbols in this section are public in 5.0.0 and may evolve during the 5.x line
-by gaining new cases, parameters, or shape, with each change shipping release
-notes and a migration path. See "Version Pinning Guidance" below.
+Symbols in this section are public in the 5.x line and may evolve by gaining
+new cases, parameters, or shape, with each change shipping release notes and a
+migration path. The HLS companion products first ship in 5.1.0; the remaining
+entries trace to 5.0.0 unless noted. See "Version Pinning Guidance" below.
 For budget enforcement, every non-SPI public declaration that is not matched
 by the explicit Stable ledger is classified as Provisionally Stable. This
 conservative default prevents an undocumented declaration from accidentally
@@ -386,16 +387,16 @@ Promotion from Provisionally Stable to Stable requires all of the following:
 Applications using only Stable API may consume the tagged 5.x line:
 
 ```swift
-.package(url: "https://github.com/InnoSquadCorp/InnoNetwork", .upToNextMajor(from: "5.0.0"))
+.package(url: "https://github.com/InnoSquadCorp/InnoNetwork", .upToNextMajor(from: "5.1.0"))
 ```
 
 Applications using Provisionally Stable API should prefer a minor-bound range:
 
 ```swift
-.package(url: "https://github.com/InnoSquadCorp/InnoNetwork", .upToNextMinor(from: "5.0.0"))
+.package(url: "https://github.com/InnoSquadCorp/InnoNetwork", .upToNextMinor(from: "5.1.0"))
 ```
 
-Pin the exact `5.0.0` version when a reproducible release build must not accept
+Pin the exact `5.1.0` version when a reproducible release build must not accept
 any dependency update.
 
 ## Public Declaration Ledger

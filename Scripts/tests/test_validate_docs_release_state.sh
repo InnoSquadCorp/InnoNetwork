@@ -74,14 +74,14 @@ EOF
 
 `5.0.0` is the public compatibility baseline for this contract.
 
-`.upToNextMajor(from: "5.0.0")`
+`.upToNextMajor(from: "5.1.0")`
 EOF
     cat > "$current_repo/README.md" <<'EOF'
 # Fixture
 
-`5.0.0` is the latest tagged stable release.
+`5.1.0` is the latest tagged stable release; `5.0.0` remains the compatibility baseline.
 
-`.upToNextMajor(from: "5.0.0")`
+`.upToNextMajor(from: "5.1.0")`
 
 5.0 Release Notes: [docs/releases/5.0.0.md](docs/releases/5.0.0.md)
 EOF
@@ -169,6 +169,38 @@ new_fixture ready
 printf '\n`4.0.0` is the latest tagged stable release.\n' >> "$current_repo/README.md"
 expect_failure "ready marker cannot retain preview README claims" \
   '`4.0.0` is the latest tagged stable release' \
+  run_validator "$current_repo"
+
+new_fixture ready
+sed -i.bak 's/upToNextMajor(from: "5.1.0")/upToNextMajor(from: "5.2.0")/' \
+  "$current_repo/API_STABILITY.md"
+rm "$current_repo/API_STABILITY.md.bak"
+expect_failure "ready state rejects a mismatched API stability dependency version" \
+  "API stability dependency version '5.2.0' must match latest tagged stable release '5.1.0'" \
+  run_validator "$current_repo"
+
+new_fixture ready
+sed -i.bak 's/upToNextMajor(from: "5.1.0")/upToNextMajor(from: "5.next")/' \
+  "$current_repo/README.md"
+rm "$current_repo/README.md.bak"
+expect_failure "ready state rejects a malformed README dependency version" \
+  "expected exactly one 5.x .upToNextMajor dependency version" \
+  run_validator "$current_repo"
+
+new_fixture ready
+sed -i.bak 's/upToNextMajor(from: "5.1.0")/upToNextMajor(from: "5.01.0")/' \
+  "$current_repo/README.md"
+rm "$current_repo/README.md.bak"
+expect_failure "ready state rejects a leading-zero minor dependency version" \
+  "expected exactly one 5.x .upToNextMajor dependency version" \
+  run_validator "$current_repo"
+
+new_fixture ready
+sed -i.bak 's/upToNextMajor(from: "5.1.0")/upToNextMajor(from: "5.1.00")/' \
+  "$current_repo/API_STABILITY.md"
+rm "$current_repo/API_STABILITY.md.bak"
+expect_failure "ready state rejects a leading-zero patch dependency version" \
+  "expected exactly one 5.x .upToNextMajor dependency version" \
   run_validator "$current_repo"
 
 new_fixture draft

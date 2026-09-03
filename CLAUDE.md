@@ -42,7 +42,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-InnoNetwork is a type-safe Swift network library shipped as **11 products**:
+InnoNetwork is a type-safe Swift network library shipped as **12 products**:
 
 **InnoNetwork (Core):**
 - Async/await + `typed throws` (`async throws(NetworkError)`)
@@ -74,6 +74,10 @@ InnoNetwork is a type-safe Swift network library shipped as **11 products**:
 **InnoNetworkHLSAVFoundation:**
 - System-managed asset downloads, playback configuration, and metrics
 - Interstitial observation and application-owned FairPlay workflows
+
+**InnoNetworkHLSAudio:**
+- Xcode 27 / Swift 6.4 decoded-PCM delivery and paced sample consumption
+- Optional full-mix processing tap on supported version 27 platforms
 
 **InnoNetworkWebSocket:**
 - Lifecycle reducer state machine + heartbeat + reconnect with jitter
@@ -116,7 +120,7 @@ swift test --list-tests
 
 ## Architecture
 
-전체 11개 product. 신규 기여 시 진입 파일과 책임만 빠르게 파악하세요.
+전체 12개 product. 신규 기여 시 진입 파일과 책임만 빠르게 파악하세요.
 
 ### Sources/InnoNetwork (Core)
 - `APIDefinition.swift` / `APIDefinition+Macro.swift` — endpoint 선언 프로토콜 + `@APIDefinition` 매크로
@@ -165,6 +169,10 @@ swift test --list-tests
 - `HLSAssetDownloadSession.swift` — system-managed background asset downloads
 - `HLSPlaybackConfigurator.swift` / `HLSPlaybackMetrics.swift` — caller-owned playback bridge
 - `HLSFairPlaySession.swift` / `HLSFairPlayPersistentKeyWorkflow.swift` — app-owned FairPlay integration
+
+### Sources/InnoNetworkHLSAudio
+- `HLSDecodedAudioOutput.swift` / `HLSDecodedAudioPacedSequence.swift` — demand-driven and paced decoded PCM
+- `HLSAudioMixProcessingTap.swift` — opt-in full-mix real-time processing on supported version 27 platforms
 
 ### Sources/InnoNetworkWebSocket
 - `WebSocketManager.swift` — 메인 actor

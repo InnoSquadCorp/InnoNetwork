@@ -34,6 +34,7 @@ EOF
 # Fixture
 
 `5.0.0` is the latest tagged stable release.
+`5.0.0` remains the compatibility baseline.
 
 `.upToNextMajor(from: "5.0.0")`
 

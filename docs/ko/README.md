@@ -38,7 +38,7 @@ InnoNetwork 는 Apple 플랫폼을 위한 타입 안전한 Swift 네트워킹 �
 Swift Concurrency, 명시적인 transport 정책, 운영 가시성을 중심으로 설계되어 프로토타입부터 프로덕션
 클라이언트까지 일관되게 사용할 수 있습니다.
 
-> **릴리즈 상태:** 현재 태그로 공개된 최신 안정 버전은 `5.0.0`입니다. 아래 API 예제는
+> **릴리즈 상태:** 현재 태그로 공개된 최신 안정 버전은 `5.1.0`입니다. 아래 API 예제는
 > 5.x 공개 계약을 기준으로 하며 4.x와 source-compatible하지 않을 수 있습니다.
 
 > 📚 **API Reference (DocC):** https://innosquadcorp.github.io/InnoNetwork/
@@ -55,13 +55,13 @@ Swift Concurrency, 명시적인 transport 정책, 운영 가시성을 중심으�
 dependencies: [
     .package(
         url: "https://github.com/InnoSquadCorp/InnoNetwork.git",
-        .upToNextMajor(from: "5.0.0")
+        .upToNextMajor(from: "5.1.0")
     )
 ]
 ```
 
 재현 가능한 릴리즈 빌드에서 의존성 업데이트를 허용하지 않으려면
-`exact: "5.0.0"`으로 고정하세요.
+`exact: "5.1.0"`으로 고정하세요.
 
 ### 기본 요청
 
@@ -357,6 +357,7 @@ InnoNetwork 기반 클라이언트를 출시하기 전에 점검해야 할 운�
 - 릴리즈 정책: [../RELEASE_POLICY.md](../RELEASE_POLICY.md)
 - 마이그레이션 정책: [../MIGRATION_POLICY.md](../MIGRATION_POLICY.md)
 - 5.0 마이그레이션 가이드: [../Migration-5.0.0.md](../Migration-5.0.0.md)
+- 5.1 릴리즈 노트: [../releases/5.1.0.md](../releases/5.1.0.md)
 - 5.0 릴리즈 노트: [../releases/5.0.0.md](../releases/5.0.0.md)
 - 로드맵: [../ROADMAP.md](../ROADMAP.md)
 
