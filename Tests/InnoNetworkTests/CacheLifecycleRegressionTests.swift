@@ -6,6 +6,45 @@ import Testing
 
 @Suite("Cache lifecycle regression tests", .timeLimit(.minutes(1)))
 struct CacheLifecycleRegressionTests {
+    private actor Gate {
+        private var isOpen = false
+        private var waiters: [CheckedContinuation<Void, Never>] = []
+        func wait() async {
+            if isOpen { return }
+            await withCheckedContinuation { waiters.append($0) }
+        }
+        func open() {
+            isOpen = true
+            let ready = waiters
+            waiters.removeAll()
+            for waiter in ready { waiter.resume() }
+        }
+    }
+
+    private actor RevalidationObserver: NetworkEventObserving {
+        let finished = Gate()
+        func handle(_ event: NetworkEvent) async {
+            guard case .cacheRevalidation(_, let state) = event else { return }
+            switch state {
+            case .scheduled: break
+            case .completed, .notModified, .failed: await finished.open()
+            }
+        }
+    }
+
+    private actor WrappingPolicy: RequestExecutionPolicy {
+        let rejectBackground: Bool
+        private(set) var calls = 0
+        init(rejectBackground: Bool = false) { self.rejectBackground = rejectBackground }
+        func execute(input: RequestExecutionInput, context: RequestExecutionContext, next: RequestExecutionNext) async throws -> Response {
+            calls += 1
+            if rejectBackground, calls > 1 { throw URLError(.cancelled) }
+            let response = try await next.execute()
+            let http = try #require(response.response)
+            return Response(statusCode: response.statusCode, data: Data("wrapped:".utf8) + response.data,
+                            request: response.request, response: http)
+        }
+    }
     private struct Endpoint: APIDefinition {
         typealias Parameter = EmptyParameter
         typealias APIResponse = Data
@@ -83,5 +122,27 @@ struct CacheLifecycleRegressionTests {
         #expect(try await client.request(endpoint) == Data("old".utf8))
         #expect(try await client.request(Endpoint()) == Data("old".utf8))
         #expect(await session.calls == 1)
+    }
+
+    @Test("Background cache revalidation runs custom response policies")
+    func backgroundRevalidationRunsPolicies() async throws {
+        let clock = TestClock()
+        let observer = RevalidationObserver()
+        let policy = WrappingPolicy()
+        let session = Session { request, call in try Self.reply(request, body: "raw-\(call)") }
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(
+                baseURL: "https://api.example.com", eventObservers: [observer],
+                responseCachePolicy: .staleWhileRevalidate(maxAge: .seconds(1), staleWindow: .seconds(60)),
+                responseCache: InMemoryResponseCache(), customExecutionPolicies: [policy]
+            ), session: session, clock: clock
+        )
+        #expect(try await client.request(Endpoint()) == Data("wrapped:raw-1".utf8))
+        clock.advance(by: .seconds(2))
+        #expect(try await client.request(Endpoint()) == Data("wrapped:raw-1".utf8))
+        await observer.finished.wait()
+        #expect(try await client.request(Endpoint()) == Data("wrapped:raw-2".utf8))
+        #expect(await policy.calls == 2)
+        #expect(await session.calls == 2)
     }
 }

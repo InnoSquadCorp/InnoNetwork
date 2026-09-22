@@ -144,16 +144,12 @@ extension RequestExecutor {
                         requestSigners: requestSigners,
                         configuration: configuration,
                         context: context,
-                        runtime: runtime
+                        runtime: runtime,
+                        requestID: revalidationID
                     )
                     try Task.checkCancellation()
 
-                    let response = Response(
-                        statusCode: result.response.statusCode,
-                        data: result.data,
-                        request: revalidationRequest,
-                        response: result.response
-                    )
+                    let response = result.response
                     let terminalState: CacheRevalidationState
                     if let substitution = try await convertNotModifiedIfNeeded(
                         response,
@@ -165,7 +161,7 @@ extension RequestExecutor {
                         try Task.checkCancellation()
                         if notModifiedRevisesVary(
                             cached: substitution.cached,
-                            notModifiedHeaders: result.response.allHeaderFields
+                            notModifiedHeaders: response.response?.allHeaderFields
                         ) {
                             try enforceResponseBodyLimit(
                                 substitution.mergedResponse,
@@ -186,9 +182,9 @@ extension RequestExecutor {
                                 cacheKey: cacheKey,
                                 request: revalidationRequest,
                                 configuration: configuration,
-                                ageHeaders: responseHeaderSnapshot(result.response),
-                                requestStartedAt: result.startedAt,
-                                responseReceivedAt: result.completedAt,
+                                ageHeaders: responseHeaderSnapshot(response.response),
+                                requestStartedAt: result.requestStartedAt,
+                                responseReceivedAt: result.responseReceivedAt,
                                 runtime: runtime,
                                 writeToken: cacheWriteToken
                             )
@@ -203,12 +199,12 @@ extension RequestExecutor {
                             request: revalidationRequest,
                             configuration: configuration,
                             ageHeaders: nil,
-                            requestStartedAt: result.startedAt,
-                            responseReceivedAt: result.completedAt,
+                            requestStartedAt: result.requestStartedAt,
+                            responseReceivedAt: result.responseReceivedAt,
                             runtime: runtime,
                             writeToken: cacheWriteToken
                         )
-                        terminalState = .completed(statusCode: result.response.statusCode)
+                        terminalState = .completed(statusCode: response.statusCode)
                     }
                     await eventHub.publish(
                         .cacheRevalidation(originalID: originalRequestID, state: terminalState),
@@ -291,10 +287,11 @@ extension RequestExecutor {
         requestSigners: [RequestSigner],
         configuration: NetworkConfiguration,
         context: NetworkRequestContext,
-        runtime: RequestExecutionRuntime
-    ) async throws -> TransportResult {
+        runtime: RequestExecutionRuntime,
+        requestID: UUID
+    ) async throws -> TimedNetworkResponse {
         let revalidationContext = NetworkRequestContext(
-            requestID: UUID(),
+            requestID: requestID,
             retryIndex: context.retryIndex,
             metricsReporter: context.metricsReporter,
             trustPolicy: context.trustPolicy,
@@ -304,13 +301,15 @@ extension RequestExecutor {
             allowsAutomaticRedirects: context.allowsAutomaticRedirects,
             allowsURLCacheStorage: context.allowsURLCacheStorage
         )
-        return try await performSignedTransportResult(
+        return try await performSignedTransport(
             request: request,
             bodySource: bodySource,
             requestSigners: requestSigners,
             configuration: configuration,
             context: revalidationContext,
-            runtime: runtime
+            runtime: runtime,
+            requestID: requestID,
+            allowsRequestCoalescing: requestSigners.isEmpty
         )
     }
 

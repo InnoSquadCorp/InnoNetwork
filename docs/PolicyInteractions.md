@@ -84,6 +84,12 @@ on a request that the *column* policy is also active for. Read horizontally:
 
 Two invariants the matrix encodes:
 
+Background stale-while-revalidate refreshes also run the custom execution
+policy chain, including synthetic responses, transformations, and failures.
+Their physical response events use the background revalidation request ID.
+They do not invoke the outer logical retry or token-refresh replay loop;
+foreground conditional revalidation continues to use those outer policies.
+
 1. **Eligible unsigned cache hits short-circuit the transport stack.** A fresh
    hit means retry/breaker/coalescer/refresh do not run. Signed requests are
    never cache-eligible, so they continue through late signing and transport.

@@ -464,41 +464,6 @@ extension RequestExecutor {
         )
     }
 
-    func performSignedTransportResult(
-        request: URLRequest,
-        bodySource: BodySource,
-        requestSigners: [RequestSigner],
-        configuration: NetworkConfiguration,
-        context: NetworkRequestContext,
-        runtime: RequestExecutionRuntime
-    ) async throws -> TransportResult {
-        let preparedBody = try prepareSigningBodySource(bodySource, signers: requestSigners)
-        defer {
-            if let snapshotURL = preparedBody.snapshotURL {
-                try? FileManager.default.removeItem(at: snapshotURL)
-            }
-        }
-
-        let requestForSigning =
-            requestSigners.isEmpty ? request : request.preparingForSignedTransport()
-        let signedRequest = try await applyRequestSigners(
-            requestSigners,
-            to: requestForSigning,
-            bodySource: preparedBody.bodySource
-        )
-        let transportContext =
-            requestSigners.isEmpty ? context : context.restrictingSignedRequestSharing()
-        return try await performTransportResult(
-            request: signedRequest,
-            identityRequest: request,
-            bodySource: preparedBody.bodySource,
-            configuration: configuration,
-            context: transportContext,
-            runtime: runtime,
-            allowsRequestCoalescing: requestSigners.isEmpty
-        )
-    }
-
     private func prepareSigningBodySource(
         _ bodySource: BodySource,
         signers: [RequestSigner]
