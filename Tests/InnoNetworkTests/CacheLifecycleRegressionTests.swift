@@ -156,6 +156,50 @@ struct CacheLifecycleRegressionTests {
         #expect(await session.calls == 3)
     }
 
+    @Test("304 supplied validators must identify the stored Last-Modified representation", arguments: [
+        ["ETag": "\"new\""],
+        ["Last-Modified": "Wed, 02 Sep 2026 00:00:00 GMT"],
+        ["Last-Modified": "not-a-date"],
+    ])
+    func notModifiedRejectsUnknownValidator(headers: [String: String]) async throws {
+        let session = Session { request, call in
+            if call == 1 {
+                return try Self.reply(request, headers: ["Last-Modified": "Tue, 01 Sep 2026 00:00:00 GMT"])
+            }
+            #expect(request.value(forHTTPHeaderField: "If-Modified-Since") == "Tue, 01 Sep 2026 00:00:00 GMT")
+            return try Self.reply(request, status: 304, body: "", headers: headers)
+        }
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(
+                baseURL: "https://api.example.com", responseCachePolicy: .networkFirst,
+                responseCache: InMemoryResponseCache()
+            ), session: session
+        )
+        _ = try await client.request(Endpoint())
+        await #expect(throws: NetworkError.self) { try await client.request(Endpoint()) }
+    }
+
+    @Test("304 matching validators preserve conditional recovery", arguments: [false, true])
+    func notModifiedAcceptsMatchingValidator(hasETag: Bool) async throws {
+        let session = Session { request, call in
+            var headers = ["Last-Modified": "Tue, 01 Sep 2026 00:00:00 GMT"]
+            if hasETag {
+                headers["ETag"] = "\"v1\""
+                if call > 1 { headers["Last-Modified"] = "Wed, 02 Sep 2026 00:00:00 GMT" }
+            }
+            return try Self.reply(request, status: call == 1 ? 200 : 304,
+                                  body: call == 1 ? "old" : "", headers: headers)
+        }
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(
+                baseURL: "https://api.example.com", responseCachePolicy: .networkFirst,
+                responseCache: InMemoryResponseCache()
+            ), session: session
+        )
+        _ = try await client.request(Endpoint())
+        #expect(try await client.request(Endpoint()) == Data("old".utf8))
+    }
+
     @Test("Background cache revalidation runs custom response policies")
     func backgroundRevalidationRunsPolicies() async throws {
         let clock = TestClock()

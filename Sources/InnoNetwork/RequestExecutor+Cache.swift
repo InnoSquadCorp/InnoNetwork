@@ -418,18 +418,27 @@ extension RequestExecutor {
                 request: request
             )
         }
-        if let cachedETag = preparedCached.etag,
-            let notModifiedETag = response.response?.value(forHTTPHeaderField: "ETag"),
-            !notModifiedETagIdentifiesCachedResponse(
-                cachedETag: cachedETag,
-                notModifiedETag: notModifiedETag
-            )
-        {
-            throw cacheRevalidationFailed(
-                "The 304 ETag did not identify the conditionally validated stored response.",
-                cached: preparedCached,
-                request: request
-            )
+        if let notModifiedETag = response.response?.value(forHTTPHeaderField: "ETag") {
+            guard let cachedETag = preparedCached.etag,
+                notModifiedETagIdentifiesCachedResponse(
+                    cachedETag: cachedETag, notModifiedETag: notModifiedETag
+                )
+            else {
+                throw cacheRevalidationFailed(
+                    "The 304 ETag did not identify the conditionally validated stored response.",
+                    cached: preparedCached, request: request
+                )
+            }
+        } else if let lastModified = response.response?.value(forHTTPHeaderField: "Last-Modified") {
+            guard let cachedValue = validatedLastModified(preparedCached),
+                let receivedDate = HTTPDateParser.parse(lastModified, requiresGMTZone: true),
+                receivedDate == HTTPDateParser.parse(cachedValue, requiresGMTZone: true)
+            else {
+                throw cacheRevalidationFailed(
+                    "The 304 Last-Modified did not identify the conditionally validated stored response.",
+                    cached: preparedCached, request: request
+                )
+            }
         }
         guard let url = request.url else {
             throw cacheRevalidationFailed(

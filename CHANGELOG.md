@@ -70,6 +70,8 @@ that cut and are not part of the 6.0 contract.
 
 ### Fixed for 6.1.0
 
+- A 304 with a supplied ETag absent from the stored response, or an unmatched
+  Last-Modified without a matching ETag, cannot relabel the cached body.
 - Stale-if-error recovery rechecks the selected representation and mutation
   generation after retries, so concurrent invalidation cannot revive old data.
 - Background stale-while-revalidate requests now run the custom execution
