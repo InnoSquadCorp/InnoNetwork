@@ -15,7 +15,7 @@ them.
 
 | RFC 9111 directive / header | Status | Behavior in 6.x |
 | --- | --- | --- |
-| `Cache-Control: no-store` (request and response) | ✅ Honored | Skips writes, invalidates an existing key. Applied in `RequestExecutor.storeCacheIfNeeded`. When the policy is wrapped via `ResponseCachePolicy.rfc9111Compliant(wrapping:)`, the directive additionally suppresses cache reads against an entry that was somehow persisted before the wrap (defence in depth). |
+| `Cache-Control: no-store` (request and response) | ✅ Honored | Request `no-store` skips response writes, including 304 refresh and background revalidation, without removing an already stored response. Response `no-store` skips writes and invalidates the existing key. Applied in `RequestExecutor.storeCacheIfNeeded`. The RFC adapter also suppresses reads of restored responses carrying `no-store`. |
 | `Cache-Control: no-cache` | ✅ Honored | Stored but flagged as `requiresRevalidation`; the next read forces conditional revalidation. The RFC adapter also derives this requirement from restored headers, so custom caches cannot accidentally make a `no-cache` entry reusable by omitting the convenience flag. |
 | `Cache-Control: private` | ✅ Honored | Skips writes, invalidates an existing key. Quoted-form (`private="X-Foo"`) is parsed by `HTTPListParser` and treated identically. |
 | `Cache-Control: public` | ✅ Honored for auth storage | Cache is private-by-default for ordinary responses; for requests carrying `Authorization`, `public` is one of the RFC 9111 §3.5 directives that permits storage. |

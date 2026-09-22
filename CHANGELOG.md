@@ -70,6 +70,9 @@ that cut and are not part of the 6.0 contract.
 
 ### Fixed for 6.1.0
 
+- Request `Cache-Control: no-store` prevents cache writes even when the origin
+  permits storage; an already reusable entry remains available as specified
+  by RFC 9111.
 - Cache mutations are serialized per target URI and shared by clients built
   from the same configuration value, so an older in-flight GET cannot
   repopulate a representation after a successful unsafe request or a

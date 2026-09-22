@@ -573,6 +573,12 @@ extension RequestExecutor {
         else {
             return
         }
+        // Request directives need not be echoed by the origin. Do not persist
+        // this response (or refresh a 304), but leave pre-existing entries
+        // untouched as required by RFC 9111 section 5.2.1.5.
+        guard !cacheControlDirectives(in: request.allHTTPHeaderFields ?? [:]).contains("no-store") else {
+            return
+        }
         let headerSnapshot = responseHeaderSnapshot(response.response)
         guard Self.cacheableStatusCodes.contains(response.statusCode) else {
             return
