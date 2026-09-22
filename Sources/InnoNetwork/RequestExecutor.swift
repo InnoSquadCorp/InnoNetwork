@@ -139,15 +139,18 @@ package struct RequestExecutor {
                 do {
                     try Task.checkCancellation()
                     guard
-                        let fallback = executor.staleIfErrorResponse(
+                        let fallback = await executor.staleIfErrorResponse(
                             candidate: recovery.fallback,
                             request: prepared.request,
-                            policy: configuration.responseCachePolicy,
-                            now: runtime.clock.now()
+                            configuration: configuration,
+                            runtime: runtime,
+                            cacheKey: recovery.cacheKey,
+                            writeToken: recovery.writeToken
                         )
                     else {
                         throw surfaced
                     }
+                    try Task.checkCancellation()
                     let recoveredResponse = try await executor.finalizeResponseStage(
                         executable,
                         networkResponse: fallback,

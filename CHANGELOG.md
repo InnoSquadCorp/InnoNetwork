@@ -70,6 +70,8 @@ that cut and are not part of the 6.0 contract.
 
 ### Fixed for 6.1.0
 
+- Stale-if-error recovery rechecks the selected representation and mutation
+  generation after retries, so concurrent invalidation cannot revive old data.
 - Background stale-while-revalidate requests now run the custom execution
   policy chain, preserving policy-transformed bodies and per-attempt events.
 - Request `Cache-Control: no-store` prevents cache writes even when the origin

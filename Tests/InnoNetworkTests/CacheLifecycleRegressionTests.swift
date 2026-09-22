@@ -124,6 +124,38 @@ struct CacheLifecycleRegressionTests {
         #expect(await session.calls == 1)
     }
 
+    @Test("Stale recovery cannot resurrect a response invalidated during transport", arguments: [false, true])
+    func invalidationPreventsStaleRecovery(transportFailure: Bool) async throws {
+        let clock = TestClock()
+        let started = Gate()
+        let finish = Gate()
+        let session = Session { request, call in
+            if request.httpMethod == "PUT" { return try Self.reply(request, body: "new") }
+            if call == 1 {
+                return try Self.reply(request, headers: ["Cache-Control": "max-age=1, stale-if-error=60"])
+            }
+            await started.open()
+            await finish.wait()
+            if transportFailure { throw URLError(.timedOut) }
+            return try Self.reply(request, status: 503, body: "unavailable")
+        }
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(
+                baseURL: "https://api.example.com",
+                responseCachePolicy: .staleIfError(wrapping: .cacheFirst(maxAge: .seconds(1))),
+                responseCache: InMemoryResponseCache()
+            ), session: session, clock: clock
+        )
+        _ = try await client.request(Endpoint())
+        clock.advance(by: .seconds(2))
+        let pending = Task { try await client.request(Endpoint()) }
+        await started.wait()
+        _ = try await client.request(Endpoint(method: .put))
+        await finish.open()
+        await #expect(throws: NetworkError.self) { try await pending.value }
+        #expect(await session.calls == 3)
+    }
+
     @Test("Background cache revalidation runs custom response policies")
     func backgroundRevalidationRunsPolicies() async throws {
         let clock = TestClock()

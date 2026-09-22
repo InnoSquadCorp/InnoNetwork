@@ -3,6 +3,8 @@ import Foundation
 struct StaleIfErrorRecovery: Error {
     let failure: NetworkError
     let fallback: CachedResponse
+    let cacheKey: ResponseCacheKey?
+    let writeToken: ResponseCacheMutationCoordinator.WriteToken?
 }
 
 // MARK: - Pipeline stage
@@ -131,7 +133,9 @@ extension RequestExecutor {
                 {
                     throw StaleIfErrorRecovery(
                         failure: mapped,
-                        fallback: staleIfErrorFallback
+                        fallback: staleIfErrorFallback,
+                        cacheKey: cacheKey,
+                        writeToken: cacheWriteToken
                     )
                 }
                 throw error
@@ -205,7 +209,9 @@ extension RequestExecutor {
             {
                 throw StaleIfErrorRecovery(
                     failure: .statusCode(networkResponse),
-                    fallback: staleIfErrorFallback
+                    fallback: staleIfErrorFallback,
+                    cacheKey: cacheKey,
+                    writeToken: cacheWriteToken
                 )
             }
 

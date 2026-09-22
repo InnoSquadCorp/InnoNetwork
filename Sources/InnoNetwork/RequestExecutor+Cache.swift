@@ -253,13 +253,33 @@ extension RequestExecutor {
     func staleIfErrorResponse(
         candidate: CachedResponse,
         request: URLRequest,
-        policy: ResponseCachePolicy,
-        now: Date
-    ) -> Response? {
-        guard policy.staleIfErrorFallback(cached: candidate, now: now) != nil else {
+        configuration: NetworkConfiguration,
+        runtime: RequestExecutionRuntime,
+        cacheKey: ResponseCacheKey?,
+        writeToken: ResponseCacheMutationCoordinator.WriteToken?
+    ) async -> Response? {
+        guard let cacheKey, let writeToken, let cache = configuration.responseCache else {
             return nil
         }
-        return response(from: candidate, for: request)
+        // Retry decisions can suspend long after the original lookup. Select
+        // recovery under the same lease used by invalidation and cache writes.
+        await runtime.cacheMutations.acquire(targetURI: writeToken.targetURI)
+        guard await runtime.cacheMutations.isCurrent(writeToken),
+            let current = await cachedRespectingVary(
+                cache, key: cacheKey, request: request,
+                sensitiveHeaderNames: configuration.responseCacheSensitiveHeaderNames
+            ),
+            current.matchesRepresentation(of: candidate),
+            configuration.responseCachePolicy.staleIfErrorFallback(
+                cached: current, now: runtime.clock.now()
+            ) != nil
+        else {
+            await runtime.cacheMutations.release(targetURI: writeToken.targetURI)
+            return nil
+        }
+        let selected = response(from: current, for: request)
+        await runtime.cacheMutations.release(targetURI: writeToken.targetURI)
+        return selected
     }
 
     private func response(from cached: CachedResponse, for request: URLRequest) -> Response? {
