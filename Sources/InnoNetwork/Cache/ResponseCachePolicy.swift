@@ -833,13 +833,13 @@ package func cachedResponseMatchesVary(
     request: URLRequest,
     sensitiveHeaderNames: Set<String> = []
 ) -> Bool {
+    guard let storedVary = cached.varyHeaders else {
+        return true
+    }
     let normalizedSensitiveHeaderNames =
         HeaderValueNormalizer.defaultSensitiveHeaderNames.union(
             sensitiveHeaderNames.map { $0.lowercased() }
         )
-    guard let storedVary = cached.varyHeaders else {
-        return true
-    }
     for (header, storedValue) in storedVary {
         let currentValue = request.value(forHTTPHeaderField: header).map {
             HeaderValueNormalizer.normalizedValue(
