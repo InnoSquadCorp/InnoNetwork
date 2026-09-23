@@ -33,7 +33,8 @@ struct CacheMutationLifetimeTests {
     @Test("Released old generations cannot invalidate a newer writer")
     func oldTokenCleanupPreservesNewGeneration() async {
         let coordinator = ResponseCacheMutationCoordinator()
-        var old: ResponseCacheMutationCoordinator.WriteToken? = await coordinator.writeToken(for: "https://example.com/a")
+        var old: ResponseCacheMutationCoordinator.WriteToken? = await coordinator.writeToken(
+            for: "https://example.com/a")
         weak var released = old
         await coordinator.advanceGeneration(for: "https://example.com/a")
         let current = await coordinator.writeToken(for: "https://example.com/a")

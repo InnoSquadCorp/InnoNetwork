@@ -34,12 +34,26 @@ struct CacheLifecycleRegressionTests {
 
     private actor WrappingPolicy: RequestExecutionPolicy {
         private(set) var calls = 0
-        func execute(input: RequestExecutionInput, context: RequestExecutionContext, next: RequestExecutionNext) async throws -> Response {
+        func execute(input: RequestExecutionInput, context: RequestExecutionContext, next: RequestExecutionNext)
+            async throws -> Response
+        {
             calls += 1
             let response = try await next.execute()
             let http = try #require(response.response)
-            return Response(statusCode: response.statusCode, data: Data("wrapped:".utf8) + response.data,
-                            request: response.request, response: http)
+            return Response(
+                statusCode: response.statusCode, data: Data("wrapped:".utf8) + response.data,
+                request: response.request, response: http)
+        }
+    }
+
+    private actor RejectRefreshPolicy: RequestExecutionPolicy {
+        private var calls = 0
+        func execute(input: RequestExecutionInput, context: RequestExecutionContext, next: RequestExecutionNext)
+            async throws -> Response
+        {
+            calls += 1
+            if calls > 1 { throw URLError(.timedOut) }
+            return try await next.execute()
         }
     }
     private struct Endpoint: APIDefinition {
@@ -75,14 +89,16 @@ struct CacheLifecycleRegressionTests {
         headers: [String: String] = [:]
     ) throws -> (Data, URLResponse) {
         let url = try #require(request.url)
-        let response = try #require(HTTPURLResponse(
-            url: url, statusCode: status, httpVersion: nil, headerFields: headers
-        ))
+        let response = try #require(
+            HTTPURLResponse(
+                url: url, statusCode: status, httpVersion: nil, headerFields: headers
+            ))
         return (Data(body.utf8), response)
     }
 
-    @Test("Request no-store prevents writes even when the origin permits caching",
-          arguments: ["no-store", "max-age=60, No-Store"])
+    @Test(
+        "Request no-store prevents writes even when the origin permits caching",
+        arguments: ["no-store", "max-age=60, No-Store"])
     func requestNoStoreDoesNotPersist(directive: String) async throws {
         let cache = InMemoryResponseCache()
         let session = Session { request, call in
@@ -121,6 +137,83 @@ struct CacheLifecycleRegressionTests {
         #expect(await session.calls == 1)
     }
 
+    @Test("Request no-store also prevents a 304 from refreshing stored age")
+    func requestNoStoreDoesNotRefresh304() async throws {
+        let clock = TestClock()
+        let session = Session { request, call in
+            if call == 2 { #expect(request.value(forHTTPHeaderField: "Cache-Control") == "no-store") }
+            return try Self.reply(request, status: call == 1 ? 200 : 304, headers: ["ETag": "\"v1\""])
+        }
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(
+                baseURL: "https://api.example.com", responseCachePolicy: .cacheFirst(maxAge: .seconds(1)),
+                responseCache: InMemoryResponseCache()
+            ), session: session, clock: clock
+        )
+        _ = try await client.request(Endpoint())
+        clock.advance(by: .seconds(2))
+        _ = try await client.request(Endpoint(headers: [HTTPHeader(name: "Cache-Control", value: "no-store")]))
+        #expect(try await client.request(Endpoint()) == Data("old".utf8))
+        #expect(await session.calls == 3)
+    }
+
+    @Test("Response no-store still invalidates when the request also carries no-store")
+    func responseNoStoreStillInvalidates() async throws {
+        let clock = TestClock()
+        let session = Session { request, call in
+            switch call {
+            case 1: return try Self.reply(request, headers: ["Cache-Control": "max-age=1, stale-if-error=60"])
+            case 2: return try Self.reply(request, body: "new", headers: ["Cache-Control": "no-store"])
+            default: return try Self.reply(request, status: 503)
+            }
+        }
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(
+                baseURL: "https://api.example.com",
+                responseCachePolicy: .staleIfError(wrapping: .cacheFirst(maxAge: .seconds(1))),
+                responseCache: InMemoryResponseCache()
+            ), session: session, clock: clock
+        )
+        _ = try await client.request(Endpoint())
+        clock.advance(by: .seconds(2))
+        _ = try await client.request(Endpoint(headers: [HTTPHeader(name: "Cache-Control", value: "no-store")]))
+        await #expect(throws: NetworkError.self) { try await client.request(Endpoint()) }
+    }
+
+    @Test(
+        "Disabled cache policies do not allocate mutation tokens",
+        arguments: [ResponseCachePolicy.disabled, .networkOnly])
+    func disabledCacheDoesNotAllocateTokens(policy: ResponseCachePolicy) async throws {
+        let configuration = makeTestNetworkConfiguration(
+            baseURL: "https://api.example.com", responseCachePolicy: policy, responseCache: InMemoryResponseCache()
+        )
+        let session = Session { request, _ in
+            #expect(await configuration.responseCacheMutations.trackedTargetCount == 0)
+            return try Self.reply(request)
+        }
+        let client = DefaultNetworkClient(configuration: configuration, session: session)
+        _ = try await client.request(Endpoint())
+    }
+
+    @Test("A background policy failure prevents physical dispatch")
+    func backgroundPolicyFailureStopsTransport() async throws {
+        let clock = TestClock()
+        let observer = RevalidationObserver()
+        let session = Session { request, _ in try Self.reply(request) }
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(
+                baseURL: "https://api.example.com", eventObservers: [observer],
+                responseCachePolicy: .staleWhileRevalidate(maxAge: .seconds(1), staleWindow: .seconds(60)),
+                responseCache: InMemoryResponseCache(), customExecutionPolicies: [RejectRefreshPolicy()]
+            ), session: session, clock: clock
+        )
+        _ = try await client.request(Endpoint())
+        clock.advance(by: .seconds(2))
+        #expect(try await client.request(Endpoint()) == Data("old".utf8))
+        await observer.finished.wait()
+        #expect(await session.calls == 1)
+    }
+
     @Test("Stale recovery cannot resurrect a response invalidated during transport", arguments: [false, true])
     func invalidationPreventsStaleRecovery(transportFailure: Bool) async throws {
         let clock = TestClock()
@@ -153,11 +246,13 @@ struct CacheLifecycleRegressionTests {
         #expect(await session.calls == 3)
     }
 
-    @Test("304 supplied validators must identify the stored Last-Modified representation", arguments: [
-        ["ETag": "\"new\""],
-        ["Last-Modified": "Wed, 02 Sep 2026 00:00:00 GMT"],
-        ["Last-Modified": "not-a-date"],
-    ])
+    @Test(
+        "304 supplied validators must identify the stored Last-Modified representation",
+        arguments: [
+            ["ETag": "\"new\""],
+            ["Last-Modified": "Wed, 02 Sep 2026 00:00:00 GMT"],
+            ["Last-Modified": "not-a-date"],
+        ])
     func notModifiedRejectsUnknownValidator(headers: [String: String]) async throws {
         let session = Session { request, call in
             if call == 1 {
@@ -168,7 +263,7 @@ struct CacheLifecycleRegressionTests {
         }
         let client = DefaultNetworkClient(
             configuration: makeTestNetworkConfiguration(
-                baseURL: "https://api.example.com", responseCachePolicy: .networkFirst,
+                baseURL: "https://api.example.com", responseCachePolicy: .cacheFirst(maxAge: .zero),
                 responseCache: InMemoryResponseCache()
             ), session: session
         )
@@ -184,12 +279,13 @@ struct CacheLifecycleRegressionTests {
                 headers["ETag"] = "\"v1\""
                 if call > 1 { headers["Last-Modified"] = "Wed, 02 Sep 2026 00:00:00 GMT" }
             }
-            return try Self.reply(request, status: call == 1 ? 200 : 304,
-                                  body: call == 1 ? "old" : "", headers: headers)
+            return try Self.reply(
+                request, status: call == 1 ? 200 : 304,
+                body: call == 1 ? "old" : "", headers: headers)
         }
         let client = DefaultNetworkClient(
             configuration: makeTestNetworkConfiguration(
-                baseURL: "https://api.example.com", responseCachePolicy: .networkFirst,
+                baseURL: "https://api.example.com", responseCachePolicy: .cacheFirst(maxAge: .zero),
                 responseCache: InMemoryResponseCache()
             ), session: session
         )
@@ -222,10 +318,14 @@ struct CacheLifecycleRegressionTests {
         let url = try #require(URL(string: "https://api.example.com/resource"))
         let firstHTTP = try #require(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: [:]))
         let secondHTTP = try #require(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: [:]))
-        let first = Response(statusCode: 200, data: Data(), request: nil, response: firstHTTP, transportTimingID: UUID())
-        let second = Response(statusCode: 200, data: Data(), request: nil, response: secondHTTP, transportTimingID: UUID())
-        await recorder.record(first, startedAt: Date(timeIntervalSince1970: 2), completedAt: Date(timeIntervalSince1970: 22))
-        await recorder.record(second, startedAt: Date(timeIntervalSince1970: 25), completedAt: Date(timeIntervalSince1970: 26))
+        let first = Response(
+            statusCode: 200, data: Data(), request: nil, response: firstHTTP, transportTimingID: UUID())
+        let second = Response(
+            statusCode: 200, data: Data(), request: nil, response: secondHTTP, transportTimingID: UUID())
+        await recorder.record(
+            first, startedAt: Date(timeIntervalSince1970: 2), completedAt: Date(timeIntervalSince1970: 22))
+        await recorder.record(
+            second, startedAt: Date(timeIntervalSince1970: 25), completedAt: Date(timeIntervalSince1970: 26))
         let copied = Response(statusCode: 200, data: Data("transformed".utf8), request: nil, response: firstHTTP)
         let selected = try #require(await recorder.timestamps(for: copied))
         #expect(selected.startedAt == Date(timeIntervalSince1970: 2))
