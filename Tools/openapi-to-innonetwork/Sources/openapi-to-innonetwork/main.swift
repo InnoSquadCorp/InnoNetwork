@@ -82,6 +82,7 @@ enum GenerationError: Error, CustomStringConvertible {
     case parseFailure(String)
     case unsupportedPath(String)
     case unsupportedSchema(String)
+    case namingCollision(String)
 
     var description: String {
         switch self {
@@ -91,6 +92,7 @@ enum GenerationError: Error, CustomStringConvertible {
         case .parseFailure(let msg): return "Parse failure: \(msg)"
         case .unsupportedPath(let msg): return "Unsupported OpenAPI feature: \(msg)"
         case .unsupportedSchema(let msg): return "Unsupported OpenAPI feature: \(msg)"
+        case .namingCollision(let msg): return "Generated name collision: \(msg)"
         }
     }
 }
@@ -261,23 +263,49 @@ struct CodeGenerator {
 
     func generate(from document: OpenAPIDocument) throws -> [GeneratedFile] {
         var files: [GeneratedFile] = []
+        var generatedNames: [String: String] = [:]
         var needsAnyCodable = false
         if let schemas = document.components?.schemas {
             for (name, schema) in schemas.sorted(by: { $0.key < $1.key }) {
-                files.append(try renderSchema(name: sanitize(name), schema: schema))
+                let typeName = sanitize(name)
+                try reserveGeneratedName(typeName, source: "schema '\(name)'", in: &generatedNames)
+                files.append(try renderSchema(name: typeName, schema: schema))
                 needsAnyCodable = needsAnyCodable || schemaNeedsAnyCodable(schema)
             }
         }
         if needsAnyCodable {
+            try reserveGeneratedName("AnyCodable", source: "fallback model", in: &generatedNames)
             files.append(renderAnyCodable())
         }
         for (path, item) in document.paths.sorted(by: { $0.key < $1.key }) {
             for (method, op) in item.operationsByMethod {
                 let typeName = sanitize(op.operationId ?? "\(method.lowercased())\(path)")
+                try reserveGeneratedName(
+                    typeName,
+                    source: "\(method) \(path) (operationId '\(op.operationId ?? "<missing>")')",
+                    in: &generatedNames
+                )
                 files.append(try renderOperation(typeName: typeName, method: method, path: path, op: op))
             }
         }
         return files
+    }
+
+    private func reserveGeneratedName(
+        _ name: String,
+        source: String,
+        in names: inout [String: String]
+    ) throws {
+        // Swift types share a module namespace. Match case-insensitively as
+        // well because generated files also have to coexist on the default
+        // case-insensitive Apple file systems.
+        let key = name.lowercased()
+        if let existing = names[key] {
+            throw GenerationError.namingCollision(
+                "\(existing) and \(source) both map to '\(name).swift'. Rename an operationId or schema."
+            )
+        }
+        names[key] = source
     }
 
     // MARK: Schema → Codable struct
@@ -685,6 +713,9 @@ func run() throws {
     }
 
     let document = try decodeOpenAPIDocument(from: data, sourceExtension: inputURL.pathExtension)
+    // Validate the complete generated namespace before creating or changing
+    // output. A collision must not leave a partially updated client behind.
+    let files = try CodeGenerator(moduleName: options.moduleName).generate(from: document)
 
     let outputDirectory = URL(fileURLWithPath: options.outputDirectory)
     do {
@@ -696,8 +727,6 @@ func run() throws {
         throw GenerationError.ioFailure("cannot create \(options.outputDirectory): \(error.localizedDescription)")
     }
 
-    let generator = CodeGenerator(moduleName: options.moduleName)
-    let files = try generator.generate(from: document)
     for file in files {
         let fileURL = outputDirectory.appendingPathComponent(file.filename)
         do {

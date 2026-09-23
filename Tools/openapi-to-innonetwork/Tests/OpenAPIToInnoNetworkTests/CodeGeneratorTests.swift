@@ -70,6 +70,47 @@ struct CodeGeneratorTests {
         #expect(files.first?.filename == "ListUsersV1.swift")
     }
 
+    @Test("colliding operation names fail before any generated file can be written")
+    func rejectsCollidingOperationNames() {
+        let document = OpenAPIDocument(paths: [
+            "/admins": PathItem(get: Operation(operationId: "get_user")),
+            "/users": PathItem(get: Operation(operationId: "get-user")),
+        ])
+
+        do {
+            _ = try CodeGenerator(moduleName: "API").generate(from: document)
+            Issue.record("expected generated-name collision")
+        } catch let error as GenerationError {
+            #expect(error.description.contains("/admins"))
+            #expect(error.description.contains("/users"))
+            #expect(error.description.contains("GetUser.swift"))
+        } catch {
+            Issue.record("unexpected error: \(error)")
+        }
+    }
+
+    @Test("schema, operation, and fallback names share one generated namespace")
+    func rejectsCrossKindGeneratedNameCollisions() {
+        let schemaOperation = OpenAPIDocument(
+            paths: ["/users": PathItem(get: Operation(operationId: "User"))],
+            components: Components(schemas: ["User": Schema(type: "object")])
+        )
+        #expect(throws: GenerationError.self) {
+            _ = try CodeGenerator(moduleName: "API").generate(from: schemaOperation)
+        }
+
+        let fallback = OpenAPIDocument(
+            paths: [:],
+            components: Components(schemas: [
+                "AnyCodable": Schema(type: "object"),
+                "User": Schema(type: "object", properties: ["metadata": Schema(type: "object")]),
+            ])
+        )
+        #expect(throws: GenerationError.self) {
+            _ = try CodeGenerator(moduleName: "API").generate(from: fallback)
+        }
+    }
+
     @Test
     func fallsBackToMethodPathWhenOperationIdMissing() throws {
         let document = OpenAPIDocument(paths: [
