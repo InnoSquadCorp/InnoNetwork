@@ -151,11 +151,19 @@ extension RequestExecutor {
                 configuration: configuration,
                 revalidation: revalidation
             ) {
+                let revalidatedResponse = responseUpdatingAge(
+                    substitution.mergedResponse,
+                    to: RFC9111ResponseAge.initialAge(
+                        headers: responseHeaderSnapshot(networkResponse.response),
+                        requestTime: timedNetworkResponse.requestStartedAt,
+                        responseTime: timedNetworkResponse.responseReceivedAt
+                    )
+                )
                 if notModifiedRevisesVary(
                     cached: substitution.cached,
                     notModifiedHeaders: networkResponse.response?.allHeaderFields
                 ) {
-                    try enforceResponseBodyLimit(substitution.mergedResponse, configuration: configuration)
+                    try enforceResponseBodyLimit(revalidatedResponse, configuration: configuration)
                     // A changed Vary dimension invalidates the selection
                     // contract under which the representation was stored.
                     // Return the successfully validated representation to
@@ -168,11 +176,11 @@ extension RequestExecutor {
                         configuration: configuration,
                         runtime: runtime
                     )
-                    return substitution.mergedResponse
+                    return revalidatedResponse
                 } else {
-                    try enforceResponseBodyLimit(substitution.mergedResponse, configuration: configuration)
+                    try enforceResponseBodyLimit(revalidatedResponse, configuration: configuration)
                     await storeCacheIfNeeded(
-                        substitution.mergedResponse,
+                        revalidatedResponse,
                         cacheKey: cacheKey,
                         request: request,
                         configuration: configuration,
@@ -182,7 +190,7 @@ extension RequestExecutor {
                         runtime: runtime,
                         writeToken: cacheWriteToken
                     )
-                    return substitution.mergedResponse
+                    return revalidatedResponse
                 }
             }
 

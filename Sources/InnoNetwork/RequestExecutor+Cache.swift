@@ -80,11 +80,19 @@ extension RequestExecutor {
                 )
             )
         case .returnCached(let cached):
-            guard let response = response(from: cached, for: request) else { return nil }
+            guard
+                let response = response(
+                    from: cached, for: request, now: runtime.clock.now()
+                )
+            else { return nil }
             try enforceResponseBodyLimit(response, configuration: configuration)
             return response
         case .returnStaleAndRevalidate(let cached):
-            guard let staleResponse = response(from: cached, for: request) else { return nil }
+            guard
+                let staleResponse = response(
+                    from: cached, for: request, now: runtime.clock.now()
+                )
+            else { return nil }
             try enforceResponseBodyLimit(staleResponse, configuration: configuration)
 
             guard let cacheKey else { return nil }
@@ -159,12 +167,20 @@ extension RequestExecutor {
                         revalidation: revalidation
                     ) {
                         try Task.checkCancellation()
+                        let revalidatedResponse = responseUpdatingAge(
+                            substitution.mergedResponse,
+                            to: RFC9111ResponseAge.initialAge(
+                                headers: responseHeaderSnapshot(response.response),
+                                requestTime: result.requestStartedAt,
+                                responseTime: result.responseReceivedAt
+                            )
+                        )
                         if notModifiedRevisesVary(
                             cached: substitution.cached,
                             notModifiedHeaders: response.response?.allHeaderFields
                         ) {
                             try enforceResponseBodyLimit(
-                                substitution.mergedResponse,
+                                revalidatedResponse,
                                 configuration: configuration
                             )
                             await invalidateCacheEntry(
@@ -174,11 +190,11 @@ extension RequestExecutor {
                             )
                         } else {
                             try enforceResponseBodyLimit(
-                                substitution.mergedResponse,
+                                revalidatedResponse,
                                 configuration: configuration
                             )
                             await storeCacheIfNeeded(
-                                substitution.mergedResponse,
+                                revalidatedResponse,
                                 cacheKey: cacheKey,
                                 request: revalidationRequest,
                                 configuration: configuration,
@@ -277,19 +293,62 @@ extension RequestExecutor {
             await runtime.cacheMutations.release(targetURI: writeToken.targetURI)
             return nil
         }
-        let selected = response(from: current, for: request)
+        let selected = response(from: current, for: request, now: runtime.clock.now())
         await runtime.cacheMutations.release(targetURI: writeToken.targetURI)
         return selected
     }
 
-    private func response(from cached: CachedResponse, for request: URLRequest) -> Response? {
-        guard let httpResponse = cached.response(for: request) else { return nil }
+    private func response(
+        from cached: CachedResponse,
+        for request: URLRequest,
+        now: Date
+    ) -> Response? {
+        guard let url = request.url else { return nil }
+        let currentAge = RFC9111ResponseAge.clamp(
+            max(0, now.timeIntervalSince(cached.storedAt)) + cached.rfc9111InitialAge
+        )
+        guard
+            let httpResponse = HTTPURLResponse(
+                url: url,
+                statusCode: cached.statusCode,
+                httpVersion: nil,
+                headerFields: headersUpdatingAge(cached.headers, to: currentAge)
+            )
+        else { return nil }
         return Response(
             statusCode: cached.statusCode,
             data: cached.data,
             request: request,
             response: httpResponse
         )
+    }
+
+    func responseUpdatingAge(_ response: Response, to age: TimeInterval) -> Response {
+        guard let original = response.response,
+            let url = original.url,
+            let httpResponse = HTTPURLResponse(
+                url: url,
+                statusCode: response.statusCode,
+                httpVersion: nil,
+                headerFields: headersUpdatingAge(responseHeaderSnapshot(original), to: age)
+            )
+        else { return response }
+        return Response(
+            statusCode: response.statusCode,
+            data: response.data,
+            request: response.request,
+            response: httpResponse,
+            kind: response.kind
+        )
+    }
+
+    private func headersUpdatingAge(
+        _ headers: [String: String],
+        to age: TimeInterval
+    ) -> [String: String] {
+        var updated = headers.filter { $0.key.caseInsensitiveCompare("Age") != .orderedSame }
+        updated["Age"] = String(Int(RFC9111ResponseAge.clamp(age).rounded(.down)))
+        return updated
     }
 
     private func requestRequestsOnlyIfCached(_ request: URLRequest) -> Bool {

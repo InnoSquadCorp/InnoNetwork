@@ -300,6 +300,7 @@ extension ResiliencePolicyTests {
     func mergedNotModifiedResetsRFCResponseAge() async throws {
         let clock = TestClock(epoch: Date(timeIntervalSince1970: 30_000))
         let cache = InMemoryResponseCache()
+        let recorder = ResilienceResponseRecorder()
         let key = resilienceUserCacheKey()
         await cache.set(
             key,
@@ -326,7 +327,8 @@ extension ResiliencePolicyTests {
                 responseCachePolicy: .rfc9111Compliant(
                     wrapping: .cacheFirst(maxAge: .seconds(60))
                 ),
-                responseCache: cache
+                responseCache: cache,
+                responseInterceptors: [ResilienceRecordingResponseInterceptor(recorder: recorder)]
             ),
             session: session,
             clock: clock
@@ -335,10 +337,78 @@ extension ResiliencePolicyTests {
         let value = try await client.request(ResilienceGetRequest())
 
         #expect(value == ResilienceUser(id: 1, name: "cached"))
+        #expect(await recorder.response()?.response?.value(forHTTPHeaderField: "Age") == "15")
         let refreshed = try #require(await cache.get(key))
-        #expect(refreshed.headers["Age"] == "10")
+        #expect(refreshed.headers["Age"] == "15")
         #expect(refreshed.storedAt == Date(timeIntervalSince1970: 30_005))
         #expect(refreshed.rfc9111InitialAge == 15)
+    }
+
+    @Test("A cache hit exposes current Age without rewriting stored metadata")
+    func returnedCacheHitUpdatesAgeHeader() async throws {
+        let clock = TestClock(epoch: Date(timeIntervalSince1970: 40_000))
+        let cache = InMemoryResponseCache()
+        let recorder = ResilienceResponseRecorder()
+        let session = try ResilienceSequenceURLSession(queue: [
+            resilienceQueuedResponse(
+                statusCode: 200,
+                body: ResilienceUser(id: 1, name: "cached"),
+                headers: ["Cache-Control": "max-age=60", "Age": "5"]
+            )
+        ])
+        let client = DefaultNetworkClient(
+            configuration: resilienceMakeLocalizedCacheConfiguration(
+                responseCachePolicy: .rfc9111Compliant(
+                    wrapping: .cacheFirst(maxAge: .seconds(60))
+                ),
+                responseCache: cache,
+                responseInterceptors: [ResilienceRecordingResponseInterceptor(recorder: recorder)]
+            ),
+            session: session,
+            clock: clock
+        )
+
+        _ = try await client.request(ResilienceGetRequest())
+        clock.advance(by: .seconds(10))
+        _ = try await client.request(ResilienceGetRequest())
+
+        #expect(await recorder.response(at: 1)?.response?.value(forHTTPHeaderField: "Age") == "15")
+        #expect(await cache.get(resilienceUserCacheKey())?.headers["Age"] == "5")
+        #expect(await session.requestCount == 1)
+    }
+
+    @Test("stale-if-error reports its current Age after failed validation")
+    func staleIfErrorUpdatesAgeHeader() async throws {
+        let clock = TestClock(epoch: Date(timeIntervalSince1970: 50_000))
+        let cache = InMemoryResponseCache()
+        await cache.set(
+            resilienceUserCacheKey(),
+            CachedResponse(
+                data: try JSONEncoder().encode(ResilienceUser(id: 1, name: "cached")),
+                headers: ["Cache-Control": "max-age=1, stale-if-error=60", "Age": "5"],
+                storedAt: Date(timeIntervalSince1970: 49_990),
+                rfc9111InitialAge: 5
+            )
+        )
+        let recorder = ResilienceResponseRecorder()
+        let session = try ResilienceSequenceURLSession(queue: [
+            resilienceQueuedResponse(statusCode: 503)
+        ])
+        let client = DefaultNetworkClient(
+            configuration: resilienceMakeLocalizedCacheConfiguration(
+                responseCachePolicy: .staleIfError(
+                    wrapping: .rfc9111Compliant(wrapping: .cacheFirst(maxAge: .seconds(1)))
+                ),
+                responseCache: cache,
+                responseInterceptors: [ResilienceRecordingResponseInterceptor(recorder: recorder)]
+            ),
+            session: session,
+            clock: clock
+        )
+
+        #expect(try await client.request(ResilienceGetRequest()) == ResilienceUser(id: 1, name: "cached"))
+        #expect(await recorder.response()?.response?.value(forHTTPHeaderField: "Age") == "15")
+        #expect(await cache.get(resilienceUserCacheKey())?.headers["Age"] == "5")
     }
 
     @Test("Response cache stores 204 responses without a body")
