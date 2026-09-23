@@ -43,7 +43,7 @@ package final class UploadDelegateEventChannel: Sendable {
         var queue: [UploadDelegateEvent] = []
         var waiter: CheckedContinuation<UploadDelegateEvent?, Never>?
         var bufferedBytes = 0
-        var overflowedTaskIdentifiers: Set<Int> = []
+        var overflowedTaskIdentifiers = UploadTaskIdentifierRanges()
         var isFinished = false
     }
 
@@ -57,6 +57,10 @@ package final class UploadDelegateEventChannel: Sendable {
 
     package init(limits: UploadResourcePolicy = .safeDefaults) {
         self.limits = limits
+    }
+
+    package var overflowedIdentifierRangeCount: Int {
+        state.withLock { $0.overflowedTaskIdentifiers.rangeCount }
     }
 
     package func next() async -> UploadDelegateEvent? {
@@ -139,7 +143,7 @@ package final class UploadDelegateEventChannel: Sendable {
     }
 
     private func enqueueOverflow(for identifier: Int, state: inout State) {
-        guard state.overflowedTaskIdentifiers.insert(identifier).inserted else { return }
+        guard state.overflowedTaskIdentifiers.insert(identifier) else { return }
         state.queue.removeAll { event in
             guard event.taskIdentifier == identifier else { return false }
             state.bufferedBytes -= event.bufferedByteCount

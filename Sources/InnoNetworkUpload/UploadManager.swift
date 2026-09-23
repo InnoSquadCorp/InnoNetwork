@@ -31,11 +31,15 @@ public actor UploadManager {
     /// URLSession identifiers whose logical attempt has already terminated.
     /// Late delegate callbacks for these attempts must never be adopted as a
     /// restored background upload.
-    private var retiredSystemIdentifiers: Set<Int> = []
+    private var retiredSystemIdentifiers = UploadTaskIdentifierRanges()
     private var responseBodies: [Int: Data] = [:]
     private var forcedFailures: [Int: UploadError] = [:]
     private var idempotencyKeys: [String: String] = [:]
     private var pendingDelegateEvents: [Int: [UploadDelegateEvent]] = [:]
+    /// Once unknown-task capacity is exceeded we cannot remember which
+    /// system identifier lost a callback. Reject later unknown adoption
+    /// rather than risk returning an incomplete response as success.
+    private var pendingUnknownTaskCapacityExceeded = false
     private var restorationCompleted = false
     private var isRestoring = false
     private var restorationWaiters: [CheckedContinuation<[UploadTask], Never>] = []
@@ -44,6 +48,10 @@ public actor UploadManager {
     private var terminalTaskOrder: [String] = []
     private var isShutdown = false
     private let ownsBackgroundSessionIdentifier: Bool
+
+    package var retainedSystemIdentifierRangeCount: Int {
+        retiredSystemIdentifiers.rangeCount
+    }
 
     /// Creates a manager for the supplied upload domain.
     public init(configuration: UploadConfiguration = .safeDefaults()) throws(UploadError) {
@@ -222,6 +230,16 @@ public actor UploadManager {
         guard !isShutdown else { return [] }
         for urlTask in systemTasks {
             guard !isShutdown else { return [] }
+            // Enumeration is a snapshot. A completion callback can adopt and
+            // retire this same system task while allUploadTasks is suspended.
+            // Rechecking ownership before minting a logical ID prevents a
+            // finished physical upload from reappearing as a second task.
+            let systemIdentifier = urlTask.taskIdentifier
+            guard !retiredSystemIdentifiers.contains(systemIdentifier) else { continue }
+            if let adoptedID = logicalIDsBySystemIdentifier[systemIdentifier] {
+                restoredTaskIDs.insert(adoptedID)
+                continue
+            }
             guard let request = urlTask.currentRequest ?? urlTask.originalRequest,
                 let url = request.url
             else {
@@ -265,7 +283,26 @@ public actor UploadManager {
                 urlTask.cancel()
                 await task.fail(with: error)
             }
+            if pendingUnknownTaskCapacityExceeded {
+                urlTask.cancel()
+                await task.fail(
+                    with: .delegateBufferExceeded(
+                        limit: configuration.resourcePolicy.maximumPendingUnknownTasks
+                    )
+                )
+            }
 
+            // Validation failure may have awaited task finalization. A
+            // delegate completion can win that reentrancy window as well.
+            if retiredSystemIdentifiers.contains(systemIdentifier) {
+                pendingStartIDs.remove(id)
+                continue
+            }
+            if let adoptedID = logicalIDsBySystemIdentifier[systemIdentifier] {
+                pendingStartIDs.remove(id)
+                restoredTaskIDs.insert(adoptedID)
+                continue
+            }
             guard !isShutdown else {
                 pendingStartIDs.remove(id)
                 return []
@@ -284,6 +321,7 @@ public actor UploadManager {
             if await task.state.isTerminal {
                 await eventHub.publishTerminalAndFinish(.failed((await task.error) ?? .cancelled), for: id)
                 pendingDelegateEvents.removeValue(forKey: urlTask.taskIdentifier)
+                recordTerminal(id)
                 removeRuntime(for: id)
                 continue
             }
@@ -634,6 +672,16 @@ public actor UploadManager {
                     await fail(adopted, with: error)
                     return
                 }
+                if pendingUnknownTaskCapacityExceeded {
+                    pendingDelegateEvents.removeValue(forKey: identifier)
+                    await fail(
+                        adopted,
+                        with: .delegateBufferExceeded(
+                            limit: configuration.resourcePolicy.maximumPendingUnknownTasks
+                        )
+                    )
+                    return
+                }
                 let pending = pendingDelegateEvents.removeValue(forKey: identifier) ?? []
                 for pendingEvent in pending {
                     await process(pendingEvent)
@@ -724,14 +772,60 @@ public actor UploadManager {
     }
 
     private func bufferPending(_ event: UploadDelegateEvent, for identifier: Int) {
+        guard !pendingUnknownTaskCapacityExceeded else { return }
         if pendingDelegateEvents[identifier] == nil,
             pendingDelegateEvents.count >= configuration.resourcePolicy.maximumPendingUnknownTasks
         {
+            // Progress is lossy; dropping it cannot truncate a receipt.
+            if case .progress = event { return }
+            pendingUnknownTaskCapacityExceeded = true
             return
         }
         let maximumPerTask = configuration.resourcePolicy.maximumBufferedDelegateEvents
-        guard pendingDelegateEvents[identifier, default: []].count < maximumPerTask else { return }
-        pendingDelegateEvents[identifier, default: []].append(event)
+        var pending = pendingDelegateEvents[identifier] ?? []
+        if pending.contains(where: {
+            if case .overflow = $0 { return true }
+            return false
+        }) {
+            return
+        }
+        if case .progress = event {
+            if let index = pending.lastIndex(where: {
+                if case .progress = $0 { return true }
+                return false
+            }) {
+                pending[index] = event
+            } else if pending.count < maximumPerTask {
+                pending.append(event)
+            }
+            pendingDelegateEvents[identifier] = pending
+            return
+        }
+        if case .overflow = event {
+            pendingDelegateEvents[identifier] = [event]
+            return
+        }
+        if case .data(_, let data) = event {
+            let bufferedBytes = pending.reduce(into: 0) { total, queued in
+                if case .data(_, let chunk) = queued { total += chunk.count }
+            }
+            if data.count > configuration.maximumResponseBytes - bufferedBytes {
+                pendingDelegateEvents[identifier] = [
+                    .overflow(taskIdentifier: identifier, byteLimit: configuration.maximumResponseBytes)
+                ]
+                return
+            }
+        }
+        guard pending.count < maximumPerTask else {
+            // A lost data/completion event would make a truncated receipt
+            // appear successful. Keep one terminal marker in bounded space.
+            pendingDelegateEvents[identifier] = [
+                .overflow(taskIdentifier: identifier, byteLimit: maximumPerTask)
+            ]
+            return
+        }
+        pending.append(event)
+        pendingDelegateEvents[identifier] = pending
     }
 
     private func recordTerminal(_ logicalID: String) {

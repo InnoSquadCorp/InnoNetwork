@@ -78,6 +78,10 @@ public struct ResponseCacheKey: Hashable, Sendable {
     public let method: String
     public let url: String
     public let headers: [String]
+    /// Request headers intentionally excluded from the canonical identity,
+    /// but still needed when an origin selects a representation with Vary.
+    /// Never persisted as part of the disk key.
+    package let selectionHeaders: [String]
 
     /// Creates a cache identity while fingerprinting credential-bearing
     /// header values. `sensitiveHeaderNames` extends the built-in set for
@@ -89,6 +93,22 @@ public struct ResponseCacheKey: Hashable, Sendable {
         headers: [String: String] = [:],
         sensitiveHeaderNames: Set<String> = []
     ) {
+        self.init(
+            method: method,
+            url: url,
+            headers: headers,
+            selectionHeaders: [:],
+            sensitiveHeaderNames: sensitiveHeaderNames
+        )
+    }
+
+    private init(
+        method: String,
+        url: String,
+        headers: [String: String],
+        selectionHeaders: [String: String],
+        sensitiveHeaderNames: Set<String>
+    ) {
         // Method tokens are case-sensitive on the wire. Keep the exact token
         // so custom methods cannot collide with differently cased methods.
         self.method = method
@@ -97,6 +117,20 @@ public struct ResponseCacheKey: Hashable, Sendable {
             headers,
             sensitiveHeaderNames: sensitiveHeaderNames
         )
+        self.selectionHeaders = Self.normalizedHeaders(
+            selectionHeaders,
+            sensitiveHeaderNames: sensitiveHeaderNames
+        )
+    }
+
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.method == rhs.method && lhs.url == rhs.url && lhs.headers == rhs.headers
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(method)
+        hasher.combine(url)
+        hasher.combine(headers)
     }
 
     // `Authorization` is intentionally part of the cache key so that
@@ -116,13 +150,23 @@ public struct ResponseCacheKey: Hashable, Sendable {
 
     package init?(request: URLRequest, sensitiveHeaderNames: Set<String> = []) {
         guard let url = Self.normalizedTargetURI(request.url) else { return nil }
-        let headers =
-            (request.allHTTPHeaderFields ?? [:])
-            .filter { !Self.excludedHeaderNames.contains($0.key.lowercased()) }
+        let requestHeaders = request.allHTTPHeaderFields ?? [:]
+        let sensitiveNames = HeaderValueNormalizer.defaultSensitiveHeaderNames.union(
+            sensitiveHeaderNames.map { $0.lowercased() }
+        )
+        let headers = requestHeaders.filter {
+            !Self.excludedHeaderNames.contains($0.key.lowercased())
+                || sensitiveNames.contains($0.key.lowercased())
+        }
+        let selectionHeaders = requestHeaders.filter {
+            Self.excludedHeaderNames.contains($0.key.lowercased())
+                && !sensitiveNames.contains($0.key.lowercased())
+        }
         self.init(
             method: request.httpMethod ?? "GET",
             url: url,
             headers: headers,
+            selectionHeaders: selectionHeaders,
             sensitiveHeaderNames: sensitiveHeaderNames
         )
     }
@@ -317,7 +361,9 @@ package extension ResponseCacheKey {
     /// Approximate in-memory size of the key in bytes. Used by
     /// `InMemoryResponseCache` to charge key bytes against `maxBytes`.
     var byteCost: Int {
-        method.utf8.count + url.utf8.count + headers.reduce(0) { $0 + $1.utf8.count }
+        method.utf8.count + url.utf8.count
+            + headers.reduce(0) { $0 + $1.utf8.count }
+            + selectionHeaders.reduce(0) { $0 + $1.utf8.count }
     }
 }
 
@@ -390,14 +436,16 @@ public actor InMemoryResponseCache: ResponseCache {
     }
 
     public func set(_ key: ResponseCacheKey, _ value: CachedResponse) async {
-        let entryCost = key.byteCost + value.byteCost
         if let existing = nodes[key] {
             currentBytes -= existing.cost
             existing.value = value
-            existing.cost = entryCost
-            currentBytes += entryCost
+            // Equality excludes selection headers. The node and dictionary
+            // retain the original key even when the replacing key differs.
+            existing.cost = existing.key.byteCost + value.byteCost
+            currentBytes += existing.cost
             moveToHead(existing)
         } else {
+            let entryCost = key.byteCost + value.byteCost
             let node = Node(key: key, value: value, cost: entryCost)
             nodes[key] = node
             currentBytes += entryCost
@@ -789,13 +837,13 @@ package func cachedResponseMatchesVary(
     request: URLRequest,
     sensitiveHeaderNames: Set<String> = []
 ) -> Bool {
+    guard let storedVary = cached.varyHeaders else {
+        return true
+    }
     let normalizedSensitiveHeaderNames =
         HeaderValueNormalizer.defaultSensitiveHeaderNames.union(
             sensitiveHeaderNames.map { $0.lowercased() }
         )
-    guard let storedVary = cached.varyHeaders else {
-        return true
-    }
     for (header, storedValue) in storedVary {
         let currentValue = request.value(forHTTPHeaderField: header).map {
             HeaderValueNormalizer.normalizedValue(

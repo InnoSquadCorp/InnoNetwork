@@ -44,6 +44,35 @@ struct VCRURLSessionTests {
         #expect(interaction.response.headers["x-trace"] == "abc")
     }
 
+    @Test("mutating redaction names remains case-insensitive in serialized cassettes")
+    func mutatedRedactionNamesRemainCaseInsensitive() async throws {
+        var policy = VCRRedactionPolicy()
+        policy.sensitiveHeaderNames = ["X-Custom-Secret"]
+        policy.sensitiveQueryItemNames.insert("Access_Token")
+        #expect(policy.sensitiveHeaderNames == ["x-custom-secret"])
+        #expect(policy.sensitiveQueryItemNames.contains("access_token"))
+
+        let backing = MockURLSession()
+        backing.mockResponse = HTTPURLResponse(
+            url: URL(string: "https://api.example.com/resource")!,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: ["X-Custom-Secret": "response-secret"]
+        )!
+        let vcr = VCRURLSession(mode: .record, recordingSession: backing, redactionPolicy: policy)
+        var request = URLRequest(url: URL(string: "https://api.example.com/resource?access_token=query-secret")!)
+        request.setValue("request-secret", forHTTPHeaderField: "x-custom-secret")
+        _ = try await vcr.data(for: request)
+
+        let serialized = String(decoding: try JSONEncoder().encode(vcr.cassette), as: UTF8.self)
+        #expect(!serialized.contains("request-secret"))
+        #expect(!serialized.contains("response-secret"))
+        #expect(!serialized.contains("query-secret"))
+        let interaction = try #require(vcr.cassette.interactions.first)
+        #expect(interaction.request.headers["x-custom-secret"] == "<redacted>")
+        #expect(interaction.response.headers["x-custom-secret"] == "<redacted>")
+    }
+
     @Test("bounded streaming fails closed before VCR record transport")
     func boundedStreamingRejectsVCRRecordMode() async throws {
         let backing = MockURLSession()

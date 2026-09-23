@@ -15,9 +15,13 @@ public enum VCRMode: Sendable, Equatable {
 /// Redaction settings applied before requests and responses are stored in a cassette.
 public struct VCRRedactionPolicy: Sendable, Equatable {
     /// Case-insensitive header names whose values should be replaced.
-    public var sensitiveHeaderNames: Set<String>
+    public var sensitiveHeaderNames: Set<String> {
+        didSet { sensitiveHeaderNames = Set(sensitiveHeaderNames.map { $0.lowercased() }) }
+    }
     /// Case-insensitive query item names whose values should be replaced.
-    public var sensitiveQueryItemNames: Set<String>
+    public var sensitiveQueryItemNames: Set<String> {
+        didSet { sensitiveQueryItemNames = Set(sensitiveQueryItemNames.map { $0.lowercased() }) }
+    }
     /// Replacement marker written into the cassette.
     public var replacement: String
 

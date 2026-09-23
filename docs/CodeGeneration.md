@@ -39,7 +39,10 @@ swift run openapi-to-innonetwork \
 The generator emits one Swift file per `components.schemas` entry before
 emitting operation files. Operations without supported request or response
 shapes fall back to `EmptyParameter` / `EmptyResponse` so adopters can fill the
-gaps during integration.
+gaps during integration. It checks generated names across schemas, operations,
+and fallback models before writing output, and fails on a collision rather
+than silently replacing a file. The local release preflight also parses and
+typechecks generated output from representative CLI fixtures.
 
 JSON and YAML inputs are both supported. YAML decoding uses Yams inside the
 standalone `Tools/` package. The root package does not resolve Yams or a code

@@ -103,6 +103,11 @@ swift run openapi-to-innonetwork \
 The generator prints a one-line summary to stderr on success
 (`openapi-to-innonetwork: wrote N file(s) to <path>`) and exits 1 with
 a diagnostic on any I/O or parse failure.
+Generated type and file names are validated across schemas, operations,
+and fallback models before output is created. Collisions fail with a
+diagnostic instead of overwriting a file. Numeric, reserved, and Unicode
+source names are mapped to valid Swift identifiers; multiline summaries
+are emitted as separate documentation-comment lines.
 
 ## Generated output
 
@@ -156,10 +161,12 @@ swift test
 ```
 
 Covers operation expansion across HTTP verbs, sanitization of
-non-alphanumeric `operationId` values, and the
+non-alphanumeric `operationId` values, namespace collisions, and the
 method-plus-path fallback when `operationId` is absent. Schema tests also
 lock required vs. optional property rendering and `AnyCodable` fallback
-generation for unsupported property shapes.
+generation for unsupported property shapes. The repository-level
+`Scripts/test_openapi_generated_output.sh` runs the CLI on regression
+fixtures and parses and typechecks the generated Swift output.
 
 ## See also
 

@@ -165,6 +165,9 @@ jobs:
         working-directory: Tools/openapi-to-innonetwork
         run: xcrun swift test
 
+      - name: Typecheck generated OpenAPI output
+        run: bash Scripts/test_openapi_generated_output.sh
+
       - name: Run quick benchmarks
         run: |
           bash Scripts/run_same_runner_benchmarks.sh \

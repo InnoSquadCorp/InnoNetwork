@@ -3,6 +3,14 @@ import Testing
 
 @testable import InnoNetwork
 
+private final class WeakReference<Object: AnyObject> {
+    weak var value: Object?
+
+    init(_ value: Object?) {
+        self.value = value
+    }
+}
+
 @Suite("Cache mutation token lifetimes", .timeLimit(.minutes(1)))
 struct CacheMutationLifetimeTests {
     @Test("Tokens share a live generation and invalidation fences old writers")
@@ -35,11 +43,11 @@ struct CacheMutationLifetimeTests {
         let coordinator = ResponseCacheMutationCoordinator()
         var old: ResponseCacheMutationCoordinator.WriteToken? = await coordinator.writeToken(
             for: "https://example.com/a")
-        weak var released = old
+        let released = WeakReference(old)
         await coordinator.advanceGeneration(for: "https://example.com/a")
         let current = await coordinator.writeToken(for: "https://example.com/a")
         old = nil
-        #expect(released == nil)
+        #expect(released.value == nil)
         #expect(await coordinator.trackedTargetCount == 1)
         #expect(await coordinator.isCurrent(current))
     }

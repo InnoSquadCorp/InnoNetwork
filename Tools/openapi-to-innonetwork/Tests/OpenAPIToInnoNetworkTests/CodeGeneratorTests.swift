@@ -70,6 +70,110 @@ struct CodeGeneratorTests {
         #expect(files.first?.filename == "ListUsersV1.swift")
     }
 
+    @Test("colliding operation names fail before any generated file can be written")
+    func rejectsCollidingOperationNames() {
+        let document = OpenAPIDocument(paths: [
+            "/admins": PathItem(get: Operation(operationId: "get_user")),
+            "/users": PathItem(get: Operation(operationId: "get-user")),
+        ])
+
+        do {
+            _ = try CodeGenerator(moduleName: "API").generate(from: document)
+            Issue.record("expected generated-name collision")
+        } catch let error as GenerationError {
+            #expect(error.description.contains("/admins"))
+            #expect(error.description.contains("/users"))
+            #expect(error.description.contains("GetUser.swift"))
+        } catch {
+            Issue.record("unexpected error: \(error)")
+        }
+    }
+
+    @Test("schema, operation, and fallback names share one generated namespace")
+    func rejectsCrossKindGeneratedNameCollisions() {
+        let schemaOperation = OpenAPIDocument(
+            paths: ["/users": PathItem(get: Operation(operationId: "User"))],
+            components: Components(schemas: ["User": Schema(type: "object")])
+        )
+        #expect(throws: GenerationError.self) {
+            _ = try CodeGenerator(moduleName: "API").generate(from: schemaOperation)
+        }
+
+        let fallback = OpenAPIDocument(
+            paths: [:],
+            components: Components(schemas: [
+                "AnyCodable": Schema(type: "object"),
+                "User": Schema(type: "object", properties: ["metadata": Schema(type: "object")]),
+            ])
+        )
+        #expect(throws: GenerationError.self) {
+            _ = try CodeGenerator(moduleName: "API").generate(from: fallback)
+        }
+    }
+
+    @Test(
+        "Generated names cannot shadow types referenced by generated source",
+        arguments: ["HTTPMethod", "APIDefinition", "SessionAuthentication", "EmptyResponse", "Date", "Codable"]
+    )
+    func rejectsReferencedTypeNames(name: String) {
+        let document = OpenAPIDocument(
+            paths: ["/items": PathItem(get: Operation(operationId: "ListItems"))],
+            components: Components(schemas: [name: Schema(type: "object")])
+        )
+        #expect(throws: GenerationError.self) {
+            _ = try CodeGenerator(moduleName: "API").generate(from: document)
+        }
+    }
+
+    @Test("numeric, reserved, and Unicode type names remain valid and references agree")
+    func sanitizesTypeNamesAndReferences() throws {
+        let document = OpenAPIDocument(
+            paths: [
+                "/status": PathItem(
+                    get: Operation(
+                        operationId: "1st-status",
+                        responses: [
+                            "200": ResponseObject(
+                                content: [
+                                    "application/json": MediaType(schema: Schema(ref: "#/components/schemas/1st-user"))
+                                ])
+                        ]
+                    )
+                )
+            ],
+            components: Components(schemas: [
+                "1st-user": Schema(type: "object"),
+                "Protocol": Schema(type: "object"),
+                "équipe": Schema(type: "object"),
+            ])
+        )
+        let files = try CodeGenerator(moduleName: "API").generate(from: document)
+
+        #expect(files.contains(where: { $0.filename == "_1stUser.swift" }))
+        #expect(files.contains(where: { $0.filename == "Protocol_.swift" }))
+        #expect(files.contains(where: { $0.filename == "UE9quipe.swift" }))
+        let operation = try #require(files.first(where: { $0.filename == "_1stStatus.swift" }))
+        #expect(operation.contents.contains("public struct _1stStatus: APIDefinition"))
+        #expect(operation.contents.contains("public typealias APIResponse = _1stUser"))
+    }
+
+    @Test("multi-line summaries and module names stay inside Swift comments")
+    func prefixesEveryUntrustedCommentLine() throws {
+        let document = OpenAPIDocument(paths: [
+            "/status": PathItem(
+                get: Operation(
+                    operationId: "status", summary: "Fetch status.\nContinue the description.\r\nFinal line.")
+            )
+        ])
+        let file = try #require(
+            CodeGenerator(moduleName: "API\nInjected module line")
+                .generate(from: document).first)
+
+        #expect(file.contents.contains("// Module: API\n// Injected module line"))
+        #expect(file.contents.contains("/// Fetch status.\n/// Continue the description.\n/// Final line."))
+        #expect(!file.contents.contains("\nContinue the description."))
+    }
+
     @Test
     func fallsBackToMethodPathWhenOperationIdMissing() throws {
         let document = OpenAPIDocument(paths: [

@@ -136,7 +136,15 @@ public struct AWSSigV4Interceptor: RequestSigner {
         let firstPass = urlPath.isEmpty ? "/" : Self.uriEncode(urlPath, allowSlash: true)
         // SigV4: S3 uses single-encoded paths; every other service expects
         // the canonical URI to be encoded again (percent signs re-escaped).
-        let path = service.lowercased() == "s3" ? firstPass : Self.uriEncode(firstPass, allowSlash: true)
+        // Foundation's decoded URL.path drops trailing empty components on
+        // macOS. S3 object keys distinguish /key, /key/, and /key//, while
+        // canonical URI encoding must still escape reserved path characters.
+        let path: String
+        if service.lowercased() == "s3" {
+            path = Self.canonicalS3Path(url)
+        } else {
+            path = Self.uriEncode(firstPass, allowSlash: true)
+        }
         let query = canonicalQueryString(from: url)
         let (headers, signed) = canonicalHeaders(of: request)
         return "\(method)\n\(path)\n\(query)\n\(headers)\n\(signed)\n\(payloadHash)"
@@ -233,6 +241,22 @@ public struct AWSSigV4Interceptor: RequestSigner {
         var allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.~")
         if allowSlash { allowed.insert(charactersIn: "/") }
         return string.addingPercentEncoding(withAllowedCharacters: allowed) ?? string
+    }
+
+    private static func canonicalS3Path(_ url: URL?) -> String {
+        guard let url,
+            let encodedPath = URLComponents(url: url, resolvingAgainstBaseURL: false)?.percentEncodedPath,
+            !encodedPath.isEmpty
+        else { return "/" }
+        // Decode and re-encode each segment independently. This preserves
+        // literal and trailing slash separators, keeps %2F inside an object
+        // key segment distinct from /, and applies AWS's unreserved-only URI
+        // encoding to characters URLComponents may leave raw (such as !, @).
+        return encodedPath.split(separator: "/", omittingEmptySubsequences: false)
+            .map { segment in
+                uriEncode(String(segment).removingPercentEncoding ?? String(segment), allowSlash: false)
+            }
+            .joined(separator: "/")
     }
 
     private static func collapseWhitespace(_ value: String) -> String {

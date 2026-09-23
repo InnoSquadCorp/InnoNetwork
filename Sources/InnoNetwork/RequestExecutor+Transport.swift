@@ -96,29 +96,40 @@ extension RequestExecutor {
             // give recovery probes their own physical dispatch.
             if circuitProbe == nil,
                 allowsRequestCoalescing,
-                case .inline = bodySource,
-                let key = RequestDedupKey(
+                case .inline = bodySource
+            {
+                let cacheMutationToken: ResponseCacheMutationCoordinator.WriteToken?
+                if configuration.responseCache != nil,
+                    configuration.responseCachePolicy.allowsCacheWrite,
+                    identityRequest.httpMethod == HTTPMethod.get.rawValue,
+                    let targetURI = ResponseCacheKey.normalizedTargetURI(identityRequest.url)
+                {
+                    cacheMutationToken = await runtime.cacheMutations.writeToken(for: targetURI)
+                } else {
+                    cacheMutationToken = nil
+                }
+                if let key = RequestDedupKey(
                     request: identityRequest,
                     policy: configuration.requestCoalescingPolicy,
-                    refreshLane: refreshLane
-                )
-            {
-                // A follower waits for an already-running physical request and
-                // therefore remains in the transport stage. The owner resets
-                // the stage to policy admission inside the closure before it
-                // acquires its local rate/admission permits.
-                NetworkOperationDeadlineContext.mark(.transport)
-                return try await runtime.requestCoalescer.run(key: key) {
-                    try await self.transportAndRecordCircuit(
-                        request: request,
-                        identityRequest: identityRequest,
-                        bodySource: bodySource,
-                        configuration: configuration,
-                        context: context,
-                        runtime: runtime,
-                        policy: configuration.circuitBreakerPolicy,
-                        circuitProbe: circuitProbe
-                    )
+                    refreshLane: refreshLane,
+                    cacheMutationGeneration: cacheMutationToken?.generation
+                ) {
+                    // A follower waits for an already-running physical request
+                    // only within the same mutation generation.
+                    NetworkOperationDeadlineContext.mark(.transport)
+                    defer { withExtendedLifetime(cacheMutationToken) {} }
+                    return try await runtime.requestCoalescer.run(key: key) {
+                        try await self.transportAndRecordCircuit(
+                            request: request,
+                            identityRequest: identityRequest,
+                            bodySource: bodySource,
+                            configuration: configuration,
+                            context: context,
+                            runtime: runtime,
+                            policy: configuration.circuitBreakerPolicy,
+                            circuitProbe: circuitProbe
+                        )
+                    }
                 }
             }
 
@@ -313,7 +324,8 @@ extension RequestExecutor {
                 bodySource: bodySource,
                 configuration: configuration,
                 context: context,
-                clock: runtime.clock
+                clock: runtime.clock,
+                runtime: runtime
             )
             await runtime.circuitBreakers.recordStatus(
                 request: identityRequest,
@@ -367,21 +379,25 @@ extension RequestExecutor {
         bodySource: BodySource,
         configuration: NetworkConfiguration,
         context: NetworkRequestContext,
-        clock: any InnoNetworkClock
+        clock: any InnoNetworkClock,
+        runtime: RequestExecutionRuntime
     ) async throws -> TransportResult {
         let requestStartedAt = clock.now()
         let attemptStartedAt = Date()
         do {
-            let (data, response): (Data, URLResponse)
+            let (data, response, invalidatedAtHeaders): (Data, URLResponse, Bool)
             switch bodySource {
             case .inline:
-                (data, response) = try await inlineData(for: request, configuration: configuration, context: context)
+                (data, response, invalidatedAtHeaders) = try await inlineData(
+                    for: request, configuration: configuration, context: context, runtime: runtime
+                )
             case .file(let fileURL, _):
-                (data, response) = try await fileUploadData(
+                (data, response, invalidatedAtHeaders) = try await fileUploadData(
                     for: request,
                     fromFile: fileURL,
                     configuration: configuration,
-                    context: context
+                    context: context,
+                    runtime: runtime
                 )
             }
 
@@ -396,6 +412,14 @@ extension RequestExecutor {
                             "Received a non-HTTP response from \(NetworkError.diagnosticURLString(for: request.url)); response was \(type(of: response))."
                     ),
                     nil
+                )
+            }
+            if !invalidatedAtHeaders {
+                await invalidateUnsafeTargetURIIfNeeded(
+                    statusCode: httpResponse.statusCode,
+                    request: request,
+                    configuration: configuration,
+                    runtime: runtime
                 )
             }
             // Buffered transports (including explicitly buffered production
@@ -431,8 +455,9 @@ extension RequestExecutor {
     func inlineData(
         for request: URLRequest,
         configuration: NetworkConfiguration,
-        context: NetworkRequestContext
-    ) async throws -> (Data, URLResponse) {
+        context: NetworkRequestContext,
+        runtime: RequestExecutionRuntime
+    ) async throws -> (Data, URLResponse, Bool) {
         switch configuration.responseBodyBufferingPolicy {
         case .streaming(let maxBytes):
             // Prefer chunk-granular delivery: URLSession.AsyncBytes vends one
@@ -450,29 +475,46 @@ extension RequestExecutor {
                 // one copy and keeps the same delegate-enforced redirect and
                 // trust policy.
                 guard let normalizedLimit else {
-                    return try await session.data(for: request, context: context)
+                    let (data, response) = try await session.data(for: request, context: context)
+                    return (data, response, false)
                 }
                 let transfer = try await chunkedSession.chunkedTransfer(
                     for: request,
                     context: context,
                     maxBytes: normalizedLimit
                 )
+                if let response = transfer.response as? HTTPURLResponse {
+                    await invalidateUnsafeTargetURIIfNeeded(
+                        statusCode: response.statusCode,
+                        request: request,
+                        configuration: configuration,
+                        runtime: runtime
+                    )
+                }
                 let data = try await collect(
                     transfer: transfer,
                     request: request,
                     maxBytes: normalizedLimit
                 )
-                return (data, transfer.response)
+                return (data, transfer.response, true)
             }
             do {
                 let (bytes, response) = try await session.bytes(for: request, context: context)
+                if let httpResponse = response as? HTTPURLResponse {
+                    await invalidateUnsafeTargetURIIfNeeded(
+                        statusCode: httpResponse.statusCode,
+                        request: request,
+                        configuration: configuration,
+                        runtime: runtime
+                    )
+                }
                 let data = try await collect(
                     bytes: bytes,
                     response: response,
                     request: request,
                     maxBytes: maxBytes
                 )
-                return (data, response)
+                return (data, response, true)
             } catch let error as NetworkError {
                 switch error {
                 case .configuration(reason: .invalidRequest):
@@ -489,18 +531,27 @@ extension RequestExecutor {
                         throw error
                     }
                     let result = try await session.data(for: request, context: context)
+                    if let response = result.1 as? HTTPURLResponse {
+                        await invalidateUnsafeTargetURIIfNeeded(
+                            statusCode: response.statusCode,
+                            request: request,
+                            configuration: configuration,
+                            runtime: runtime
+                        )
+                    }
                     // Test-support fixtures are already buffered, so enforce
                     // the configured ceiling immediately. This keeps an
                     // oversized fixture from reaching response events,
                     // execution policies, auth refresh, or cache side effects.
                     try enforceResponseBodyLimit(data: result.0, configuration: configuration)
-                    return result
+                    return (result.0, result.1, true)
                 default:
                     throw error
                 }
             }
         case .buffered:
-            return try await session.data(for: request, context: context)
+            let (data, response) = try await session.data(for: request, context: context)
+            return (data, response, false)
         }
     }
 
@@ -508,12 +559,14 @@ extension RequestExecutor {
         for request: URLRequest,
         fromFile fileURL: URL,
         configuration: NetworkConfiguration,
-        context: NetworkRequestContext
-    ) async throws -> (Data, URLResponse) {
+        context: NetworkRequestContext,
+        runtime: RequestExecutionRuntime
+    ) async throws -> (Data, URLResponse, Bool) {
         guard let maxBytes = configuration.responseBodyBufferingPolicy.maxBytes else {
             // Preserve the existing upload-task behavior when the caller has
             // explicitly opted out of a response bound.
-            return try await session.upload(for: request, fromFile: fileURL, context: context)
+            let (data, response) = try await session.upload(for: request, fromFile: fileURL, context: context)
+            return (data, response, false)
         }
         // Prefer chunk-granular response delivery for the same reason as
         // `inlineData`: byte-wise AsyncBytes collection pays a per-byte
@@ -526,12 +579,20 @@ extension RequestExecutor {
                 context: context,
                 maxBytes: maxBytes
             )
+            if let response = transfer.response as? HTTPURLResponse {
+                await invalidateUnsafeTargetURIIfNeeded(
+                    statusCode: response.statusCode,
+                    request: request,
+                    configuration: configuration,
+                    runtime: runtime
+                )
+            }
             let data = try await collect(
                 transfer: transfer,
                 request: request,
                 maxBytes: maxBytes
             )
-            return (data, transfer.response)
+            return (data, transfer.response, true)
         }
         guard let boundedSession = session as? any BoundedFileUploadSession else {
             // A buffered fallback would collect an arbitrarily large response
@@ -549,13 +610,21 @@ extension RequestExecutor {
             uploadingFileAt: fileURL,
             context: context
         )
+        if let httpResponse = response as? HTTPURLResponse {
+            await invalidateUnsafeTargetURIIfNeeded(
+                statusCode: httpResponse.statusCode,
+                request: request,
+                configuration: configuration,
+                runtime: runtime
+            )
+        }
         let data = try await collect(
             bytes: bytes,
             response: response,
             request: request,
             maxBytes: maxBytes
         )
-        return (data, response)
+        return (data, response, true)
     }
 
     func collect(

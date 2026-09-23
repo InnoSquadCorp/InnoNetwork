@@ -1,0 +1,31 @@
+{
+  "openapi": "3.0.3",
+  "info": {"title": "Code generation regression", "version": "1.0.0"},
+  "paths": {
+    "/status": {
+      "get": {
+        "operationId": "1st-status",
+        "summary": "Fetch status.\nContinue the description.",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/1st-user"}
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "1st-user": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {"id": {"type": "integer"}}
+      }
+    }
+  }
+}

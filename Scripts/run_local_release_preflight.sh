@@ -224,6 +224,7 @@ run_consumer_examples() {
 run_openapi_generator() {
   xcrun swift build --package-path Tools/openapi-to-innonetwork
   xcrun swift test --package-path Tools/openapi-to-innonetwork
+  bash Scripts/test_openapi_generated_output.sh
 }
 
 run_bounded_tests() {
