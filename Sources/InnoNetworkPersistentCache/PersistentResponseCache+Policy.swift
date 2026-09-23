@@ -74,9 +74,13 @@ extension PersistentResponseCache {
         )
     }
 
-    static func varySnapshot(_ varyHeaders: [String: String?]?, matches key: DiskKey) -> Bool {
+    static func varySnapshot(
+        _ varyHeaders: [String: String?]?,
+        matches key: DiskKey,
+        selectionHeaders: [String]
+    ) -> Bool {
         guard let varyHeaders else { return true }
-        let requestHeaders = key.headers.reduce(into: [String: String]()) { result, header in
+        let requestHeaders = (key.headers + selectionHeaders).reduce(into: [String: String]()) { result, header in
             guard let separator = header.firstIndex(of: ":") else { return }
             let name = String(header[..<separator]).lowercased()
             let value = String(header[header.index(after: separator)...])

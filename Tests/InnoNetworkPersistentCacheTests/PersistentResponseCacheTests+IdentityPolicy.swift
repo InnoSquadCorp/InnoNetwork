@@ -313,6 +313,109 @@ extension PersistentResponseCacheTests {
         #expect(await reopened.get(secondKey) == nil)
     }
 
+    @Test(
+        "Executor cache keys preserve excluded Vary selection headers on disk",
+        arguments: ["Accept-Encoding", "User-Agent"]
+    )
+    func executorKeyPreservesExcludedVarySelection(header: String) async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configuration = PersistentResponseCacheConfiguration(directoryURL: directory)
+        var request = URLRequest(url: URL(string: "https://example.com/selected")!)
+        request.setValue("fixture-one", forHTTPHeaderField: header)
+        let key = try #require(ResponseCacheKey(request: request))
+        #expect(key.headers.allSatisfy { !$0.lowercased().hasPrefix("\(header.lowercased()):") })
+
+        let cached = CachedResponse(
+            data: Data("selected".utf8),
+            headers: ["Vary": header],
+            varyHeaders: [header.lowercased(): "fixture-one"]
+        )
+        let cache = try PersistentResponseCache(configuration: configuration)
+        await cache.set(key, cached)
+        #expect(await cache.get(key)?.data == cached.data)
+
+        let reopened = try PersistentResponseCache(configuration: configuration)
+        #expect(await reopened.get(key)?.data == cached.data)
+        request.setValue("fixture-two", forHTTPHeaderField: header)
+        let otherKey = try #require(ResponseCacheKey(request: request))
+        #expect(otherKey == key)
+        #expect(await reopened.get(otherKey) == nil)
+    }
+
+    @Test(
+        "Executor reuses matching Vary variants in memory and on disk",
+        arguments: ["Accept-Encoding", "User-Agent"], [false, true]
+    )
+    func executorVaryParity(header: String, useDisk: Bool) async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let disk = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(directoryURL: directory)
+        )
+        let session = PersistentVaryCountingSession(varyHeader: header)
+        let client = DefaultNetworkClient(
+            configuration: NetworkConfiguration(
+                baseURL: URL(string: "https://example.com")!,
+                responseCachePolicy: .rfc9111Compliant(
+                    wrapping: .cacheFirst(maxAge: .seconds(60))
+                ),
+                responseCache: useDisk ? disk : InMemoryResponseCache(),
+                responseBodyBufferingPolicy: .buffered(maxBytes: 1_024)
+            ),
+            session: session
+        )
+        let endpoint = EndpointBuilder<PersistentCacheUser>.get("/vary")
+            .header(header, value: "fixture-one")
+        let first = try await client.request(endpoint)
+        let second = try await client.request(endpoint)
+        #expect(first == second)
+        #expect(await session.calls == 1)
+
+        let other = try await client.request(
+            EndpointBuilder<PersistentCacheUser>.get("/vary")
+                .header(header, value: "fixture-two")
+        )
+        #expect(other != first)
+        #expect(await session.calls == 2)
+    }
+
+    @Test("Client-scoped sensitive selection names remain HMAC-protected identities")
+    func sensitiveExcludedHeaderBecomesProtectedIdentity() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configuration = PersistentResponseCacheConfiguration(
+            directoryURL: directory,
+            storesAuthenticatedResponses: true
+        )
+        var request = URLRequest(url: URL(string: "https://example.com/selected-private")!)
+        request.setValue("private-user-agent-one", forHTTPHeaderField: "User-Agent")
+        let key = try #require(
+            ResponseCacheKey(request: request, sensitiveHeaderNames: ["User-Agent"])
+        )
+        #expect(key.headers.contains { $0.hasPrefix("user-agent:sha256:") })
+        #expect(key.selectionHeaders.isEmpty)
+        let cache = try PersistentResponseCache(configuration: configuration)
+        await cache.set(
+            key,
+            CachedResponse(
+                data: Data("private".utf8),
+                headers: ["Vary": "User-Agent", "Cache-Control": "public, max-age=60"],
+                varyHeaders: ["user-agent": "sha256:\(String(repeating: "0", count: 64))"]
+            )
+        )
+        #expect(await cache.get(key)?.data == Data("private".utf8))
+        let indexText = try String(contentsOf: indexURL(in: directory), encoding: .utf8)
+        #expect(!indexText.contains("private-user-agent-one"))
+        #expect(indexText.contains("hmac-sha256:"))
+
+        request.setValue("private-user-agent-two", forHTTPHeaderField: "User-Agent")
+        let otherKey = try #require(
+            ResponseCacheKey(request: request, sensitiveHeaderNames: ["User-Agent"])
+        )
+        #expect(await cache.get(otherKey) == nil)
+    }
+
     @Test("Persistent multi-token Vary lookup matches core token-set parity")
     func persistentMultiTokenVaryLookupMatchesCoreTokenSetParity() async throws {
         let directory = makeDirectory()
@@ -568,4 +671,27 @@ extension PersistentResponseCacheTests {
         )
     }
 
+}
+
+private actor PersistentVaryCountingSession: URLSessionProtocol {
+    private(set) var calls = 0
+    let varyHeader: String
+
+    init(varyHeader: String) {
+        self.varyHeader = varyHeader
+    }
+
+    func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+        calls += 1
+        let data = try JSONEncoder().encode(
+            PersistentCacheUser(id: calls, name: "variant-\(calls)")
+        )
+        let response = HTTPURLResponse(
+            url: request.url!,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: ["Cache-Control": "max-age=60", "Vary": varyHeader]
+        )!
+        return (data, response)
+    }
 }

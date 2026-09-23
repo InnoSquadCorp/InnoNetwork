@@ -290,7 +290,11 @@ public actor PersistentResponseCache: ResponseCache {
     /// never demotes a successful read to a miss.
     public func get(_ key: ResponseCacheKey) async -> CachedResponse? {
         let diskKey = DiskKey(key, normalizer: keyNormalizer)
-        guard let selection = matchingEntry(for: diskKey) else {
+        // Selection-only headers are never persisted in DiskKey. Compare
+        // their normalized (and, when sensitive, fingerprinted) values in
+        // memory; HMACing them here would lose comparability with Vary.
+        let selectionHeaders = key.selectionHeaders
+        guard let selection = matchingEntry(for: diskKey, selectionHeaders: selectionHeaders) else {
             recordMiss()
             return nil
         }
@@ -656,7 +660,10 @@ public actor PersistentResponseCache: ResponseCache {
         index.entries[id]?.bodyFileName == entry.bodyFileName
     }
 
-    private func matchingEntry(for diskKey: DiskKey) -> (String, Entry)? {
+    private func matchingEntry(
+        for diskKey: DiskKey,
+        selectionHeaders: [String]
+    ) -> (String, Entry)? {
         let candidates =
             entryIDs(matching: diskKey)
             .sorted { lhs, rhs in
@@ -669,7 +676,11 @@ public actor PersistentResponseCache: ResponseCache {
                 return lhs.key > rhs.key
             }
         return candidates.first { _, entry in
-            Self.varySnapshot(entry.varyHeaders, matches: diskKey)
+            Self.varySnapshot(
+                entry.varyHeaders,
+                matches: diskKey,
+                selectionHeaders: selectionHeaders
+            )
         }
     }
 
