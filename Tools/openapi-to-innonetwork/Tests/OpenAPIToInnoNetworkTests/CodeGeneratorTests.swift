@@ -111,6 +111,38 @@ struct CodeGeneratorTests {
         }
     }
 
+    @Test("numeric, reserved, and Unicode type names remain valid and references agree")
+    func sanitizesTypeNamesAndReferences() throws {
+        let document = OpenAPIDocument(
+            paths: [
+                "/status": PathItem(
+                    get: Operation(
+                        operationId: "1st-status",
+                        responses: [
+                            "200": ResponseObject(
+                                content: [
+                                    "application/json": MediaType(schema: Schema(ref: "#/components/schemas/1st-user"))
+                                ])
+                        ]
+                    )
+                )
+            ],
+            components: Components(schemas: [
+                "1st-user": Schema(type: "object"),
+                "Protocol": Schema(type: "object"),
+                "équipe": Schema(type: "object"),
+            ])
+        )
+        let files = try CodeGenerator(moduleName: "API").generate(from: document)
+
+        #expect(files.contains(where: { $0.filename == "_1stUser.swift" }))
+        #expect(files.contains(where: { $0.filename == "Protocol_.swift" }))
+        #expect(files.contains(where: { $0.filename == "UE9quipe.swift" }))
+        let operation = try #require(files.first(where: { $0.filename == "_1stStatus.swift" }))
+        #expect(operation.contents.contains("public struct _1stStatus: APIDefinition"))
+        #expect(operation.contents.contains("public typealias APIResponse = _1stUser"))
+    }
+
     @Test
     func fallsBackToMethodPathWhenOperationIdMissing() throws {
         let document = OpenAPIDocument(paths: [

@@ -613,19 +613,28 @@ struct CodeGenerator {
     }
 
     private func sanitize(_ raw: String) -> String {
-        let allowed = CharacterSet.alphanumerics
         var result = ""
         var capitalizeNext = true
         for scalar in raw.unicodeScalars {
-            if allowed.contains(scalar) {
+            if (65...90).contains(scalar.value) || (97...122).contains(scalar.value)
+                || (48...57).contains(scalar.value)
+            {
                 let char = String(scalar)
                 result += capitalizeNext ? char.uppercased() : char
+                capitalizeNext = false
+            } else if CharacterSet.alphanumerics.contains(scalar) {
+                // Keep Unicode source names distinct while emitting an ASCII
+                // Swift identifier that compiles on every supported toolchain.
+                result += "U\(String(scalar.value, radix: 16, uppercase: true))"
                 capitalizeNext = false
             } else {
                 capitalizeNext = true
             }
         }
-        return result.isEmpty ? "Generated" : result
+        if result.isEmpty { result = "Generated" }
+        if let first = result.first, first.isNumber { result = "_" + result }
+        if Self.swiftReservedIdentifiers.contains(result) { result += "_" }
+        return result
     }
 
     private func safeIdentifier(_ raw: String) -> String {
