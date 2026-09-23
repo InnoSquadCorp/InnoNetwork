@@ -4,8 +4,25 @@ import Testing
 
 @testable import InnoNetwork
 
-@Suite("Physical response cache invalidation")
+@Suite("Physical response cache invalidation", .timeLimit(.minutes(1)))
 struct CacheMutationPhysicalResponseTests {
+    private actor Gate {
+        private var open = false
+        private var waiters: [CheckedContinuation<Void, Never>] = []
+
+        func wait() async {
+            if open { return }
+            await withCheckedContinuation { waiters.append($0) }
+        }
+
+        func release() {
+            open = true
+            let ready = waiters
+            waiters.removeAll()
+            for waiter in ready { waiter.resume() }
+        }
+    }
+
     private struct Endpoint: APIDefinition {
         typealias Parameter = EmptyParameter
         typealias APIResponse = Data
@@ -96,6 +113,62 @@ struct CacheMutationPhysicalResponseTests {
                 #expect(error.underlyingError?.code == NetworkErrorCode.responseBodyLimitExceeded.rawValue)
             }
         }
+        #expect(try await client.request(Endpoint()) == Data("new".utf8))
+        #expect(await session.calls == 3)
+    }
+
+    @Test(
+        "A post-mutation GET cannot join a pre-mutation physical GET",
+        arguments: [false, true]
+    )
+    func coalescingSeparatesMutationGenerations(cancelEarlierGET: Bool) async throws {
+        let firstStarted = Gate()
+        let secondStarted = Gate()
+        let finishGETs = Gate()
+        let session = Session { request, call in
+            if request.httpMethod == "PUT" {
+                return try Self.reply(request, body: "ok")
+            }
+            if call == 1 {
+                await firstStarted.release()
+                await finishGETs.wait()
+                return try Self.reply(
+                    request, body: "old", headers: ["Cache-Control": "max-age=60"]
+                )
+            }
+            await secondStarted.release()
+            await finishGETs.wait()
+            return try Self.reply(request, body: "new", headers: ["Cache-Control": "max-age=60"])
+        }
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(
+                baseURL: "https://api.example.com",
+                requestCoalescingPolicy: .getOnly,
+                responseCachePolicy: .rfc9111Compliant(
+                    wrapping: .cacheFirst(maxAge: .seconds(60))
+                ),
+                responseCache: InMemoryResponseCache()
+            ),
+            session: session
+        )
+
+        let before = Task { try await client.request(Endpoint()) }
+        await firstStarted.wait()
+        _ = try await client.request(Endpoint(method: .put))
+        let after = Task { try await client.request(Endpoint()) }
+        await secondStarted.wait()
+        if cancelEarlierGET { before.cancel() }
+        await finishGETs.release()
+
+        do {
+            let old = try await before.value
+            #expect(!cancelEarlierGET)
+            #expect(old == Data("old".utf8))
+        } catch {
+            #expect(cancelEarlierGET)
+            #expect(NetworkError.isCancellation(error))
+        }
+        #expect(try await after.value == Data("new".utf8))
         #expect(try await client.request(Endpoint()) == Data("new".utf8))
         #expect(await session.calls == 3)
     }

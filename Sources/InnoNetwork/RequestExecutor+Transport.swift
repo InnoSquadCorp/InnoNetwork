@@ -96,29 +96,40 @@ extension RequestExecutor {
             // give recovery probes their own physical dispatch.
             if circuitProbe == nil,
                 allowsRequestCoalescing,
-                case .inline = bodySource,
-                let key = RequestDedupKey(
+                case .inline = bodySource
+            {
+                let cacheMutationToken: ResponseCacheMutationCoordinator.WriteToken?
+                if configuration.responseCache != nil,
+                    configuration.responseCachePolicy.allowsCacheWrite,
+                    identityRequest.httpMethod == HTTPMethod.get.rawValue,
+                    let targetURI = ResponseCacheKey.normalizedTargetURI(identityRequest.url)
+                {
+                    cacheMutationToken = await runtime.cacheMutations.writeToken(for: targetURI)
+                } else {
+                    cacheMutationToken = nil
+                }
+                if let key = RequestDedupKey(
                     request: identityRequest,
                     policy: configuration.requestCoalescingPolicy,
-                    refreshLane: refreshLane
-                )
-            {
-                // A follower waits for an already-running physical request and
-                // therefore remains in the transport stage. The owner resets
-                // the stage to policy admission inside the closure before it
-                // acquires its local rate/admission permits.
-                NetworkOperationDeadlineContext.mark(.transport)
-                return try await runtime.requestCoalescer.run(key: key) {
-                    try await self.transportAndRecordCircuit(
-                        request: request,
-                        identityRequest: identityRequest,
-                        bodySource: bodySource,
-                        configuration: configuration,
-                        context: context,
-                        runtime: runtime,
-                        policy: configuration.circuitBreakerPolicy,
-                        circuitProbe: circuitProbe
-                    )
+                    refreshLane: refreshLane,
+                    cacheMutationGeneration: cacheMutationToken?.generation
+                ) {
+                    // A follower waits for an already-running physical request
+                    // only within the same mutation generation.
+                    NetworkOperationDeadlineContext.mark(.transport)
+                    defer { withExtendedLifetime(cacheMutationToken) {} }
+                    return try await runtime.requestCoalescer.run(key: key) {
+                        try await self.transportAndRecordCircuit(
+                            request: request,
+                            identityRequest: identityRequest,
+                            bodySource: bodySource,
+                            configuration: configuration,
+                            context: context,
+                            runtime: runtime,
+                            policy: configuration.circuitBreakerPolicy,
+                            circuitProbe: circuitProbe
+                        )
+                    }
                 }
             }
 

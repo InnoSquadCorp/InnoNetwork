@@ -67,8 +67,16 @@ package struct RequestDedupKey: Hashable, Sendable {
     /// receives a unique lane so stale 401 results cannot leak through the
     /// coalescer when `Authorization` is excluded from the key.
     let refreshLane: UUID?
+    /// A successful unsafe response advances this target's cache generation.
+    /// Later GETs must not join a physical GET from the old generation.
+    let cacheMutationGeneration: UUID?
 
-    init?(request: URLRequest, policy: RequestCoalescingPolicy, refreshLane: UUID? = nil) {
+    init?(
+        request: URLRequest,
+        policy: RequestCoalescingPolicy,
+        refreshLane: UUID? = nil,
+        cacheMutationGeneration: UUID? = nil
+    ) {
         guard policy.isEnabled else { return nil }
         let method = request.httpMethod ?? HTTPMethod.get.rawValue
         guard policy.methods.contains(method) else { return nil }
@@ -85,6 +93,7 @@ package struct RequestDedupKey: Hashable, Sendable {
         self.headers = headers
         self.body = request.httpBody
         self.refreshLane = refreshLane
+        self.cacheMutationGeneration = cacheMutationGeneration
     }
 }
 
