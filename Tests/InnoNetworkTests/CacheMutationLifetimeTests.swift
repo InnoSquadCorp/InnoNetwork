@@ -35,7 +35,7 @@ struct CacheMutationLifetimeTests {
         let coordinator = ResponseCacheMutationCoordinator()
         var old: ResponseCacheMutationCoordinator.WriteToken? = await coordinator.writeToken(
             for: "https://example.com/a")
-        weak var released = old
+        weak let released = old
         await coordinator.advanceGeneration(for: "https://example.com/a")
         let current = await coordinator.writeToken(for: "https://example.com/a")
         old = nil
