@@ -70,6 +70,9 @@ that cut and are not part of the 6.0 contract.
 
 ### Fixed for 6.1.0
 
+- Custom execution policies that rebuild `Response` preserve transport age.
+  Unknown response provenance uses a conservative physical-attempt interval,
+  rather than treating an upstream response as newly synthesized.
 - A 304 with a supplied ETag absent from the stored response, or an unmatched
   Last-Modified without a matching ETag, cannot relabel the cached body.
 - Stale-if-error recovery rechecks the selected representation and mutation

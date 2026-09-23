@@ -28,18 +28,36 @@ actor TransportTimingRecorder {
     private struct Timing {
         let startedAt: Date
         let completedAt: Date
+        let metadata: HTTPURLResponse?
     }
 
     private var entries: [UUID: Timing] = [:]
 
     func record(_ response: Response, startedAt: Date, completedAt: Date) {
         guard let id = response.transportTimingID else { return }
-        entries[id] = Timing(startedAt: startedAt, completedAt: completedAt)
+        entries[id] = Timing(startedAt: startedAt, completedAt: completedAt, metadata: response.response)
     }
 
     func timestamps(for response: Response) -> (startedAt: Date, completedAt: Date)? {
-        guard let id = response.transportTimingID, let entry = entries[id] else { return nil }
-        return (entry.startedAt, entry.completedAt)
+        if let id = response.transportTimingID, let entry = entries[id] {
+            return (entry.startedAt, entry.completedAt)
+        }
+        // Public Response construction intentionally hides internal IDs. A
+        // policy that transforms the body but keeps the HTTP metadata still
+        // identifies its transport, even when it called next more than once.
+        if let metadata = response.response {
+            let matches = entries.values.filter { $0.metadata === metadata }
+            if matches.count == 1, let match = matches.first {
+                return (match.startedAt, match.completedAt)
+            }
+        }
+        // Rebuilt metadata makes provenance ambiguous. Conservatively retain
+        // the whole physical transport interval instead of rejuvenating an
+        // upstream response. Only a policy that never dispatched is synthetic.
+        guard let start = entries.values.map(\.startedAt).min(),
+            let end = entries.values.map(\.completedAt).max()
+        else { return nil }
+        return (start, end)
     }
 }
 

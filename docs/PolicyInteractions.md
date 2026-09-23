@@ -82,13 +82,21 @@ on a request that the *column* policy is also active for. Read horizontally:
 | **Coalescing** dedup hit | follower receives leader's response (and its cache write) | follower does not retry independently | followers share the leader result inside the same custom-policy call | follower inherits leader's circuit-breaker recording | this is the coalescer's own role | both leader and followers see the same auth header |
 | **Refresh** triggered by 401 | unchanged: 401 cache writes are skipped | refresh replay does not consume a retry slot | replay runs through custom policies again with the refreshed request | replay still records breaker outcome | replay opens a fresh dedup key in a refresh-segregated lane | single-flight refresh; concurrent followers wait |
 
-Two invariants the matrix encodes:
-
 Background stale-while-revalidate refreshes also run the custom execution
 policy chain, including synthetic responses, transformations, and failures.
 Their physical response events use the background revalidation request ID.
 They do not invoke the outer logical retry or token-refresh replay loop;
 foreground conditional revalidation continues to use those outer policies.
+
+When a policy rebuilds `Response` while retaining the original
+`HTTPURLResponse`, cache age uses that physical attempt's timestamps. If it
+also replaces the metadata, the executor conservatively uses the interval
+from the earliest physical attempt's dispatch through the latest completion.
+Only a policy that never invokes transport gets synthetic zero-delay timing.
+This excludes admission before the first dispatch and prevents transformations
+from making an expired upstream response fresh again.
+
+Two invariants the matrix encodes:
 
 1. **Eligible unsigned cache hits short-circuit the transport stack.** A fresh
    hit means retry/breaker/coalescer/refresh do not run. Signed requests are

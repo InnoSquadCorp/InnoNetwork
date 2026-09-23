@@ -33,12 +33,9 @@ struct CacheLifecycleRegressionTests {
     }
 
     private actor WrappingPolicy: RequestExecutionPolicy {
-        let rejectBackground: Bool
         private(set) var calls = 0
-        init(rejectBackground: Bool = false) { self.rejectBackground = rejectBackground }
         func execute(input: RequestExecutionInput, context: RequestExecutionContext, next: RequestExecutionNext) async throws -> Response {
             calls += 1
-            if rejectBackground, calls > 1 { throw URLError(.cancelled) }
             let response = try await next.execute()
             let http = try #require(response.response)
             return Response(statusCode: response.statusCode, data: Data("wrapped:".utf8) + response.data,
@@ -198,6 +195,48 @@ struct CacheLifecycleRegressionTests {
         )
         _ = try await client.request(Endpoint())
         #expect(try await client.request(Endpoint()) == Data("old".utf8))
+    }
+
+    @Test("A policy-rebuilt response retains its physical transport age")
+    func policyResponseTransformationPreservesAge() async throws {
+        let clock = TestClock()
+        let session = Session { request, call in
+            clock.advance(by: .seconds(20))
+            return try Self.reply(request, body: "raw-\(call)", headers: ["Cache-Control": "max-age=10"])
+        }
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(
+                baseURL: "https://api.example.com",
+                responseCachePolicy: .rfc9111Compliant(wrapping: .cacheFirst(maxAge: .seconds(10))),
+                responseCache: InMemoryResponseCache(), customExecutionPolicies: [WrappingPolicy()]
+            ), session: session, clock: clock
+        )
+        #expect(try await client.request(Endpoint()) == Data("wrapped:raw-1".utf8))
+        #expect(try await client.request(Endpoint()) == Data("wrapped:raw-2".utf8))
+        #expect(await session.calls == 2)
+    }
+
+    @Test("Rebuilt metadata cannot reset transport age and metadata identity selects the right attempt")
+    func reconstructedResponseTiming() async throws {
+        let recorder = TransportTimingRecorder()
+        let url = try #require(URL(string: "https://api.example.com/resource"))
+        let firstHTTP = try #require(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: [:]))
+        let secondHTTP = try #require(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: [:]))
+        let first = Response(statusCode: 200, data: Data(), request: nil, response: firstHTTP, transportTimingID: UUID())
+        let second = Response(statusCode: 200, data: Data(), request: nil, response: secondHTTP, transportTimingID: UUID())
+        await recorder.record(first, startedAt: Date(timeIntervalSince1970: 2), completedAt: Date(timeIntervalSince1970: 22))
+        await recorder.record(second, startedAt: Date(timeIntervalSince1970: 25), completedAt: Date(timeIntervalSince1970: 26))
+        let copied = Response(statusCode: 200, data: Data("transformed".utf8), request: nil, response: firstHTTP)
+        let selected = try #require(await recorder.timestamps(for: copied))
+        #expect(selected.startedAt == Date(timeIntervalSince1970: 2))
+        #expect(selected.completedAt == Date(timeIntervalSince1970: 22))
+        let newHTTP = try #require(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: [:]))
+        let rebuilt = Response(statusCode: 200, data: Data(), request: nil, response: newHTTP)
+        let conservative = try #require(await recorder.timestamps(for: rebuilt))
+        #expect(conservative.startedAt == Date(timeIntervalSince1970: 2))
+        #expect(conservative.completedAt == Date(timeIntervalSince1970: 26))
+        let emptyRecorder = TransportTimingRecorder()
+        #expect(await emptyRecorder.timestamps(for: rebuilt) == nil)
     }
 
     @Test("Background cache revalidation runs custom response policies")
