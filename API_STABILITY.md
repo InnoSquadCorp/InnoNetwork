@@ -403,6 +403,10 @@ general handshake retry policy would retry an ordinary transport timeout.
   default implementation for source compatibility; built-in caches remove all
   variants for the normalized target URI, while custom caches may override the
   default to match their own key layout.
+- `ResponseCacheKey` — public equality and hashing use only its method,
+  normalized URL, and canonical identity headers. Request headers excluded
+  from that identity are retained transiently for `Vary` selection in the
+  built-in caches, not included in the persistent key format.
 - `ResponseCachePolicy.rfc9111Compliant(wrapping:)` — the adapter may tighten
   read-side freshness handling as RFC 9111 coverage expands. `max-age`
   remains higher priority than `Expires`, which remains higher priority than
