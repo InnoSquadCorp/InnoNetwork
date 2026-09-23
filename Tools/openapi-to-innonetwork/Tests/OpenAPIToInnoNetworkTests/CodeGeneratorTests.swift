@@ -143,6 +143,23 @@ struct CodeGeneratorTests {
         #expect(operation.contents.contains("public typealias APIResponse = _1stUser"))
     }
 
+    @Test("multi-line summaries and module names stay inside Swift comments")
+    func prefixesEveryUntrustedCommentLine() throws {
+        let document = OpenAPIDocument(paths: [
+            "/status": PathItem(
+                get: Operation(
+                    operationId: "status", summary: "Fetch status.\nContinue the description.\r\nFinal line.")
+            )
+        ])
+        let file = try #require(
+            CodeGenerator(moduleName: "API\nInjected module line")
+                .generate(from: document).first)
+
+        #expect(file.contents.contains("// Module: API\n// Injected module line"))
+        #expect(file.contents.contains("/// Fetch status.\n/// Continue the description.\n/// Final line."))
+        #expect(!file.contents.contains("\nContinue the description."))
+    }
+
     @Test
     func fallsBackToMethodPathWhenOperationIdMissing() throws {
         let document = OpenAPIDocument(paths: [

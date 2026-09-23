@@ -1,0 +1,8 @@
+{
+  "openapi": "3.0.3",
+  "info": {"title": "Name collision regression", "version": "1.0.0"},
+  "paths": {
+    "/admins": {"get": {"operationId": "get_user"}},
+    "/users": {"get": {"operationId": "get-user"}}
+  }
+}
