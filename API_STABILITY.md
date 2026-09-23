@@ -557,8 +557,8 @@ below keeps the high-level compatibility classification readable. Historical
 5.x HLS sections document the migration source but are no longer included in
 the current machine-checked inventory.
 
-The machine-checked snapshot currently partitions all 1,613 declarations into
-306 Stable consumer declarations, 1,274 Provisionally Stable consumer
+The machine-checked snapshot currently partitions all 1,614 declarations into
+306 Stable consumer declarations, 1,275 Provisionally Stable consumer
 declarations, and 33 opt-in SPI declarations. The three sets are disjoint and
 exhaustive. `Scripts/symbols/stable-rules.tsv` maps the Stable ledger to symbol
 paths, while the compiler-authored SPI flag is snapshotted in
