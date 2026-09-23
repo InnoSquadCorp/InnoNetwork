@@ -226,6 +226,16 @@ public actor UploadManager {
         guard !isShutdown else { return [] }
         for urlTask in systemTasks {
             guard !isShutdown else { return [] }
+            // Enumeration is a snapshot. A completion callback can adopt and
+            // retire this same system task while allUploadTasks is suspended.
+            // Rechecking ownership before minting a logical ID prevents a
+            // finished physical upload from reappearing as a second task.
+            let systemIdentifier = urlTask.taskIdentifier
+            guard !retiredSystemIdentifiers.contains(systemIdentifier) else { continue }
+            if let adoptedID = logicalIDsBySystemIdentifier[systemIdentifier] {
+                restoredTaskIDs.insert(adoptedID)
+                continue
+            }
             guard let request = urlTask.currentRequest ?? urlTask.originalRequest,
                 let url = request.url
             else {
@@ -278,6 +288,17 @@ public actor UploadManager {
                 )
             }
 
+            // Validation failure may have awaited task finalization. A
+            // delegate completion can win that reentrancy window as well.
+            if retiredSystemIdentifiers.contains(systemIdentifier) {
+                pendingStartIDs.remove(id)
+                continue
+            }
+            if let adoptedID = logicalIDsBySystemIdentifier[systemIdentifier] {
+                pendingStartIDs.remove(id)
+                restoredTaskIDs.insert(adoptedID)
+                continue
+            }
             guard !isShutdown else {
                 pendingStartIDs.remove(id)
                 return []
