@@ -6,6 +6,60 @@ import Testing
 @Suite("Upload restoration races", .serialized, .timeLimit(.minutes(1)))
 struct UploadRestorationRaceTests {
     @Test(
+        "Rejected restores obey terminal retention and free tracked capacity",
+        arguments: [false, true]
+    )
+    func rejectedRestoreReleasesTerminalSlot(sensitive: Bool) async throws {
+        let policy = UploadResourcePolicy(
+            maximumTrackedTasks: 1,
+            maximumBufferedDelegateEvents: 8,
+            maximumBufferedDelegateBytes: 1_024,
+            maximumPendingUnknownTasks: 4,
+            maximumRetainedTerminalTasks: 0
+        )
+        var request = URLRequest(url: URL(string: "https://upload.example.test/file")!)
+        request.httpMethod = "POST"
+        if sensitive {
+            request.setValue("Bearer fixture", forHTTPHeaderField: "Authorization")
+        }
+        let physical = StubUploadURLTask(
+            taskIdentifier: 91, request: request, taskDescription: "retention"
+        )
+        let (manager, _, channel) = makeUploadHarness(
+            configuration: .background(
+                sessionIdentifier: "test.restore.retention.\(sensitive)",
+                resourcePolicy: policy
+            ),
+            tasks: [physical]
+        )
+        _ = await manager.restoreTasks()
+        if !sensitive {
+            channel.send(
+                .completed(
+                    taskIdentifier: 91,
+                    taskDescription: "retention",
+                    originalRequest: request,
+                    currentRequest: request,
+                    response: HTTPURLResponse(
+                        url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil
+                    ),
+                    error: nil
+                )
+            )
+            await Self.drain(manager, channel)
+        }
+        #expect(await manager.allTasks().isEmpty)
+
+        let source = try makeTemporaryUploadFile()
+        defer { try? FileManager.default.removeItem(at: source.deletingLastPathComponent()) }
+        var next = URLRequest(url: URL(string: "https://upload.example.test/file")!)
+        next.httpMethod = "POST"
+        let operation = try await manager.upload(next, fromFile: source)
+        #expect(await operation.task.state == .uploading)
+        await manager.shutdown()
+    }
+
+    @Test(
         "A stale enumeration cannot re-adopt a completed physical upload",
         arguments: [false, true]
     )

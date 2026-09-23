@@ -317,6 +317,7 @@ public actor UploadManager {
             if await task.state.isTerminal {
                 await eventHub.publishTerminalAndFinish(.failed((await task.error) ?? .cancelled), for: id)
                 pendingDelegateEvents.removeValue(forKey: urlTask.taskIdentifier)
+                recordTerminal(id)
                 removeRuntime(for: id)
                 continue
             }
