@@ -31,7 +31,7 @@ public actor UploadManager {
     /// URLSession identifiers whose logical attempt has already terminated.
     /// Late delegate callbacks for these attempts must never be adopted as a
     /// restored background upload.
-    private var retiredSystemIdentifiers: Set<Int> = []
+    private var retiredSystemIdentifiers = UploadTaskIdentifierRanges()
     private var responseBodies: [Int: Data] = [:]
     private var forcedFailures: [Int: UploadError] = [:]
     private var idempotencyKeys: [String: String] = [:]
@@ -48,6 +48,10 @@ public actor UploadManager {
     private var terminalTaskOrder: [String] = []
     private var isShutdown = false
     private let ownsBackgroundSessionIdentifier: Bool
+
+    package var retainedSystemIdentifierRangeCount: Int {
+        retiredSystemIdentifiers.rangeCount
+    }
 
     /// Creates a manager for the supplied upload domain.
     public init(configuration: UploadConfiguration = .safeDefaults()) throws(UploadError) {

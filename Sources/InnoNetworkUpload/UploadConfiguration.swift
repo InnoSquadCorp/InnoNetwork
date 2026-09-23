@@ -22,8 +22,11 @@ public struct UploadResourcePolicy: Sendable, Equatable {
     /// Creates an explicit upload resource profile.
     ///
     /// Pass `nil` for `maximumRetainedTerminalTasks` to preserve every
-    /// terminal task until the manager is released. Other limits must be
-    /// positive and are clamped to one when necessary.
+    /// terminal task until the manager is released. A finite value limits
+    /// logical task history, not the exact task-identifier tombstones needed
+    /// to reject delayed background callbacks. Those identifiers are stored
+    /// as compact adjacent ranges until manager shutdown. Other limits must
+    /// be positive and are clamped to one when necessary.
     public init(
         maximumTrackedTasks: Int,
         maximumBufferedDelegateEvents: Int,
