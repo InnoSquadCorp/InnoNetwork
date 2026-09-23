@@ -361,7 +361,9 @@ package extension ResponseCacheKey {
     /// Approximate in-memory size of the key in bytes. Used by
     /// `InMemoryResponseCache` to charge key bytes against `maxBytes`.
     var byteCost: Int {
-        method.utf8.count + url.utf8.count + headers.reduce(0) { $0 + $1.utf8.count }
+        method.utf8.count + url.utf8.count
+            + headers.reduce(0) { $0 + $1.utf8.count }
+            + selectionHeaders.reduce(0) { $0 + $1.utf8.count }
     }
 }
 
@@ -434,14 +436,16 @@ public actor InMemoryResponseCache: ResponseCache {
     }
 
     public func set(_ key: ResponseCacheKey, _ value: CachedResponse) async {
-        let entryCost = key.byteCost + value.byteCost
         if let existing = nodes[key] {
             currentBytes -= existing.cost
             existing.value = value
-            existing.cost = entryCost
-            currentBytes += entryCost
+            // Equality excludes selection headers. The node and dictionary
+            // retain the original key even when the replacing key differs.
+            existing.cost = existing.key.byteCost + value.byteCost
+            currentBytes += existing.cost
             moveToHead(existing)
         } else {
+            let entryCost = key.byteCost + value.byteCost
             let node = Node(key: key, value: value, cost: entryCost)
             nodes[key] = node
             currentBytes += entryCost

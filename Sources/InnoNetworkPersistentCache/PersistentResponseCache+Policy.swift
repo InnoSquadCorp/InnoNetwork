@@ -95,7 +95,9 @@ extension PersistentResponseCache {
             case (nil, _), (_, nil):
                 return false
             case (let stored?, let current?):
-                if current.hasPrefix("hmac-sha256:"), stored.hasPrefix("sha256:") {
+                if current.hasPrefix("hmac-sha256:"), stored.hasPrefix("sha256:"),
+                    key.headers.contains("\(name):\(current)")
+                {
                     // Persistent disk keys already include the HMAC-protected
                     // sensitive request header. A legacy unkeyed Vary snapshot
                     // can only be considered after that key matched, and the

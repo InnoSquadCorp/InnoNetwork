@@ -343,6 +343,28 @@ extension PersistentResponseCacheTests {
         #expect(await reopened.get(otherKey) == nil)
     }
 
+    @Test("Literal HMAC prefix in a non-sensitive Vary header cannot match legacy SHA snapshot")
+    func literalHMACPrefixDoesNotMatchLegacySensitiveSnapshot() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var request = URLRequest(url: URL(string: "https://example.com/literal-prefix")!)
+        request.setValue("hmac-sha256:literal-value", forHTTPHeaderField: "User-Agent")
+        let key = try #require(ResponseCacheKey(request: request))
+        #expect(key.headers.isEmpty)
+        let cache = try PersistentResponseCache(
+            configuration: PersistentResponseCacheConfiguration(directoryURL: directory)
+        )
+        await cache.set(
+            key,
+            CachedResponse(
+                data: Data("wrong-variant".utf8),
+                headers: ["Vary": "User-Agent"],
+                varyHeaders: ["user-agent": "sha256:legacy-value"]
+            )
+        )
+        #expect(await cache.get(key) == nil)
+    }
+
     @Test(
         "Executor reuses matching Vary variants in memory and on disk",
         arguments: ["Accept-Encoding", "User-Agent"], [false, true]

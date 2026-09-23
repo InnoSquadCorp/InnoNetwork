@@ -7,6 +7,42 @@ import os
 @Suite("ResponseCacheKey query identity")
 struct ResponseCacheKeyQueryNormalizationTests {
 
+    @Test("Excluded selection header bytes count toward the in-memory limit")
+    func selectionHeadersCountTowardByteLimit() async throws {
+        var request = URLRequest(url: URL(string: "https://example.com/large-selection")!)
+        request.setValue(String(repeating: "x", count: 1_024), forHTTPHeaderField: "User-Agent")
+        let key = try #require(ResponseCacheKey(request: request))
+        #expect(key.headers.isEmpty)
+        #expect(key.selectionHeaders.contains { $0.hasPrefix("user-agent:") })
+        #expect(key.byteCost > 512)
+
+        let cache = InMemoryResponseCache(maxBytes: 512)
+        await cache.set(key, CachedResponse(data: Data()))
+        #expect(await cache.get(key) == nil)
+    }
+
+    @Test("Overwriting an equal key retains the stored selection-header byte charge")
+    func overwriteRetainsStoredSelectionHeaderCharge() async throws {
+        let url = URL(string: "https://example.com/selected")!
+        var firstRequest = URLRequest(url: url)
+        firstRequest.setValue(String(repeating: "x", count: 1_024), forHTTPHeaderField: "User-Agent")
+        var replacementRequest = URLRequest(url: url)
+        replacementRequest.setValue("short", forHTTPHeaderField: "User-Agent")
+        let firstKey = try #require(ResponseCacheKey(request: firstRequest))
+        let replacementKey = try #require(ResponseCacheKey(request: replacementRequest))
+        #expect(firstKey == replacementKey)
+        let otherKey = ResponseCacheKey(method: "GET", url: "https://example.com/other")
+        let value = CachedResponse(data: Data(count: 128))
+        let cap = firstKey.byteCost + value.byteCost + otherKey.byteCost + value.byteCost - 1
+        let cache = InMemoryResponseCache(maxBytes: cap)
+
+        await cache.set(firstKey, value)
+        await cache.set(replacementKey, value)
+        await cache.set(otherKey, value)
+        #expect(await cache.get(firstKey) == nil)
+        #expect(await cache.get(otherKey) != nil)
+    }
+
     @Test("Reordered query items remain distinct cache keys")
     func reorderedQueryItemsRemainDistinct() throws {
         let urlA = try #require(URL(string: "https://api.example.com/v1/items?b=2&a=1&c=3"))
