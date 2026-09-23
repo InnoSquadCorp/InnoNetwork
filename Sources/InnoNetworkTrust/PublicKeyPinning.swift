@@ -154,6 +154,7 @@ public struct PublicKeyPinningPolicy: Sendable {
         guard !host.isEmpty else { return nil }
         let withoutRootDot = host.hasSuffix(".") ? String(host.dropLast()) : host
         guard !withoutRootDot.isEmpty,
+            !withoutRootDot.hasPrefix("."),
             !withoutRootDot.hasSuffix("."),
             !withoutRootDot.contains("..")
         else { return nil }

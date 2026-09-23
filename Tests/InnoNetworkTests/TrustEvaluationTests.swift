@@ -40,6 +40,8 @@ struct TrustEvaluationTests {
         #expect(policy.pins(forHost: "mobile.api.example.com.") == Set(["sha256/api-pin", "sha256/parent-pin"]))
         #expect(policy.pins(forHost: "notapi.example.com.") == Set(["sha256/parent-pin"]))
         #expect(policy.pins(forHost: "api.example.com..") == nil)
+        #expect(policy.pins(forHost: ".api.example.com") == nil)
+        #expect(policy.pins(forHost: ".api.example.com.") == nil)
     }
 
     @Test("Root dot matching preserves strict, most-specific and IP-literal policy")
