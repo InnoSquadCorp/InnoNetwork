@@ -85,6 +85,13 @@ Jitter prevents synchronised reconnect storms — when a server restarts and 10 
 clients all try at the same moment with a fixed delay, the next failure is a thundering
 herd. A small jitter (10–20 %) is enough to spread the load.
 
+When a cumulative reconnect duration is configured, each sleep is capped by
+the remaining window. The coordinator checks expiry again after waking, and
+the manager checks once more after acquiring lifecycle admission. At the
+deadline (including a delayed timer wake-up), no new connection is started;
+the task fails with `reconnectWindowExceeded` and its pending worker is cleaned
+up. A zero cumulative duration keeps the limit disabled.
+
 ## Attempt accounting
 
 `WebSocketTask` tracks two counters:

@@ -66,7 +66,7 @@ package struct WebSocketReconnectCoordinator {
 
         if configuration.reconnectMaxTotalDuration > 0,
             let started = await task.reconnectWindowStartedAt,
-            now.timeIntervalSince(started) > configuration.reconnectMaxTotalDuration
+            now.timeIntervalSince(started) >= configuration.reconnectMaxTotalDuration
         {
             // Bump the counter so observers see the rejected attempt before
             // returning .exceeded — mirrors the maxReconnectAttempts semantics.
@@ -99,6 +99,7 @@ package struct WebSocketReconnectCoordinator {
 
     package func attemptReconnect(
         task: WebSocketTask,
+        onBudgetExceeded: (@Sendable (WebSocketTask) async -> Void)? = nil,
         startConnection: @escaping @Sendable (WebSocketTask) async -> Void
     ) async {
         // Cancel any prior reconnect task before installing a new one. We do
@@ -113,7 +114,9 @@ package struct WebSocketReconnectCoordinator {
         let reconnectTask = Task { [eventHub] in
             await WebSocketRuntimeWorkerContext.$workerID.withValue(workerID) {
                 let reconnectCount = await task.attemptedReconnectCount
-                let delay = reconnectDelay(forAttempt: reconnectCount)
+                await task.beginReconnectWindowIfNeeded(now: dateProvider())
+                let remaining = await remainingReconnectDuration(task: task)
+                let delay = min(reconnectDelay(forAttempt: reconnectCount), remaining ?? .infinity)
 
                 do {
                     try await clock.sleep(for: .seconds(delay))
@@ -144,12 +147,35 @@ package struct WebSocketReconnectCoordinator {
                 guard await task.autoReconnectEnabled else { return }
                 let state = await task.state
                 if Self.shouldReconnect(currentState: state, autoReconnectEnabled: true) {
+                    // A delayed timer can resume after its requested deadline.
+                    // Check again immediately before dispatch, not only when
+                    // the retry is first scheduled.
+                    if await hasExpiredReconnectWindow(task: task) {
+                        if let onBudgetExceeded {
+                            await onBudgetExceeded(task)
+                        } else if let eventHub {
+                            await eventHub.publish(.error(.reconnectWindowExceeded), for: task.id)
+                        }
+                        return
+                    }
                     await startConnection(task)
                 }
             }
         }
 
         await runtimeRegistry.setReconnectTask(reconnectTask, workerID: workerID, for: task.id)
+    }
+
+    package func hasExpiredReconnectWindow(task: WebSocketTask) async -> Bool {
+        guard let remaining = await remainingReconnectDuration(task: task) else { return false }
+        return remaining <= 0
+    }
+
+    private func remainingReconnectDuration(task: WebSocketTask) async -> TimeInterval? {
+        guard configuration.reconnectMaxTotalDuration > 0,
+            let started = await task.reconnectWindowStartedAt
+        else { return nil }
+        return max(0, configuration.reconnectMaxTotalDuration - dateProvider().timeIntervalSince(started))
     }
 
     private func reconnectDelay(forAttempt reconnectCount: Int) -> TimeInterval {

@@ -43,6 +43,22 @@ package enum WebSocketLifecycleReducer: StateReducer {
             return closeTimeout(from: state, closeCode: closeCode, error: error)
         case .reconnectTimerFired:
             return reconnectTimerFired(from: state)
+        case .reconnectWindowExpired:
+            guard case .reconnecting(_, _, true, _, _, _) = state else {
+                return .init(state: state, effects: [.ignoreStaleCallback])
+            }
+            return .init(
+                state: .failed(
+                    generation: state.generation, attempt: state.attempt, autoReconnect: true,
+                    closeCode: state.closeCode, disposition: state.closeDisposition,
+                    error: .reconnectWindowExceeded
+                ),
+                effects: [
+                    .cleanupRuntime, .cancelHeartbeat, .cancelReconnect, .cancelMessageListener,
+                    .publishTerminalError(.reconnectWindowExceeded),
+                    .finishTerminal(generation: state.generation),
+                ]
+            )
         case .reset:
             return .init(
                 state: .idle(generation: state.generation, attempt: 0, autoReconnect: true),

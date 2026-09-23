@@ -70,6 +70,9 @@ that cut and are not part of the 6.0 contract.
 
 ### Fixed for 6.1.0
 
+- WebSocket reconnect sleeps are capped by the remaining cumulative budget.
+  Timer wake-up and lifecycle admission both reject expired reconnects,
+  publish the terminal window error, and clean up the pending worker.
 - Cache mutation generations live only while requests, background refreshes,
   or deferred recovery own a token. Invalidations no longer leave permanent
   per-URL tombstones, and disabled/network-only policies allocate no tokens.

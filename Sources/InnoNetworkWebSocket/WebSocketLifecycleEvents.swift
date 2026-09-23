@@ -23,6 +23,7 @@ package enum WebSocketLifecycleEvent: Sendable, Equatable {
     case managerShutdown(error: WebSocketError)
     case closeTimeout(closeCode: WebSocketCloseCode, error: WebSocketError)
     case reconnectTimerFired
+    case reconnectWindowExpired
     case reset
 }
 

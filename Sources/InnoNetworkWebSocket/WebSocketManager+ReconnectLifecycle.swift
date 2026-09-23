@@ -15,7 +15,9 @@ extension WebSocketManager {
             await task.state == .reconnecting
         else { return }
 
-        await reconnectCoordinator.attemptReconnect(task: task) { [weak self] task in
+        await reconnectCoordinator.attemptReconnect(task: task, onBudgetExceeded: { [weak self] task in
+            await self?.startReconnecting(task, expectedGeneration: generation, budgetExpired: true)
+        }) { [weak self] task in
             await self?.startReconnecting(task, expectedGeneration: generation)
         }
     }
@@ -55,7 +57,9 @@ extension WebSocketManager {
         await runtimeRegistry.setCloseHandshakeTask(closeTimeoutTask, workerID: workerID, for: taskID)
     }
 
-    func startReconnecting(_ task: WebSocketTask, expectedGeneration: Int? = nil) async {
+    func startReconnecting(
+        _ task: WebSocketTask, expectedGeneration: Int? = nil, budgetExpired: Bool = false
+    ) async {
         guard beginShutdownTrackedOperation() else { return }
         defer { finishShutdownTrackedOperation() }
 
@@ -74,7 +78,12 @@ extension WebSocketManager {
             releaseTaskLifecycleGate(taskID: task.id)
             return
         }
-        let transition = await task.applyLifecycleEvent(.reconnectTimerFired)
+        // Acquiring the lifecycle gate can itself take time after the timer
+        // callback. Enforce the same deadline at this final admission point.
+        let nowExpired = await reconnectCoordinator.hasExpiredReconnectWindow(task: task)
+        let transition = await task.applyLifecycleEvent(
+            budgetExpired || nowExpired ? .reconnectWindowExpired : .reconnectTimerFired
+        )
         await executeLifecycleEffectsAfterLockedApply(transition, for: task)
     }
 
