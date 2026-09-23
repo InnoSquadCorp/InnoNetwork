@@ -39,10 +39,11 @@ struct WebSocketReconnectDeadlineTests {
             task: task,
             onBudgetExceeded: { _ in
                 await completion.finish(expired: true)
+            },
+            startConnection: { _ in
+                await completion.finish(expired: false)
             }
-        ) { _ in
-            await completion.finish(expired: false)
-        }
+        )
         try #require(await clock.waitForWaiters(count: 1))
         if delayedWakeup {
             clock.advanceWithoutResuming(by: .seconds(6))
@@ -73,10 +74,11 @@ struct WebSocketReconnectDeadlineTests {
             task: task,
             onBudgetExceeded: { _ in
                 await completion.finish(expired: true)
+            },
+            startConnection: { _ in
+                await completion.finish(expired: false)
             }
-        ) { _ in
-            await completion.finish(expired: false)
-        }
+        )
         try #require(await clock.waitForWaiters(count: 1))
         clock.advance(by: .seconds(1))
         #expect(await completion.value() == false)
