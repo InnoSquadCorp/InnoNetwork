@@ -1,5 +1,33 @@
 import Foundation
 
+private actor StreamingTimeoutResultGate<Value: Sendable> {
+    private var result: Result<Value, any Error>?
+    private var waiters: [CheckedContinuation<Result<Value, any Error>, Never>] = []
+
+    func wait() async -> Result<Value, any Error> {
+        if let result { return result }
+        return await withCheckedContinuation { continuation in
+            if let result {
+                continuation.resume(returning: result)
+            } else {
+                waiters.append(continuation)
+            }
+        }
+    }
+
+    @discardableResult
+    func resolve(_ result: Result<Value, any Error>) -> Bool {
+        guard self.result == nil else { return false }
+        self.result = result
+        let pending = waiters
+        waiters.removeAll(keepingCapacity: false)
+        for waiter in pending {
+            waiter.resume(returning: result)
+        }
+        return true
+    }
+}
+
 /// Executes a ``StreamingAPIDefinition`` request as a long-lived line-delimited
 /// stream. Owns per-attempt request preparation, line iteration, optional
 /// Last-Event-ID resume, response interceptor application, and lifecycle event
@@ -14,15 +42,16 @@ import Foundation
 /// 2. session-level then per-endpoint request interceptors, then
 ///    `RefreshTokenPolicy.applyCurrentToken`
 /// 3. `requestAdapted` event
-/// 4. transport `bytes(for:context:)` call
-/// 5. `responseReceived` event
-/// 6. session-level response interceptors (the `Response.data` is intentionally
+/// 4. rate-limit and dedicated stream admission at the physical dispatch boundary
+/// 5. transport `bytes(for:context:)` call
+/// 6. `responseReceived` event
+/// 7. session-level response interceptors (the `Response.data` is intentionally
 ///    empty because stream contents are decoded line-by-line)
-/// 7. acceptable status code validation with optional retry-policy handling
+/// 8. acceptable status code validation with optional retry-policy handling
 ///    before any stream body bytes are consumed
-/// 8. line iteration with `decode(line:)` and event id tracking
-/// 9. resume decision when the iterator throws mid-stream
-/// 10. `requestFinished` on clean completion or `requestFailed` on terminal error
+/// 9. line iteration with `decode(line:)` and event id tracking
+/// 10. resume decision when the iterator throws mid-stream
+/// 11. `requestFinished` on clean completion or `requestFailed` on terminal error
 package struct StreamingExecutor: Sendable {
     package let session: URLSessionProtocol
     package let eventHub: NetworkEventHub
@@ -39,12 +68,16 @@ package struct StreamingExecutor: Sendable {
         executionRuntime: RequestExecutionRuntime,
         sink: StreamingOutputSink<T.Output>
     ) async {
+        let resumePolicy = request.resumePolicy
+        let timeoutPolicy = request.timeoutPolicy
+        let logicalStart = executionRuntime.clock.monotonicNow()
         do {
             try Self.validateSessionAuthentication(request, configuration: configuration)
+            try resumePolicy.validate()
         } catch {
             let mapped = Self.mapTransportError(error, startedAt: nil)
             let nsError = mapped as NSError
-            await eventHub.publish(
+            await eventHub.publishTerminal(
                 .requestFailed(
                     requestID: requestID,
                     errorCode: nsError.code,
@@ -58,14 +91,38 @@ package struct StreamingExecutor: Sendable {
             return
         }
 
-        let resumePolicy = request.resumePolicy
+        let initialNetworkSnapshot: NetworkSnapshot?
+        do {
+            initialNetworkSnapshot = try await withStreamingTimeout(
+                phase: .total,
+                phaseBudget: nil,
+                totalBudget: timeoutPolicy.total,
+                logicalStart: logicalStart,
+                clock: executionRuntime.clock
+            ) {
+                await configuration.networkMonitor?.currentSnapshot()
+            }
+        } catch {
+            let mapped = Self.mapTransportError(error, startedAt: nil)
+            let nsError = mapped as NSError
+            await eventHub.publishTerminal(
+                .requestFailed(
+                    requestID: requestID,
+                    errorCode: nsError.code,
+                    message: mapped.observabilityCategory
+                ),
+                requestID: requestID,
+                observers: configuration.eventObservers
+            )
+            await eventHub.finish(requestID: requestID)
+            sink.finish(throwing: mapped)
+            return
+        }
+
         let resumeBudget = resumePolicy.maxAttempts
-        let resumeDelay = resumePolicy.retryDelay
         var resumeState = StreamingResumeState()
         var resumeAttempts = 0
-        var handshakeRetryState = StreamingHandshakeRetryState(
-            snapshot: await configuration.networkMonitor?.currentSnapshot()
-        )
+        var handshakeRetryState = StreamingHandshakeRetryState(snapshot: initialNetworkSnapshot)
 
         while true {
             do {
@@ -77,34 +134,88 @@ package struct StreamingExecutor: Sendable {
                     executionRuntime: executionRuntime,
                     resumeState: &resumeState,
                     retryIndex: attemptRetryIndex,
+                    resumePolicy: resumePolicy,
+                    timeoutPolicy: timeoutPolicy,
+                    logicalStart: logicalStart,
+                    isResuming: resumeAttempts > 0,
                     sink: sink
                 )
 
                 switch attemptResult {
-                case .transportFailure(let streamError, let attemptStartedAt):
+                case .transportFailure(
+                    let streamError,
+                    let attemptStartedAt,
+                    let networkResponse
+                ):
                     // Mid-stream transport disconnect. Resume only when:
                     // - resume policy is active
                     // - attempt budget remains
                     // - this attempt observed a safe cursor (empty cursor
                     //   explicitly resets Last-Event-ID)
-                    let canResume = resumeState.canResume(
+                    let canResume = resumeState.canReconnect(
                         maxAttempts: resumeBudget,
-                        completedResumeAttempts: resumeAttempts
+                        completedResumeAttempts: resumeAttempts,
+                        permitsCursorlessReconnect: resumePolicy.permitsCursorlessReconnect
                     )
-                    if canResume {
-                        resumeAttempts += 1
-                        try await Self.waitBeforeResume(
-                            delay: resumeDelay,
-                            executionRuntime: executionRuntime
+                    if canResume && Self.isResumableTransportError(streamError) {
+                        await eventHub.publishPhysicalTransportCompletion(
+                            requestID: requestID,
+                            statusCode: networkResponse.statusCode,
+                            observers: configuration.eventObservers,
+                            occurredAt: executionRuntime.clock.now()
                         )
+                        resumeAttempts += 1
+                        let reconnectDelay = resumeState.serverRetryDelay ?? resumePolicy.retryDelay
+                        try await withStreamingTimeout(
+                            phase: .total,
+                            phaseBudget: nil,
+                            totalBudget: timeoutPolicy.total,
+                            logicalStart: logicalStart,
+                            clock: executionRuntime.clock
+                        ) {
+                            try await Self.waitBeforeResume(
+                                delay: reconnectDelay,
+                                executionRuntime: executionRuntime
+                            )
+                        }
                         try Task.checkCancellation()
                         continue
                     }
                     throw StreamingAttemptFailure(error: streamError, startedAt: attemptStartedAt)
 
                 case .completed(let networkResponse, let streamedByteCount):
+                    let reconnectsAfterEOF =
+                        resumePolicy.reconnectsAfterEOF
+                        && resumeState.canReconnect(
+                            maxAttempts: resumeBudget,
+                            completedResumeAttempts: resumeAttempts,
+                            permitsCursorlessReconnect: resumePolicy.permitsCursorlessReconnect
+                        )
+                    if reconnectsAfterEOF {
+                        await eventHub.publishPhysicalTransportCompletion(
+                            requestID: requestID,
+                            statusCode: networkResponse.statusCode,
+                            observers: configuration.eventObservers,
+                            occurredAt: executionRuntime.clock.now()
+                        )
+                        resumeAttempts += 1
+                        let reconnectDelay = resumeState.serverRetryDelay ?? resumePolicy.retryDelay
+                        try await withStreamingTimeout(
+                            phase: .total,
+                            phaseBudget: nil,
+                            totalBudget: timeoutPolicy.total,
+                            logicalStart: logicalStart,
+                            clock: executionRuntime.clock
+                        ) {
+                            try await Self.waitBeforeResume(
+                                delay: reconnectDelay,
+                                executionRuntime: executionRuntime
+                            )
+                        }
+                        continue
+                    }
                     // Stream completed cleanly.
-                    await eventHub.publish(
+                    await eventHub.publishTerminal(
                         .requestFinished(
                             requestID: requestID,
                             statusCode: networkResponse.statusCode,
@@ -126,7 +237,9 @@ package struct StreamingExecutor: Sendable {
                             state: &handshakeRetryState,
                             configuration: configuration,
                             executionRuntime: executionRuntime,
-                            requestID: requestID
+                            requestID: requestID,
+                            timeoutPolicy: timeoutPolicy,
+                            logicalStart: logicalStart
                         )
                     {
                         continue
@@ -138,7 +251,7 @@ package struct StreamingExecutor: Sendable {
                     )
                     let surfaced = configuration.captureFailurePayload ? mapped : mapped.redactingFailurePayload()
                     let nsError = surfaced as NSError
-                    await eventHub.publish(
+                    await eventHub.publishTerminal(
                         .requestFailed(
                             requestID: requestID,
                             errorCode: nsError.code,
@@ -158,7 +271,7 @@ package struct StreamingExecutor: Sendable {
                 )
                 let surfaced = configuration.captureFailurePayload ? mapped : mapped.redactingFailurePayload()
                 let nsError = surfaced as NSError
-                await eventHub.publish(
+                await eventHub.publishTerminal(
                     .requestFailed(
                         requestID: requestID,
                         errorCode: nsError.code,
@@ -199,6 +312,10 @@ package struct StreamingExecutor: Sendable {
         executionRuntime: RequestExecutionRuntime,
         resumeState: inout StreamingResumeState,
         retryIndex: Int,
+        resumePolicy: StreamingResumePolicy,
+        timeoutPolicy: StreamingTimeoutPolicy,
+        logicalStart: Duration,
+        isResuming: Bool,
         sink: StreamingOutputSink<T.Output>
     ) async throws -> StreamingAttemptResult {
         var attemptStartedAt: Date?
@@ -209,7 +326,9 @@ package struct StreamingExecutor: Sendable {
             var urlRequest = try Self.makeURLRequest(
                 for: request,
                 configuration: configuration,
-                lastSeenEventID: resumeState.lastSeenEventID
+                lastSeenEventID: resumeState.lastSeenEventID,
+                resumeHeader: resumePolicy.headerName,
+                isResuming: isResuming
             )
             retryRequest = urlRequest
 
@@ -224,15 +343,24 @@ package struct StreamingExecutor: Sendable {
                 observers: configuration.eventObservers
             )
 
-            urlRequest = try await applyRequestInterceptors(
-                urlRequest,
-                sessionInterceptors: configuration.requestInterceptors,
-                endpointInterceptors: request.requestInterceptors,
-                sessionSigners: configuration.requestSigners,
-                endpointSigners: request.requestSigners,
-                sessionAuthentication: request.sessionAuthentication,
-                refreshCoordinator: executionRuntime.refreshCoordinator
-            )
+            let requestBeforeInterceptors = urlRequest
+            urlRequest = try await withStreamingTimeout(
+                phase: .total,
+                phaseBudget: nil,
+                totalBudget: timeoutPolicy.total,
+                logicalStart: logicalStart,
+                clock: executionRuntime.clock
+            ) {
+                try await applyRequestInterceptors(
+                    requestBeforeInterceptors,
+                    sessionInterceptors: configuration.requestInterceptors,
+                    endpointInterceptors: request.requestInterceptors,
+                    sessionSigners: configuration.requestSigners,
+                    endpointSigners: request.requestSigners,
+                    sessionAuthentication: request.sessionAuthentication,
+                    refreshCoordinator: executionRuntime.refreshCoordinator
+                )
+            }
             retryRequest = urlRequest
 
             // Streaming applies endpoint/session interceptors, auth tokens,
@@ -263,86 +391,323 @@ package struct StreamingExecutor: Sendable {
                 eventObservers: configuration.eventObservers,
                 redirectPolicy: configuration.redirectPolicy,
                 allowsInsecureHTTP: configuration.allowsInsecureHTTP,
-                allowsAutomaticRedirects: true,
+                allowsAutomaticRedirects: resumePolicy.headerName == nil,
                 allowsURLCacheStorage: true
             )
             let hasRequestSigners =
                 !configuration.requestSigners.isEmpty || !request.requestSigners.isEmpty
             let context =
                 hasRequestSigners ? baseContext.restrictingSignedRequestSharing() : baseContext
-            attemptStartedAt = Date()
-            let bytes: URLSession.AsyncBytes
-            let response: URLResponse
-            do {
-                (bytes, response) = try await session.bytes(for: urlRequest, context: context)
-            } catch {
-                throw StreamingAttemptFailure(
-                    error: error,
-                    startedAt: attemptStartedAt,
-                    phase: .handshake,
-                    request: retryRequest
-                )
-            }
-            guard let httpResponse = response as? HTTPURLResponse else {
-                throw NetworkError.underlying(
-                    SendableUnderlyingError(
-                        domain: NetworkError.errorDomain,
-                        code: NetworkErrorCode.nonHTTPResponse.rawValue,
-                        message:
-                            "Received a non-HTTP response on streaming request to \(NetworkError.diagnosticURLString(for: urlRequest.url)); response was \(type(of: response))."
-                    ),
-                    nil
-                )
-            }
-            await eventHub.publish(
-                .responseReceived(
-                    requestID: requestID,
-                    statusCode: httpResponse.statusCode,
-                    byteCount: 0
-                ),
+            let transportRequest = urlRequest
+            let streamPermit = try await acquireStreamingTransportPermit(
+                request: transportRequest,
                 requestID: requestID,
-                observers: configuration.eventObservers
+                retryIndex: retryIndex,
+                configuration: configuration,
+                executionRuntime: executionRuntime,
+                totalBudget: timeoutPolicy.total,
+                logicalStart: logicalStart
             )
-
-            var networkResponse = Response(
-                statusCode: httpResponse.statusCode,
-                data: Data(),
-                request: urlRequest,
-                response: httpResponse,
-                kind: .headersOnly
-            )
-            for interceptor in configuration.responseInterceptors {
-                networkResponse = try await interceptor.adapt(networkResponse, request: urlRequest)
-            }
-
-            let acceptable = request.acceptableStatusCodes ?? configuration.acceptableStatusCodes
-            guard acceptable.contains(networkResponse.statusCode) else {
-                // Handshake failure: surface the status before consuming body
-                // bytes so the outer loop can consult RetryPolicy without
-                // mixing this budget with Last-Event-ID resume.
-                throw StreamingAttemptFailure(
-                    error: NetworkError.statusCode(networkResponse),
-                    startedAt: attemptStartedAt,
-                    phase: .handshake,
-                    request: urlRequest
+            let streamGrant = streamPermit.admissionGrant
+            do {
+                attemptStartedAt = executionRuntime.clock.now()
+                await eventHub.publish(
+                    .decision(
+                        NetworkDecision(
+                            requestID: requestID,
+                            attemptIndex: retryIndex,
+                            kind: .dispatch,
+                            outcome: .allowed,
+                            reason: .policyAllowed,
+                            occurredAt: attemptStartedAt ?? executionRuntime.clock.now()
+                        )
+                    ),
+                    requestID: requestID,
+                    observers: configuration.eventObservers
                 )
-            }
+                let bytes: URLSession.AsyncBytes
+                let response: URLResponse
+                do {
+                    (bytes, response) = try await withStreamingTimeout(
+                        phase: .firstResponse,
+                        phaseBudget: timeoutPolicy.firstResponse,
+                        totalBudget: timeoutPolicy.total,
+                        logicalStart: logicalStart,
+                        clock: executionRuntime.clock,
+                        onDiscarded: { result in result.0.task.cancel() },
+                        operation: {
+                            try await session.bytes(for: transportRequest, context: context)
+                        }
+                    )
+                } catch {
+                    throw StreamingAttemptFailure(
+                        error: error,
+                        startedAt: attemptStartedAt,
+                        phase: Self.isExplicitStreamingDeadline(error) ? .terminalDeadline : .handshake,
+                        request: retryRequest
+                    )
+                }
+                // Stop rejected handshakes and abandoned/erroring decoders too.
+                // Receiving headers does not mean the response body has completed.
+                defer { bytes.task.cancel() }
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    throw NetworkError.underlying(
+                        SendableUnderlyingError(
+                            domain: NetworkError.errorDomain,
+                            code: NetworkErrorCode.nonHTTPResponse.rawValue,
+                            message:
+                                "Received a non-HTTP response on streaming request to \(NetworkError.diagnosticURLString(for: urlRequest.url)); response was \(type(of: response))."
+                        ),
+                        nil
+                    )
+                }
+                let responseReceivedAt = executionRuntime.clock.now()
+                if let rateReservation = streamPermit.rateReservation {
+                    await executionRuntime.rateLimit?.observe(
+                        response: httpResponse,
+                        for: transportRequest,
+                        reservation: rateReservation
+                    )
+                }
+                await eventHub.publish(
+                    .responseReceived(
+                        requestID: requestID,
+                        statusCode: httpResponse.statusCode,
+                        byteCount: 0
+                    ),
+                    requestID: requestID,
+                    observers: configuration.eventObservers,
+                    occurredAt: responseReceivedAt
+                )
 
-            let streamingLineByteLimit = max(1, configuration.streamingLineByteLimit)
-            return try await consumeAttemptBytes(
-                bytes,
-                request: request,
-                networkResponse: networkResponse,
-                httpResponse: httpResponse,
-                maxLineBytes: streamingLineByteLimit,
-                resumeState: &resumeState,
-                attemptStartedAt: attemptStartedAt,
-                sink: sink
-            )
+                var networkResponse = Response(
+                    statusCode: httpResponse.statusCode,
+                    data: Data(),
+                    request: urlRequest,
+                    response: httpResponse,
+                    kind: .headersOnly
+                )
+                let interceptedRequest = urlRequest
+                for interceptor in configuration.responseInterceptors {
+                    let response = networkResponse
+                    networkResponse = try await withStreamingTimeout(
+                        phase: .total,
+                        phaseBudget: nil,
+                        totalBudget: timeoutPolicy.total,
+                        logicalStart: logicalStart,
+                        clock: executionRuntime.clock
+                    ) {
+                        try await interceptor.adapt(response, request: interceptedRequest)
+                    }
+                }
+
+                let acceptable = request.acceptableStatusCodes ?? configuration.acceptableStatusCodes
+                guard acceptable.contains(networkResponse.statusCode) else {
+                    throw StreamingAttemptFailure(
+                        error: NetworkError.statusCode(networkResponse),
+                        startedAt: attemptStartedAt,
+                        phase: .handshake,
+                        request: urlRequest
+                    )
+                }
+
+                let streamingLineByteLimit = max(1, configuration.streamingLineByteLimit)
+                let result = try await consumeAttemptBytes(
+                    bytes,
+                    request: request,
+                    networkResponse: networkResponse,
+                    httpResponse: httpResponse,
+                    maxLineBytes: streamingLineByteLimit,
+                    resumeState: &resumeState,
+                    attemptStartedAt: attemptStartedAt,
+                    timeoutPolicy: timeoutPolicy,
+                    logicalStart: logicalStart,
+                    clock: executionRuntime.clock,
+                    sink: sink
+                )
+                if let streamGrant {
+                    await executionRuntime.streamAdmission?.release(scope: streamGrant.scope)
+                }
+                return result
+            } catch {
+                if let streamGrant {
+                    await executionRuntime.streamAdmission?.release(scope: streamGrant.scope)
+                }
+                if let rateReservation = streamPermit.rateReservation {
+                    await executionRuntime.rateLimit?.finish(rateReservation)
+                }
+                throw error
+            }
         } catch let failure as StreamingAttemptFailure {
             throw failure
         } catch {
             throw StreamingAttemptFailure(error: error, startedAt: attemptStartedAt)
+        }
+    }
+
+    private struct StreamingTransportPermit {
+        let admissionGrant: RequestAdmissionGrant?
+        let rateReservation: RateLimitReservation?
+    }
+
+    private func acquireStreamingTransportPermit(
+        request: URLRequest,
+        requestID: UUID,
+        retryIndex: Int,
+        configuration: NetworkConfiguration,
+        executionRuntime: RequestExecutionRuntime,
+        totalBudget: Duration?,
+        logicalStart: Duration
+    ) async throws -> StreamingTransportPermit {
+        let rateReservation: RateLimitReservation?
+        do {
+            rateReservation = try await withStreamingTimeout(
+                phase: .total,
+                phaseBudget: nil,
+                totalBudget: totalBudget,
+                logicalStart: logicalStart,
+                clock: executionRuntime.clock,
+                onDiscarded: { reservation in
+                    if let reservation {
+                        await executionRuntime.rateLimit?.refund(reservation)
+                    }
+                },
+                operation: {
+                    try await executionRuntime.rateLimit?.reserve(for: request)
+                }
+            )
+        } catch RateLimitAdmissionFailure.queueFull {
+            throw NetworkError.underlying(
+                SendableUnderlyingError(
+                    domain: NetworkError.errorDomain,
+                    code: NetworkErrorCode.rateLimitQueueRejected.rawValue,
+                    message: "The bounded rate-limit queue is full."
+                ), nil
+            )
+        } catch RateLimitAdmissionFailure.scopeLimitReached {
+            throw NetworkError.underlying(
+                SendableUnderlyingError(
+                    domain: NetworkError.errorDomain,
+                    code: NetworkErrorCode.rateLimitScopeRejected.rawValue,
+                    message: "The bounded rate-limit scope registry is full."
+                ), nil
+            )
+        } catch RateLimitAdmissionFailure.invalidConfiguration(let message) {
+            throw NetworkError.configuration(reason: .invalidRequest(message))
+        }
+
+        if let rateReservation {
+            await eventHub.publish(
+                .decision(
+                    NetworkDecision(
+                        requestID: requestID,
+                        attemptIndex: retryIndex,
+                        kind: .rateLimit,
+                        outcome: rateReservation.wasDelayed ? .delayed : .allowed,
+                        reason: rateReservation.wasDelayed ? .localQuota : .policyAllowed
+                    )
+                ),
+                requestID: requestID,
+                observers: configuration.eventObservers
+            )
+        }
+
+        var grant: RequestAdmissionGrant?
+        do {
+            while true {
+                grant = try await withStreamingTimeout(
+                    phase: .total,
+                    phaseBudget: nil,
+                    totalBudget: totalBudget,
+                    logicalStart: logicalStart,
+                    clock: executionRuntime.clock,
+                    onDiscarded: { grant in
+                        if let grant {
+                            await executionRuntime.streamAdmission?.release(scope: grant.scope)
+                        }
+                    },
+                    operation: {
+                        try await executionRuntime.streamAdmission?.acquire(for: request)
+                    }
+                )
+                if let grant {
+                    await eventHub.publish(
+                        .decision(
+                            NetworkDecision(
+                                requestID: requestID,
+                                attemptIndex: retryIndex,
+                                kind: .admission,
+                                outcome: grant.wasQueued ? .delayed : .allowed,
+                                reason: .policyAllowed
+                            )
+                        ),
+                        requestID: requestID,
+                        observers: configuration.eventObservers
+                    )
+                }
+
+                guard let rateReservation,
+                    let dispatchWait = await executionRuntime.rateLimit?.commit(rateReservation)
+                else {
+                    return StreamingTransportPermit(
+                        admissionGrant: grant,
+                        rateReservation: rateReservation
+                    )
+                }
+                if let currentGrant = grant {
+                    await executionRuntime.streamAdmission?.release(scope: currentGrant.scope)
+                    grant = nil
+                }
+                await eventHub.publish(
+                    .decision(
+                        NetworkDecision(
+                            requestID: requestID,
+                            attemptIndex: retryIndex,
+                            kind: .rateLimit,
+                            outcome: .delayed,
+                            reason: .localQuota
+                        )
+                    ),
+                    requestID: requestID,
+                    observers: configuration.eventObservers
+                )
+                try await withStreamingTimeout(
+                    phase: .total,
+                    phaseBudget: nil,
+                    totalBudget: totalBudget,
+                    logicalStart: logicalStart,
+                    clock: executionRuntime.clock
+                ) {
+                    try await executionRuntime.clock.sleep(for: dispatchWait)
+                }
+            }
+        } catch {
+            if let grant {
+                await executionRuntime.streamAdmission?.release(scope: grant.scope)
+            }
+            if let rateReservation {
+                await executionRuntime.rateLimit?.refund(rateReservation)
+            }
+            switch error {
+            case RequestAdmissionFailure.queueFull:
+                throw NetworkError.underlying(
+                    SendableUnderlyingError(
+                        domain: NetworkError.errorDomain,
+                        code: NetworkErrorCode.requestAdmissionRejected.rawValue,
+                        message: "The bounded streaming admission queue is full."
+                    ), nil
+                )
+            case RequestAdmissionFailure.queueWaitExpired:
+                throw NetworkError.underlying(
+                    SendableUnderlyingError(
+                        domain: NetworkError.errorDomain,
+                        code: NetworkErrorCode.requestAdmissionWaitExpired.rawValue,
+                        message: "The streaming admission wait expired."
+                    ), nil
+                )
+            default:
+                throw error
+            }
         }
     }
 
@@ -354,18 +719,44 @@ package struct StreamingExecutor: Sendable {
         maxLineBytes: Int,
         resumeState: inout StreamingResumeState,
         attemptStartedAt: Date?,
+        timeoutPolicy: StreamingTimeoutPolicy,
+        logicalStart: Duration,
+        clock: any InnoNetworkClock,
         sink: StreamingOutputSink<T.Output>
     ) async throws -> StreamingAttemptResult {
         var streamedByteCount = 0
         var iterator = bytes.makeAsyncIterator()
+        var skipsLeadingLF = false
+        let decode = request.makeFrameDecoder()
+        let watchdog = StreamingTimeoutWatchdog(
+            policy: timeoutPolicy,
+            logicalStart: logicalStart,
+            clock: clock,
+            cancelTransport: { bytes.task.cancel() }
+        )
+        defer { watchdog.finish() }
         while true {
             let frame: BoundedStreamLine?
             do {
                 frame = try await Self.nextBoundedLine(
                     from: &iterator,
-                    maxBytes: maxLineBytes
+                    skipsLeadingLF: &skipsLeadingLF,
+                    maxBytes: maxLineBytes,
+                    onActivity: { watchdog.recordNetworkActivity() }
                 )
             } catch is CancellationError {
+                if let timeoutPhase = watchdog.revalidateDeadline() {
+                    switch timeoutPhase {
+                    case .firstEvent, .idle:
+                        return .transportFailure(
+                            timeoutPhase.error,
+                            attemptStartedAt,
+                            networkResponse
+                        )
+                    case .firstResponse, .total:
+                        throw timeoutPhase.error
+                    }
+                }
                 throw NetworkError.cancelled
             } catch let error as StreamingLineTooLargeError {
                 throw Self.streamFrameTooLargeError(
@@ -375,7 +766,32 @@ package struct StreamingExecutor: Sendable {
                     fallbackResponse: httpResponse
                 )
             } catch {
-                return .transportFailure(error, attemptStartedAt)
+                if let timeoutPhase = watchdog.timeoutPhase {
+                    switch timeoutPhase {
+                    case .firstEvent, .idle:
+                        return .transportFailure(
+                            timeoutPhase.error,
+                            attemptStartedAt,
+                            networkResponse
+                        )
+                    case .firstResponse, .total:
+                        throw timeoutPhase.error
+                    }
+                }
+                return .transportFailure(error, attemptStartedAt, networkResponse)
+            }
+
+            if let timeoutPhase = watchdog.revalidateDeadline() {
+                switch timeoutPhase {
+                case .firstEvent, .idle:
+                    return .transportFailure(
+                        timeoutPhase.error,
+                        attemptStartedAt,
+                        networkResponse
+                    )
+                case .firstResponse, .total:
+                    throw timeoutPhase.error
+                }
             }
 
             guard let frame else {
@@ -384,9 +800,9 @@ package struct StreamingExecutor: Sendable {
             let line = frame.line
             try Task.checkCancellation()
             streamedByteCount += frame.byteCount
-            let decoded: T.Output?
+            let decoded: StreamingDecodedFrame<T.Output>
             do {
-                decoded = try request.decode(line: line)
+                decoded = try decode(line)
             } catch {
                 throw NetworkError.decoding(
                     stage: .streamFrame,
@@ -399,18 +815,44 @@ package struct StreamingExecutor: Sendable {
                     )
                 )
             }
-            if let output = decoded {
-                if let eventID = request.eventID(from: output) {
-                    if eventID.isEmpty || Self.isValidLastEventIDCursor(eventID) {
-                        resumeState.observe(eventID: eventID)
-                    } else {
-                        // Do not keep sending a stale cursor after a malformed
-                        // custom id. An unsafe cursor makes this attempt
-                        // non-resumable instead of replaying from an older id.
-                        resumeState.rejectEventID()
-                    }
+            if let timeoutPhase = watchdog.admitDecodedFrame(
+                deliversEvent: decoded.output != nil
+            ) {
+                switch timeoutPhase {
+                case .firstEvent, .idle:
+                    return .transportFailure(
+                        timeoutPhase.error,
+                        attemptStartedAt,
+                        networkResponse
+                    )
+                case .firstResponse, .total:
+                    throw timeoutPhase.error
                 }
-                try await sink.yield(output)
+            }
+            switch decoded.control.cursor {
+            case .unchanged:
+                break
+            case .clear:
+                resumeState.observe(eventID: "")
+            case .set(let eventID):
+                if Self.isValidLastEventIDCursor(eventID) {
+                    resumeState.observe(eventID: eventID)
+                } else {
+                    resumeState.rejectEventID()
+                }
+            }
+            resumeState.observe(retryDelay: decoded.control.retryDelay)
+
+            if let output = decoded.output {
+                try await withStreamingTimeout(
+                    phase: .total,
+                    phaseBudget: nil,
+                    totalBudget: timeoutPolicy.total,
+                    logicalStart: logicalStart,
+                    clock: clock
+                ) {
+                    try await sink.yield(output)
+                }
             }
         }
     }
@@ -423,12 +865,21 @@ package struct StreamingExecutor: Sendable {
         try await executionRuntime.clock.sleep(for: .seconds(delay))
     }
 
+    package static func isResumableTransportError(_ error: Error) -> Bool {
+        switch NetworkError.mapTransportError(error) {
+        case .timeout, .reachability: true
+        default: false
+        }
+    }
+
     private func retryHandshakeIfNeeded(
         _ failure: StreamingAttemptFailure,
         state: inout StreamingHandshakeRetryState,
         configuration: NetworkConfiguration,
         executionRuntime: RequestExecutionRuntime,
-        requestID: UUID
+        requestID: UUID,
+        timeoutPolicy: StreamingTimeoutPolicy,
+        logicalStart: Duration
     ) async throws -> Bool {
         guard failure.phase == .handshake,
             let policy = configuration.retryPolicy
@@ -471,21 +922,49 @@ package struct StreamingExecutor: Sendable {
         var nextRetryIndex = state.retryIndex + 1
         var nextSnapshot = state.snapshot
         if policy.waitsForNetworkChanges, let monitor = configuration.networkMonitor {
-            let newSnapshot = await monitor.waitForChange(
-                from: nextSnapshot,
-                timeout: policy.networkChangeTimeout
+            let snapshotBeforeWait = nextSnapshot
+            let monitorTimeout = try boundedNetworkChangeTimeout(
+                configuredTimeout: policy.networkChangeTimeout,
+                totalBudget: timeoutPolicy.total,
+                logicalStart: logicalStart,
+                clock: executionRuntime.clock
             )
-            if policy.shouldResetAttempts(afterNetworkChangeFrom: nextSnapshot, to: newSnapshot) {
+            let newSnapshot = try await withStreamingTimeout(
+                phase: .total,
+                phaseBudget: nil,
+                totalBudget: timeoutPolicy.total,
+                logicalStart: logicalStart,
+                clock: executionRuntime.clock
+            ) {
+                await monitor.waitForChange(from: snapshotBeforeWait, timeout: monitorTimeout)
+            }
+            if policy.shouldResetAttempts(afterNetworkChangeFrom: snapshotBeforeWait, to: newSnapshot) {
                 nextRetryIndex = 0
             }
             if let newSnapshot {
                 nextSnapshot = newSnapshot
             } else {
-                nextSnapshot = await monitor.currentSnapshot() ?? nextSnapshot
+                let fallbackSnapshot = nextSnapshot
+                nextSnapshot = try await withStreamingTimeout(
+                    phase: .total,
+                    phaseBudget: nil,
+                    totalBudget: timeoutPolicy.total,
+                    logicalStart: logicalStart,
+                    clock: executionRuntime.clock
+                ) {
+                    await monitor.currentSnapshot() ?? fallbackSnapshot
+                }
             }
         }
 
-        if delay > 0 {
+        try await withStreamingTimeout(
+            phase: .total,
+            phaseBudget: nil,
+            totalBudget: timeoutPolicy.total,
+            logicalStart: logicalStart,
+            clock: executionRuntime.clock
+        ) {
+            guard delay > 0 else { return }
             try await executionRuntime.clock.sleep(for: .seconds(delay))
         }
 
@@ -515,16 +994,21 @@ package struct StreamingExecutor: Sendable {
 
     private static func nextBoundedLine<Iterator: AsyncIteratorProtocol>(
         from iterator: inout Iterator,
-        maxBytes: Int
+        skipsLeadingLF: inout Bool,
+        maxBytes: Int,
+        onActivity: () -> Void = {}
     ) async throws -> BoundedStreamLine? where Iterator.Element == UInt8 {
         var bytes: [UInt8] = []
         bytes.reserveCapacity(min(maxBytes, 4 * 1024))
 
         while let byte = try await iterator.next() {
-            if byte == 0x0A {
-                if bytes.last == 0x0D {
-                    bytes.removeLast()
-                }
+            onActivity()
+            if skipsLeadingLF {
+                skipsLeadingLF = false
+                if byte == 0x0A { continue }
+            }
+            if byte == 0x0A || byte == 0x0D {
+                skipsLeadingLF = byte == 0x0D
                 return BoundedStreamLine(
                     line: String(decoding: bytes, as: UTF8.self),
                     byteCount: bytes.count
@@ -538,13 +1022,95 @@ package struct StreamingExecutor: Sendable {
         }
 
         guard !bytes.isEmpty else { return nil }
-        if bytes.last == 0x0D {
-            bytes.removeLast()
-        }
         return BoundedStreamLine(
             line: String(decoding: bytes, as: UTF8.self),
             byteCount: bytes.count
         )
+    }
+
+    private func withStreamingTimeout<Value: Sendable>(
+        phase: StreamingTimeoutPhase,
+        phaseBudget: Duration?,
+        totalBudget: Duration?,
+        logicalStart: Duration,
+        clock: any InnoNetworkClock,
+        onDiscarded: @escaping @Sendable (Value) async -> Void = { _ in },
+        operation: @escaping @Sendable () async throws -> Value
+    ) async throws -> Value {
+        let startedAt = clock.monotonicNow()
+        var deadlines: [(instant: Duration, phase: StreamingTimeoutPhase)] = []
+        if let phaseBudget {
+            deadlines.append((startedAt + phaseBudget, phase))
+        }
+        if let totalBudget {
+            deadlines.append((logicalStart + totalBudget, .total))
+        }
+        guard let selected = deadlines.min(by: { $0.instant < $1.instant }) else {
+            return try await operation()
+        }
+        guard selected.instant > startedAt else { throw selected.phase.error }
+
+        // A structured task group cannot return until every child finishes,
+        // even after cancelling the losing child. Interceptors and callback
+        // bridges are allowed to observe cancellation without returning
+        // immediately, so use an explicit single-result gate: the caller gets
+        // the deadline promptly while the losing task is cancelled and any
+        // resource it acquires late is discarded by the supplied cleanup.
+        let gate = StreamingTimeoutResultGate<Value>()
+        let operationTask = Task {
+            do {
+                let value = try await operation()
+                if clock.monotonicNow() >= selected.instant {
+                    _ = await gate.resolve(.failure(selected.phase.error))
+                    await onDiscarded(value)
+                } else if !(await gate.resolve(.success(value))) {
+                    await onDiscarded(value)
+                }
+            } catch {
+                let resolvedError =
+                    clock.monotonicNow() >= selected.instant
+                    ? selected.phase.error
+                    : error
+                _ = await gate.resolve(.failure(resolvedError))
+            }
+        }
+        let timeoutTask = Task {
+            while true {
+                let remaining = selected.instant - clock.monotonicNow()
+                guard remaining > .zero else { break }
+                do {
+                    try await clock.sleep(for: remaining)
+                } catch {
+                    return
+                }
+            }
+            _ = await gate.resolve(.failure(selected.phase.error))
+        }
+        let result = await withTaskCancellationHandler {
+            await gate.wait()
+        } onCancel: {
+            operationTask.cancel()
+            timeoutTask.cancel()
+            Task {
+                _ = await gate.resolve(.failure(CancellationError()))
+            }
+        }
+        operationTask.cancel()
+        timeoutTask.cancel()
+        return try result.get()
+    }
+
+    private func boundedNetworkChangeTimeout(
+        configuredTimeout: TimeInterval?,
+        totalBudget: Duration?,
+        logicalStart: Duration,
+        clock: any InnoNetworkClock
+    ) throws -> TimeInterval? {
+        guard let totalBudget else { return configuredTimeout }
+        let remaining = logicalStart + totalBudget - clock.monotonicNow()
+        guard remaining > .zero else { throw StreamingTimeoutPhase.total.error }
+        let remainingSeconds = remaining.timeInterval
+        return configuredTimeout.map { min(max(0, $0), remainingSeconds) } ?? remainingSeconds
     }
 
     private static func streamFrameTooLargeError(
@@ -574,7 +1140,9 @@ package struct StreamingExecutor: Sendable {
     private static func makeURLRequest<T: StreamingAPIDefinition>(
         for request: T,
         configuration: NetworkConfiguration,
-        lastSeenEventID: String?
+        lastSeenEventID: String?,
+        resumeHeader: String?,
+        isResuming: Bool
     ) throws -> URLRequest {
         let url = try EndpointPathBuilder.makeURL(
             baseURL: configuration.baseURL,
@@ -590,16 +1158,19 @@ package struct StreamingExecutor: Sendable {
         urlRequest.allowsCellularAccess = configuration.allowsCellularAccess
         urlRequest.allowsExpensiveNetworkAccess = configuration.allowsExpensiveNetworkAccess
         urlRequest.allowsConstrainedNetworkAccess = configuration.allowsConstrainedNetworkAccess
-        if let lastSeenEventID, Self.isValidLastEventIDHeaderValue(lastSeenEventID) {
-            urlRequest.setValue(lastSeenEventID, forHTTPHeaderField: "Last-Event-ID")
+        if isResuming, let resumeHeader {
+            // Also removes a caller's initial header after an explicit reset.
+            let value = lastSeenEventID.flatMap { Self.isValidLastEventIDHeaderValue($0) ? $0 : nil }
+            urlRequest.setValue(value, forHTTPHeaderField: resumeHeader)
         }
         return urlRequest
     }
 
     private static func isValidLastEventIDCursor(_ value: String) -> Bool {
-        value.unicodeScalars.allSatisfy { scalar in
-            (0x20...0x7E).contains(scalar.value)
-        }
+        value.utf8.count <= 4096
+            && value.unicodeScalars.allSatisfy { scalar in
+                (0x20...0x7E).contains(scalar.value)
+            }
     }
 
     private static func isValidLastEventIDHeaderValue(_ value: String) -> Bool {
@@ -618,17 +1189,23 @@ package struct StreamingExecutor: Sendable {
     ) async throws -> URLRequest {
         var current = urlRequest
         for interceptor in sessionInterceptors {
+            try Task.checkCancellation()
             current = try await interceptor.adapt(current)
+            try Task.checkCancellation()
         }
         for interceptor in endpointInterceptors {
+            try Task.checkCancellation()
             current = try await interceptor.adapt(current)
+            try Task.checkCancellation()
         }
+        try Task.checkCancellation()
         switch sessionAuthentication {
         case .anonymous:
             break
         case .optional:
             if let refreshCoordinator {
                 current = try await refreshCoordinator.applyCurrentToken(to: current)
+                try Task.checkCancellation()
             }
         case .required:
             guard let refreshCoordinator else {
@@ -639,6 +1216,7 @@ package struct StreamingExecutor: Sendable {
                 )
             }
             current = try await refreshCoordinator.applyRequiredTokenWithGeneration(to: current).request
+            try Task.checkCancellation()
         }
         guard !sessionSigners.isEmpty || !endpointSigners.isEmpty else {
             return current
@@ -646,13 +1224,18 @@ package struct StreamingExecutor: Sendable {
         current = current.preparingForSignedTransport()
         let body = try BodySource.inline.signingBody(for: current)
         for signer in sessionSigners {
+            try Task.checkCancellation()
             let headers = try await signer.signatureHeaders(for: current, body: body)
+            try Task.checkCancellation()
             Self.apply(headers: headers, to: &current)
         }
         for signer in endpointSigners {
+            try Task.checkCancellation()
             let headers = try await signer.signatureHeaders(for: current, body: body)
+            try Task.checkCancellation()
             Self.apply(headers: headers, to: &current)
         }
+        try Task.checkCancellation()
         return current
     }
 
@@ -674,6 +1257,12 @@ package struct StreamingExecutor: Sendable {
             resourceTimeoutInterval: nil
         )
     }
+
+    private static func isExplicitStreamingDeadline(_ error: Error) -> Bool {
+        guard case .timeout(_, let underlying) = error as? NetworkError else { return false }
+        return underlying?.domain == NetworkError.errorDomain
+            && underlying?.code == NetworkErrorCode.streamingPhaseTimeout.rawValue
+    }
 }
 
 private struct BoundedStreamLine {
@@ -689,13 +1278,14 @@ private struct StreamingHandshakeRetryState {
 
 private enum StreamingAttemptResult {
     case completed(Response, Int)
-    case transportFailure(Error, Date?)
+    case transportFailure(Error, Date?, Response)
 }
 
 private struct StreamingAttemptFailure: Error {
     enum Phase {
         case handshake
         case body
+        case terminalDeadline
     }
 
     let error: Error

@@ -20,21 +20,38 @@ package extension ResponseCachePolicy {
     func prepareWithRFC9111(
         inner: ResponseCachePolicy,
         cached: CachedResponse?,
-        now: Date
+        now: Date,
+        initialAge: TimeInterval?
     ) -> CachePreparation {
         guard let cached else { return inner.prepare(cached: nil, now: now) }
+        let initialAge = initialAge ?? cached.rfc9111InitialAge
 
         let directives = RFC9111CacheControlDirectives(headers: cached.headers)
         if directives.noStore {
             return .revalidate(nil)
         }
+        if directives.noCache {
+            return inner.revalidatingInsteadOfServing(
+                cached: cached,
+                now: now,
+                rfc9111InitialAge: initialAge
+            )
+        }
 
         switch directives.freshnessLifetime(headers: cached.headers, storedAt: cached.storedAt) {
         case .invalidOrExpired:
-            return inner.revalidatingInsteadOfServing(cached: cached, now: now)
+            return inner.revalidatingInsteadOfServing(
+                cached: cached,
+                now: now,
+                rfc9111InitialAge: initialAge
+            )
         case .lifetime(let seconds):
             let adjustedInner = inner.applyingMaxAge(serverMaxAge: seconds)
-            let preparation = adjustedInner.prepare(cached: cached, now: now)
+            let preparation = adjustedInner.prepare(
+                cached: cached,
+                now: now,
+                rfc9111InitialAge: initialAge
+            )
             if directives.mustRevalidate, case .returnStaleAndRevalidate(let entry) = preparation {
                 return .revalidate(entry)
             }
@@ -44,7 +61,11 @@ package extension ResponseCachePolicy {
         }
 
         let adjustedInner = inner.applyingMaxAge(serverMaxAge: nil)
-        let preparation = adjustedInner.prepare(cached: cached, now: now)
+        let preparation = adjustedInner.prepare(
+            cached: cached,
+            now: now,
+            rfc9111InitialAge: initialAge
+        )
 
         if directives.mustRevalidate, case .returnStaleAndRevalidate(let entry) = preparation {
             return .revalidate(entry)
@@ -68,18 +89,89 @@ package extension ResponseCachePolicy {
         case .staleWhileRevalidate(let maxAge, let staleWindow):
             return .staleWhileRevalidate(maxAge: min(maxAge, serverDuration), staleWindow: staleWindow)
         case .rfc9111Compliant(let inner):
-            return inner.applyingMaxAge(serverMaxAge: serverMaxAge)
+            return .rfc9111Compliant(wrapping: inner.applyingMaxAge(serverMaxAge: serverMaxAge))
+        case .staleIfError(let inner):
+            return .staleIfError(wrapping: inner.applyingMaxAge(serverMaxAge: serverMaxAge))
+        case .requestOnlyIfCached(let inner):
+            return .requestOnlyIfCached(wrapping: inner.applyingMaxAge(serverMaxAge: serverMaxAge))
         }
     }
 
-    private func revalidatingInsteadOfServing(cached: CachedResponse, now: Date) -> CachePreparation {
-        switch prepare(cached: cached, now: now) {
+    private func revalidatingInsteadOfServing(
+        cached: CachedResponse,
+        now: Date,
+        rfc9111InitialAge: TimeInterval
+    ) -> CachePreparation {
+        switch prepare(
+            cached: cached,
+            now: now,
+            rfc9111InitialAge: rfc9111InitialAge
+        ) {
         case .bypass:
             return .bypass
         case .revalidate(let entry):
             return .revalidate(entry)
+        case .revalidateWithStaleIfError(let entry):
+            return .revalidateWithStaleIfError(entry)
         case .returnCached, .returnStaleAndRevalidate:
             return .revalidate(cached)
+        case .onlyIfCachedMiss:
+            return .onlyIfCachedMiss
+        }
+    }
+}
+
+// MARK: - Current age
+
+/// RFC 9111 section 4.2.3 response-age calculation. The value is captured at
+/// storage time so cache residency can be added deterministically after an
+/// in-memory lookup or a persistent-cache reopen.
+package enum RFC9111ResponseAge {
+    /// RFC 9111 section 1.2.2 requires unrepresentable delta-seconds to be
+    /// treated as 2^31 (or the largest convenient positive integer).
+    package static let maximumDeltaSeconds: TimeInterval = 2_147_483_648
+
+    package static func clamp(_ value: TimeInterval) -> TimeInterval {
+        guard value.isFinite else { return maximumDeltaSeconds }
+        return min(max(0, value), maximumDeltaSeconds)
+    }
+
+    package static func initialAge(
+        headers: [String: String],
+        requestTime: Date,
+        responseTime: Date
+    ) -> TimeInterval {
+        let dateValue = headerValues(named: "Date", in: headers).first
+            .flatMap { HTTPDateParser.parse($0, requiresGMTZone: true) }
+        let apparentAge =
+            dateValue.map {
+                clamp(responseTime.timeIntervalSince($0))
+            } ?? 0
+        let responseDelay = clamp(responseTime.timeIntervalSince(requestTime))
+        let correctedAgeValue = clamp(ageValue(in: headers) + responseDelay)
+        return max(apparentAge, correctedAgeValue)
+    }
+
+    private static func ageValue(in headers: [String: String]) -> TimeInterval {
+        let values = headerValues(named: "Age", in: headers)
+        guard values.count <= 1 else { return maximumDeltaSeconds }
+        guard let raw = values.first else { return 0 }
+        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty,
+            value.allSatisfy({ $0.isASCII && $0.isNumber }),
+            let parsed = UInt64(value)
+        else {
+            return maximumDeltaSeconds
+        }
+        return min(TimeInterval(parsed), maximumDeltaSeconds)
+    }
+
+    private static func headerValues(
+        named name: String,
+        in headers: [String: String]
+    ) -> [String] {
+        headers.compactMap { key, value in
+            key.caseInsensitiveCompare(name) == .orderedSame ? value : nil
         }
     }
 }
@@ -97,9 +189,12 @@ struct RFC9111CacheControlDirectives: Sendable, Equatable {
     }
 
     let noStore: Bool
+    let noCache: Bool
     let mustRevalidate: Bool
     let maxAgeSeconds: TimeInterval?
     let hasInvalidMaxAge: Bool
+    let staleIfErrorSeconds: TimeInterval?
+    let hasInvalidStaleIfError: Bool
 
     init(headers: [String: String]) {
         let combined =
@@ -109,22 +204,31 @@ struct RFC9111CacheControlDirectives: Sendable, Equatable {
             .joined(separator: ",")
         guard !combined.isEmpty else {
             self.noStore = false
+            self.noCache = false
             self.mustRevalidate = false
             self.maxAgeSeconds = nil
             self.hasInvalidMaxAge = false
+            self.staleIfErrorSeconds = nil
+            self.hasInvalidStaleIfError = false
             return
         }
 
         var noStore = false
+        var noCache = false
         var mustRevalidate = false
         var maxAge: TimeInterval?
         var maxAgeCount = 0
         var hasInvalidMaxAge = false
+        var staleIfError: TimeInterval?
+        var staleIfErrorCount = 0
+        var hasInvalidStaleIfError = false
         for element in HTTPListParser.split(combined) {
             let name = HTTPListParser.directiveName(of: element)
             switch name {
             case "no-store":
                 noStore = true
+            case "no-cache":
+                noCache = true
             case "must-revalidate":
                 mustRevalidate = true
             case "max-age":
@@ -140,14 +244,28 @@ struct RFC9111CacheControlDirectives: Sendable, Equatable {
                 } else {
                     hasInvalidMaxAge = true
                 }
+            case "stale-if-error":
+                staleIfErrorCount += 1
+                if staleIfErrorCount > 1 {
+                    hasInvalidStaleIfError = true
+                } else if let value = Self.directiveValue(of: element),
+                    let seconds = Self.parseDeltaSeconds(value)
+                {
+                    staleIfError = seconds
+                } else {
+                    hasInvalidStaleIfError = true
+                }
             default:
                 continue
             }
         }
         self.noStore = noStore
+        self.noCache = noCache
         self.mustRevalidate = mustRevalidate
         self.maxAgeSeconds = hasInvalidMaxAge ? nil : maxAge
         self.hasInvalidMaxAge = hasInvalidMaxAge
+        self.staleIfErrorSeconds = hasInvalidStaleIfError ? nil : staleIfError
+        self.hasInvalidStaleIfError = hasInvalidStaleIfError
     }
 
     func freshnessLifetime(headers: [String: String], storedAt: Date) -> FreshnessLifetime {
@@ -213,6 +331,9 @@ struct RFC9111CacheControlDirectives: Sendable, Equatable {
         guard !trimmed.isEmpty, trimmed.allSatisfy({ $0.isASCII && $0.isNumber }) else {
             return nil
         }
-        return TimeInterval(trimmed)
+        guard let seconds = TimeInterval(trimmed) else {
+            return RFC9111ResponseAge.maximumDeltaSeconds
+        }
+        return RFC9111ResponseAge.clamp(seconds)
     }
 }

@@ -1,5 +1,12 @@
 import Foundation
 
+struct StaleIfErrorRecovery: Error {
+    let failure: NetworkError
+    let fallback: CachedResponse
+    let cacheKey: ResponseCacheKey?
+    let writeToken: ResponseCacheMutationCoordinator.WriteToken?
+}
+
 // MARK: - Pipeline stage
 //
 // Outer pipeline that the entrypoint `RequestExecutor.execute(...)` delegates
@@ -33,13 +40,15 @@ extension RequestExecutor {
         configuration: NetworkConfiguration,
         context: NetworkRequestContext,
         runtime: RequestExecutionRuntime,
-        requestID: UUID
+        requestID: UUID,
+        acceptableStatusCodes: Set<Int>
     ) async throws -> Response {
         var request = adaptedRequest
         var refreshGeneration = initialRefreshGeneration
         var replayedAfterRefresh = false
 
         while true {
+            NetworkOperationDeadlineContext.mark(.cacheLookup)
             // Interceptors and token applicators can replace the entire
             // request, and a 401 refresh creates another adapted request on
             // replay. Re-run admission for every transport iteration before
@@ -62,17 +71,24 @@ extension RequestExecutor {
             // partitions on `allowsRequestSharing`, not on this key.
             let cacheKey: ResponseCacheKey? =
                 allowsRequestSharing && configuration.responseCache != nil
+                    && (configuration.responseCachePolicy.allowsCacheRead
+                        || configuration.responseCachePolicy.allowsCacheWrite)
                 ? ResponseCacheKey(
                     request: request,
                     sensitiveHeaderNames: configuration.responseCacheSensitiveHeaderNames
                 )
                 : nil
+            let cacheWriteToken = await cacheWriteToken(
+                cacheKey: cacheKey,
+                runtime: runtime
+            )
             let cachePreparation = await prepareCacheLookup(
                 cacheKey: cacheKey,
                 request: request,
                 configuration: configuration,
                 runtime: runtime
             )
+            let staleIfErrorFallback = staleIfErrorCandidate(preparation: cachePreparation)
             if let cachedResponse = try await cachedResponseIfAvailable(
                 preparation: cachePreparation,
                 cacheKey: cacheKey,
@@ -82,7 +98,8 @@ extension RequestExecutor {
                 bodySource: bodySource,
                 requestSigners: requestSigners,
                 runtime: runtime,
-                originalRequestID: requestID
+                originalRequestID: requestID,
+                cacheWriteToken: cacheWriteToken
             ) {
                 try Task.checkCancellation()
                 return cachedResponse
@@ -98,16 +115,34 @@ extension RequestExecutor {
             // Every pre-transport header must be covered by canonical
             // signatures. Signed requests conservatively bypass cache sharing
             // because their principal does not exist in the unsigned key.
-            let networkResponse = try await performSignedTransport(
-                request: request,
-                bodySource: bodySource,
-                requestSigners: requestSigners,
-                configuration: configuration,
-                context: context,
-                runtime: runtime,
-                requestID: requestID,
-                allowsRequestCoalescing: allowsRequestSharing
-            )
+            NetworkOperationDeadlineContext.mark(.transport)
+            let timedNetworkResponse: TimedNetworkResponse
+            do {
+                timedNetworkResponse = try await performSignedTransport(
+                    request: request,
+                    bodySource: bodySource,
+                    requestSigners: requestSigners,
+                    configuration: configuration,
+                    context: context,
+                    runtime: runtime,
+                    requestID: requestID,
+                    allowsRequestCoalescing: allowsRequestSharing
+                )
+            } catch {
+                let mapped = error as? NetworkError ?? NetworkError.mapTransportError(error)
+                if let staleIfErrorFallback,
+                    Self.isEligibleStaleIfErrorTransportFailure(mapped)
+                {
+                    throw StaleIfErrorRecovery(
+                        failure: mapped,
+                        fallback: staleIfErrorFallback,
+                        cacheKey: cacheKey,
+                        writeToken: cacheWriteToken
+                    )
+                }
+                throw error
+            }
+            let networkResponse = timedNetworkResponse.response
 
             if let substitution = try await convertNotModifiedIfNeeded(
                 networkResponse,
@@ -120,28 +155,32 @@ extension RequestExecutor {
                     cached: substitution.cached,
                     notModifiedHeaders: networkResponse.response?.allHeaderFields
                 ) {
-                    try enforceResponseBodyLimit(substitution.preservedResponse, configuration: configuration)
-                    // The 304 advertises a different Vary dimension than the
-                    // stored entry was keyed on. Rewriting with the new
-                    // snapshot would silently move the entry to a different
-                    // dimension; refresh `storedAt` instead so the freshness
-                    // window reflects the successful revalidation while the
-                    // stored representation remains addressable through its
-                    // original Vary signature.
-                    await refreshCachedFreshness(
-                        cached: substitution.cached,
+                    try enforceResponseBodyLimit(substitution.mergedResponse, configuration: configuration)
+                    // A changed Vary dimension invalidates the selection
+                    // contract under which the representation was stored.
+                    // Return the successfully validated representation to
+                    // this caller, but force the next request through the
+                    // origin so the new variant can be stored under a fresh
+                    // request-header snapshot. This also ensures a revised
+                    // `no-store` directive cannot leave the old entry behind.
+                    await invalidateCacheEntry(
                         cacheKey: cacheKey,
                         configuration: configuration,
                         runtime: runtime
                     )
-                    return substitution.preservedResponse
+                    return substitution.mergedResponse
                 } else {
                     try enforceResponseBodyLimit(substitution.mergedResponse, configuration: configuration)
                     await storeCacheIfNeeded(
                         substitution.mergedResponse,
                         cacheKey: cacheKey,
                         request: request,
-                        configuration: configuration
+                        configuration: configuration,
+                        ageHeaders: responseHeaderSnapshot(networkResponse.response),
+                        requestStartedAt: timedNetworkResponse.requestStartedAt,
+                        responseReceivedAt: timedNetworkResponse.responseReceivedAt,
+                        runtime: runtime,
+                        writeToken: cacheWriteToken
                     )
                     return substitution.mergedResponse
                 }
@@ -151,6 +190,7 @@ extension RequestExecutor {
                 await refreshCoordinator.shouldRefresh(statusCode: networkResponse.statusCode, request: request),
                 !replayedAfterRefresh
             {
+                NetworkOperationDeadlineContext.mark(.authentication)
                 // Replay from the fully adapted request so session and
                 // endpoint interceptors keep their headers/signatures while
                 // the auth policy replaces only the Authorization value.
@@ -165,10 +205,23 @@ extension RequestExecutor {
                 continue
             }
 
+            if let staleIfErrorFallback,
+                !acceptableStatusCodes.contains(networkResponse.statusCode),
+                Self.isEligibleStaleIfErrorStatus(networkResponse.statusCode)
+            {
+                throw StaleIfErrorRecovery(
+                    failure: .statusCode(networkResponse),
+                    fallback: staleIfErrorFallback,
+                    cacheKey: cacheKey,
+                    writeToken: cacheWriteToken
+                )
+            }
+
             await invalidateUnsafeTargetURIIfNeeded(
                 networkResponse,
                 request: request,
-                configuration: configuration
+                configuration: configuration,
+                runtime: runtime
             )
 
             // Enforced before the response cache is written so an oversize
@@ -178,9 +231,31 @@ extension RequestExecutor {
             // streaming or buffered transport path.
             try enforceResponseBodyLimit(networkResponse, configuration: configuration)
             await storeCacheIfNeeded(
-                networkResponse, cacheKey: cacheKey, request: request, configuration: configuration)
+                networkResponse,
+                cacheKey: cacheKey,
+                request: request,
+                configuration: configuration,
+                ageHeaders: nil,
+                requestStartedAt: timedNetworkResponse.requestStartedAt,
+                responseReceivedAt: timedNetworkResponse.responseReceivedAt,
+                runtime: runtime,
+                writeToken: cacheWriteToken
+            )
             return networkResponse
         }
+    }
+
+    private static func isEligibleStaleIfErrorTransportFailure(_ error: NetworkError) -> Bool {
+        switch error {
+        case .timeout, .reachability:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private static func isEligibleStaleIfErrorStatus(_ statusCode: Int) -> Bool {
+        statusCode == 500 || statusCode == 502 || statusCode == 503 || statusCode == 504
     }
 
     func executeCustomPolicies(
@@ -192,9 +267,8 @@ extension RequestExecutor {
         runtime: RequestExecutionRuntime,
         requestID: UUID,
         allowsRequestCoalescing: Bool
-    ) async throws -> Response {
-        let eventHub = self.eventHub
-        let baseNext = RequestExecutionNext {
+    ) async throws -> TimedNetworkResponse {
+        if configuration.customExecutionPolicies.isEmpty {
             let result = try await performTransportResult(
                 request: request,
                 identityRequest: identityRequest,
@@ -204,22 +278,31 @@ extension RequestExecutor {
                 runtime: runtime,
                 allowsRequestCoalescing: allowsRequestCoalescing
             )
-            if !configuration.eventObservers.isEmpty {
-                await eventHub.publish(
-                    .responseReceived(
-                        requestID: requestID,
-                        statusCode: result.response.statusCode,
-                        byteCount: result.data.count
-                    ),
-                    requestID: requestID,
-                    observers: configuration.eventObservers
-                )
-            }
-            return Response(
-                statusCode: result.response.statusCode,
-                data: result.data,
+            let response = await response(
+                from: result,
                 request: request,
-                response: result.response
+                requestID: requestID,
+                configuration: configuration
+            )
+            return TimedNetworkResponse(
+                response: response,
+                requestStartedAt: result.startedAt,
+                responseReceivedAt: result.completedAt
+            )
+        }
+
+        let timingRecorder = TransportTimingRecorder()
+        let baseNext = RequestExecutionNext {
+            try await performPolicyTransport(
+                request: request,
+                identityRequest: identityRequest,
+                bodySource: bodySource,
+                configuration: configuration,
+                context: context,
+                runtime: runtime,
+                requestID: requestID,
+                allowsRequestCoalescing: allowsRequestCoalescing,
+                timingRecorder: timingRecorder
             )
         }
 
@@ -231,6 +314,7 @@ extension RequestExecutor {
             eventObservers: context.eventObservers
         )
 
+        NetworkOperationDeadlineContext.mark(.policyAdmission)
         let chain = configuration.customExecutionPolicies.reversed().reduce(baseNext) { next, policy in
             RequestExecutionNext {
                 try await policy.execute(
@@ -245,7 +329,82 @@ extension RequestExecutor {
             }
         }
 
-        return try await chain.execute()
+        let response = try await chain.execute()
+        if let timestamps = await timingRecorder.timestamps(for: response) {
+            return TimedNetworkResponse(
+                response: response,
+                requestStartedAt: timestamps.startedAt,
+                responseReceivedAt: timestamps.completedAt
+            )
+        }
+        let syntheticResponseTime = runtime.clock.now()
+        return TimedNetworkResponse(
+            response: response,
+            requestStartedAt: syntheticResponseTime,
+            responseReceivedAt: syntheticResponseTime
+        )
+    }
+
+    private func performPolicyTransport(
+        request: URLRequest,
+        identityRequest: URLRequest,
+        bodySource: BodySource,
+        configuration: NetworkConfiguration,
+        context: NetworkRequestContext,
+        runtime: RequestExecutionRuntime,
+        requestID: UUID,
+        allowsRequestCoalescing: Bool,
+        timingRecorder: TransportTimingRecorder
+    ) async throws -> Response {
+        let result = try await performTransportResult(
+            request: request,
+            identityRequest: identityRequest,
+            bodySource: bodySource,
+            configuration: configuration,
+            context: context,
+            runtime: runtime,
+            allowsRequestCoalescing: allowsRequestCoalescing
+        )
+        let transportResponse = await response(
+            from: result,
+            request: request,
+            requestID: requestID,
+            configuration: configuration
+        )
+        await timingRecorder.record(
+            transportResponse,
+            startedAt: result.startedAt,
+            completedAt: result.completedAt
+        )
+        return transportResponse
+    }
+
+    private func response(
+        from result: TransportResult,
+        request: URLRequest,
+        requestID: UUID,
+        configuration: NetworkConfiguration
+    ) async -> Response {
+        if !configuration.eventObservers.isEmpty {
+            await eventHub.publish(
+                .responseReceived(
+                    requestID: requestID,
+                    statusCode: result.response.statusCode,
+                    byteCount: result.data.count
+                ),
+                requestID: requestID,
+                observers: configuration.eventObservers,
+                occurredAt: result.completedAt,
+                completesPhysicalTransport: true
+            )
+        }
+        return Response(
+            statusCode: result.response.statusCode,
+            data: result.data,
+            request: request,
+            response: result.response,
+            transportTimingID: UUID()
+        )
     }
 
     func refreshLaneIfInProgress(
@@ -265,7 +424,9 @@ extension RequestExecutor {
         let body = try bodySource.signingBody(for: request)
         var signedRequest = request
         for signer in signers {
+            try Task.checkCancellation()
             let headers = try await signer.signatureHeaders(for: signedRequest, body: body)
+            try Task.checkCancellation()
             for header in headers {
                 signedRequest.setValue(header.value, forHTTPHeaderField: header.name)
             }
@@ -282,7 +443,7 @@ extension RequestExecutor {
         runtime: RequestExecutionRuntime,
         requestID: UUID,
         allowsRequestCoalescing: Bool
-    ) async throws -> Response {
+    ) async throws -> TimedNetworkResponse {
         let preparedBody = try prepareSigningBodySource(bodySource, signers: requestSigners)
         defer {
             if let snapshotURL = preparedBody.snapshotURL {
@@ -308,41 +469,6 @@ extension RequestExecutor {
             runtime: runtime,
             requestID: requestID,
             allowsRequestCoalescing: allowsRequestCoalescing
-        )
-    }
-
-    func performSignedTransportResult(
-        request: URLRequest,
-        bodySource: BodySource,
-        requestSigners: [RequestSigner],
-        configuration: NetworkConfiguration,
-        context: NetworkRequestContext,
-        runtime: RequestExecutionRuntime
-    ) async throws -> TransportResult {
-        let preparedBody = try prepareSigningBodySource(bodySource, signers: requestSigners)
-        defer {
-            if let snapshotURL = preparedBody.snapshotURL {
-                try? FileManager.default.removeItem(at: snapshotURL)
-            }
-        }
-
-        let requestForSigning =
-            requestSigners.isEmpty ? request : request.preparingForSignedTransport()
-        let signedRequest = try await applyRequestSigners(
-            requestSigners,
-            to: requestForSigning,
-            bodySource: preparedBody.bodySource
-        )
-        let transportContext =
-            requestSigners.isEmpty ? context : context.restrictingSignedRequestSharing()
-        return try await performTransportResult(
-            request: signedRequest,
-            identityRequest: request,
-            bodySource: preparedBody.bodySource,
-            configuration: configuration,
-            context: transportContext,
-            runtime: runtime,
-            allowsRequestCoalescing: requestSigners.isEmpty
         )
     }
 
@@ -416,21 +542,4 @@ extension RequestExecutor {
         )
     }
 
-    func notifyFailure(
-        _ networkError: NetworkError,
-        requestID: UUID,
-        configuration: NetworkConfiguration
-    ) async {
-        guard !configuration.eventObservers.isEmpty else { return }
-        let nsError = networkError as NSError
-        await eventHub.publish(
-            .requestFailed(
-                requestID: requestID,
-                errorCode: nsError.code,
-                message: networkError.observabilityCategory
-            ),
-            requestID: requestID,
-            observers: configuration.eventObservers
-        )
-    }
 }

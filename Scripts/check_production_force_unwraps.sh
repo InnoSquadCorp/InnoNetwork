@@ -9,10 +9,7 @@ production_paths=(
   Sources/InnoNetworkMacros
   Sources/InnoNetworkAuthAWS
   Sources/InnoNetworkDownload
-  Sources/InnoNetworkHLS
-  Sources/InnoNetworkHLSLive
-  Sources/InnoNetworkHLSAVFoundation
-  Sources/InnoNetworkHLSAudio
+  Sources/InnoNetworkUpload
   Sources/InnoNetworkOpenAPI
   Sources/InnoNetworkPersistentCache
   Sources/InnoNetworkTrust

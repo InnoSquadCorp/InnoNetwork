@@ -104,7 +104,7 @@ extension ResiliencePolicyTests {
             )
         )
         let session = try ResilienceSequenceURLSession(queue: [
-            resilienceQueuedResponse(statusCode: 304, headers: ["ETag": "v2", "Cache-Control": "max-age=60"])
+            resilienceQueuedResponse(statusCode: 304, headers: ["ETag": "v1", "Cache-Control": "max-age=60"])
         ])
         let client = DefaultNetworkClient(
             configuration: resilienceMakeLocalizedCacheConfiguration(
@@ -121,14 +121,241 @@ extension ResiliencePolicyTests {
         #expect(await session.capturedRequests.first?.value(forHTTPHeaderField: "If-None-Match") == "v1")
         let observedResponse = try #require(await recorder.response())
         #expect(observedResponse.statusCode == 200)
-        #expect(resilienceResponseHeader(observedResponse, named: "ETag") == "v2")
+        #expect(resilienceResponseHeader(observedResponse, named: "ETag") == "v1")
         #expect(resilienceResponseHeader(observedResponse, named: "Cache-Control") == "max-age=60")
         let refreshed = try #require(await cache.get(key))
-        #expect(refreshed.etag == "v2")
+        #expect(refreshed.etag == "v1")
         #expect(
             refreshed.headers.first { $0.key.caseInsensitiveCompare("Cache-Control") == .orderedSame }?.value
                 == "max-age=60")
         #expect(refreshed.storedAt > storedAt)
+    }
+
+    @Test("304 with a different ETag fails closed instead of relabeling the cached body")
+    func mismatchedETagNotModifiedFailsClosed() async throws {
+        let cache = InMemoryResponseCache()
+        let body = try JSONEncoder().encode(ResilienceUser(id: 1, name: "cached"))
+        await cache.set(
+            resilienceUserCacheKey(),
+            CachedResponse(
+                data: body,
+                headers: ["ETag": "v1"],
+                storedAt: Date(timeIntervalSinceNow: -60)
+            )
+        )
+        let session = try ResilienceSequenceURLSession(queue: [
+            resilienceQueuedResponse(statusCode: 304, headers: ["ETag": "v2"])
+        ])
+        let client = DefaultNetworkClient(
+            configuration: resilienceMakeLocalizedCacheConfiguration(
+                responseCachePolicy: .cacheFirst(maxAge: .seconds(1)),
+                responseCache: cache
+            ),
+            session: session
+        )
+
+        do {
+            _ = try await client.request(ResilienceGetRequest())
+            Issue.record("Expected mismatched 304 validator to fail")
+        } catch NetworkError.underlying(let error, let response) {
+            #expect(error.domain == "InnoNetwork.ResponseCache")
+            #expect(response?.statusCode == 200)
+        } catch {
+            Issue.record("Expected cache revalidation failure, got \(error)")
+        }
+    }
+
+    @Test("A weak 304 ETag can identify a stored response with the same opaque tag")
+    func weakETagNotModifiedMatchesStoredStrongETag() async throws {
+        let cache = InMemoryResponseCache()
+        await cache.set(
+            resilienceUserCacheKey(),
+            CachedResponse(
+                data: try JSONEncoder().encode(ResilienceUser(id: 1, name: "cached")),
+                headers: ["ETag": "\"v1\""],
+                storedAt: Date(timeIntervalSinceNow: -60)
+            )
+        )
+        let session = try ResilienceSequenceURLSession(queue: [
+            resilienceQueuedResponse(statusCode: 304, headers: ["ETag": "W/\"v1\""])
+        ])
+        let client = DefaultNetworkClient(
+            configuration: resilienceMakeLocalizedCacheConfiguration(
+                responseCachePolicy: .cacheFirst(maxAge: .seconds(1)),
+                responseCache: cache
+            ),
+            session: session
+        )
+
+        #expect(try await client.request(ResilienceGetRequest()) == ResilienceUser(id: 1, name: "cached"))
+        #expect(await cache.get(resilienceUserCacheKey())?.etag == "W/\"v1\"")
+    }
+
+    @Test("A strong 304 ETag does not identify a weak stored validator")
+    func strongETagNotModifiedRejectsStoredWeakETag() async throws {
+        let cache = InMemoryResponseCache()
+        await cache.set(
+            resilienceUserCacheKey(),
+            CachedResponse(
+                data: try JSONEncoder().encode(ResilienceUser(id: 1, name: "cached")),
+                headers: ["ETag": "W/\"v1\""],
+                storedAt: Date(timeIntervalSinceNow: -60)
+            )
+        )
+        let session = try ResilienceSequenceURLSession(queue: [
+            resilienceQueuedResponse(statusCode: 304, headers: ["ETag": "\"v1\""])
+        ])
+        let client = DefaultNetworkClient(
+            configuration: resilienceMakeLocalizedCacheConfiguration(
+                responseCachePolicy: .cacheFirst(maxAge: .seconds(1)),
+                responseCache: cache
+            ),
+            session: session
+        )
+
+        await #expect(throws: NetworkError.self) {
+            _ = try await client.request(ResilienceGetRequest())
+        }
+    }
+
+    @Test("Last-Modified 304 response uses cached body")
+    func lastModifiedNotModifiedUsesCachedBody() async throws {
+        let cache = InMemoryResponseCache()
+        let key = resilienceUserCacheKey()
+        let body = try JSONEncoder().encode(ResilienceUser(id: 1, name: "cached"))
+        let lastModified = "Wed, 21 Oct 2015 07:28:00 GMT"
+        await cache.set(
+            key,
+            CachedResponse(
+                data: body,
+                headers: ["Last-Modified": lastModified],
+                storedAt: Date(timeIntervalSinceNow: -60)
+            )
+        )
+        let session = try ResilienceSequenceURLSession(queue: [
+            resilienceQueuedResponse(statusCode: 304, headers: ["Cache-Control": "max-age=60"])
+        ])
+        let client = DefaultNetworkClient(
+            configuration: resilienceMakeLocalizedCacheConfiguration(
+                responseCachePolicy: .cacheFirst(maxAge: .seconds(1)),
+                responseCache: cache
+            ),
+            session: session
+        )
+
+        let user = try await client.request(ResilienceGetRequest())
+
+        #expect(user == ResilienceUser(id: 1, name: "cached"))
+        #expect(
+            await session.capturedRequests.first?.value(forHTTPHeaderField: "If-Modified-Since")
+                == lastModified
+        )
+        #expect(await session.capturedRequests.first?.value(forHTTPHeaderField: "If-None-Match") == nil)
+    }
+
+    @Test("Conditional revalidation sends both valid validators")
+    func conditionalRevalidationSendsBothValidators() async throws {
+        let cache = InMemoryResponseCache()
+        let key = resilienceUserCacheKey()
+        let lastModified = "Wed, 21 Oct 2015 07:28:00 GMT"
+        await cache.set(
+            key,
+            CachedResponse(
+                data: try JSONEncoder().encode(ResilienceUser(id: 1, name: "cached")),
+                headers: ["ETag": "v1", "Last-Modified": lastModified],
+                storedAt: Date(timeIntervalSinceNow: -60)
+            )
+        )
+        let session = try ResilienceSequenceURLSession(queue: [
+            resilienceQueuedResponse(statusCode: 304)
+        ])
+        let client = DefaultNetworkClient(
+            configuration: resilienceMakeLocalizedCacheConfiguration(
+                responseCachePolicy: .cacheFirst(maxAge: .seconds(1)),
+                responseCache: cache
+            ),
+            session: session
+        )
+
+        _ = try await client.request(ResilienceGetRequest())
+
+        let request = try #require(await session.capturedRequests.first)
+        #expect(request.value(forHTTPHeaderField: "If-None-Match") == "v1")
+        #expect(request.value(forHTTPHeaderField: "If-Modified-Since") == lastModified)
+    }
+
+    @Test("Malformed Last-Modified is not emitted as a conditional header")
+    func malformedLastModifiedIsNotEmitted() async throws {
+        let cache = InMemoryResponseCache()
+        let key = resilienceUserCacheKey()
+        let fresh = ResilienceUser(id: 2, name: "fresh")
+        await cache.set(
+            key,
+            CachedResponse(
+                data: try JSONEncoder().encode(ResilienceUser(id: 1, name: "cached")),
+                headers: ["Last-Modified": "tomorrow-ish"],
+                storedAt: Date(timeIntervalSinceNow: -60)
+            )
+        )
+        let session = try ResilienceSequenceURLSession(queue: [
+            resilienceQueuedResponse(statusCode: 200, body: fresh)
+        ])
+        let client = DefaultNetworkClient(
+            configuration: resilienceMakeLocalizedCacheConfiguration(
+                responseCachePolicy: .cacheFirst(maxAge: .seconds(1)),
+                responseCache: cache
+            ),
+            session: session
+        )
+
+        let user = try await client.request(ResilienceGetRequest())
+
+        #expect(user == fresh)
+        #expect(
+            await session.capturedRequests.first?.value(forHTTPHeaderField: "If-Modified-Since") == nil
+        )
+    }
+
+    @Test("Background stale revalidation uses Last-Modified")
+    func staleWhileRevalidateUsesLastModified() async throws {
+        let cache = InMemoryResponseCache()
+        let key = resilienceUserCacheKey()
+        let lastModified = "Wed, 21 Oct 2015 07:28:00 GMT"
+        let storedAt = Date(timeIntervalSinceNow: -5)
+        let cachedUser = ResilienceUser(id: 1, name: "cached")
+        await cache.set(
+            key,
+            CachedResponse(
+                data: try JSONEncoder().encode(cachedUser),
+                headers: ["Last-Modified": lastModified],
+                storedAt: storedAt
+            )
+        )
+        let session = try ResilienceSequenceURLSession(queue: [
+            resilienceQueuedResponse(statusCode: 304, headers: ["Cache-Control": "max-age=60"])
+        ])
+        let client = DefaultNetworkClient(
+            configuration: resilienceMakeLocalizedCacheConfiguration(
+                responseCachePolicy: .staleWhileRevalidate(
+                    maxAge: .seconds(1),
+                    staleWindow: .seconds(10)
+                ),
+                responseCache: cache
+            ),
+            session: session
+        )
+
+        let user = try await client.request(ResilienceGetRequest())
+        try await waitUntil {
+            await cache.get(key)?.storedAt ?? storedAt > storedAt
+        }
+
+        #expect(user == cachedUser)
+        #expect(
+            await session.capturedRequests.first?.value(forHTTPHeaderField: "If-Modified-Since")
+                == lastModified
+        )
+        #expect(await cache.get(key)?.storedAt ?? storedAt > storedAt)
     }
 
     @Test("304 after cached entry disappears throws cacheRevalidationFailed")
@@ -171,8 +398,8 @@ extension ResiliencePolicyTests {
         }
     }
 
-    @Test("304 carrying a different Vary header preserves the stored vary snapshot")
-    func etagNotModifiedWithChangedVaryPreservesSnapshot() async throws {
+    @Test("304 carrying a different Vary header invalidates the stored vary snapshot")
+    func etagNotModifiedWithChangedVaryInvalidatesSnapshot() async throws {
         let cache = InMemoryResponseCache()
         let recorder = ResilienceResponseRecorder()
         let key = resilienceUserCacheKey()
@@ -190,7 +417,7 @@ extension ResiliencePolicyTests {
         let session = try ResilienceSequenceURLSession(queue: [
             resilienceQueuedResponse(
                 statusCode: 304,
-                headers: ["ETag": "v2", "Vary": "Accept"]
+                headers: ["ETag": "v1", "Vary": "Accept"]
             )
         ])
         let client = DefaultNetworkClient(
@@ -207,16 +434,9 @@ extension ResiliencePolicyTests {
         #expect(user == ResilienceUser(id: 1, name: "cached"))
         let observedResponse = try #require(await recorder.response())
         #expect(observedResponse.statusCode == 200)
-        #expect(resilienceResponseHeader(observedResponse, named: "Vary") == "Accept-Language")
+        #expect(resilienceResponseHeader(observedResponse, named: "Vary") == "Accept")
         #expect(resilienceResponseHeader(observedResponse, named: "ETag") == "v1")
-        let refreshed = try #require(await cache.get(key))
-        #expect(refreshed.varyHeaders == ["accept-language": cacheFixtureAcceptLanguage])
-        #expect(
-            refreshed.headers.first { $0.key.caseInsensitiveCompare("Vary") == .orderedSame }?.value
-                == "Accept-Language"
-        )
-        #expect(refreshed.etag == "v1")
-        #expect(refreshed.storedAt > storedAt)
+        #expect(await cache.get(key) == nil)
     }
 
     @Test("SWR returns stale data and revalidates in the background")

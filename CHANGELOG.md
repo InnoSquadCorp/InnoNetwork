@@ -7,6 +7,276 @@ Versioning.
 
 ## [Unreleased]
 
+Changes through the local `6.0.0` release cut form the unreleased `6.0.0` draft and have not been tagged.
+Entries explicitly labelled for `6.1.0` are additive candidates layered after
+that cut and are not part of the 6.0 contract.
+
+### Added for 6.1.0
+
+- Bounded request admission now provides global/origin concurrency, finite
+  pending queues, cancellation-safe queue deadlines, and separate long-lived
+  streaming slots at the physical transport boundary.
+- `AdvancedRateLimitPolicy` adds monotonic token-bucket and exact sliding-window
+  algorithms, reservations/refunds, bounded scopes/queues, `Retry-After`, and
+  an explicitly versioned IETF RateLimit draft-11 adapter.
+- `CachedResponse.rfc9111InitialAge` and its initializer input are public so
+  custom persistent caches can preserve upstream age and transport delay
+  across serialization without relying on package-only state.
+- Streaming adds independent first-response, first-event, idle-byte, and total
+  budgets. `StreamingDecodedFrame` preserves output-free SSE `id:` resets and
+  `retry:` hints, while `StreamingResumePolicy.serverSentEvents` can reconnect
+  after clean EOF within a fixed attempt and total-time budget.
+- `NetworkSpanObserver` exports separate logical request and physical attempt
+  spans through a bounded asynchronous vendor-neutral buffer. Attempt spans
+  begin only at physical dispatch, so cache hits, coalesced followers, and
+  pre-dispatch failures do not create synthetic transport attempts.
+- `ResumableUploadEngine` probes server state and checkpoints only confirmed
+  offsets. Hashing and chunk reads share one private immutable snapshot, while
+  checkpoints use an atomic credential-free store.
+- Upload delegate events and manager task/terminal state now have explicit
+  resource ceilings; progress is coalesced while terminal events remain lossless.
+
+- `StreamingResumePolicy.cursor(header:maxAttempts:retryDelay:)` supports
+  caller-owned NDJSON and other line-stream cursors, with validated header
+  names, a 4 KiB cursor ceiling, no automatic redirects, and transient-only
+  resume. Invalid cursors disable the entire attempt; empty cursors remove
+  seeded headers. Lossy output buffers remain incompatible with resume.
+- `StreamingAPIDefinition.makeDecoder()` creates response-scoped decoder
+  state, including reconnects and concurrent calls. `ServerSentEventDecoder`
+  adds an explicit reset and opt-in aggregate UTF-8 byte limit. Migrate
+  stateful definitions to the factory; stateless `decode(line:)` stays source
+  compatible. SSE fixes preserve empty data and significant newlines, inherit
+  IDs, ignore metadata-only blocks, and recognize CR/LF/CRLF. Rejected
+  handshakes and terminating decoders cancel the underlying response task.
+- `NetworkOperationDeadline` gives each operation-first buffered request one
+  monotonic latency budget across request preparation, authentication, cache
+  lookup, policy admission, connectivity waits, retry delay, transport, and
+  decoding. Deadline failures expose only a coarse
+  `NetworkOperationDeadlineStage`, preserve replay-safe recovery guidance, and
+  keep coalesced callers' budgets independent.
+- `UploadManager.pause(_:)` and `resume(_:)` add idempotent interactive upload
+  controls. Background restoration distinguishes durable user-paused intent
+  from an ordinary Foundation suspension. `retry(_:with:fromFile:)` reuses the
+  logical task only for failed attempts, requires explicit refreshed inputs,
+  and verifies that the original application-owned `Idempotency-Key` is
+  unchanged.
+- `ResponseCachePolicy.staleIfError(wrapping:)` recovers eligible `500`,
+  `502`, `503`, `504`, timeout, and reachability failures from an origin-
+  authorized stale response only after the retry policy reaches a terminal
+  decision. `requestOnlyIfCached(wrapping:)` honors request
+  `Cache-Control: only-if-cached` without transport or background
+  revalidation. Both controls are opt-in; cancellation, trust,
+  configuration, decoding, and body-limit failures remain non-recoverable.
+
+### Fixed for 6.1.0
+
+- WebSocket reconnect sleeps are capped by the remaining cumulative budget.
+  Timer wake-up and lifecycle admission both reject expired reconnects,
+  publish the terminal window error, and clean up the pending worker.
+- Cache mutation generations live only while requests, background refreshes,
+  or deferred recovery own a token. Invalidations no longer leave permanent
+  per-URL tombstones, and disabled/network-only policies allocate no tokens.
+- Custom execution policies that rebuild `Response` preserve transport age.
+  Unknown response provenance uses a conservative physical-attempt interval,
+  rather than treating an upstream response as newly synthesized.
+- A 304 with a supplied ETag absent from the stored response, or an unmatched
+  Last-Modified without a matching ETag, cannot relabel the cached body.
+- Stale-if-error recovery rechecks the selected representation and mutation
+  generation after retries, so concurrent invalidation cannot revive old data.
+- Background stale-while-revalidate requests now run the custom execution
+  policy chain, preserving policy-transformed bodies and per-attempt events.
+- Request `Cache-Control: no-store` prevents cache writes even when the origin
+  permits storage; an already reusable entry remains available as specified
+  by RFC 9111.
+- Cache mutations are serialized per target URI and shared by clients built
+  from the same configuration value, so an older in-flight GET cannot
+  repopulate a representation after a successful unsafe request or a
+  storage-prohibiting response invalidates it. A new `Vary: *` response also
+  removes any previously stored representation for the request key and cannot
+  leave a stale-if-error fallback behind.
+- Conditional cache validation now applies strong and weak ETag matching when
+  deciding whether a `304` identifies the stored response. A changed `Vary`
+  still invalidates the old selection snapshot, while the current caller
+  observes the merged validation metadata. RFC `no-cache` is enforced from
+  restored headers even when a custom cache did not persist
+  `requiresRevalidation`.
+- RFC response age uses the physical transport dispatch and completion times,
+  excluding local custom-policy, admission, and quota waits while preserving
+  actual origin response delay. Multi-dispatch custom policies retain timing
+  for the exact transport response they return.
+- RFC 9111 cache handling clamps oversized `max-age` and
+  `stale-if-error` delta-seconds before `Duration` conversion, invalidates a
+  stored representation when a `304` revises `Vary`, and cannot retain that
+  representation when the validation response adds `no-store`.
+- `stale-if-error` no longer bypasses mandatory `no-cache` validation and
+  rechecks the origin-authorized stale window after retries and transport
+  delay before returning a fallback.
+- Request and stream admission queues compare an absolute monotonic deadline
+  immediately before granting capacity, so a delayed timeout task cannot
+  admit expired work.
+- IETF draft-11 rate-limit feedback now gives a valid `Retry-After` header
+  precedence over a shorter `RateLimit` effective window. Structured policy
+  lists use the first member and RFC 9651 parsing boundaries for ASCII,
+  integers, byte sequences, extension item types, whitespace, and duplicate
+  parameters; a malformed or semantically incomplete member causes the
+  complete field to be ignored.
+- In-memory cache LRU links no longer retain the cache graph after the cache is
+  released. RFC 9111 freshness now includes valid upstream `Age`, apparent age
+  from `Date`, and request/response delay; malformed or overflowing `Age`
+  values fail closed, and an entry is stale at the exact freshness boundary.
+  Corrected initial age survives `304` revalidation and current persistent
+  records, while legacy records remain decodable with conservative age
+  reconstruction.
+- Decoded streaming frames are admitted atomically against the active watchdog
+  deadline before cursor/retry state or output is updated. Frames decoded at
+  or after expiry are discarded and cannot provide a reconnect cursor.
+- Cancelling a `NetworkOperation` or the task awaiting `value()` now resolves
+  promptly as `.cancelled`, including operations without a deadline, without
+  waiting for cancellation-noncooperative application work to return.
+- Buffered request, authentication, signing, response, and pre-decode callback
+  chains stop before invoking another callback after caller cancellation is
+  observed. Session-level and endpoint-level ordering remains unchanged.
+- Streaming phase and total budgets compare operation completion against one
+  absolute monotonic deadline, so a delayed timer cannot allow a response that
+  arrived after expiry. Metadata-only frames and EOF also recheck the total
+  deadline, and late successful transport values are discarded through their
+  resource cleanup path.
+- First-event and idle watchdogs update activity under the same timeout latch.
+  Timely activity defeats stale timer snapshots, while activity observed at or
+  after expiry cannot revive or extend an expired deadline.
+- Invalid streaming cursors now override cursorless reconnect permission for
+  both transient transport failures and clean EOF. Unobserved cursors retain
+  the existing EventSource reconnect behavior, while invalid values fail closed
+  for the remainder of their attempt.
+- Streaming attempt spans retain the HTTP status observed at headers and close
+  at body completion before reconnect waiting. Reconnect delay remains part of
+  the logical request span, while the internal physical-completion signal is
+  filtered from ordinary observers so it cannot emit a duplicate public
+  `responseReceived` event.
+- Half-open circuit-breaker probes bypass request coalescing so every granted
+  probe performs its own physical transport instead of joining an older
+  in-flight request.
+- Buffered requests recheck cancellation after every decoding interceptor,
+  including caller, cancellation-tag, and operation-handle cancellation.
+- Operation deadlines capture one absolute monotonic instant before the
+  operation task is dispatched. A zero budget prevents the wrapped request
+  from starting, and a success that arrives after the instant cannot escape
+  as a successful operation. Deadline stages now advance at the actual policy
+  admission and physical transport boundaries.
+- Streaming total deadlines return promptly even when application response
+  interceptors do not cooperate with cancellation. Late transport, quota, and
+  stream-admission results are cancelled, refunded, or released. Session and
+  endpoint request interceptors, token application, and request signers also
+  stop their callback chains as soon as cancellation is observed.
+- First-event and idle-byte watchdog expirations participate in configured
+  transient stream resume, while first-response and total deadlines remain
+  terminal even when the general retry policy is enabled. Reconnect attempts
+  stay within the existing attempt and total-time bounds.
+- Physical attempt spans use their own monotonically increasing index, so
+  authentication refresh replays and other repeated dispatches inside one
+  retry decision are exported as distinct child attempts. Buffered attempts
+  end when response collection completes, before decoding and policy
+  post-processing; they retain their HTTP status and successful transport
+  outcome even when later decoding fails. Streaming attempts remain open past
+  response headers until the stream itself terminates.
+- Managed-upload retries compare the supplied HTTP method with the original
+  case-sensitive token exactly and reject case-only substitutions before
+  starting a replacement task.
+- Upload retries leave terminal-retention accounting before becoming active,
+  remain addressable by manager controls while running, and honor caller
+  cancellation before creating or resuming another system upload task.
+- Buffered requests publish one authoritative terminal lifecycle outcome only
+  after decoding completes. Retried attempts no longer terminate logical spans,
+  and final non-cancellation failures retain guaranteed event admission under
+  partition saturation.
+- Circuit-breaker idle cleanup retains open and half-open safety state, so a
+  long-running probe or delayed follow-up cannot silently reopen unrestricted
+  traffic after the five-minute closed-state reclamation interval.
+- Advanced rate-limit scope reclamation now treats committed transports as
+  active leases until a response or terminal transport error arrives, ensuring
+  late `Retry-After` and RateLimit feedback cannot be discarded after origin
+  churn.
+- Zero-duration operation deadlines establish their initial request-preparation
+  stage before racing request and timer tasks, eliminating schedule-dependent
+  `.unknown` deadline diagnostics under coverage instrumentation.
+- Origin-scoped admission, quota, redirect, and circuit-breaker keys now
+  canonicalize scheme and host casing, implicit default ports, and IPv6
+  authority formatting before comparing or allocating state.
+- Request admission enforces the origin registry bound on immediate grants and
+  lets an origin with free capacity bypass waiters blocked only by another
+  origin's per-scope cap.
+- Advanced rate limiting rejects non-finite, zero-refill, and impossible-cost
+  configurations without trapping or waiting forever. Reservations are
+  rechecked when transport actually dispatches, and fully replenished inactive
+  scopes can be reclaimed without increasing quota. Scopes with suspended
+  reserve calls remain retained until every waiter exits.
+- Half-open circuit-breaker probes are attempt-owned. Stale outcomes and local
+  pre-transport failures cannot consume or strand another request's probe.
+- Streaming total deadlines include request authentication/interceptors,
+  rate-limit and stream-slot waits, response interceptors, reconnect delays,
+  monitor snapshot/change waits, and backpressured output delivery. A stream
+  slot is acquired before opening the URLSession byte transport.
+- Concurrent upload starts reserve tracked-task capacity before actor
+  suspension; new uploads, background restoration, and completion adoption
+  share the same bounded accounting.
+- Span-buffer policy values remain positive after public mutation, preventing
+  zero-sized drain batches, and request terminal events are guaranteed through
+  saturated partition and observer queues so span state cannot be stranded.
+- Resumable uploads stop before server work when already cancelled, preserve
+  hash-to-byte identity if the caller replaces the source path, remove private
+  snapshots on every terminal path, and do not report a completed remote
+  finalize as failed solely because local checkpoint cleanup failed.
+
+### Added for 6.0.0
+
+- `NetworkSnapshot` now reports Low Data Mode, expensive-path, DNS, IPv4,
+  IPv6, and typed unsatisfied-reason state. `NetworkMonitoring.snapshots()`
+  provides a latest-state stream that replays the current snapshot when one is
+  available.
+- `WebSocketMessageCodec`, `JSONWebSocketMessageCodec`, and the lazy
+  `WebSocketDecodedMessages` sequence add typed application-message send and
+  receive paths without introducing another relay task or message buffer.
+- The new `InnoNetworkUpload` product adds file-backed foreground and
+  background uploads with pre-registered progress streams, system-task
+  restoration, bounded response capture, and `AnyResponseDecoder` integration.
+  Background requests reject redirect-sensitive authorization and cookie
+  headers because Foundation cannot expose every background redirect hop.
+- `RefreshTokenPolicy` can now resolve an `AuthenticationRealm` per request.
+  Refresh single-flight state, generations, and failure cooldowns are isolated
+  by realm while the original single-token initializer keeps its behavior.
+- `SemanticNetworkEventAdapter` maps lifecycle events to vendor-neutral HTTP
+  semantic attributes without adding an exporter SDK dependency.
+- Experimental `RateLimitExecutionPolicy` adds cancellation-aware fixed-window
+  request pacing around each transport attempt, including retries.
+- The root `InnoNetwork` product now owns the operation-first client,
+  value-only failure taxonomy, secure configuration façade, bounded companion
+  transfer, retry execution, and URL-validation contracts.
+
+### Fixed
+
+- Conditional cache revalidation now validates and emits `If-Modified-Since`
+  for `Last-Modified` entries, including persistent-cache reopen and dual
+  validator paths. Malformed dates are never replayed as request headers.
+- Restored background uploads that are still suspended now resume only after
+  URL and sensitive-header admission succeeds. Upload shutdown also stops
+  waiting after a bounded internal invalidation deadline if Foundation does
+  not deliver its session-invalidated callback; repeated shutdown remains
+  idempotent.
+
+### Changed
+
+- `@APIDefinition(method:path:auth:)`, the default-enabled `Macros` package
+  trait, and the `traits: []` opt-out are promoted to Stable. Existing accepted
+  endpoint declarations and their generated method, path, authentication,
+  conformance, and payload-witness meaning are protected throughout 6.x;
+  diagnostic prose and generated-source formatting remain non-contractual.
+- The `InnoNetworkNext` preview product was removed after its declarations
+  were promoted into the root module. Existing type names remain unchanged.
+- The HLS products (`InnoNetworkHLS`, `InnoNetworkHLSLive`,
+  `InnoNetworkHLSAVFoundation`, and `InnoNetworkHLSAudio`) moved to the
+  independently versioned InnoStream package without changing their product
+  or module names.
+
 ## [5.1.0] - 2026-09-03
 
 ### Fixed

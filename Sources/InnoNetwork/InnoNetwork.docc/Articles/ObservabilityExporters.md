@@ -13,6 +13,48 @@ vendor SDK adapter is glue code: it forwards those events to
 the vendor's tracer/span/breadcrumb API in the format the vendor
 expects.
 
+``SemanticNetworkEventAdapter`` provides the dependency-free half of that
+glue. It maps lifecycle events to a compact envelope using current HTTP
+semantic-convention names such as `http.request.method`, `url.full`,
+`server.address`, `http.request.resend_count`,
+`http.response.status_code`, and `error.type`. The application still owns the
+vendor exporter. Use ``NetworkSpanObserver`` when it wants bounded request and
+retry-attempt span lifecycles instead of reconstructing them itself.
+
+```swift
+let observer = SemanticNetworkEventAdapter { event in
+    await telemetryPipeline.export(event)
+}
+
+let configuration = NetworkConfiguration.advanced(
+    baseURL: apiBaseURL,
+    observability: ObservabilityPack(eventObservers: [observer])
+)
+```
+
+```swift
+let spans = NetworkSpanObserver(
+    exporter: MySpanExporter(),
+    policy: .init(maximumBufferedSpans: 512, batchSize: 32)
+)
+let configuration = NetworkConfiguration.advanced(
+    baseURL: apiBaseURL,
+    observability: ObservabilityPack(eventObservers: [spans])
+)
+```
+
+Span records intentionally omit URLs, headers, and bodies. A logical request
+span owns child attempt spans; retry scheduling closes the prior attempt as
+`retried`. A child begins only when the physical transport dispatches. Cache
+hits, coalesced followers, and failures during preparation, quota, or admission
+therefore keep their logical span without a synthetic attempt. For buffered
+requests, the child ends when the response body has been collected, before
+decoding interceptors and policy feedback run. Its HTTP status and transport
+outcome remain attached even if the logical request later fails decoding. A
+streaming child stays open after response headers and ends with the stream.
+Export runs asynchronously through a bounded buffer and drops the oldest
+completed span under sustained exporter backpressure.
+
 Putting that glue inside InnoNetwork would either pull every supported
 vendor into the package graph (build-time cost, transitive license
 exposure) or fragment the API behind compile-time flags. The vendor
@@ -136,9 +178,10 @@ they're frequent and not interesting on their own unless they fail.
 
 ## Versioning and compatibility
 
-The current observability surface belongs to the Provisionally Stable 5.x
-contract. Adapter packages should pin a 5.x minor range or an exact version
-when reproducibility is required. The 5.x line aims to keep changes
-additive; adapters should include a `default:` case in event switches so new
+The current observability surface belongs to the planned Provisionally Stable
+6.x contract. Until 6.0.0 is tagged, production adapter packages should remain
+on a 5.x minor range or an exact released version. After adopting 6.x, use a
+minor-bounded range when reproducibility is required. Changes remain additive;
+adapters should include a `default:` case in event switches so new
 ``NetworkEvent`` cases do not break compilation before the adapter has mapped
 them.

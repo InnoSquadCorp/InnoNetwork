@@ -41,7 +41,7 @@ extension RequestExecutor {
         runtime: RequestExecutionRuntime,
         requestID: UUID,
         allowsRequestCoalescing: Bool
-    ) async throws -> Response {
+    ) async throws -> TimedNetworkResponse {
         try await executeCustomPolicies(
             request: request,
             identityRequest: identityRequest,
@@ -63,13 +63,13 @@ extension RequestExecutor {
         runtime: RequestExecutionRuntime,
         allowsRequestCoalescing: Bool
     ) async throws -> TransportResult {
-        try await runtime.circuitBreakers.prepare(
+        let circuitProbe = try await runtime.circuitBreakers.prepare(
             request: identityRequest,
             policy: configuration.circuitBreakerPolicy
         )
 
-        // `prepare()` may have flipped a half-open probe slot to
-        // `probeInFlight: true`. The await on `refreshLaneIfInProgress` and
+        // `prepare()` may have returned ownership of a half-open probe. The
+        // await on `refreshLaneIfInProgress` and
         // the coalescer dispatch below are both cancellation points; if the
         // outer task is cancelled before transport runs, no `recordX` would
         // fire and the probe slot would stay held until GC. Wrap the rest
@@ -89,7 +89,13 @@ extension RequestExecutor {
             // `Authorization` it is the actual safeguard.
             let refreshLane: UUID? = await refreshLaneIfInProgress(coordinator: runtime.refreshCoordinator)
 
-            if allowsRequestCoalescing,
+            // A half-open probe is ownership of a real transport outcome. It
+            // must not join a transport that started while the circuit was
+            // closed because that older transport has no matching probe to
+            // release or complete. Keep ordinary closed-state coalescing, but
+            // give recovery probes their own physical dispatch.
+            if circuitProbe == nil,
+                allowsRequestCoalescing,
                 case .inline = bodySource,
                 let key = RequestDedupKey(
                     request: identityRequest,
@@ -97,6 +103,11 @@ extension RequestExecutor {
                     refreshLane: refreshLane
                 )
             {
+                // A follower waits for an already-running physical request and
+                // therefore remains in the transport stage. The owner resets
+                // the stage to policy admission inside the closure before it
+                // acquires its local rate/admission permits.
+                NetworkOperationDeadlineContext.mark(.transport)
                 return try await runtime.requestCoalescer.run(key: key) {
                     try await self.transportAndRecordCircuit(
                         request: request,
@@ -105,7 +116,8 @@ extension RequestExecutor {
                         configuration: configuration,
                         context: context,
                         runtime: runtime,
-                        policy: configuration.circuitBreakerPolicy
+                        policy: configuration.circuitBreakerPolicy,
+                        circuitProbe: circuitProbe
                     )
                 }
             }
@@ -117,7 +129,8 @@ extension RequestExecutor {
                 configuration: configuration,
                 context: context,
                 runtime: runtime,
-                policy: configuration.circuitBreakerPolicy
+                policy: configuration.circuitBreakerPolicy,
+                circuitProbe: circuitProbe
             )
         } catch let handled as CircuitBreakerHandledError {
             // Inner already recorded (cancellation OR failure); just unwrap
@@ -125,24 +138,10 @@ extension RequestExecutor {
             // `NetworkError.isCancellation`) never observe the sentinel.
             throw handled.underlying
         } catch {
-            // Anything reaching here did NOT pass through
-            // `transportAndRecordCircuit`'s catch arm — typed throws from
-            // `prepare()` (e.g. `circuitBreakerOpen`) and pre-transport
-            // cancellation both land here. Only cancellation needs to
-            // release the half-open probe slot; other typed errors are
-            // owned by `prepare()` and should propagate unchanged. A rare
-            // race where a coalescer-follower self-cancels while the
-            // leader is still transporting can lead to two
-            // `recordCancellation` calls for the same host key — the
-            // operation is idempotent on `halfOpen(probeInFlight: true →
-            // false)` and a no-op in `closed`/`open`, so this absorbs
-            // safely without state corruption.
-            if NetworkError.isCancellation(error) {
-                await runtime.circuitBreakers.recordCancellation(
-                    request: identityRequest,
-                    policy: configuration.circuitBreakerPolicy
-                )
-            }
+            // The transport did not produce an outcome. Release only this
+            // request's half-open probe for local admission/rate-limit
+            // failures, coalescer errors, and cancellation alike.
+            await runtime.circuitBreakers.abandon(circuitProbe)
             throw error
         }
     }
@@ -154,29 +153,200 @@ extension RequestExecutor {
         configuration: NetworkConfiguration,
         context: NetworkRequestContext,
         runtime: RequestExecutionRuntime,
-        policy: CircuitBreakerPolicy?
+        policy: CircuitBreakerPolicy?,
+        circuitProbe: CircuitBreakerProbe?
     ) async throws -> TransportResult {
+        NetworkOperationDeadlineContext.mark(.policyAdmission)
+        let rateReservation: RateLimitReservation?
         do {
+            rateReservation = try await runtime.rateLimit?.reserve(for: request)
+            if let rateReservation {
+                await eventHub.publish(
+                    .decision(
+                        NetworkDecision(
+                            requestID: context.requestID,
+                            attemptIndex: context.retryIndex,
+                            kind: .rateLimit,
+                            outcome: rateReservation.wasDelayed ? .delayed : .allowed,
+                            reason: rateReservation.wasDelayed ? .localQuota : .policyAllowed
+                        )
+                    ),
+                    requestID: context.requestID,
+                    observers: context.eventObservers
+                )
+            }
+        } catch RateLimitAdmissionFailure.queueFull {
+            throw NetworkError.underlying(
+                SendableUnderlyingError(
+                    domain: NetworkError.errorDomain,
+                    code: NetworkErrorCode.rateLimitQueueRejected.rawValue,
+                    message: "The bounded rate-limit queue is full."
+                ),
+                nil
+            )
+        } catch RateLimitAdmissionFailure.scopeLimitReached {
+            throw NetworkError.underlying(
+                SendableUnderlyingError(
+                    domain: NetworkError.errorDomain,
+                    code: NetworkErrorCode.rateLimitScopeRejected.rawValue,
+                    message: "The bounded rate-limit scope registry is full."
+                ),
+                nil
+            )
+        } catch RateLimitAdmissionFailure.invalidConfiguration(let message) {
+            throw NetworkError.configuration(reason: .invalidRequest(message))
+        }
+
+        var admissionGrant: RequestAdmissionGrant?
+        do {
+            while true {
+                admissionGrant = try await runtime.requestAdmission?.acquire(for: request)
+                if let admissionGrant {
+                    await eventHub.publish(
+                        .decision(
+                            NetworkDecision(
+                                requestID: context.requestID,
+                                attemptIndex: context.retryIndex,
+                                kind: .admission,
+                                outcome: admissionGrant.wasQueued ? .delayed : .allowed,
+                                reason: .policyAllowed
+                            )
+                        ),
+                        requestID: context.requestID,
+                        observers: context.eventObservers
+                    )
+                }
+
+                guard let rateReservation,
+                    let dispatchWait = await runtime.rateLimit?.commit(rateReservation)
+                else {
+                    break
+                }
+                if let grant = admissionGrant {
+                    await runtime.requestAdmission?.release(scope: grant.scope)
+                    admissionGrant = nil
+                }
+                await eventHub.publish(
+                    .decision(
+                        NetworkDecision(
+                            requestID: context.requestID,
+                            attemptIndex: context.retryIndex,
+                            kind: .rateLimit,
+                            outcome: .delayed,
+                            reason: .localQuota
+                        )
+                    ),
+                    requestID: context.requestID,
+                    observers: context.eventObservers
+                )
+                try await runtime.clock.sleep(for: dispatchWait)
+            }
+        } catch RequestAdmissionFailure.queueFull {
+            if let rateReservation { await runtime.rateLimit?.refund(rateReservation) }
+            await eventHub.publish(
+                .decision(
+                    NetworkDecision(
+                        requestID: context.requestID,
+                        attemptIndex: context.retryIndex,
+                        kind: .admission,
+                        outcome: .denied,
+                        reason: .queueFull
+                    )
+                ),
+                requestID: context.requestID,
+                observers: context.eventObservers
+            )
+            throw NetworkError.underlying(
+                SendableUnderlyingError(
+                    domain: NetworkError.errorDomain,
+                    code: NetworkErrorCode.requestAdmissionRejected.rawValue,
+                    message: "The bounded request admission queue is full."
+                ),
+                nil
+            )
+        } catch RequestAdmissionFailure.queueWaitExpired {
+            if let rateReservation { await runtime.rateLimit?.refund(rateReservation) }
+            await eventHub.publish(
+                .decision(
+                    NetworkDecision(
+                        requestID: context.requestID,
+                        attemptIndex: context.retryIndex,
+                        kind: .admission,
+                        outcome: .denied,
+                        reason: .queueWaitExpired
+                    )
+                ),
+                requestID: context.requestID,
+                observers: context.eventObservers
+            )
+            throw NetworkError.underlying(
+                SendableUnderlyingError(
+                    domain: NetworkError.errorDomain,
+                    code: NetworkErrorCode.requestAdmissionWaitExpired.rawValue,
+                    message: "The request admission wait expired before transport."
+                ),
+                nil
+            )
+        } catch {
+            if let rateReservation { await runtime.rateLimit?.refund(rateReservation) }
+            throw error
+        }
+
+        do {
+            await eventHub.publish(
+                .decision(
+                    NetworkDecision(
+                        requestID: context.requestID,
+                        attemptIndex: context.retryIndex,
+                        kind: .dispatch,
+                        outcome: .allowed,
+                        reason: .policyAllowed,
+                        occurredAt: runtime.clock.now()
+                    )
+                ),
+                requestID: context.requestID,
+                observers: context.eventObservers
+            )
+            NetworkOperationDeadlineContext.mark(.transport)
             let result = try await transport(
                 request: request,
                 bodySource: bodySource,
                 configuration: configuration,
-                context: context
+                context: context,
+                clock: runtime.clock
             )
             await runtime.circuitBreakers.recordStatus(
                 request: identityRequest,
                 policy: policy,
-                statusCode: result.response.statusCode
+                statusCode: result.response.statusCode,
+                probe: circuitProbe
             )
+            if let admissionGrant {
+                await runtime.requestAdmission?.release(scope: admissionGrant.scope)
+            }
+            if let rateReservation {
+                await runtime.rateLimit?.observe(
+                    response: result.response,
+                    for: request,
+                    reservation: rateReservation
+                )
+            }
             return result
         } catch {
+            if let admissionGrant {
+                await runtime.requestAdmission?.release(scope: admissionGrant.scope)
+            }
+            if let rateReservation {
+                await runtime.rateLimit?.finish(rateReservation)
+            }
             if NetworkError.isCancellation(error) {
-                await runtime.circuitBreakers.recordCancellation(request: identityRequest, policy: policy)
+                await runtime.circuitBreakers.abandon(circuitProbe)
             } else {
                 await runtime.circuitBreakers.recordFailure(
                     request: identityRequest,
                     policy: policy,
-                    error: error
+                    error: error,
+                    probe: circuitProbe
                 )
             }
             // Tag the error so `runWithCircuitBreaker`'s outer catch knows
@@ -196,8 +366,10 @@ extension RequestExecutor {
         request: URLRequest,
         bodySource: BodySource,
         configuration: NetworkConfiguration,
-        context: NetworkRequestContext
+        context: NetworkRequestContext,
+        clock: any InnoNetworkClock
     ) async throws -> TransportResult {
+        let requestStartedAt = clock.now()
         let attemptStartedAt = Date()
         do {
             let (data, response): (Data, URLResponse)
@@ -233,7 +405,12 @@ extension RequestExecutor {
             // Streaming collection enforces the same ceiling incrementally;
             // this shared boundary also protects buffered implementations.
             try enforceResponseBodyLimit(data: data, configuration: configuration)
-            return TransportResult(data: data, response: httpResponse)
+            return TransportResult(
+                data: data,
+                response: httpResponse,
+                startedAt: requestStartedAt,
+                completedAt: clock.now()
+            )
         } catch let networkError as NetworkError {
             // Already classified by an inner layer (e.g. responseBodyLimitExceeded
             // from `collect(bytes:response:maxBytes:)`). Rethrow as-is so the

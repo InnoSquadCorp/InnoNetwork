@@ -179,18 +179,10 @@ package struct StreamingResumeState: Sendable {
         case valid
         case explicitReset
         case invalid
-
-        var permitsResume: Bool {
-            switch self {
-            case .valid, .explicitReset:
-                return true
-            case .unobserved, .invalid:
-                return false
-            }
-        }
     }
 
     package private(set) var lastSeenEventID: String?
+    package private(set) var serverRetryDelay: TimeInterval?
     private var attemptCursorObservation = AttemptCursorObservation.unobserved
 
     package init() {}
@@ -200,7 +192,7 @@ package struct StreamingResumeState: Sendable {
     }
 
     package mutating func observe(eventID: String?) {
-        guard let eventID else { return }
+        guard let eventID, attemptCursorObservation != .invalid else { return }
         if eventID.isEmpty {
             lastSeenEventID = nil
             attemptCursorObservation = .explicitReset
@@ -215,10 +207,33 @@ package struct StreamingResumeState: Sendable {
         attemptCursorObservation = .invalid
     }
 
+    package mutating func observe(retryDelay: TimeInterval?) {
+        guard let retryDelay, retryDelay.isFinite, retryDelay >= 0 else { return }
+        serverRetryDelay = retryDelay
+    }
+
     package func canResume(maxAttempts: Int, completedResumeAttempts: Int) -> Bool {
-        maxAttempts > 0
-            && completedResumeAttempts < maxAttempts
-            && attemptCursorObservation.permitsResume
+        canReconnect(
+            maxAttempts: maxAttempts,
+            completedResumeAttempts: completedResumeAttempts,
+            permitsCursorlessReconnect: false
+        )
+    }
+
+    package func canReconnect(
+        maxAttempts: Int,
+        completedResumeAttempts: Int,
+        permitsCursorlessReconnect: Bool
+    ) -> Bool {
+        guard maxAttempts > 0, completedResumeAttempts < maxAttempts else { return false }
+        switch attemptCursorObservation {
+        case .valid, .explicitReset:
+            return true
+        case .unobserved:
+            return permitsCursorlessReconnect
+        case .invalid:
+            return false
+        }
     }
 }
 
@@ -362,6 +377,13 @@ public final class DefaultNetworkClient: NetworkClient, UploadNetworkClient, Sen
             hubKind: .networkRequest,
             clock: clock
         )
+    }
+
+    /// Waits until the production request coalescer contains the requested
+    /// number of active callers. Package integration tests use this boundary
+    /// to control deadline races without scheduler-dependent sleeps.
+    package func waitForCoalescedCallerCount(atLeast count: Int) async {
+        await executionRuntime.requestCoalescer.waitForActiveWaiterCount(atLeast: count)
     }
 
     /// Begins a long-lived streaming request and returns decoded line payloads

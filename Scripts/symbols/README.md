@@ -19,42 +19,47 @@ are snapshotted separately; every remaining consumer declaration defaults to
 Provisionally Stable. A new public symbol therefore cannot silently inherit a
 Stable compatibility promise.
 
-## Current sizes (5.0.0 release baseline)
+## Current sizes (InnoNetwork 6 development baseline)
+
+The 5.0.0 release baseline remains the compatibility reference for the
+currently tagged 5.x line; this table tracks the 6.1 candidate layered after
+the planned 6.0 boundary with 1,613 public declarations in the root package.
 
 | Product | Public declarations |
 |---|---:|
-| `InnoNetwork` (core) | 786 |
-| `InnoNetworkWebSocket` | 130 |
+| `InnoNetwork` (core) | 1048 |
+| `InnoNetworkWebSocket` | 164 |
 | `InnoNetworkDownload` | 94 |
-| `InnoNetworkHLS` | 797 |
-| `InnoNetworkHLSLive` | 300 |
-| `InnoNetworkHLSAVFoundation` | 705 |
-| `InnoNetworkHLSAudio` | 65 |
+| `InnoNetworkUpload` | 109 |
 | `InnoNetworkTestSupport` | 84 |
 | `InnoNetworkPersistentCache` | 51 |
 | `InnoNetworkOpenAPI` | 36 |
 | `InnoNetworkTrust` | 17 |
 | `InnoNetworkAuthAWS` | 10 |
-| **Total** | **3,075** |
+| **Total** | **1,613** |
 
 | Compatibility tier | Public declarations |
 |---|---:|
-| Stable consumer API | 305 |
-| Provisionally Stable consumer API | 2,737 |
+| Stable consumer API | 306 |
+| Provisionally Stable consumer API | 1,274 |
 | `@_spi(GeneratedClientSupport)` | 33 |
-| **Total** | **3,075** |
+| **Total** | **1,613** |
 
 ## Why this matters
 
-For a single-maintainer client-side Swift networking library, 3,075 public
-declarations is unusually large — roughly 4× `Get`'s surface and ~10× the
-`URLSession`-only "two functions and a `Decoder`" baseline.
+The 6.0 split reduced this repository's machine-checked surface from 3,254 to
+1,407 declarations by moving the four HLS modules to InnoStream and folding
+the temporary `InnoNetworkNext` module into the root product. The additive 6.1
+deadline, upload-control, cache-control, bounded streaming/cursor, admission,
+advanced quota, tracing, and resumable-upload candidates raise the development
+snapshot to 1,613 declarations. The 179 new declarations remain Provisionally
+Stable until real server and consumer evidence supports promotion.
 
 At release, every public symbol becomes:
 
 - A regression-testing obligation in CI (the allowlists make this concrete).
 - A backwards-compatibility promise for the lifetime of the surrounding
-  contract tier throughout 5.x (Stable / Provisionally Stable, see
+  contract tier throughout the released major line (Stable / Provisionally Stable, see
   `API_STABILITY.md`).
 - A documentation obligation — DocC catalogues are spot-checked by
   `check_docs_contract_sync.sh`.

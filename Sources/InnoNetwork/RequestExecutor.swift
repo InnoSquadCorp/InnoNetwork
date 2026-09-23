@@ -2,12 +2,10 @@ import Foundation
 import OSLog
 
 /// Conditional revalidation product used by the cache stage when a 304 is
-/// received. Carries both a merged-headers `Response` (for storage when the
-/// `Vary` dimension matches) and a preserved-headers `Response` (for return
-/// when the `Vary` dimension changes), plus the original cached entry.
+/// received. Carries the cached body with merged validation headers plus the
+/// original cached entry used to validate representation identity.
 struct NotModifiedSubstitution {
     let mergedResponse: Response
-    let preservedResponse: Response
     let cached: CachedResponse
 }
 
@@ -16,6 +14,51 @@ struct NotModifiedSubstitution {
 /// exists; otherwise the executor has no representation to substitute.
 struct ConditionalRevalidationContext {
     let cached: CachedResponse
+}
+
+/// Response plus the request/response timestamps needed by RFC 9111 current
+/// age calculation. This remains internal to the execution pipeline.
+struct TimedNetworkResponse {
+    let response: Response
+    let requestStartedAt: Date
+    let responseReceivedAt: Date
+}
+
+actor TransportTimingRecorder {
+    private struct Timing {
+        let startedAt: Date
+        let completedAt: Date
+        let metadata: HTTPURLResponse?
+    }
+
+    private var entries: [UUID: Timing] = [:]
+
+    func record(_ response: Response, startedAt: Date, completedAt: Date) {
+        guard let id = response.transportTimingID else { return }
+        entries[id] = Timing(startedAt: startedAt, completedAt: completedAt, metadata: response.response)
+    }
+
+    func timestamps(for response: Response) -> (startedAt: Date, completedAt: Date)? {
+        if let id = response.transportTimingID, let entry = entries[id] {
+            return (entry.startedAt, entry.completedAt)
+        }
+        // Public Response construction intentionally hides internal IDs. A
+        // policy that transforms the body but keeps the HTTP metadata still
+        // identifies its transport, even when it called next more than once.
+        if let metadata = response.response {
+            let matches = entries.values.filter { $0.metadata === metadata }
+            if matches.count == 1, let match = matches.first {
+                return (match.startedAt, match.completedAt)
+            }
+        }
+        // Rebuilt metadata makes provenance ambiguous. Conservatively retain
+        // the whole physical transport interval instead of rejuvenating an
+        // upstream response. Only a policy that never dispatched is synthetic.
+        guard let start = entries.values.map(\.startedAt).min(),
+            let end = entries.values.map(\.completedAt).max()
+        else { return nil }
+        return (start, end)
+    }
 }
 
 private struct PreparedExecutionRequest {
@@ -57,6 +100,7 @@ package struct RequestExecutor {
 
         var retryRequest: URLRequest?
         var attemptStartedAt: Date?
+        var preparedForRecovery: PreparedExecutionRequest?
         do {
             let prepared = try await prepareRequestStage(
                 executable,
@@ -66,6 +110,7 @@ package struct RequestExecutor {
                 retryIndex: retryIndex,
                 requestID: requestID
             )
+            preparedForRecovery = prepared
             defer {
                 if let cleanupFileURL = prepared.cleanupFileURL {
                     try? FileManager.default.removeItem(at: cleanupFileURL)
@@ -80,15 +125,87 @@ package struct RequestExecutor {
                 runtime: runtime,
                 requestID: requestID
             )
-            return try await decodeStage(
+            let decoded = try await decodeStage(
                 executable,
                 response: networkResponse,
                 configuration: configuration
             )
+            await notifySuccess(
+                networkResponse,
+                requestID: requestID,
+                configuration: configuration
+            )
+            return decoded
+        } catch let recovery as StaleIfErrorRecovery {
+            let surfaced =
+                configuration.captureFailurePayload
+                ? recovery.failure
+                : recovery.failure.redactingFailurePayload()
+            executable.logger.log(error: surfaced)
+            guard let prepared = preparedForRecovery else {
+                throw RequestExecutionFailure(
+                    error: surfaced,
+                    request: retryRequest ?? surfaced.underlyingRequest
+                )
+            }
+            let executor = self
+            let recoveryAttemptStartedAt = attemptStartedAt
+            throw RequestExecutionFailureWithFallback(
+                error: surfaced,
+                request: retryRequest ?? surfaced.underlyingRequest
+            ) {
+                do {
+                    try Task.checkCancellation()
+                    guard
+                        let fallback = await executor.staleIfErrorResponse(
+                            candidate: recovery.fallback,
+                            request: prepared.request,
+                            configuration: configuration,
+                            runtime: runtime,
+                            cacheKey: recovery.cacheKey,
+                            writeToken: recovery.writeToken
+                        )
+                    else {
+                        throw surfaced
+                    }
+                    try Task.checkCancellation()
+                    let recoveredResponse = try await executor.finalizeResponseStage(
+                        executable,
+                        networkResponse: fallback,
+                        prepared: prepared,
+                        configuration: configuration
+                    )
+                    let decoded = try await executor.decodeStage(
+                        executable,
+                        response: recoveredResponse,
+                        configuration: configuration
+                    )
+                    await executor.notifySuccess(
+                        recoveredResponse,
+                        requestID: requestID,
+                        configuration: configuration
+                    )
+                    return decoded
+                } catch let error as NetworkError {
+                    let fallbackFailure =
+                        configuration.captureFailurePayload
+                        ? error
+                        : error.redactingFailurePayload()
+                    executable.logger.log(error: fallbackFailure)
+                    throw fallbackFailure
+                } catch {
+                    let mapped = Self.mapTransportError(error, startedAt: recoveryAttemptStartedAt)
+                    let fallbackFailure =
+                        configuration.captureFailurePayload
+                        ? mapped
+                        : mapped.redactingFailurePayload()
+                    executable.logger.log(error: fallbackFailure)
+                    throw fallbackFailure
+                }
+            }
         } catch let error as NetworkError {
             let surfaced = configuration.captureFailurePayload ? error : error.redactingFailurePayload()
             executable.logger.log(error: surfaced)
-            await notifyFailure(surfaced, requestID: requestID, configuration: configuration)
             throw RequestExecutionFailure(error: surfaced, request: retryRequest ?? surfaced.underlyingRequest)
         } catch {
             let mapped = Self.mapTransportError(
@@ -97,7 +214,6 @@ package struct RequestExecutor {
             )
             let surfaced = configuration.captureFailurePayload ? mapped : mapped.redactingFailurePayload()
             executable.logger.log(error: surfaced)
-            await notifyFailure(surfaced, requestID: requestID, configuration: configuration)
             throw RequestExecutionFailure(error: surfaced, request: retryRequest ?? surfaced.underlyingRequest)
         }
     }
@@ -111,6 +227,7 @@ package struct RequestExecutor {
         retryIndex: Int,
         requestID: UUID
     ) async throws -> PreparedExecutionRequest {
+        NetworkOperationDeadlineContext.mark(.requestPreparation)
         try validateSessionAuthentication(executable, configuration: configuration)
         let built = try requestBuilder.build(executable, configuration: configuration)
         var request = built.request
@@ -130,10 +247,14 @@ package struct RequestExecutor {
             // NetworkConfiguration apply to every endpoint; per-APIDefinition
             // interceptors layer on top.
             for interceptor in configuration.requestInterceptors {
+                try Task.checkCancellation()
                 request = try await interceptor.adapt(request)
+                try Task.checkCancellation()
             }
             for interceptor in executable.requestInterceptors {
+                try Task.checkCancellation()
                 request = try await interceptor.adapt(request)
+                try Task.checkCancellation()
             }
             let refreshCoordinator: RefreshTokenCoordinator?
             let refreshGeneration: UInt64?
@@ -142,15 +263,19 @@ package struct RequestExecutor {
                 refreshCoordinator = nil
                 refreshGeneration = nil
             case .optional:
+                NetworkOperationDeadlineContext.mark(.authentication)
                 refreshCoordinator = runtime.refreshCoordinator
                 if let refreshCoordinator {
+                    try Task.checkCancellation()
                     let application = try await refreshCoordinator.applyCurrentTokenWithGeneration(to: request)
+                    try Task.checkCancellation()
                     request = application.request
                     refreshGeneration = application.generation
                 } else {
                     refreshGeneration = nil
                 }
             case .required:
+                NetworkOperationDeadlineContext.mark(.authentication)
                 // The synchronous preflight above guarantees this coordinator.
                 guard let requiredCoordinator = runtime.refreshCoordinator else {
                     throw NetworkError.configuration(
@@ -160,10 +285,14 @@ package struct RequestExecutor {
                     )
                 }
                 refreshCoordinator = requiredCoordinator
+                try Task.checkCancellation()
                 let application = try await requiredCoordinator.applyRequiredTokenWithGeneration(to: request)
+                try Task.checkCancellation()
                 request = application.request
                 refreshGeneration = application.generation
             }
+
+            NetworkOperationDeadlineContext.mark(.requestPreparation)
 
             let requestSigners = configuration.requestSigners + executable.requestSigners
             await notifyRequestAdapted(
@@ -212,7 +341,8 @@ package struct RequestExecutor {
         runtime: RequestExecutionRuntime,
         requestID: UUID
     ) async throws -> Response {
-        var networkResponse = try await executeWithPolicies(
+        let acceptable = executable.acceptableStatusCodes ?? configuration.acceptableStatusCodes
+        let networkResponse = try await executeWithPolicies(
             request: prepared.request,
             refreshGeneration: prepared.refreshGeneration,
             refreshCoordinator: prepared.refreshCoordinator,
@@ -221,18 +351,40 @@ package struct RequestExecutor {
             configuration: configuration,
             context: prepared.context,
             runtime: runtime,
-            requestID: requestID
+            requestID: requestID,
+            acceptableStatusCodes: acceptable
         )
+        return try await finalizeResponseStage(
+            executable,
+            networkResponse: networkResponse,
+            prepared: prepared,
+            configuration: configuration
+        )
+    }
+
+    @inline(__always)
+    private func finalizeResponseStage<D: SingleRequestExecutable>(
+        _ executable: D,
+        networkResponse initialResponse: Response,
+        prepared: PreparedExecutionRequest,
+        configuration: NetworkConfiguration
+    ) async throws -> Response {
+        var networkResponse = initialResponse
+        NetworkOperationDeadlineContext.mark(.responseDecoding)
 
         // Onion unwinds inner→outer: per-request interceptors first,
         // session-level interceptors last. A session-level response
         // interceptor sees the same response a session-only setup would
         // produce because per-endpoint adapters have already finished.
         for interceptor in executable.responseInterceptors {
+            try Task.checkCancellation()
             networkResponse = try await interceptor.adapt(networkResponse, request: prepared.request)
+            try Task.checkCancellation()
         }
         for interceptor in configuration.responseInterceptors {
+            try Task.checkCancellation()
             networkResponse = try await interceptor.adapt(networkResponse, request: prepared.request)
+            try Task.checkCancellation()
         }
         // After response interceptors settle, give cancellation a chance
         // to short-circuit before we spend cycles on body-limit checks,
@@ -249,18 +401,6 @@ package struct RequestExecutor {
         }
 
         executable.logger.log(response: networkResponse, isError: false)
-        if !configuration.eventObservers.isEmpty {
-            await eventHub.publish(
-                .requestFinished(
-                    requestID: requestID,
-                    statusCode: networkResponse.statusCode,
-                    byteCount: networkResponse.data.count
-                ),
-                requestID: requestID,
-                observers: configuration.eventObservers
-            )
-        }
-
         return networkResponse
     }
 
@@ -270,14 +410,17 @@ package struct RequestExecutor {
         response networkResponse: Response,
         configuration: NetworkConfiguration
     ) async throws -> D.APIResponse {
+        NetworkOperationDeadlineContext.mark(.responseDecoding)
         // willDecode runs after response interceptors have settled so adapters
         // that mutate the response observe the same payload the decoder will see.
         var decodableData = networkResponse.data
         for interceptor in configuration.decodingInterceptors {
+            try Task.checkCancellation()
             decodableData = try await interceptor.willDecode(
                 data: decodableData,
                 response: networkResponse
             )
+            try Task.checkCancellation()
         }
         try enforceResponseBodyLimit(data: decodableData, configuration: configuration)
 
@@ -286,8 +429,33 @@ package struct RequestExecutor {
         try Task.checkCancellation()
         var decoded = try executable.decode(data: decodableData, response: networkResponse)
         for interceptor in configuration.decodingInterceptors {
+            try Task.checkCancellation()
             decoded = try await interceptor.didDecode(decoded, response: networkResponse)
+            // An async post-decoder may observe cancellation without throwing
+            // (for example, a callback bridge that finishes normally). Do not
+            // let that late value cross the terminal success boundary.
+            try Task.checkCancellation()
         }
+        // Keep the no-interceptor path consistent and close the narrow race
+        // between synchronous decoding and the caller receiving success.
+        try Task.checkCancellation()
         return decoded
+    }
+
+    private func notifySuccess(
+        _ response: Response,
+        requestID: UUID,
+        configuration: NetworkConfiguration
+    ) async {
+        guard !configuration.eventObservers.isEmpty else { return }
+        await eventHub.publishTerminal(
+            .requestFinished(
+                requestID: requestID,
+                statusCode: response.statusCode,
+                byteCount: response.data.count
+            ),
+            requestID: requestID,
+            observers: configuration.eventObservers
+        )
     }
 }

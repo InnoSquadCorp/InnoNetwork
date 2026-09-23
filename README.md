@@ -19,13 +19,16 @@ concepts:
 2. `@APIDefinition` to derive and validate repetitive protocol witnesses
 3. `DefaultNetworkClient.request(_:)` to execute the typed request
 
-Everything else—including Download, raw or system-managed HLS, WebSocket,
+Everything else—including Download, Upload, WebSocket,
 persistent cache, OpenAPI, AWS signing, pinning, and test support—is an
 optional product selected only when that capability is required.
 
 > **Release status:** `5.1.0` is the latest tagged stable release and the
-> actively security-supported line. The API examples below describe the 5.x
-> contract and may not compile against 4.x.
+> actively security-supported line. `6.0.0` is an unreleased draft on this
+> branch; do not point production dependencies at `main`. The API examples
+> below describe the developing 6.0 contract and may not compile against 5.x.
+> Additive 6.1 candidates are developed only after the local 6.0 release cut
+> and remain unreleased as well.
 
 ## Product Selection Guide
 
@@ -34,10 +37,7 @@ optional product selected only when that capability is required.
 | `InnoNetwork` | Start here for named typed HTTP endpoints and the async request pipeline. Advanced policy remains opt-in. |
 | `InnoNetworkAuthAWS` | You need the optional AWS SigV4 reference signer. It is a single-shot signer, not an AWS SDK replacement. |
 | `InnoNetworkDownload` | You need foreground/background download lifecycle management with pause, resume, retry, persistence, and event streams. |
-| `InnoNetworkHLS` | You need bounded HLS playlist resolution, deterministic variant selection, browser-free non-DRM VOD assembly, or typed retry and recovery diagnostics. |
-| `InnoNetworkHLSLive` | You need blocking reloads, delta-window reconstruction, bounded snapshots, or atomic live DVR capture. |
-| `InnoNetworkHLSAVFoundation` | You need AVFoundation-managed background HLS persistence, media selections, a value-only integrated interstitial timeline, playback health, an app-owned FairPlay content-key setup, or system-download lifecycle diagnostics. |
-| `InnoNetworkHLSAudio` | You need demand-driven decoded PCM or in-place full-mix processing from an HLS player item on supported version 27 platforms. This product requires Xcode 27 and Swift 6.4. |
+| `InnoNetworkUpload` | You need file-backed foreground/background uploads with progress, restoration, bounded responses, and typed decoding. |
 | `InnoNetworkWebSocket` | You need long-lived bidirectional connections with heartbeat, reconnect, close taxonomy, and event delivery. |
 | `InnoNetworkPersistentCache` | You want `ResponseCache` backed by disk with conservative RFC-aware storage guards and data protection. |
 | `InnoNetworkOpenAPI` | Use `OpenAPIRequest` when generated or hand-written operations should run through the full `DefaultNetworkClient` pipeline. Use `InnoNetworkClientTransport` when an OpenAPI Runtime client needs a thin URLSession-backed transport and the full pipeline is not required. |
@@ -56,8 +56,8 @@ Start with only the `InnoNetwork` product and
 `DefaultNetworkClient(baseURL:)`. A named endpoint struct plus
 `@APIDefinition` needs no configuration pack or optional product. Add an
 advanced pack only when a concrete retry, auth, cache, transport, or
-observability requirement appears; add Download, WebSocket, persistent cache,
-the HLS assembler, AVFoundation HLS, OpenAPI, AWS auth, or pinning products only
+observability requirement appears; add Download, Upload, WebSocket, persistent cache,
+OpenAPI, AWS auth, or pinning products only
 for the capability named in the table above. If the application has only one
 or two uncomplicated requests and no shared policy, direct `URLSession` is
 intentionally the smaller choice.
@@ -69,6 +69,27 @@ second runtime API.
 The packages are built around Swift Concurrency, explicit transport
 policies, and operational visibility that can scale from app prototypes
 to production clients.
+
+### InnoNetwork 6 migration
+
+The operation-first `OperationNetworkClient`, configuration, operation handle,
+and value-only failure types previously previewed by `InnoNetworkNext` now ship
+in the root `InnoNetwork` module. Remove the preview product and replace
+`import InnoNetworkNext` with `import InnoNetwork`.
+
+The 6.1 candidate adds an opt-in `NetworkOperationDeadline` to buffered
+operation-first requests. One monotonic duration covers admission, retries,
+transport, and decoding; `NetworkFailure.deadlineStage` reports only the
+coarse stage that exhausted the budget. Existing calls without a deadline keep
+their 6.0 behavior.
+
+The four HLS products moved to the independently versioned
+[InnoStream](https://github.com/InnoSquadCorp/InnoStream) package. Their product
+and module names are unchanged, so migration consists of changing the SwiftPM
+package dependency while keeping existing imports.
+
+See the [6.0 migration guide](docs/Migration-6.0.0.md) for the exact package
+manifest diff, replay-safety rules, and tag validation order.
 
 ## Why InnoNetwork
 
@@ -87,7 +108,8 @@ wrapper or Alamofire-style helper:
   `SessionAuthentication` as `.anonymous`, `.optional`, or `.required`.
   Required endpoints fail before transport when no refresh policy can provide
   a token; the single-flight `RefreshTokenPolicy` only refreshes endpoints
-  that opted in.
+  that opted in and can isolate token, refresh, generation, and cooldown state
+  with a per-request `AuthenticationRealm`.
 - **Single-flight refresh + idempotency-aware retry** — concurrent 401s
   coalesce into one refresh call (`RefreshTokenCoordinator`). Retries
   follow RFC 9110: `GET`, `HEAD`, `OPTIONS`, and `TRACE` retry by default;
@@ -98,6 +120,10 @@ wrapper or Alamofire-style helper:
   `rfc9111Compliant(wrapping:)` to get the documented directive subset, or
   drop in `MockURLSession` / `VCRURLSession` / `StubNetworkClient` from
   `InnoNetworkTestSupport` (a top-level product, not a hidden helper).
+
+Production controls remain composable: use `RateLimitExecutionPolicy` for
+client-side fixed-window pacing and `SemanticNetworkEventAdapter` to translate
+redacted request lifecycle events into exporter-neutral semantic attributes.
 
 See `API_STABILITY.md` for the Stable / Provisionally Stable contract
 around each of these.
@@ -162,6 +188,10 @@ dependencies: [
     )
 ]
 ```
+
+The 6.0 examples in this branch are prerelease documentation. After the
+`6.0.0` tag exists, new adopters can change the lower bound to `6.0.0`; until
+then, use a local checkout only for explicit migration validation.
 
 > InnoNetwork also intentionally requires Swift 6.2+ and current Apple OS
 > baselines (iOS 16, macOS 14, tvOS 16, watchOS 9, visionOS 1). That keeps
@@ -410,7 +440,16 @@ for await event in await manager.events(for: task) {
 - append-log persistence for durable task restoration
 - `AsyncStream` and listener-based event delivery
 
-### `InnoNetworkHLS`
+### `InnoNetworkUpload`
+
+- file-backed foreground and background `URLSessionUploadTask` orchestration
+- pre-registered progress and terminal event streams
+- background system-task restoration through opaque logical identifiers
+- bounded response capture with `AnyResponseDecoder` integration
+- HTTPS-only admission, foreground redirect checks, and background rejection
+  of redirect-sensitive authorization or cookie headers
+
+### InnoStream: `InnoNetworkHLS`
 
 - bounded UTF-8 HLS playlist fetch and parsing through the shared transport
   policy
@@ -502,12 +541,13 @@ for await event in await manager.events(for: task) {
 - deterministic parser mutations, sub-quadratic large-playlist scaling,
   concurrent live-stream isolation, and AVFoundation event terminal-race
   gates, plus an actual loopback HTTP `AVPlayer` decoded-PCM smoke on macOS 27
-  or newer; run them independently with
+  or newer; run them independently from an InnoStream checkout with
   `bash Scripts/run_hls_quality_gates.sh`. Older hosts report the runtime smoke
   as `NOT RUN`
 - opt-in Apple Media Stream Validator and HLS Report validation for the pinned
   MPEG-TS, video fragmented-MP4, and audio fragmented-MP4 fixtures. Install
-  Apple's separate HTTP Live Streaming Tools download, then run
+  Apple's separate HTTP Live Streaming Tools download, then run from the
+  InnoStream checkout
   `bash Scripts/run_hls_quality_gates.sh --require-apple-tools`; ordinary runs
   print `NOT RUN` when the tools are absent, while the full local release
   preflight requires both Apple conformance and the supported runtime smoke
@@ -541,7 +581,7 @@ for await event in await manager.events(for: task) {
   unsupported, while system-managed downloads remain available for native
   background persistence
 
-### `InnoNetworkHLSLive`
+### InnoStream: `InnoNetworkHLSLive`
 
 - direct media or multivariant live entry with deterministic variant
   selection, selected-pathway/rendition metadata, one-shot snapshots, and a
@@ -649,7 +689,7 @@ for await event in await manager.events(for: task) {
 - local DVR receipts expose the same typed, loopback-only playback bridge as
   offline-package receipts without claiming direct `file://` playback
 
-### `InnoNetworkHLSAVFoundation`
+### InnoStream: `InnoNetworkHLSAVFoundation`
 
 - a main-actor local-playback owner that serves validated raw offline and DVR
   packages over a random, loopback-only HTTP endpoint; reachable playlists are
@@ -738,7 +778,7 @@ for await event in await manager.events(for: task) {
 - available on iOS, macOS, watchOS, and visionOS where
   `AVAssetDownloadURLSession` is supported; unavailable on tvOS
 
-### `InnoNetworkHLSAudio`
+### InnoStream: `InnoNetworkHLSAudio`
 
 - a version 27-only HLS-audio companion isolated from the core network,
   raw HLS, live reload, and broader AVFoundation playback products
@@ -809,6 +849,8 @@ for await event in await manager.events(for: task) {
 
 ### Macro Support
 
+- Stable in 6.0: existing accepted declarations and generated endpoint meaning
+  remain source-compatible throughout 6.x
 - default-enabled `@APIDefinition(method:path:auth:)` from `import InnoNetwork`
 - explicit endpoint structs remain the source of truth
 - `APIResponse` and authentication intent stay mandatory and visible
@@ -1015,7 +1057,8 @@ The opt-in `ResponseCachePolicy` honours the response `Vary` header
 automatically (RFC 9111 §4.1):
 
 - `Vary: *` responses are not stored — the cache cannot prove a future
-  request would match.
+  request would match — and replace any previous entry for the current key
+  with an origin-required miss.
 - A concrete `Vary` header (for example `Vary: Accept-Language`) captures the
   named request headers when the response is stored. The next lookup matches
   only when those same header values are present, so two clients with
@@ -1029,13 +1072,21 @@ automatically (RFC 9111 §4.1):
   cache key and skip writes, including quoted directives such as
   `private="Set-Cookie, Authorization"`. `Cache-Control: no-cache` stores the
   response but forces revalidation before every reuse.
+- Stale entries with a valid `Last-Modified` emit `If-Modified-Since`; entries
+  carrying both `ETag` and `Last-Modified` emit both validators. A `304`
+  response restores the bounded cached representation only when its supplied
+  `ETag` still identifies that stored body using RFC strong/weak validator
+  rules; a mismatched validator fails closed.
+  Malformed dates are never copied into a conditional request header.
 - Responses to requests carrying `Authorization` are stored only when the
   origin explicitly permits it with `Cache-Control: public`, `must-revalidate`,
   or `s-maxage`.
 - Successful unsafe methods (`POST`, `PUT`, `PATCH`, `DELETE`, and unknown
   methods) invalidate every cached variant for the normalized target URI per
   RFC 9111 §4.4. `.disabled` and `.networkOnly` still leave cache metadata
-  untouched.
+  untouched. Clients constructed from copies of one `NetworkConfiguration`
+  share the cache-mutation fence, so an earlier GET on one client cannot
+  repopulate the cache after another client completes an unsafe mutation.
 
 `InnoNetworkPersistentCache` is **not** a full RFC 9111 cache by
 default — storage directives are enforced by the executor, while
@@ -1155,7 +1206,7 @@ examples.
 
 Public releases follow semantic versioning. `5.1.0` is the latest tagged
 stable release; `5.0.0` remains the compatibility baseline for the 5.x
-contract.
+contract. `6.0.0` remains an unreleased compatibility-reset draft.
 
 - Stable public API: [API_STABILITY.md](API_STABILITY.md)
 - Release rules and compatibility policy: [docs/RELEASE_POLICY.md](docs/RELEASE_POLICY.md)
@@ -1180,9 +1231,10 @@ offers unbounded or lossy delivery when that trade-off is intentional. To
 cancel every in-flight request and stream
 (for example, on logout or backgrounding), call
 `DefaultNetworkClient.cancelAll()`. See the
-[5.1 release notes](docs/releases/5.1.0.md) for the HLS companion products and
-the
-[5.0 migration guide](docs/Migration-5.0.0.md) for source changes.
+[6.0 migration guide](docs/Migration-6.0.0.md) for the package split and
+operation contract, [5.1 release notes](docs/releases/5.1.0.md) for the
+previous HLS companion products, and the [5.0 migration guide](docs/Migration-5.0.0.md)
+for the prior compatibility reset.
 
 ## Benchmarks
 
@@ -1338,6 +1390,8 @@ Operational items to verify before shipping a client built on InnoNetwork.
 - Migration Guides: [docs/MigrationGuides.md](docs/MigrationGuides.md)
 - 5.0 Migration Guide: [docs/Migration-5.0.0.md](docs/Migration-5.0.0.md)
 - 5.1 Release Notes: [docs/releases/5.1.0.md](docs/releases/5.1.0.md)
+- 6.0 Migration Guide: [docs/Migration-6.0.0.md](docs/Migration-6.0.0.md)
+- Draft 6.0 Release Notes: [docs/releases/6.0.0.md](docs/releases/6.0.0.md)
 - Alamofire Migration Cookbook: [docs/MigrationFromAlamofire.md](docs/MigrationFromAlamofire.md)
 - Moya Migration Cookbook: [docs/MigrationFromMoya.md](docs/MigrationFromMoya.md)
 - DocC Deployment: [docs/DocC_Deployment.md](docs/DocC_Deployment.md)

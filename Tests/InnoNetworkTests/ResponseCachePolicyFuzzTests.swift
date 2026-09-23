@@ -85,7 +85,7 @@ struct ResponseCachePolicyFuzzTests {
                 if !requiresRevalidation {
                     #expect(ageSeconds > maxAgeSeconds, "cacheFirst revalidated within freshness window unexpectedly")
                 }
-            case .returnStaleAndRevalidate, .bypass:
+            case .returnStaleAndRevalidate, .bypass, .revalidateWithStaleIfError, .onlyIfCachedMiss:
                 Issue.record("cacheFirst produced unexpected \(result)")
             }
         }
@@ -128,8 +128,8 @@ struct ResponseCachePolicyFuzzTests {
                         "swr revalidated inside stale window without cause"
                     )
                 }
-            case .bypass:
-                Issue.record("swr produced unexpected .bypass")
+            case .bypass, .revalidateWithStaleIfError, .onlyIfCachedMiss:
+                Issue.record("swr produced unexpected \(result)")
             }
         }
     }
@@ -186,6 +186,36 @@ struct ResponseCachePolicyFuzzTests {
                     Issue.record("nil cached produced \(result)")
                 }
             }
+        }
+    }
+
+    @Test("RFC no-cache header forces revalidation for externally restored entries")
+    func rfcNoCacheHeaderForcesRevalidation() {
+        let now = Date(timeIntervalSinceReferenceDate: 1_000_000)
+        let cached = CachedResponse(
+            data: Data([0x01]),
+            headers: ["Cache-Control": "no-cache, max-age=60"],
+            storedAt: now,
+            requiresRevalidation: false
+        )
+
+        let policies: [ResponseCachePolicy] = [
+            .rfc9111Compliant(wrapping: .cacheFirst(maxAge: .seconds(60))),
+            .rfc9111Compliant(
+                wrapping: .staleWhileRevalidate(maxAge: .seconds(60), staleWindow: .seconds(60))
+            ),
+            .staleIfError(
+                wrapping: .rfc9111Compliant(wrapping: .cacheFirst(maxAge: .seconds(60)))
+            ),
+        ]
+
+        for policy in policies {
+            let result = policy.prepare(cached: cached, now: now)
+            guard case .revalidate(let candidate) = result else {
+                Issue.record("Expected no-cache metadata to force revalidation, got \(result)")
+                continue
+            }
+            #expect(candidate == cached)
         }
     }
 

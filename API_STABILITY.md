@@ -1,7 +1,9 @@
-# API Stability (5.x)
+# API Stability (6.0 Draft)
 
-This document defines the compatibility contract for the InnoNetwork 5.x
-release line. `5.0.0` is the public compatibility baseline for this contract.
+This document defines the planned compatibility contract for InnoNetwork 6.
+`6.0.0` has not been tagged; `5.1.0` remains the latest stable public release.
+The Stable ledger inherited from 5.x remains protected unless the 6.0
+migration guide explicitly removes or relocates a package boundary.
 
 The 5.0.0 baseline removes the deprecated 4.x
 `NetworkConfiguration.with(...)` modifier family, replace the type-level
@@ -45,6 +47,7 @@ and own application reducer types in their feature or architecture layer.
 ## Stable
 
 - `APIDefinition`
+- `@APIDefinition(method:path:auth:)` and the default-enabled `Macros` package trait (promoted to Stable in 6.0.0; `traits: []` remains the supported opt-out)
 - `CancellationTag`
 - `Endpoint`
 - `MultipartAPIDefinition`
@@ -106,7 +109,8 @@ and own application reducer types in their feature or architecture layer.
 > **5.0.0 is the compatibility reset for the 5.x line.**
 > From this release onward, the Stable ledger will only grow during 5.x;
 > entries will not move back into Provisionally Stable, and breaking changes
-> will wait for a future major.
+> wait for a future major. InnoNetwork 6 is that next major; declarations not
+> named as removed in the 6.0 migration guide retain their compatibility tier.
 
 ## Stable Examples
 
@@ -123,7 +127,7 @@ because these examples are copyable public-contract code, not narrative-only
 documentation.
 
 - `Examples/BasicRequest` — request/response fundamentals across HTTP verbs
-  and content types.
+  and content types, including the Stable macro-first endpoint shape.
 - `Examples/Auth` — `RefreshTokenPolicy` wiring with a Keychain-backed
   token store and single-flight refresh.
 - `Examples/ErrorHandling` — `NetworkError` taxonomy and the
@@ -136,16 +140,24 @@ intentionally **not** enforced by the gate above. README/DocC examples
 continue to track the stable APIs they illustrate; their wording is not
 part of the compatibility contract.
 
+The independent `Examples/MacroAdopterSmoke` package is an additional release
+gate for runtime macro expansion, authentication, payload inference, and
+protocol-composed endpoint metadata. Its directory layout is operational, but
+the accepted endpoint source shapes it exercises are protected by the Stable
+macro contract.
+
 ## Provisionally Stable
 
-Symbols in this section are public in the 5.x line and may evolve by gaining
-new cases, parameters, or shape, with each change shipping release notes and a
-migration path. The HLS companion products first ship in 5.1.0; the remaining
-entries trace to 5.0.0 unless noted. See "Version Pinning Guidance" below.
+Symbols in this section form the planned 6.0 public surface and may evolve in
+6.x by gaining new cases, parameters, or shape, with each change shipping
+release notes and a migration path. Declarations inherited from the 5.x line
+retain their documented source-compatibility boundary unless the 6.0 migration
+guide explicitly removes or relocates them. See "Version Pinning Guidance"
+below.
 For budget enforcement, every non-SPI public declaration that is not matched
 by the explicit Stable ledger is classified as Provisionally Stable. This
 conservative default prevents an undocumented declaration from accidentally
-acquiring a 5.x compatibility promise.
+acquiring a 6.x Stable compatibility promise.
 
 - benchmark runner CLI flags and JSON summary presentation details
 - troubleshooting guidance and examples in README/DocC
@@ -154,14 +166,23 @@ acquiring a 5.x compatibility promise.
   and the `VCRCassette` / `VCRURLSession` record-and-replay family)
 - `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`
 - `RefreshTokenPolicy`, `RequestCoalescingPolicy`, retry, response cache, redirect, encoding utility, and circuit breaker policy surfaces
+  This includes the additive 6.1
+  `ResponseCachePolicy.staleIfError(wrapping:)` and
+  `requestOnlyIfCached(wrapping:)` cases; both remain explicitly opt-in and
+  Provisionally Stable
 - `MultipartResponseDecoder` buffered multipart response parsing surface
 - `MultipartStreamingResponseDecoder` streaming multipart response parsing surface
 - `InnoNetworkOpenAPI` companion product
-- `InnoNetworkHLS` companion product and its public playlist, variant selection, single-file download, offline package, event, and error symbols
-- `InnoNetworkHLSLive` companion product and its public live reload, bounded DVR recording, snapshot, configuration, and error symbols
-- `InnoNetworkHLSAVFoundation` companion product and its public download, offline readiness, playback configuration, timed metadata, playback metrics, playback health, interstitial and integrated-timeline observation, and FairPlay symbols
-- `InnoNetworkHLSAudio` companion product and its Xcode 27 / Swift 6.4 public decoded PCM plus full-mix processing configuration, callback, lifecycle, pacing, sample, and error symbols
-- `@APIDefinition(method:path:auth:)` and the default-enabled `Macros` package trait
+- `InnoNetworkUpload` companion product and its public file-upload, progress, restoration, bounded response, event, and error symbols
+  plus the additive 6.1 pause/resume, durable paused-intent, and
+  idempotency-key-guarded retry controls
+- operation-first `NetworkClientConfiguration`, `OperationNetworkClient`,
+  `NetworkOperation`, `NetworkOperationReplaySafety`, and value-only
+  `NetworkFailure` root-module contracts, including the additive 6.1
+  `NetworkOperationDeadline`, `NetworkOperationDeadlineStage`, deadline-aware
+  `start` overloads, and `NetworkFailure.deadlineStage`
+- bounded companion transport contracts: `BoundedNetworkTransfer`,
+  `NetworkRetryExecutor`, `NetworkURLPolicy`, and `NetworkURLValidator`
 - `PersistentResponseCache` statistics and telemetry surfaces
 - `WebSocketError.unsupportedProtocolFeature`
 - `WebSocketProtocolFeature`
@@ -169,24 +190,32 @@ acquiring a 5.x compatibility promise.
 - `JWTBearerInterceptor` reference signer for request-minted JWT bearer tokens
 - `InnoNetworkAuthAWS` companion product and `AWSSigV4Interceptor` reference signer for single-shot AWS SigV4 signing
 - `StreamingBufferingPolicy`, `StreamingOutputSequence`, `TraceContextInterceptor`, `W3CTraceContext`, `CurlCommandOptions`, `IdempotencyKeyPolicy`, and `RequestPriority`
+- `StreamingAPIDefinition.makeDecoder()`, `StreamingResumePolicy.cursor`, and
+  `ServerSentEventDecoder.reset()` / `decode(line:maximumEventBytes:)` are
+  additive 6.1 Provisionally Stable surfaces. The default factory preserves
+  existing stateless `decode(line:)` implementations; stateful consumers must
+  migrate to a response-scoped factory for reconnect/concurrent-use isolation.
 - `HTTPHeaderName<Variant>` phantom-typed header key surface and its predefined `SingleValueHeader` / `RepeatableHeader` markers (also referenced as `HTTPHeaderName` / `HTTPHeaderVariant` for contract-sync purposes)
 - `MultipartUploadStrategy.threshold(bytes:)`
 - `PersistentResponseCacheStatistics.hitCount` / `missCount` / `evictionCount`
 - `DownloadTask.generation` / `attempt` observation accessors
-- `NetworkErrorCode` SSOT enum (4.0.0 baseline) — owns every `NetworkError.errorCode` raw value; new cases may be added in 5.x minors when `NetworkError` itself adds a case
+- `NetworkErrorCode` SSOT enum (4.0.0 baseline) — owns every `NetworkError.errorCode` raw value; new cases may be added in 6.x minors when `NetworkError` itself adds a case
 - `NetworkError.reachability(_:_:_:)` and `ReachabilityReason` (4.0.0 baseline)
 - `MultipartUploadStrategy.inMemory(maxBytes:)` (4.0.0 baseline) — the explicit cap and encoder accumulator guard are part of the contract
 - `DownloadTransferPack.init(...taskInactivityTimeout:...)` and `DownloadTask.lastProgressAt` (4.0.0 behavior carried into the 5.0 pack contract)
 - `ResponseCachePolicy.rfc9111Compliant(wrapping:)` directive-aware adapter (4.0.0 baseline)
+  This also includes the additive
+  `ResponseCachePolicy.staleIfError(wrapping:)` and
+  `requestOnlyIfCached(wrapping:)` opt-in cache-control adapters (6.1 candidate)
 - `DownloadPersistencePack.init(...sharedContainerIdentifier:...)` (4.0.0 behavior carried into the 5.0 pack contract)
 - `ResponseCache.invalidateTargetURI(_:)` and RFC 9111 unsafe-method target URI invalidation (4.0.0 baseline)
 - `TransportPack.init(...streamingLineByteLimit:...)` (4.0.0 behavior carried into the 5.0 pack contract)
 
-## 5.x Evolution Boundaries
+## 6.x Evolution Boundaries
 
-Per-symbol compatibility boundaries for the 5.x line follow.
+Per-symbol compatibility boundaries for the planned 6.x line follow.
 Stable entries describe commitments that stay source-compatible throughout
-5.x; Provisionally Stable entries describe their explicitly allowed evolution.
+6.x; Provisionally Stable entries describe their explicitly allowed evolution.
 
 Promotion from Provisionally Stable to Stable requires all of the following:
 
@@ -198,23 +227,53 @@ Promotion from Provisionally Stable to Stable requires all of the following:
 - Stable examples or generated-client recipes are updated when the promoted
   surface is a recommended entry point.
 - The symbol is moved into the Stable ledger above; once promoted, it cannot
-  move back to Provisionally Stable within the 5.x line.
+  move back to Provisionally Stable within the 6.x line.
 
 | Surface | Promotion target | Required evidence |
 | --- | --- | --- |
 | `EndpointBuilder` runtime-composed path | Stable since 4.0.0 | Runtime-composed request examples, stable example smoke, and migration cookbook shapes stay green. |
-| `InnoNetworkAuthAWS` | 5.x minor after adopter validation | AWS SigV4 vector tests, product README/DocC scope, and explicit "reference signer, not AWS SDK replacement" wording. |
-| `PersistentResponseCache` statistics and telemetry | 5.x minor | Reentrancy invariant docs plus persistent cache key-rotation/statistics tests. |
-| `ResponseCachePolicy.rfc9111Compliant(wrapping:)` | 5.x minor | The subset is documented as RFC 9111-aware, with directive tests for the supported rules. |
-| Root `@APIDefinition` macro | No automatic promotion | Promote only after the explicit-struct expansion, diagnostics, and trait opt-out have sustained adopter validation. |
+| `InnoNetworkAuthAWS` | 6.x minor after adopter validation | AWS SigV4 vector tests, product README/DocC scope, and explicit "reference signer, not AWS SDK replacement" wording. |
+| `PersistentResponseCache` statistics and telemetry | 6.x minor | Reentrancy invariant docs plus persistent cache key-rotation/statistics tests. |
+| `ResponseCachePolicy.rfc9111Compliant(wrapping:)` | 6.x minor | The subset is documented as RFC 9111-aware, with directive tests for the supported rules. |
+| `CachedResponse.rfc9111InitialAge` persistence contract | Later 6.x minor | Built-in persistence and external-consumer round trips preserve freshness decisions without package access. |
+| Root `@APIDefinition` macro | Stable in 6.0.0 | InnoSample and Mulbyul adoption, expansion and diagnostic fixtures, the independent macro smoke, and the `traits: []` build prove the explicit-struct and opt-out contracts. |
+| 6.1 admission, advanced quota, and structured decisions | Later 6.x minor | Bounded/cancellation and dispatch-time tests are present; server-contract validation and production quota evidence remain. |
+| 6.1 streaming timeout and control-frame APIs | Later 6.x minor | Virtual-time budgets and SSE wire fixtures are present; consumer reconnect validation remains. |
+| 6.1 span export and resumable-upload APIs | Later 6.x minor | Backpressure, physical-attempt, interruption, and immutable-byte tests are present; crash/restart backend fixtures and real adapter adoption remain. |
 
-- `default` aliases — may add new defaults; never removed within 5.x.
+The 6.1 candidate rows cover `RequestAdmissionPolicy`,
+`AdvancedRateLimitPolicy`, `NetworkDecision`, `StreamingTimeoutPolicy`,
+`StreamingDecodedFrame`, `StreamingFrameControl`,
+`StreamingResumePolicy.serverSentEvents`, `NetworkSpanObserver`,
+`NetworkSpanExporting`, `ResumableUploadEngine`,
+`ResumableUploadAdapting`, `ResumableUploadCheckpoint`, and
+`ResumableUploadCheckpointStoring` as Provisionally Stable contracts.
+Their supporting public values are `AdvancedRateLimitAlgorithm`,
+`RateLimitServerFeedbackPolicy`, `RequestAdmissionScope`,
+`NetworkDecisionKind`, `NetworkDecisionOutcome`, `NetworkDecisionReason`,
+`StreamingCursorUpdate`, `NetworkSpan`, `NetworkSpan.Kind`,
+`NetworkSpan.Outcome`, `NetworkSpanObserver.Policy`,
+`FileResumableUploadCheckpointStore`, `ResumableUploadError`,
+`ResumableUploadResult`, and `UploadResourcePolicy`.
+
+For the provisional streaming contract, an invalid cursor is a fail-closed
+attempt state: it suppresses both cursor-bearing and cursorless reconnects
+after a transport failure or clean EOF. A cursor that has not yet been
+observed remains distinct and may use the explicit EventSource cursorless
+reconnect policy. Streaming timeout budgets are monotonic absolute boundaries;
+an operation result completed at or after expiry is not delivered as success.
+Late activity cannot move an already expired first-event or idle deadline, and
+EOF or metadata-only frames cannot bypass the total deadline. Explicit
+first-response and total deadline expirations remain terminal even when the
+general handshake retry policy would retry an ordinary transport timeout.
+
+- `default` aliases — may add new defaults; never removed within 6.x.
 - Benchmark runner CLI flags and JSON keys — may evolve to reflect new
   metrics; baseline contents are operational policy.
 - README/DocC examples — track the stable APIs they illustrate; their
   exact wording is not part of the compatibility contract.
 - `InnoNetworkTestSupport` — additional helpers may be added; existing
-  symbols stay source-compatible within 5.x. VCR-style cassette helpers are
+  symbols stay source-compatible within 6.x. VCR-style cassette helpers are
   intended for test targets and may gain new matching/redaction knobs.
 - `EndpointBuilder`, `AnyEncodable`, `NetworkContext`, `CorrelationIDInterceptor` —
   builder shape may grow new chainable methods.
@@ -228,10 +287,11 @@ Promotion from Provisionally Stable to Stable requires all of the following:
 - `HTTPMethod` — the 5.0 value type accepts any valid, case-sensitive
   RFC 9110 method token through its failable `init(rawValue:)`; the standard
   GET, HEAD, POST, PUT, PATCH, DELETE, CONNECT, OPTIONS, and TRACE constants
-  will remain available throughout 5.x. URLSession-backed execution fails
+  will remain available throughout 6.x. URLSession-backed execution fails
   before transport if Foundation cannot preserve a token's exact spelling;
   retry, redirect, cache, coalescing, and diagnostics never normalize method
-  case on the caller's behalf.
+  case on the caller's behalf. `UploadManager.retry(_:with:fromFile:)` also
+  requires an exact case-sensitive match with the original method token.
 - `ResponseBodyBufferingPolicy` — the default inline request path is
   streaming. Its `streaming(maxBytes:)` and `buffered(maxBytes:)` cases are
   the single source of truth for collection mode and byte ceiling.
@@ -260,13 +320,15 @@ Promotion from Provisionally Stable to Stable requires all of the following:
   `Authorization` require both the caller's privacy opt-in and an RFC 9111
   permission directive (`public`, `must-revalidate`, or `s-maxage`). Core
   URLSession transports clear session-configured additional-header values on
-  cross-origin redirects while preserving them on same-origin hops.
+  cross-origin redirects while preserving them on same-origin hops. A granted
+  half-open probe always owns a fresh physical transport and never joins a
+  request-coalescing entry created before that probe was granted.
 - `NetworkConfigurationFailureReason` — typed payload for
   ``NetworkError/configuration(reason:)``. Carries
   `invalidBaseURL` / `invalidRequest` / `offline` cases. The standalone
   `NetworkError.invalidBaseURL` and
   `NetworkError.invalidRequestConfiguration` cases are not part of the
-  5.x surface; adopters switch on this reason payload directly.
+  6.x surface; adopters switch on this reason payload directly.
 - `ReachabilityCheckExecutionPolicy` — `RequestExecutionPolicy` that
   consults a `NetworkMonitoring` source and short-circuits requests
   when the path is `.unsatisfied`. `.requiresConnection` waits up to
@@ -283,12 +345,35 @@ Promotion from Provisionally Stable to Stable requires all of the following:
   configurations to share one cap. The raw semaphore is not public, preventing
   interceptor pairs that leak capacity when transport errors skip response
   processing.
+- `AuthenticationRealm` and the realm-aware `RefreshTokenPolicy` initializer
+  — per-request realm routing is additive in 6.0. Each realm owns its refresh
+  generation, in-flight task, and failure cooldown; returning `nil` excludes
+  a request. Realm identifiers are opaque in-memory routing keys and must not
+  contain credentials.
+- `SemanticNetworkEvent`, `SemanticAttributeValue`, and
+  `SemanticNetworkEventAdapter` — dependency-free mapping from redacted
+  lifecycle events to semantic HTTP attributes. Event names and InnoNetwork
+  extension attributes may gain additive cases while the exporter boundary
+  remains vendor-neutral.
+- `NetworkSpanObserver` — `NetworkSpan.attemptIndex` is the zero-based physical
+  dispatch order within one logical request, independent of retry-policy
+  indexing. Authentication refresh replays and repeated custom-policy
+  dispatches therefore create distinct attempt spans; cache hits and
+  coalesced followers create none. Buffered physical attempts end at response
+  collection rather than after decoding or policy feedback, retain their HTTP
+  status independently from the logical request outcome, and streaming
+  attempts do not end at response headers.
+- `RateLimitExecutionPolicy` — experimental cancellation-aware fixed-window
+  admission around each transport attempt. Copies share one limiter; retry
+  attempts consume capacity independently. Its scheduling algorithm may be
+  refined in a future 6.x minor with release notes and deterministic fairness
+  and cancellation evidence.
 - `ResiliencePack`, `AuthPack`, `ObservabilityPack`, `CachePack`,
   `TransportPack` — configuration packs accepted as named arguments by
   `NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:)`.
   Each pack groups a thematic axis of options; the underlying builder
   is now `package`-only. The pack APIs stay source-compatible throughout
-  5.x; future minors may add fields to existing packs without
+  6.x; future minors may add fields to existing packs without
   breaking call sites because every field defaults to `nil`.
 - Download and WebSocket configuration packs — immutable thematic values
   accepted by each optional product's `advanced(...)` factory. Their
@@ -322,27 +407,69 @@ Promotion from Provisionally Stable to Stable requires all of the following:
   read-side freshness handling as RFC 9111 coverage expands. `max-age`
   remains higher priority than `Expires`, which remains higher priority than
   the `Last-Modified` heuristic; invalid or duplicate freshness directives
-  are treated as stale rather than extending cache reuse.
+  are treated as stale rather than extending cache reuse. Current age includes
+  valid upstream `Age`, apparent age from `Date`, and transport response delay;
+  malformed or overflowing `Age` fails closed, and oversized freshness
+  delta-seconds clamp before conversion. The corrected initial age is
+  preserved through same-dimension `304` revalidation and current persistent
+  records, while a revised `Vary` invalidates the old selection contract.
+  Custom caches can persist the public age metadata; legacy persistent records
+  remain readable and reconstruct it conservatively.
+- `ResponseCachePolicy.staleIfError(wrapping:)` — recovery remains limited to
+  origin-authorized stale windows after retry exhaustion. Eligible HTTP
+  statuses may grow only additively; cancellation, trust, configuration,
+  decoding, body-limit failures, and responses requiring `no-cache`
+  validation remain excluded. The window is checked again immediately before
+  final recovery.
+- `ResponseCachePolicy.requestOnlyIfCached(wrapping:)` — the request directive
+  is consumed only under this wrapper. A miss or forced revalidation remains
+  a local typed failure and never starts transport or background refresh.
 - `NetworkErrorCode` — raw values use the
   `com.innosquad.innonetwork.NetworkError` domain exclusively; Foundation
   `URLError` codes are preserved only as underlying metadata.
 - `WebSocketError.unsupportedProtocolFeature` and `WebSocketProtocolFeature`
   — feature cases may grow as optional transports add or reject more protocol
   extensions.
-- `@APIDefinition(method:path:auth:)` — the signature may add optional
-  arguments, but `APIResponse` and authentication intent remain explicit.
 - `DecodingInterceptor` — protocol may grow new optional hooks with
   default implementations as additional decode-boundary use cases
-  surface.
+  surface. Cancellation is rechecked after each `didDecode` hook, so a hook
+  cannot convert caller, tag, or operation cancellation into success.
 - `StreamingBufferingPolicy` — bounded buffering cases may gain additional
   policy knobs, but `stream(_:)` stays lossless and backpressured by default
-  for 5.x. Explicit bounded buffers remain incompatible with
-  `StreamingResumePolicy.lastEventID`; explicit `.unbounded` remains the
+  for 6.x. Explicit bounded buffers remain incompatible with
+  `StreamingResumePolicy.lastEventID` and `.cursor`; explicit `.unbounded` remains the
   producer-nonsuspending, lossless opt-out.
+- `StreamingResumePolicy` — resume accepts at most 4,096 printable ASCII
+  cursor bytes from decoded outputs and only retries timeout/reachability
+  failures. Invalid cursors latch until the next attempt; invalid/reserved
+  custom header names and nonfinite delays fail before dispatch. Resume-enabled
+  streams disable automatic redirects, including same-origin redirects, so
+  applications must resolve their final endpoint explicitly. Empty cursors
+  clear a seeded request header. Server-side replay and deduplication remain
+  application contracts, not an exactly-once library guarantee. First-event
+  and idle-byte watchdog expirations are recoverable under this policy;
+  first-response and total deadlines are terminal. A decoded frame is admitted
+  against the watchdog deadline before its event or control metadata becomes
+  observable; an expired frame cannot update the reconnect cursor or retry
+  hint.
+- `ServerSentEventDecoder` — empty `data` lines dispatch, multiline data keeps
+  significant newlines, metadata-only blocks do not dispatch, and IDs persist
+  within one response. BOM handling is response-scoped, not event-scoped.
+  The legacy nonthrowing decoder remains unbounded; the opt-in throwing
+  overload caps retained UTF-8 data/metadata and fails closed until reset.
 - `stream(_:)` / `stream(_:bufferingPolicy:)` — every failure the returned
   ``StreamingOutputSequence`` finishes with is a `NetworkError`. Its iterator
   exposes typed `throws(NetworkError)` on every supported platform floor, so
-  callers do not need a cast to exhaustively switch over the failure.
+  callers do not need a cast to exhaustively switch over the failure. Total
+  deadlines do not await cancellation-noncooperative application callbacks;
+  executor-owned late transports and admission reservations are reclaimed.
+  Request interception, token application, and signing chains stop between
+  callbacks once cancellation is observed.
+- `NetworkOperation` — cancelling the handle or the task awaiting `value()`
+  resolves the public result promptly as `.cancelled`, even when the wrapped
+  application work does not cooperate with cancellation. The executor cancels
+  owned work but does not claim that arbitrary application callbacks have
+  physically stopped before the cancellation result is returned.
 - `TraceContextInterceptor` and `W3CTraceContext` — W3C header propagation
   remains additive; future minors may add richer correlation helpers without
   changing `NetworkEvent` case shape.
@@ -359,7 +486,7 @@ Promotion from Provisionally Stable to Stable requires all of the following:
   explicit nil limits remain the opt-out.
 - `NetworkConfiguration.init(...)` — the direct 32-parameter public
   construction surface was removed before the 4.0.0 baseline and is not part
-  of the planned 5.x stable API. Use presets and the named configuration packs
+  of the planned 6.x Stable API. Use presets and the named configuration packs
   passed to `NetworkConfiguration.advanced(...)` instead.
 - Core, Download, and WebSocket configuration runtime fields are package-owned.
   Configuration values are immutable commands, not readable state mirrors;
@@ -382,15 +509,28 @@ Promotion from Provisionally Stable to Stable requires all of the following:
   so applications can inject bundle or locale ownership without relying on a
   process-start snapshot.
 
+## InnoNetwork 6 Boundaries
+
+- `InnoNetworkNext` is removed; its source-compatible type names are promoted
+  into the root module.
+- HLS products are removed from this package and continue in InnoStream with
+  their existing product and module names.
+- `BoundedNetworkTransfer`, `NetworkRetryExecutor`, and
+  `NetworkURLValidator` form the public companion boundary. Package-internal
+  URLSession delegates, event hubs, clocks, and retry coordinators remain
+  implementation details.
+
 ## Version Pinning Guidance
 
-Applications using only Stable API may consume the tagged 5.x line:
+Production applications should continue consuming the tagged 5.x line while
+6.0 remains a draft:
 
 ```swift
 .package(url: "https://github.com/InnoSquadCorp/InnoNetwork", .upToNextMajor(from: "5.1.0"))
 ```
 
-Applications using Provisionally Stable API should prefer a minor-bound range:
+Applications using Provisionally Stable 5.x API should prefer a minor-bound
+range:
 
 ```swift
 .package(url: "https://github.com/InnoSquadCorp/InnoNetwork", .upToNextMinor(from: "5.1.0"))
@@ -399,16 +539,22 @@ Applications using Provisionally Stable API should prefer a minor-bound range:
 Pin the exact `5.1.0` version when a reproducible release build must not accept
 any dependency update.
 
+After `6.0.0` is published, Stable-only applications may adopt the new major
+with `.upToNextMajor(from: "6.0.0")`; Provisionally Stable adopters should use
+`.upToNextMinor(from: "6.0.0")`. Those declarations are intentionally not
+shown as the current install snippet before the tag exists.
+
 ## Public Declaration Ledger
 
 The docs-contract gate extracts public symbols from Swift symbol graphs and
 compares them with `Scripts/symbols/*.allowlist`. That catches nested public
 types and members in addition to top-level declarations. The grouped ledger
-below keeps the high-level compatibility classification readable for the
-5.x release line.
+below keeps the high-level compatibility classification readable. Historical
+5.x HLS sections document the migration source but are no longer included in
+the current machine-checked inventory.
 
-The machine-checked snapshot currently partitions all 3,075 declarations into
-305 Stable consumer declarations, 2,737 Provisionally Stable consumer
+The machine-checked snapshot currently partitions all 1,613 declarations into
+306 Stable consumer declarations, 1,274 Provisionally Stable consumer
 declarations, and 33 opt-in SPI declarations. The three sets are disjoint and
 exhaustive. `Scripts/symbols/stable-rules.tsv` maps the Stable ledger to symbol
 paths, while the compiler-authored SPI flag is snapshotted in
@@ -418,10 +564,10 @@ Stable.
 ### InnoNetwork
 
 - `APIDefinition`, `AnyEncodable`, `AnyRequestExecutionPolicy`,
-  `AnyResponseDecoder`,
+  `AnyResponseDecoder`, `AuthenticationRealm`,
   `CachedResponse`, `CacheRevalidationState`, `CancellationTag`,
   `CircuitBreakerOpenError`, `CircuitBreakerPolicy`,
-  `ConcurrencyLimitExecutionPolicy`,
+  `ConcurrencyLimitExecutionPolicy`, `RateLimitExecutionPolicy`,
   `ContentType`, `CorrelationIDInterceptor`, `CurlCommandOptions`,
   `DecodingStage`,
   `DefaultNetworkClient`, `DefaultRedirectPolicy`,
@@ -438,8 +584,10 @@ Stable.
   `NetworkEvent`, `NetworkEventObserving`, `NetworkInterfaceType`,
   `NetworkLoggingOptions`, `NetworkLogger`, `NetworkMetricsReporting`,
   `NetworkMonitor`, `NetworkMonitoring`, `NetworkReachabilityStatus`,
+  `NetworkUnsatisfiedReason`,
   `NetworkRequestContext`, `NetworkSnapshot`,
-  `OSLogNetworkEventObserver`,
+  `OSLogNetworkEventObserver`, `SemanticAttributeValue`,
+  `SemanticNetworkEvent`, `SemanticNetworkEventAdapter`,
   `RedirectPolicy`, `RefreshFailureCooldown`, `RefreshTokenPolicy`,
   `RequestCoalescingPolicy`, `RequestEncodingPolicy`,
   `RequestPriority`, `RequestBody`,
@@ -472,7 +620,23 @@ Stable.
   `DownloadManager`, `DownloadManagerError`,
   `DownloadProgress`, `DownloadState`, and `DownloadTask`.
 
-### InnoNetworkHLS
+### InnoNetworkUpload
+
+- `UploadConfiguration`, `UploadError`, `UploadEvent`, `UploadManager`,
+  `UploadOperation`, `UploadProgress`, `UploadReceipt`, `UploadState`, and
+  `UploadTask`.
+
+### InnoNetwork 6 operation contract
+
+- `NetworkClientConfiguration`, `NetworkFailure`, `NetworkFailureKind`,
+  `NetworkOperation`, `NetworkOperationDeadline`,
+  `NetworkOperationDeadlineStage`, `NetworkOperationEvent`,
+  `NetworkOperationReplaySafety`, `NetworkRecoveryDisposition`, and
+  `OperationNetworkClient`.
+- These declarations now belong to the root InnoNetwork module. The 5.x
+  InnoNetworkNext product has been removed.
+
+### Historical 5.x InnoNetworkHLS
 
 - Playlist and inspection: `HLSByteRange`, `HLSClosedCaptionReference`,
   `HLSDateRange`, `HLSDateRangeCue`, `HLSDateRangePreload`,
@@ -548,7 +712,7 @@ Stable.
   `HLSOfflinePackageTrackKind`,
   `HLSOfflineRenditionPack`, and `HLSOfflineRenditionSelectionPolicy`.
 
-### InnoNetworkHLSAVFoundation
+### Historical 5.x InnoNetworkHLSAVFoundation
 
 - `HLSAssetDownload`, `HLSAssetDownloadContentPack`,
   `HLSAssetDownloadEvent`, `HLSAssetDownloadEvictionPriority`,
@@ -662,12 +826,12 @@ Stable.
   primary and interstitial ranges while the application owns playback,
   seeking, scheduling, and navigation policy.
 
-### InnoNetworkHLSAudio
+### Historical 5.x InnoNetworkHLSAudio
 
-- The product remains present in the Swift 6.2 package graph so older
-  toolchains can validate the rest of InnoNetwork, but its public declarations
-  require the Xcode 27 SDK and Swift 6.4 compiler. Xcode 26 builds only the
-  empty compatibility module and exposes no HLS-audio symbols.
+- In the 5.x package graph, the product remained present under Swift 6.2 so
+  older toolchains could validate the rest of InnoNetwork, while its public
+  declarations required the Xcode 27 SDK and Swift 6.4 compiler. Xcode 26
+  built only the empty compatibility module and exposed no HLS-audio symbols.
 - `HLSDecodedAudioConfiguration`, `HLSDecodedAudioError`,
   `HLSDecodedAudioOutput`, `HLSDecodedAudioSample`,
   `HLSDecodedAudioPacingConfiguration`, and
@@ -685,7 +849,7 @@ Stable.
   safety and protected-content policy; FairPlay audio is unavailable to the
   system tap.
 
-### InnoNetworkHLSLive
+### Historical 5.x InnoNetworkHLSLive
 
 - `HLSLiveCDNTuneInPack`, `HLSLiveConfiguration`,
   `HLSLiveEncryptionKeyPreloading`, `HLSLiveError`,
@@ -726,11 +890,15 @@ Stable.
 
 ### InnoNetworkWebSocket
 
-- `WebSocketCloseCode`, `WebSocketCloseDisposition`, `WebSocketConfiguration`,
-  `WebSocketError`, `WebSocketEvent`,
+- `JSONWebSocketMessageCodec`, `WebSocketCloseCode`,
+  `WebSocketCloseDisposition`, `WebSocketConfiguration`,
+  `WebSocketDecodedMessages`, `WebSocketError`, `WebSocketEvent`,
+  `WebSocketFrame`, `WebSocketFrameKind`,
   `WebSocketHandshakeRequestAdapter`, `WebSocketManager`,
+  `WebSocketMessageCodec`, `WebSocketMessageCodingError`,
   `WebSocketPingContext`, `WebSocketPongContext`, `WebSocketProtocolFeature`,
-  `WebSocketSendOverflowPolicy`, `WebSocketState`, and `WebSocketTask`.
+  `WebSocketSendOverflowPolicy`, `WebSocketState`, `WebSocketTask`,
+  `WebSocketTypedChannel`, and `WebSocketTypedSendError`.
 
 ### InnoNetworkTrust
 
@@ -759,14 +927,13 @@ Stable.
   `VCRRedactionPolicy`, `VCRRequest`, `VCRResponse`, `VCRURLSession`, and
   `WebSocketEventRecorder`.
 
-### Root Macro Surface (Provisionally Stable)
+### Root Macro Surface (Stable in 6.0)
 
 - `APIDefinition(method:path:auth:)` attached macro.
 - The default-enabled `Macros` package trait and `traits: []` opt-out.
 
-The macro's `auth:` argument consumes the Stable `SessionAuthentication`
-values. Their compatibility tier does not inherit the macro surface's
-Provisionally Stable status.
+The macro's `auth:` argument and the consumed `SessionAuthentication` values
+are both Stable in 6.0.
 
 The root `InnoNetwork` product exports the macro declaration when `Macros` is
 enabled; no separate package or import is required. Expansion is
@@ -794,6 +961,15 @@ the consumer target graph and compilation. SwiftPM still resolves package-level
 manifest dependencies and may resolve or fetch `swift-syntax`. Traits are
 unified per package across a resolved graph, so another dependency enabling
 the default `Macros` trait re-enables it for the shared package instance.
+
+For the 6.x line, existing accepted declarations must keep compiling with the
+same generated method, percent-encoded path, authentication, conformance, and
+payload-witness meaning. New macro arguments may be added only with defaults,
+and the default-enabled trait plus the explicit `traits: []` opt-out remain
+supported package contracts. Manual `APIDefinition` conformance remains the
+non-macro fallback. Exact expansion formatting, diagnostic prose, and Fix-It
+wording are not SemVer contracts, but accepted source cannot become an error
+and the fail-closed diagnostic categories cannot silently become acceptance.
 
 ### SPI
 
@@ -841,7 +1017,7 @@ does not require a major version bump.
 
 **2. The root macro does not bridge the generated-client SPI.**
 
-`@APIDefinition` derives only stable/provisional endpoint protocol witnesses
+`@APIDefinition` derives only public endpoint protocol witnesses
 and does not import `@_spi(GeneratedClientSupport)`. SPI changes therefore do
 not require a corresponding macro expansion migration. Third-party generators
 (custom OpenAPI adapters, in-house DSLs, hand-written `@_spi` imports) must
@@ -885,14 +1061,16 @@ requires `@_spi` import.
 - package-scoped `APISingleRequestExecutable` and
   `MultipartSingleRequestExecutable` adapters used only by the built-in client
 - package-scoped `StateReducer` / `StateReduction` lifecycle vocabulary used
-  by shipping modules; it is not part of the planned consumer-facing 5.x API
+  by shipping modules; it is not part of the planned consumer-facing 6.x API
 - benchmark baseline contents and update cadence
 - lower-level execution hooks that are present in source but not part of the
   proposed 5.0 stable public contract
 
 ## Notes
 
-- Stable items follow semantic versioning for the 5.0.0 line once it is tagged.
+- Stable items follow semantic versioning for the tagged 5.x line and the
+  planned 6.x line; the 6.0 migration guide records every major-only removal
+  or relocation.
 - `default` aliases are convenience entry points and should be treated as `safeDefaults` aliases.
 - Configuration packs are public and supported; their operational tuning
   defaults are not guaranteed to stay numerically identical across releases.
@@ -942,10 +1120,6 @@ requires `@_spi` import.
   Retry scheduling, auth refresh replay, response-cache substitution,
   coalescing, and circuit-breaker state remain owned by built-in pipeline
   stages that may evolve internally.
-- The root `@APIDefinition` macro is default-enabled by the `Macros` package
-  trait. Core-only consumers can request `traits: []` consistently across the
-  graph to exclude the macro declaration and compiler plug-in compilation;
-  SwiftPM may still resolve or fetch manifest-level `swift-syntax` sources.
 - Persistence and telemetry formats are not external storage contracts.
 - Benchmark guard thresholds, guarded benchmark selection, and baseline
   contents are operational policy rather than public compatibility surface.
@@ -956,7 +1130,7 @@ requires `@_spi` import.
   `NetworkError` should add `@unknown default` to keep their code
   forward-compatible across minor bumps.
 - `NetworkError.errorDescription` localization keys are intended to be a
-  Provisionally Stable behaviour contract in 5.x. The package ships the
+  Provisionally Stable behaviour contract in 6.x. The package ships the
   English catalogue;
   applications own end-user localization. Existing key meanings are not
   repurposed without a changelog entry.

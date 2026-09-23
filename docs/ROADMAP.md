@@ -1,5 +1,131 @@
 # Roadmap
 
+## 6.0.0 Release Boundary
+
+`6.0.0` is still an unreleased draft. Its scope is the compatibility reset
+already described in `docs/releases/6.0.0.md`: the operation-first contract
+moves into `InnoNetwork`, HLS moves to InnoStream, and recovery decisions gain
+explicit HTTP, authentication, and replay-safety context. No item in the 6.1
+candidate list below is a blocker for that release.
+
+The root `@APIDefinition(method:path:auth:)` macro, default-enabled `Macros`
+trait, and `traits: []` opt-out are Stable in this 6.0 boundary. Their 5.x
+adoption and permanent macro, diagnostic, and consumer gates satisfy the
+promotion criteria; they are not deferred to 6.1.
+
+The 6.0 exit gate is evidence, not another feature pass: the API allowlists,
+package preflight, non-HLS consumers, InnoStream local integration, companion
+packages, and finally clean remote-tag consumers must all agree with the
+published contract.
+
+## 6.1.0 Candidate Scope
+
+The first minor after 6.0 should be additive and operationally narrow. A
+candidate enters implementation only with an API sketch, a named adopter or
+reproducible protocol gap, negative-path tests, and a measurement or fixture
+that can become a permanent gate. Items are ordered by expected consumer
+value, not by implementation convenience.
+
+### Priority 0 — correctness and adoption evidence
+
+1. **Conditional cache revalidation — completed for the 6.0 boundary.** A
+   valid `Last-Modified` now emits `If-Modified-Since`, dual validators are
+   preserved, malformed dates fail closed, and `304` substitution follows the
+   same bounded path after persistent-cache reopen. Unsafe methods and Vary
+   mismatches continue to bypass conditional reuse.
+2. **End-to-end operation deadline — implemented for the 6.1 candidate.**
+   `NetworkOperationDeadline` applies one monotonic budget across request
+   preparation, authentication, cache lookup, policy admission, reachability,
+   retry delay, transport, and decoding. Expiry cancels built-in client work
+   and reports a payload-free `NetworkOperationDeadlineStage`; recovery still
+   obeys method and explicit replay safety. Deterministic tests cover expired
+   input, retry delay, caller cancellation, successful timer cleanup, and
+   coalesced callers with different budgets. The operation-first API returns a
+   buffered value, so separately returned streaming sequences are explicitly
+   outside this deadline contract rather than receiving a partial promise.
+3. **Promote only proven remaining provisional surfaces.** Use each surface's
+   relevant app and companion-package consumers to identify declarations used
+   without wrappers or SPI. `@APIDefinition` is the deliberate 6.0 promotion;
+   other surfaces remain evidence-gated. Promotion is a compatibility promise,
+   not a declaration-count target.
+
+### Priority 1 — explicit opt-in capabilities
+
+1. **Directive-aware cache controls — implemented for the 6.1 candidate.**
+   `staleIfError(wrapping:)` requires both an explicit caller wrapper and a
+   valid response `stale-if-error=N` directive, preserves caller/server
+   freshness ceilings, and returns stale data only after the retry policy
+   declines another attempt. `requestOnlyIfCached(wrapping:)` consumes the
+   request directive only when opted in, returns an immediately reusable
+   entry without transport, and fails locally when revalidation would be
+   required. Cancellation, trust, configuration, decoding, and body-limit
+   failures never use stale data; authenticated entries still follow the
+   existing admission and identity rules. `immutable`, synthesized `Age`, and
+   default-policy consumption remain separate decisions.
+2. **Managed-upload controls — implemented for the 6.1 candidate.** Pause and
+   resume are idempotent, background restoration persists user-paused intent,
+   and retry requires the original stable `Idempotency-Key` plus an explicitly
+   refreshed request and readable source file. A retry reuses only the logical
+   task identity and receives a new pre-registered event stream; it cannot
+   change destination or method and cannot restart cancelled or completed
+   uploads. This surface remains Provisionally Stable pending external adopter
+   evidence.
+3. **Caller-owned streaming cursors — implemented locally.** The additive
+   `StreamingResumePolicy.cursor` supports NDJSON and other line-oriented
+   protocols with a validated reconnect header, a 4 KiB cursor cap, and
+   transient-only bounded resume. Lossy buffering and automatic redirects are
+   rejected. Response-scoped decoder factories and an opt-in aggregate SSE
+   event limit cover interrupted/concurrent streams and multiline memory growth.
+   Real TCP disconnect fixtures validate custom cursors and explicit resets;
+   server replay/deduplication still belongs to the application.
+4. **Exporter-neutral request span lifecycle — implemented for the 6.1
+   candidate.** `NetworkSpanObserver` relates logical requests and physical
+   dispatch attempts without importing a vendor SDK or exposing request and
+   response bodies. Cache hits, coalesced followers, and failures before
+   dispatch retain a logical span but do not invent a transport attempt.
+   Retry attempts remain child spans and export through a bounded queue.
+
+### Priority 2 — operational scheduling
+
+- **Advanced rate limiting — implemented for the 6.1 candidate.** The opt-in
+  policy provides monotonic token-bucket and exact sliding-window scheduling,
+  bounded origin state, cancellation-aware waiting, and conservative
+  `Retry-After` or versioned draft-11 feedback. Numeric configurations fail
+  before sleeping, dormant fully replenished origins release registry slots,
+  and quota is rechecked after concurrency admission at the actual dispatch
+  boundary. Keep this surface Provisionally Stable until a real adopter's
+  server quota model and production traffic evidence validate the choice.
+
+### Admission and release gates
+
+- Each feature ships independently; an unfinished Priority 1 item does not
+  hold the minor release.
+- Public additions update symbol allowlists, API stability classification,
+  changelog, migration examples, and DocC in the same commit.
+- HTTP behavior needs deterministic URLProtocol fixtures plus persistent-cache
+  parity where applicable; streaming behavior needs disconnect, duplicate,
+  gap, cancellation, and memory-bound tests.
+- Performance-sensitive paths must stay within the existing release benchmark
+  budgets, and diagnostics must prove header/body redaction.
+- At least one real consumer must build without SPI for any surface proposed
+  for Stable promotion.
+
+### Explicitly outside 6.1
+
+- HLS parsing, playback, download, FairPlay, and live DVR remain owned by
+  InnoStream.
+- gRPC, HTTP/3 ownership, WebTransport, a SwiftNIO transport, and WebSocket
+  `permessage-deflate` are separate products or major design efforts.
+- Renaming configuration packs, reshaping `NetworkError`, or removing
+  provisional declarations requires a later major release.
+- Automatic replay of unsafe requests, automatic reuse of opaque body streams,
+  and a claim of complete RFC 9111 compliance are not minor-release goals.
+
+## Historical release context
+
+Everything below this heading is retained as design history for the 4.x and
+5.x lines. It is not the active 6.1 backlog.
+
 ## 5.0.0 Release Scope
 
 The 5.0.0 release converted the hardening backlog into an explicit
@@ -140,7 +266,7 @@ chunk-signing remain explicitly deferred to protocol-specific transports.
 | `InnoNetworkAuthAWS` | Provisionally Stable | 5.x minor after field validation | AWS SigV4 vector tests, README/DocC reference-signer scope, and one adopter migration note. |
 | `PersistentResponseCache` telemetry/statistics | Provisionally Stable | 5.x minor | Reentrancy invariant documented, persistent cache tests cover key rotation and stats. |
 | `ResponseCachePolicy.rfc9111Compliant(wrapping:)` | Provisionally Stable | 5.x minor | Directive subset is documented as RFC 9111-aware, not full compliance, with cache policy tests. |
-| Root `@APIDefinition` macro | Provisionally Stable | No automatic promotion | Explicit structs remain the source of truth; diagnostics, body/query inference, and the core-only trait opt-out sustain adopter validation. |
+| Root `@APIDefinition` macro | Provisionally Stable in 5.x | Promoted to Stable in 6.0.0 | Explicit structs remain the source of truth; InnoSample and Mulbyul adoption plus diagnostics, body/query inference, macro smoke, and the core-only trait opt-out satisfy the promotion gate. |
 
 ## Post-5.0 RFC Parking Lot
 

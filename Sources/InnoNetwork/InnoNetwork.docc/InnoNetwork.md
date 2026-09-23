@@ -15,7 +15,7 @@ one-off or runtime-composed requests.
 Use this module when you need:
 
 - typed request definitions with ``APIDefinition``
-- a single async request entry point through ``DefaultNetworkClient``
+- an operation-first request lifecycle through ``OperationNetworkClient``
 - request encoding choices that stay explicit
 - trust policy, retry policy, and observability that can be tuned when production needs it
 
@@ -49,6 +49,14 @@ retain those values.
 ### Essentials
 
 - <doc:GettingStarted>
+- <doc:MigrationTo6>
+- ``NetworkClientConfiguration``
+- ``OperationNetworkClient``
+- ``NetworkOperation``
+- ``NetworkOperationReplaySafety``
+- ``NetworkOperationDeadline``
+- ``NetworkOperationDeadlineStage``
+- ``NetworkFailure``
 - ``DefaultNetworkClient``
 - ``APIDefinition``
 - <doc:UsingMacros>
@@ -60,6 +68,13 @@ retain those values.
 - ``UploadNetworkClient``
 - ``EndpointBuilder``
 - ``MultipartAPIDefinition``
+- <doc:StreamingGuide>
+- ``StreamingAPIDefinition``
+- ``StreamingResumePolicy``
+- ``ServerSentEventDecoder``
+- ``BoundedNetworkTransfer``
+- ``NetworkRetryExecutor``
+- ``NetworkURLValidator``
 
 ### Configuration
 
@@ -68,7 +83,11 @@ retain those values.
 - <doc:TrustPolicies>
 - ``NetworkEvent``
 - ``NetworkEventObserving``
+- ``SemanticNetworkEventAdapter``
 - ``NetworkMetricsReporting``
+- ``NetworkSpanObserver``
+- ``NetworkSpanExporting``
+- <doc:AdmissionAndRateLimiting>
 
 ### Request and Response Behavior
 
@@ -89,11 +108,15 @@ retain those values.
 - ``RetryPolicy``
 - ``ExponentialBackoffRetryPolicy``
 - ``RefreshTokenPolicy``
+- ``AuthenticationRealm``
 - ``RequestCoalescingPolicy``
 - ``ResponseCachePolicy``
 - ``ResponseCache``
 - ``InMemoryResponseCache``
 - ``RequestExecutionPolicy``
+- ``RateLimitExecutionPolicy``
+- ``RequestAdmissionPolicy``
+- ``AdvancedRateLimitPolicy``
 - ``ResponseBodyBufferingPolicy``
 - ``CircuitBreakerPolicy``
 - ``CircuitBreakerOpenError``

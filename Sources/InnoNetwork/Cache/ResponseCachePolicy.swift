@@ -52,6 +52,24 @@ public enum ResponseCachePolicy: Sendable, Equatable {
     /// each layer, so consumers should not assume the case nests at most
     /// once.
     indirect case rfc9111Compliant(wrapping: ResponseCachePolicy)
+    /// Allows a stale cached response to recover a transient transport or
+    /// server failure when the stored response explicitly advertises a valid
+    /// `Cache-Control: stale-if-error=N` window. Recovery is considered only
+    /// after the active retry policy declines another retry. Cancellation,
+    /// trust, configuration, decoding, and response-body-limit failures never
+    /// fall back to stale data.
+    ///
+    /// This wrapper is opt-in and does not weaken the inner policy's cache
+    /// admission, identity partitioning, or freshness ceiling.
+    indirect case staleIfError(wrapping: ResponseCachePolicy)
+    /// Honors a request's `Cache-Control: only-if-cached` directive. When the
+    /// directive is present, an immediately reusable entry is returned without
+    /// transport; a miss or an entry that requires network revalidation fails
+    /// locally with ``NetworkError/configuration(reason:)``.
+    ///
+    /// The wrapper is opt-in so existing clients continue forwarding the
+    /// directive to their origin without InnoNetwork changing request flow.
+    indirect case requestOnlyIfCached(wrapping: ResponseCachePolicy)
 }
 
 
@@ -88,6 +106,7 @@ public struct ResponseCacheKey: Hashable, Sendable {
     // localize representations without changing the URL.
     private static let excludedHeaderNames: Set<String> = [
         "accept-encoding",
+        "cache-control",
         "content-type",
         "date",
         "if-modified-since",
@@ -210,6 +229,13 @@ public struct CachedResponse: Sendable, Equatable {
     public let statusCode: Int
     public let headers: [String: String]
     public let storedAt: Date
+    /// Corrected RFC 9111 response age at ``storedAt``.
+    ///
+    /// Custom persistent caches must store and restore this value unchanged
+    /// so transport delay and upstream `Age` metadata survive a process
+    /// restart. The initializer clamps invalid, negative, and overflowing
+    /// values to the RFC delta-seconds range.
+    public let rfc9111InitialAge: TimeInterval
     /// Whether a cached entry must be revalidated before reuse even while it
     /// is still inside the caller-provided freshness window.
     public let requiresRevalidation: Bool
@@ -227,6 +253,7 @@ public struct CachedResponse: Sendable, Equatable {
         statusCode: Int = 200,
         headers: [String: String] = [:],
         storedAt: Date = Date(),
+        rfc9111InitialAge: TimeInterval? = nil,
         requiresRevalidation: Bool = false,
         varyHeaders: [String: String?]? = nil
     ) {
@@ -234,6 +261,13 @@ public struct CachedResponse: Sendable, Equatable {
         self.statusCode = statusCode
         self.headers = headers
         self.storedAt = storedAt
+        self.rfc9111InitialAge =
+            rfc9111InitialAge.map(RFC9111ResponseAge.clamp)
+            ?? RFC9111ResponseAge.initialAge(
+                headers: headers,
+                requestTime: storedAt,
+                responseTime: storedAt
+            )
         self.requiresRevalidation = requiresRevalidation
         self.varyHeaders = varyHeaders
     }
@@ -270,9 +304,11 @@ public struct CachedResponse: Sendable, Equatable {
             varyHeaders?.reduce(0) { partial, entry in
                 partial + entry.key.utf8.count + (entry.value?.utf8.count ?? 0)
             } ?? 0
-        // Date stride covers `storedAt`; constant overhead covers the boxed
-        // optional `varyHeaders` and the `requiresRevalidation` flag.
-        return data.count + headersCost + varyCost + MemoryLayout<Date>.stride + 16
+        // Fixed-width strides cover `storedAt` and the RFC initial-age
+        // snapshot; constant overhead covers the boxed optional
+        // `varyHeaders` and the `requiresRevalidation` flag.
+        return data.count + headersCost + varyCost
+            + MemoryLayout<Date>.stride + MemoryLayout<TimeInterval>.stride + 16
     }
 }
 
@@ -327,7 +363,7 @@ public actor InMemoryResponseCache: ResponseCache {
         let key: ResponseCacheKey
         var value: CachedResponse
         var cost: Int
-        var prev: Node?
+        weak var prev: Node?
         var next: Node?
 
         init(key: ResponseCacheKey, value: CachedResponse, cost: Int) {
@@ -436,7 +472,9 @@ package enum CachePreparation: Sendable {
     case bypass
     case returnCached(CachedResponse)
     case revalidate(CachedResponse?)
+    case revalidateWithStaleIfError(CachedResponse)
     case returnStaleAndRevalidate(CachedResponse)
+    case onlyIfCachedMiss
 }
 
 
@@ -447,7 +485,9 @@ package extension ResponseCachePolicy {
             return false
         case .networkOnly, .cacheFirst, .staleWhileRevalidate:
             return true
-        case .rfc9111Compliant(let inner):
+        case .rfc9111Compliant(let inner),
+            .staleIfError(let inner),
+            .requestOnlyIfCached(let inner):
             return inner.isEnabled
         }
     }
@@ -458,7 +498,9 @@ package extension ResponseCachePolicy {
             return true
         case .disabled, .networkOnly:
             return false
-        case .rfc9111Compliant(let inner):
+        case .rfc9111Compliant(let inner),
+            .staleIfError(let inner),
+            .requestOnlyIfCached(let inner):
             return inner.allowsConditionalRevalidation
         }
     }
@@ -471,7 +513,9 @@ package extension ResponseCachePolicy {
             return true
         case .disabled, .networkOnly:
             return false
-        case .rfc9111Compliant(let inner):
+        case .rfc9111Compliant(let inner),
+            .staleIfError(let inner),
+            .requestOnlyIfCached(let inner):
             return inner.allowsCacheRead
         }
     }
@@ -485,12 +529,22 @@ package extension ResponseCachePolicy {
             return true
         case .disabled, .networkOnly:
             return false
-        case .rfc9111Compliant(let inner):
+        case .rfc9111Compliant(let inner),
+            .staleIfError(let inner),
+            .requestOnlyIfCached(let inner):
             return inner.allowsCacheWrite
         }
     }
 
     func prepare(cached: CachedResponse?, now: Date = Date()) -> CachePreparation {
+        prepare(cached: cached, now: now, rfc9111InitialAge: nil)
+    }
+
+    func prepare(
+        cached: CachedResponse?,
+        now: Date,
+        rfc9111InitialAge: TimeInterval?
+    ) -> CachePreparation {
         switch self {
         case .disabled:
             return .bypass
@@ -499,12 +553,21 @@ package extension ResponseCachePolicy {
         case .cacheFirst(let maxAge):
             guard let cached else { return .revalidate(nil) }
             guard !cached.requiresRevalidation else { return .revalidate(cached) }
-            return cached.age(since: now) <= maxAge.timeInterval ? .returnCached(cached) : .revalidate(cached)
+            let age = cached.age(since: now, additionalAge: rfc9111InitialAge ?? 0)
+            let isFresh =
+                rfc9111InitialAge == nil
+                ? age <= maxAge.timeInterval
+                : age < maxAge.timeInterval
+            return isFresh ? .returnCached(cached) : .revalidate(cached)
         case .staleWhileRevalidate(let maxAge, let staleWindow):
             guard let cached else { return .revalidate(nil) }
             guard !cached.requiresRevalidation else { return .revalidate(cached) }
-            let age = cached.age(since: now)
-            if age <= maxAge.timeInterval {
+            let age = cached.age(since: now, additionalAge: rfc9111InitialAge ?? 0)
+            let isFresh =
+                rfc9111InitialAge == nil
+                ? age <= maxAge.timeInterval
+                : age < maxAge.timeInterval
+            if isFresh {
                 return .returnCached(cached)
             }
             if age <= maxAge.timeInterval + staleWindow.timeInterval {
@@ -512,15 +575,114 @@ package extension ResponseCachePolicy {
             }
             return .revalidate(cached)
         case .rfc9111Compliant(let inner):
-            return prepareWithRFC9111(inner: inner, cached: cached, now: now)
+            return prepareWithRFC9111(
+                inner: inner,
+                cached: cached,
+                now: now,
+                initialAge: cached?.rfc9111InitialAge ?? rfc9111InitialAge
+            )
+        case .staleIfError(let inner), .requestOnlyIfCached(let inner):
+            return inner.prepare(
+                cached: cached,
+                now: now,
+                rfc9111InitialAge: rfc9111InitialAge
+            )
+        }
+    }
+
+    var honorsRequestOnlyIfCached: Bool {
+        switch self {
+        case .requestOnlyIfCached:
+            return true
+        case .rfc9111Compliant(let inner), .staleIfError(let inner):
+            return inner.honorsRequestOnlyIfCached
+        case .disabled, .networkOnly, .cacheFirst, .staleWhileRevalidate:
+            return false
+        }
+    }
+
+    private var containsStaleIfErrorOptIn: Bool {
+        switch self {
+        case .staleIfError:
+            return true
+        case .rfc9111Compliant(let inner), .requestOnlyIfCached(let inner):
+            return inner.containsStaleIfErrorOptIn
+        case .disabled, .networkOnly, .cacheFirst, .staleWhileRevalidate:
+            return false
+        }
+    }
+
+    /// Returns the stale entry only when both sides of the contract agree:
+    /// the caller opted in and the origin supplied a valid stale-if-error
+    /// allowance that still covers the entry's current staleness.
+    func staleIfErrorFallback(
+        cached: CachedResponse,
+        now: Date
+    ) -> CachedResponse? {
+        guard containsStaleIfErrorOptIn, allowsCacheRead else { return nil }
+        let directives = RFC9111CacheControlDirectives(headers: cached.headers)
+        guard !directives.noStore,
+            !directives.noCache,
+            !cached.requiresRevalidation,
+            !directives.mustRevalidate,
+            !directives.hasInvalidStaleIfError,
+            let staleWindow = directives.staleIfErrorSeconds,
+            let freshnessLifetime = effectiveFreshnessLifetime(for: cached),
+            case .revalidate(let candidate) = prepare(cached: cached, now: now),
+            candidate != nil
+        else {
+            return nil
+        }
+        let additionalAge = containsRFC9111Adapter ? cached.rfc9111InitialAge : 0
+        let staleness = max(
+            0,
+            cached.age(since: now, additionalAge: additionalAge) - freshnessLifetime
+        )
+        return staleness <= staleWindow ? cached : nil
+    }
+
+    private var containsRFC9111Adapter: Bool {
+        switch self {
+        case .rfc9111Compliant:
+            return true
+        case .staleIfError(let inner), .requestOnlyIfCached(let inner):
+            return inner.containsRFC9111Adapter
+        case .disabled, .networkOnly, .cacheFirst, .staleWhileRevalidate:
+            return false
+        }
+    }
+
+    private func effectiveFreshnessLifetime(for cached: CachedResponse) -> TimeInterval? {
+        switch self {
+        case .disabled, .networkOnly:
+            return nil
+        case .cacheFirst(let maxAge), .staleWhileRevalidate(let maxAge, _):
+            return max(0, maxAge.timeInterval)
+        case .staleIfError(let inner), .requestOnlyIfCached(let inner):
+            return inner.effectiveFreshnessLifetime(for: cached)
+        case .rfc9111Compliant(let inner):
+            guard let innerLifetime = inner.effectiveFreshnessLifetime(for: cached) else {
+                return nil
+            }
+            let directives = RFC9111CacheControlDirectives(headers: cached.headers)
+            switch directives.freshnessLifetime(headers: cached.headers, storedAt: cached.storedAt) {
+            case .invalidOrExpired:
+                return 0
+            case .lifetime(let serverLifetime):
+                return min(innerLifetime, max(0, serverLifetime))
+            case .unspecified:
+                return innerLifetime
+            }
         }
     }
 }
 
 
 private extension CachedResponse {
-    func age(since now: Date) -> TimeInterval {
-        max(0, now.timeIntervalSince(storedAt))
+    func age(since now: Date, additionalAge: TimeInterval = 0) -> TimeInterval {
+        RFC9111ResponseAge.clamp(
+            max(0, now.timeIntervalSince(storedAt)) + max(0, additionalAge)
+        )
     }
 }
 

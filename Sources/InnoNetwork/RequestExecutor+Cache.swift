@@ -15,12 +15,15 @@ extension RequestExecutor {
         configuration: NetworkConfiguration,
         runtime: RequestExecutionRuntime
     ) async -> CachePreparation {
+        let onlyIfCached =
+            configuration.responseCachePolicy.honorsRequestOnlyIfCached
+            && requestRequestsOnlyIfCached(request)
         guard let cacheKey,
             request.httpMethod == HTTPMethod.get.rawValue,
             let cache = configuration.responseCache,
             configuration.responseCachePolicy.allowsCacheRead
         else {
-            return .bypass
+            return onlyIfCached ? .onlyIfCachedMiss : .bypass
         }
 
         let cached = await cachedRespectingVary(
@@ -29,10 +32,30 @@ extension RequestExecutor {
             request: request,
             sensitiveHeaderNames: configuration.responseCacheSensitiveHeaderNames
         )
-        return configuration.responseCachePolicy.prepare(
+        let preparation = configuration.responseCachePolicy.prepare(
             cached: cached,
             now: runtime.clock.now()
         )
+        if onlyIfCached {
+            switch preparation {
+            case .returnCached(let entry), .returnStaleAndRevalidate(let entry):
+                // only-if-cached explicitly forbids the background network
+                // leg that stale-while-revalidate would normally schedule.
+                return .returnCached(entry)
+            case .bypass, .revalidate, .revalidateWithStaleIfError, .onlyIfCachedMiss:
+                return .onlyIfCachedMiss
+            }
+        }
+        if case .revalidate(let candidate) = preparation,
+            let candidate,
+            let fallback = configuration.responseCachePolicy.staleIfErrorFallback(
+                cached: candidate,
+                now: runtime.clock.now()
+            )
+        {
+            return .revalidateWithStaleIfError(fallback)
+        }
+        return preparation
     }
 
     func cachedResponseIfAvailable(
@@ -44,29 +67,24 @@ extension RequestExecutor {
         bodySource: BodySource,
         requestSigners: [RequestSigner],
         runtime: RequestExecutionRuntime,
-        originalRequestID: UUID
+        originalRequestID: UUID,
+        cacheWriteToken: ResponseCacheMutationCoordinator.WriteToken?
     ) async throws -> Response? {
         switch preparation {
-        case .bypass, .revalidate:
+        case .bypass, .revalidate, .revalidateWithStaleIfError:
             return nil
-        case .returnCached(let cached):
-            guard let httpResponse = cached.response(for: request) else { return nil }
-            let response = Response(
-                statusCode: cached.statusCode,
-                data: cached.data,
-                request: request,
-                response: httpResponse
+        case .onlyIfCachedMiss:
+            throw NetworkError.configuration(
+                reason: .invalidRequest(
+                    "Cache-Control: only-if-cached could not be satisfied without network access."
+                )
             )
+        case .returnCached(let cached):
+            guard let response = response(from: cached, for: request) else { return nil }
             try enforceResponseBodyLimit(response, configuration: configuration)
             return response
         case .returnStaleAndRevalidate(let cached):
-            guard let httpResponse = cached.response(for: request) else { return nil }
-            let staleResponse = Response(
-                statusCode: cached.statusCode,
-                data: cached.data,
-                request: request,
-                response: httpResponse
-            )
+            guard let staleResponse = response(from: cached, for: request) else { return nil }
             try enforceResponseBodyLimit(staleResponse, configuration: configuration)
 
             guard let cacheKey else { return nil }
@@ -106,12 +124,12 @@ extension RequestExecutor {
                         // RFC 9110 §13.1.3 permits sending both validators
                         // together — origins MAY use whichever they have a
                         // strong preference for.
-                        if let lastModified = cached.lastModified {
+                        if let lastModified = validatedLastModified(cached) {
                             revalidationRequest.setValue(
                                 lastModified, forHTTPHeaderField: "If-Modified-Since")
                         }
                         revalidation = ConditionalRevalidationContext(cached: cached)
-                    } else if let lastModified = cached.lastModified {
+                    } else if let lastModified = validatedLastModified(cached) {
                         revalidationRequest.setValue(
                             lastModified, forHTTPHeaderField: "If-Modified-Since")
                         revalidation = ConditionalRevalidationContext(cached: cached)
@@ -126,16 +144,12 @@ extension RequestExecutor {
                         requestSigners: requestSigners,
                         configuration: configuration,
                         context: context,
-                        runtime: runtime
+                        runtime: runtime,
+                        requestID: revalidationID
                     )
                     try Task.checkCancellation()
 
-                    let response = Response(
-                        statusCode: result.response.statusCode,
-                        data: result.data,
-                        request: revalidationRequest,
-                        response: result.response
-                    )
+                    let response = result.response
                     let terminalState: CacheRevalidationState
                     if let substitution = try await convertNotModifiedIfNeeded(
                         response,
@@ -147,14 +161,13 @@ extension RequestExecutor {
                         try Task.checkCancellation()
                         if notModifiedRevisesVary(
                             cached: substitution.cached,
-                            notModifiedHeaders: result.response.allHeaderFields
+                            notModifiedHeaders: response.response?.allHeaderFields
                         ) {
                             try enforceResponseBodyLimit(
-                                substitution.preservedResponse,
+                                substitution.mergedResponse,
                                 configuration: configuration
                             )
-                            await refreshCachedFreshness(
-                                cached: substitution.cached,
+                            await invalidateCacheEntry(
                                 cacheKey: cacheKey,
                                 configuration: configuration,
                                 runtime: runtime
@@ -168,7 +181,12 @@ extension RequestExecutor {
                                 substitution.mergedResponse,
                                 cacheKey: cacheKey,
                                 request: revalidationRequest,
-                                configuration: configuration
+                                configuration: configuration,
+                                ageHeaders: responseHeaderSnapshot(response.response),
+                                requestStartedAt: result.requestStartedAt,
+                                responseReceivedAt: result.responseReceivedAt,
+                                runtime: runtime,
+                                writeToken: cacheWriteToken
                             )
                         }
                         terminalState = .notModified
@@ -176,8 +194,17 @@ extension RequestExecutor {
                         try Task.checkCancellation()
                         try enforceResponseBodyLimit(response, configuration: configuration)
                         await storeCacheIfNeeded(
-                            response, cacheKey: cacheKey, request: revalidationRequest, configuration: configuration)
-                        terminalState = .completed(statusCode: result.response.statusCode)
+                            response,
+                            cacheKey: cacheKey,
+                            request: revalidationRequest,
+                            configuration: configuration,
+                            ageHeaders: nil,
+                            requestStartedAt: result.requestStartedAt,
+                            responseReceivedAt: result.responseReceivedAt,
+                            runtime: runtime,
+                            writeToken: cacheWriteToken
+                        )
+                        terminalState = .completed(statusCode: response.statusCode)
                     }
                     await eventHub.publish(
                         .cacheRevalidation(originalID: originalRequestID, state: terminalState),
@@ -216,16 +243,75 @@ extension RequestExecutor {
         }
     }
 
+    func staleIfErrorCandidate(preparation: CachePreparation) -> CachedResponse? {
+        guard case .revalidateWithStaleIfError(let cached) = preparation else {
+            return nil
+        }
+        return cached
+    }
+
+    func staleIfErrorResponse(
+        candidate: CachedResponse,
+        request: URLRequest,
+        configuration: NetworkConfiguration,
+        runtime: RequestExecutionRuntime,
+        cacheKey: ResponseCacheKey?,
+        writeToken: ResponseCacheMutationCoordinator.WriteToken?
+    ) async -> Response? {
+        guard let cacheKey, let writeToken, let cache = configuration.responseCache else {
+            return nil
+        }
+        // Retry decisions can suspend long after the original lookup. Select
+        // recovery under the same lease used by invalidation and cache writes.
+        await runtime.cacheMutations.acquire(targetURI: writeToken.targetURI)
+        guard await runtime.cacheMutations.isCurrent(writeToken),
+            let current = await cachedRespectingVary(
+                cache, key: cacheKey, request: request,
+                sensitiveHeaderNames: configuration.responseCacheSensitiveHeaderNames
+            ),
+            current.matchesRepresentation(of: candidate),
+            configuration.responseCachePolicy.staleIfErrorFallback(
+                cached: current, now: runtime.clock.now()
+            ) != nil
+        else {
+            await runtime.cacheMutations.release(targetURI: writeToken.targetURI)
+            return nil
+        }
+        let selected = response(from: current, for: request)
+        await runtime.cacheMutations.release(targetURI: writeToken.targetURI)
+        return selected
+    }
+
+    private func response(from cached: CachedResponse, for request: URLRequest) -> Response? {
+        guard let httpResponse = cached.response(for: request) else { return nil }
+        return Response(
+            statusCode: cached.statusCode,
+            data: cached.data,
+            request: request,
+            response: httpResponse
+        )
+    }
+
+    private func requestRequestsOnlyIfCached(_ request: URLRequest) -> Bool {
+        guard let value = request.value(forHTTPHeaderField: "Cache-Control") else {
+            return false
+        }
+        return HTTPListParser.split(value).contains {
+            HTTPListParser.directiveName(of: $0) == "only-if-cached"
+        }
+    }
+
     func revalidateInBackground(
         request: URLRequest,
         bodySource: BodySource,
         requestSigners: [RequestSigner],
         configuration: NetworkConfiguration,
         context: NetworkRequestContext,
-        runtime: RequestExecutionRuntime
-    ) async throws -> TransportResult {
+        runtime: RequestExecutionRuntime,
+        requestID: UUID
+    ) async throws -> TimedNetworkResponse {
         let revalidationContext = NetworkRequestContext(
-            requestID: UUID(),
+            requestID: requestID,
             retryIndex: context.retryIndex,
             metricsReporter: context.metricsReporter,
             trustPolicy: context.trustPolicy,
@@ -235,13 +321,15 @@ extension RequestExecutor {
             allowsAutomaticRedirects: context.allowsAutomaticRedirects,
             allowsURLCacheStorage: context.allowsURLCacheStorage
         )
-        return try await performSignedTransportResult(
+        return try await performSignedTransport(
             request: request,
             bodySource: bodySource,
             requestSigners: requestSigners,
             configuration: configuration,
             context: revalidationContext,
-            runtime: runtime
+            runtime: runtime,
+            requestID: requestID,
+            allowsRequestCoalescing: requestSigners.isEmpty
         )
     }
 
@@ -250,10 +338,18 @@ extension RequestExecutor {
         preparation: CachePreparation,
         configuration: NetworkConfiguration
     ) -> ConditionalRevalidationContext? {
+        let candidate: CachedResponse?
+        switch preparation {
+        case .revalidate(let revalidationCandidate):
+            candidate = revalidationCandidate
+        case .revalidateWithStaleIfError(let revalidationCandidate):
+            candidate = revalidationCandidate
+        case .bypass, .returnCached, .returnStaleAndRevalidate, .onlyIfCachedMiss:
+            candidate = nil
+        }
         guard configuration.responseCachePolicy.isEnabled,
             configuration.responseCachePolicy.allowsConditionalRevalidation,
-            case .revalidate(let revalidationCandidate) = preparation,
-            let candidate = revalidationCandidate
+            let candidate
         else {
             return nil
         }
@@ -262,7 +358,7 @@ extension RequestExecutor {
             request.setValue(etag, forHTTPHeaderField: "If-None-Match")
             attached = true
         }
-        if let lastModified = candidate.lastModified {
+        if let lastModified = validatedLastModified(candidate) {
             request.setValue(lastModified, forHTTPHeaderField: "If-Modified-Since")
             attached = true
         }
@@ -270,6 +366,15 @@ extension RequestExecutor {
             return nil
         }
         return ConditionalRevalidationContext(cached: candidate)
+    }
+
+    private func validatedLastModified(_ cached: CachedResponse) -> String? {
+        guard let value = cached.lastModified,
+            HTTPDateParser.parse(value, requiresGMTZone: true) != nil
+        else {
+            return nil
+        }
+        return value
     }
 
     func convertNotModifiedIfNeeded(
@@ -313,16 +418,31 @@ extension RequestExecutor {
                 request: request
             )
         }
+        if let notModifiedETag = response.response?.value(forHTTPHeaderField: "ETag") {
+            guard let cachedETag = preparedCached.etag,
+                notModifiedETagIdentifiesCachedResponse(
+                    cachedETag: cachedETag, notModifiedETag: notModifiedETag
+                )
+            else {
+                throw cacheRevalidationFailed(
+                    "The 304 ETag did not identify the conditionally validated stored response.",
+                    cached: preparedCached, request: request
+                )
+            }
+        } else if let lastModified = response.response?.value(forHTTPHeaderField: "Last-Modified") {
+            guard let cachedValue = validatedLastModified(preparedCached),
+                let receivedDate = HTTPDateParser.parse(lastModified, requiresGMTZone: true),
+                receivedDate == HTTPDateParser.parse(cachedValue, requiresGMTZone: true)
+            else {
+                throw cacheRevalidationFailed(
+                    "The 304 Last-Modified did not identify the conditionally validated stored response.",
+                    cached: preparedCached, request: request
+                )
+            }
+        }
         guard let url = request.url else {
             throw cacheRevalidationFailed(
                 "Request URL was unavailable during 304 Not Modified substitution.",
-                cached: preparedCached,
-                request: request
-            )
-        }
-        guard let preservedHTTPResponse = preparedCached.response(for: request) else {
-            throw cacheRevalidationFailed(
-                "Cached response headers could not be reconstructed during 304 Not Modified substitution.",
                 cached: preparedCached,
                 request: request
             )
@@ -348,14 +468,30 @@ extension RequestExecutor {
                 request: request,
                 response: httpResponse
             ),
-            preservedResponse: Response(
-                statusCode: preparedCached.statusCode,
-                data: preparedCached.data,
-                request: request,
-                response: preservedHTTPResponse
-            ),
             cached: preparedCached
         )
+    }
+
+    /// Applies RFC 9111 section 4.3.4's validator selection rule to the one
+    /// representation carried by `ResponseCache`. A strong validator in the
+    /// 304 must strongly match the stored validator; a weak validator may
+    /// identify a stored validator with the same opaque tag.
+    private func notModifiedETagIdentifiesCachedResponse(
+        cachedETag: String,
+        notModifiedETag: String
+    ) -> Bool {
+        let cached = normalizedEntityTag(cachedETag)
+        let notModified = normalizedEntityTag(notModifiedETag)
+        guard cached.opaqueTag == notModified.opaqueTag else { return false }
+        return notModified.isWeak || !cached.isWeak
+    }
+
+    private func normalizedEntityTag(_ raw: String) -> (isWeak: Bool, opaqueTag: String) {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("W/") else {
+            return (isWeak: false, opaqueTag: trimmed)
+        }
+        return (isWeak: true, opaqueTag: String(trimmed.dropFirst(2)))
     }
 
     private func cacheRevalidationFailed(
@@ -383,39 +519,6 @@ extension RequestExecutor {
                 data: cached.data,
                 request: request,
                 response: httpResponse
-            )
-        )
-    }
-
-    /// Re-stores `cached` under `cacheKey` with a refreshed `storedAt`.
-    ///
-    /// Used on the 304 substitution path when the not-modified response
-    /// advertises a different `Vary` dimension than the stored entry was
-    /// keyed on. The stored representation, headers, and Vary snapshot are
-    /// preserved verbatim; only the freshness timestamp moves forward so
-    /// the entry honours the successful conditional revalidation without
-    /// being silently rekeyed.
-    func refreshCachedFreshness(
-        cached: CachedResponse,
-        cacheKey: ResponseCacheKey?,
-        configuration: NetworkConfiguration,
-        runtime: RequestExecutionRuntime
-    ) async {
-        guard let cacheKey,
-            let cache = configuration.responseCache,
-            configuration.responseCachePolicy.allowsCacheWrite
-        else {
-            return
-        }
-        await cache.set(
-            cacheKey,
-            CachedResponse(
-                data: cached.data,
-                statusCode: cached.statusCode,
-                headers: cached.headers,
-                storedAt: runtime.clock.now(),
-                requiresRevalidation: cached.requiresRevalidation,
-                varyHeaders: cached.varyHeaders
             )
         )
     }
@@ -454,7 +557,8 @@ extension RequestExecutor {
     func invalidateUnsafeTargetURIIfNeeded(
         _ response: Response,
         request: URLRequest,
-        configuration: NetworkConfiguration
+        configuration: NetworkConfiguration,
+        runtime: RequestExecutionRuntime
     ) async {
         guard
             Self.shouldInvalidateCacheForUnsafeMethod(request.httpMethod, statusCode: response.statusCode),
@@ -465,7 +569,10 @@ extension RequestExecutor {
             return
         }
 
+        await runtime.cacheMutations.acquire(targetURI: targetURI)
+        await runtime.cacheMutations.advanceGeneration(for: targetURI)
         await cache.invalidateTargetURI(targetURI)
+        await runtime.cacheMutations.release(targetURI: targetURI)
     }
 
     /// Stores the response in cache when the policy allows writes.
@@ -480,7 +587,12 @@ extension RequestExecutor {
         _ response: Response,
         cacheKey: ResponseCacheKey?,
         request: URLRequest,
-        configuration: NetworkConfiguration
+        configuration: NetworkConfiguration,
+        ageHeaders: [String: String]?,
+        requestStartedAt: Date,
+        responseReceivedAt: Date,
+        runtime: RequestExecutionRuntime,
+        writeToken: ResponseCacheMutationCoordinator.WriteToken?
     ) async {
         guard let cacheKey,
             request.httpMethod == HTTPMethod.get.rawValue,
@@ -489,23 +601,27 @@ extension RequestExecutor {
         else {
             return
         }
-        let headerSnapshot =
-            response.response?.allHeaderFields.reduce(into: [String: String]()) { result, pair in
-                guard let key = pair.key as? String, let value = pair.value as? String else { return }
-                result[key] = value
-            } ?? [:]
+        let headerSnapshot = responseHeaderSnapshot(response.response)
         guard Self.cacheableStatusCodes.contains(response.statusCode) else {
             return
         }
         let cacheControl = cacheControlDirectives(in: headerSnapshot)
         if cacheControl.contains("no-store") || cacheControl.contains("private") {
-            await cache.invalidate(cacheKey)
+            await invalidateCacheEntry(
+                cacheKey: cacheKey,
+                configuration: configuration,
+                runtime: runtime
+            )
             return
         }
         if ResponseCacheStoragePolicy.containsAuthorizationRequestHeader(request.allHTTPHeaderFields ?? [:]),
             !ResponseCacheStoragePolicy.responsePermitsAuthenticatedStorage(cacheControlDirectives: cacheControl)
         {
-            await cache.invalidate(cacheKey)
+            await invalidateCacheEntry(
+                cacheKey: cacheKey,
+                configuration: configuration,
+                runtime: runtime
+            )
             return
         }
         let varyHeaders: [String: String?]?
@@ -515,11 +631,28 @@ extension RequestExecutor {
             sensitiveHeaderNames: configuration.responseCacheSensitiveHeaderNames
         ) {
         case .wildcardSkipsCache:
+            await invalidateCacheEntry(
+                cacheKey: cacheKey,
+                configuration: configuration,
+                runtime: runtime
+            )
             return
         case .noVary:
             varyHeaders = nil
         case .vary(let snapshot):
             varyHeaders = snapshot
+        }
+        // Request directives need not be echoed by the origin. Do not persist
+        // this response (or refresh a 304). Existing entries stay untouched
+        // unless the response itself prohibits storage, as handled above.
+        guard !cacheControlDirectives(in: request.allHTTPHeaderFields ?? [:]).contains("no-store") else {
+            return
+        }
+        guard let writeToken else { return }
+        await runtime.cacheMutations.acquire(targetURI: writeToken.targetURI)
+        guard await runtime.cacheMutations.isCurrent(writeToken) else {
+            await runtime.cacheMutations.release(targetURI: writeToken.targetURI)
+            return
         }
         await cache.set(
             cacheKey,
@@ -527,10 +660,45 @@ extension RequestExecutor {
                 data: response.data,
                 statusCode: response.statusCode,
                 headers: headerSnapshot,
+                storedAt: responseReceivedAt,
+                rfc9111InitialAge: RFC9111ResponseAge.initialAge(
+                    headers: ageHeaders ?? headerSnapshot,
+                    requestTime: requestStartedAt,
+                    responseTime: responseReceivedAt
+                ),
                 requiresRevalidation: cacheControl.contains("no-cache"),
                 varyHeaders: varyHeaders
             )
         )
+        await runtime.cacheMutations.release(targetURI: writeToken.targetURI)
+    }
+
+    func cacheWriteToken(
+        cacheKey: ResponseCacheKey?,
+        runtime: RequestExecutionRuntime
+    ) async -> ResponseCacheMutationCoordinator.WriteToken? {
+        guard let targetURI = cacheKey?.url else { return nil }
+        return await runtime.cacheMutations.writeToken(for: targetURI)
+    }
+
+    func invalidateCacheEntry(
+        cacheKey: ResponseCacheKey?,
+        configuration: NetworkConfiguration,
+        runtime: RequestExecutionRuntime
+    ) async {
+        guard let cacheKey, let cache = configuration.responseCache else { return }
+        let targetURI = cacheKey.url
+        await runtime.cacheMutations.acquire(targetURI: targetURI)
+        await runtime.cacheMutations.advanceGeneration(for: targetURI)
+        await cache.invalidate(cacheKey)
+        await runtime.cacheMutations.release(targetURI: targetURI)
+    }
+
+    func responseHeaderSnapshot(_ response: HTTPURLResponse?) -> [String: String] {
+        response?.allHeaderFields.reduce(into: [String: String]()) { result, pair in
+            guard let key = pair.key as? String, let value = pair.value as? String else { return }
+            result[key] = value
+        } ?? [:]
     }
 
     /// Status codes that are cacheable by default per RFC 9110 §15. `307`

@@ -42,7 +42,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-InnoNetwork is a type-safe Swift network library shipped as **12 products**:
+InnoNetwork is a type-safe Swift network library shipped as **9 products**.
+The former HLS products live in the sibling InnoStream package.
 
 **InnoNetwork (Core):**
 - Async/await + `typed throws` (`async throws(NetworkError)`)
@@ -62,20 +63,20 @@ InnoNetwork is a type-safe Swift network library shipped as **12 products**:
 - Pause/resume + atomic file move + inactivity watchdog
 - AsyncSequence event streams + actor-based persistence
 
-**InnoNetworkHLS:**
+**Sibling InnoStream / InnoNetworkHLS:**
 - Bounded HLS playlist resolution + deterministic variant selection
 - Browser-free VOD segment download and TS/fMP4 assembly
 - AsyncSequence progress, completion, failure, and cancellation events
 
-**InnoNetworkHLSLive:**
+**Sibling InnoStream / InnoNetworkHLSLive:**
 - Blocking and delta live-playlist reloads with bounded snapshot delivery
 - Deterministic multivariant selection, Content Steering recovery, and DVR capture
 
-**InnoNetworkHLSAVFoundation:**
+**Sibling InnoStream / InnoNetworkHLSAVFoundation:**
 - System-managed asset downloads, playback configuration, and metrics
 - Interstitial observation and application-owned FairPlay workflows
 
-**InnoNetworkHLSAudio:**
+**Sibling InnoStream / InnoNetworkHLSAudio:**
 - Xcode 27 / Swift 6.4 decoded-PCM delivery and paced sample consumption
 - Optional full-mix processing tap on supported version 27 platforms
 
@@ -120,7 +121,7 @@ swift test --list-tests
 
 ## Architecture
 
-전체 12개 product. 신규 기여 시 진입 파일과 책임만 빠르게 파악하세요.
+전체 13개 product. 신규 기여 시 진입 파일과 책임만 빠르게 파악하세요.
 
 ### Sources/InnoNetwork (Core)
 - `APIDefinition.swift` / `APIDefinition+Macro.swift` — endpoint 선언 프로토콜 + `@APIDefinition` 매크로
@@ -153,24 +154,35 @@ swift test --list-tests
 - `DownloadRuntimeRegistry.swift` — in-memory task ↔ identifier 매핑
 - `DownloadConfiguration.swift` / `DownloadState.swift`
 
-### Sources/InnoNetworkHLS
+### Sources/InnoNetworkUpload
+- `UploadManager.swift` — 파일 기반 foreground/background 업로드와 시스템 task 복원
+- `UploadModels.swift` — 진행률, lifecycle event, bounded response receipt
+- `UploadSessionDelegate.swift` — 진행률·응답·redirect delegate bridge
+
+### Sources/InnoNetwork/V6
+- `OperationNetworkClient.swift` — 6.0 operation-first 실행 프리뷰와 5.x client adapter
+- `NetworkOperation.swift` — 취소 가능한 typed value handle과 bounded lifecycle event
+- `NetworkFailure.swift` — payload를 보존하지 않는 value-only 실패·복구 분류
+- `NetworkClientConfiguration.swift` — secure/production configuration façade와 migration bridge
+
+### Sibling InnoStream/Sources/InnoNetworkHLS
 - `PlaylistResolver.swift` — bounded UTF-8 playlist fetch + parser
 - `VariantSelector.swift` — deterministic configurable variant selection
 - `HLSHTTPClient.swift` — shared bounded chunk transport + request policy bridge
 - `HLSDownloader.swift` — per-resource-bounded VOD download + ordered assembly
 - `HLSModels.swift` — playlist, variant, progress, event, and stable error contracts
 
-### Sources/InnoNetworkHLSLive
+### Sibling InnoStream/Sources/InnoNetworkHLSLive
 - `HLSLivePlaylistClient.swift` — blocking/delta reload와 bounded snapshot stream
 - `HLSLivePlaylistMerger.swift` — media-sequence 기반 delta reconstruction
 - `HLSLiveDVRRecorder.swift` — bounded live-window VOD package capture
 
-### Sources/InnoNetworkHLSAVFoundation
+### Sibling InnoStream/Sources/InnoNetworkHLSAVFoundation
 - `HLSAssetDownloadSession.swift` — system-managed background asset downloads
 - `HLSPlaybackConfigurator.swift` / `HLSPlaybackMetrics.swift` — caller-owned playback bridge
 - `HLSFairPlaySession.swift` / `HLSFairPlayPersistentKeyWorkflow.swift` — app-owned FairPlay integration
 
-### Sources/InnoNetworkHLSAudio
+### Sibling InnoStream/Sources/InnoNetworkHLSAudio
 - `HLSDecodedAudioOutput.swift` / `HLSDecodedAudioPacedSequence.swift` — demand-driven and paced decoded PCM
 - `HLSAudioMixProcessingTap.swift` — opt-in full-mix real-time processing on supported version 27 platforms
 

@@ -86,6 +86,10 @@ package final class TestClock: InnoNetworkClock, @unchecked Sendable {
         return epoch.addingTimeInterval(virtualSeconds)
     }
 
+    package func monotonicNow() -> Duration {
+        stateLock.withLock { $0.virtualNow }
+    }
+
     package func sleep(for duration: Duration) async throws {
         let id = UUID()
         try await withTaskCancellationHandler {
@@ -141,6 +145,19 @@ package final class TestClock: InnoNetworkClock, @unchecked Sendable {
             waiter.continuation.resume()
         }
         for condition in result.1 {
+            condition.resume(returning: true)
+        }
+    }
+
+    /// Advances monotonic time without resuming elapsed sleepers. Tests use
+    /// this to exercise actor reentrancy while a time-based operation remains
+    /// suspended, then call `advance(by: .zero)` to release elapsed sleepers.
+    package func advanceWithoutResuming(by duration: Duration) {
+        let readyConditions = stateLock.withLock { state in
+            state.virtualNow += duration
+            return state.removeSatisfiedConditionWaiters()
+        }
+        for condition in readyConditions {
             condition.resume(returning: true)
         }
     }

@@ -27,6 +27,7 @@ jobs:
       - name: Test release artifact scripts
         run: |
           bash Scripts/tests/test_validate_docs_release_state.sh
+          bash Scripts/tests/test_validate_6_release_state.sh
           bash Scripts/tests/test_validate_release_ref.sh
           bash Scripts/tests/test_validate_release_candidate.sh
           bash Scripts/tests/test_generate_sbom.sh
@@ -43,8 +44,6 @@ jobs:
           python3 Scripts/tests/test_check_example_platform_floors.py
           python3 Scripts/tests/test_check_apple_platform_build_contract.py
           bash Scripts/tests/test_check_docc_archives.sh
-          bash Scripts/tests/test_validate_hls_with_apple_tools.sh
-          bash Scripts/tests/test_run_fairplay_acceptance.sh
           bash Scripts/tests/test_run_local_release_preflight.sh
           python3 Scripts/tests/test_check_release_workflow_contract.py
 

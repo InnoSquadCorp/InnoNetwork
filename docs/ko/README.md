@@ -9,20 +9,21 @@
 > 우선합니다.
 
 InnoNetwork 는 Apple 플랫폼을 위한 타입 안전한 Swift 네트워킹 패키지입니다. root runtime package 는
-열두 개의 공개 product 로 구성되어 있습니다.
+아홉 개의 공개 product 로 구성되어 있습니다.
 
 - `InnoNetwork` — 요청/응답 API
 - `InnoNetworkAuthAWS` — body-aware AWS SigV4 reference signer
 - `InnoNetworkDownload` — 다운로드 생명주기 관리
-- `InnoNetworkHLS` — 값 노출 없는 Apple 저작 진단과 bounded presentation-graph 교차 검사, 타입화된 인터스티셜 동기 재생 변동성·타임라인·이동 제한·건너뛰기 표시 메타데이터, 요청 관측, 목적별 요청 정책, HLS 2nd Edition draft-22 선택·보호·비디오 레이아웃·세션·LL-HLS 메타데이터와 I-frame trick-play 해석, 완성·LL-HLS 리소스의 병렬 `KEYFORMAT`에서 identity를 선택하고 선택형 `EXT-X-SESSION-KEY` 선행 요청을 지원하는 AES-128 비 DRM VOD 조립, 외부 오디오·비디오·자막을 보존하는 로컬 오프라인 패키지
-- `InnoNetworkHLSLive` — blocking reload와 delta window 복구, raw 헤더를 노출하지 않는 타입형 HTTP freshness 진단, AES-128 평문 로컬 패키지, 선택형 URL-free 체크포인트 재개 및 원자적 bounded DVR을 제공하는 async media-playlist snapshot stream
-- `InnoNetworkHLSAVFoundation` — AVFoundation 기반 백그라운드 HLS 저장과
+- `InnoNetworkUpload` — 파일 기반 foreground/background 업로드, 진행률, 복원, bounded 응답 디코딩
+- 별도 `InnoStream` 패키지의 `InnoNetworkHLS` — 값 노출 없는 Apple 저작 진단과 bounded presentation-graph 교차 검사, 타입화된 인터스티셜 동기 재생 변동성·타임라인·이동 제한·건너뛰기 표시 메타데이터, 요청 관측, 목적별 요청 정책, HLS 2nd Edition draft-22 선택·보호·비디오 레이아웃·세션·LL-HLS 메타데이터와 I-frame trick-play 해석, 완성·LL-HLS 리소스의 병렬 `KEYFORMAT`에서 identity를 선택하고 선택형 `EXT-X-SESSION-KEY` 선행 요청을 지원하는 AES-128 비 DRM VOD 조립, 외부 오디오·비디오·자막을 보존하는 로컬 오프라인 패키지
+- 별도 `InnoStream` 패키지의 `InnoNetworkHLSLive` — blocking reload와 delta window 복구, raw 헤더를 노출하지 않는 타입형 HTTP freshness 진단, AES-128 평문 로컬 패키지, 선택형 URL-free 체크포인트 재개 및 원자적 bounded DVR을 제공하는 async media-playlist snapshot stream
+- 별도 `InnoStream` 패키지의 `InnoNetworkHLSAVFoundation` — AVFoundation 기반 백그라운드 HLS 저장과
   version 26의 URL-free 오프라인 다운로드 요약 메트릭,
   값 기반 CMCD 활성화 상태(watchOS는 asset resource loader가 없어 미지원),
   커스텀 자막 UI용 값 기반 미디어 카탈로그, 버전형 오프라인 에셋
   라이브러리, 값이 제거된 재생 상태 분석, 앱 소유 라이선스 통신·보안
   저장소를 유지하는 FairPlay 영구 키 흐름
-- `InnoNetworkHLSAudio` — version 27 플랫폼에서 HLS player item의 decoded
+- 별도 `InnoStream` 패키지의 `InnoNetworkHLSAudio` — version 27 플랫폼에서 HLS player item의 decoded
   PCM을 한 번에 하나씩 요청하거나 지원 플랫폼의 전체 오디오 mix를
   실시간·in-place로 처리하는 Xcode 27·Swift 6.4 전용 선택형 companion
 - `InnoNetworkWebSocket` — 연결 지향 실시간 흐름
@@ -39,7 +40,8 @@ Swift Concurrency, 명시적인 transport 정책, 운영 가시성을 중심으�
 클라이언트까지 일관되게 사용할 수 있습니다.
 
 > **릴리즈 상태:** 현재 태그로 공개된 최신 안정 버전은 `5.1.0`입니다. 아래 API 예제는
-> 5.x 공개 계약을 기준으로 하며 4.x와 source-compatible하지 않을 수 있습니다.
+> 아직 태그가 없는 6.0 계약 초안을 반영하며 5.x와 source-compatible하지 않을 수 있습니다.
+> 프로덕션 의존성은 6.0 릴리즈 전까지 `5.1.0`에 유지하세요.
 
 > 📚 **API Reference (DocC):** https://innosquadcorp.github.io/InnoNetwork/
 
@@ -93,6 +95,8 @@ macro 를 사용해도 struct 가 endpoint 계약의 단일 기준입니다. `AP
 custom header/interceptor/transport/decoder 는 struct 에 명시적으로 남고, attribute 는
 `method`, `path`, `auth` 를 한눈에 보여 줍니다. `auth:` 는 `.anonymous`, `.optional`,
 `.required` 중 하나를 반드시 선택해야 하며 자동 추론하지 않습니다.
+`@APIDefinition(method:path:auth:)`, 기본 `Macros` trait, `traits: []` opt-out 은
+InnoNetwork 6부터 Stable 계약입니다.
 
 - GET/HEAD 의 저장 `query` 프로퍼티는 `Parameter` / `parameters` 로 생성됩니다.
 - POST/PUT/PATCH/DELETE 의 저장 `body` 프로퍼티도 같은 방식으로 생성됩니다.
@@ -208,7 +212,8 @@ await client.cancelAll(matching: feed)  // feed 태그만 취소
 
 `ResponseCachePolicy` 는 응답의 `Vary` 헤더를 자동으로 처리합니다 (RFC 9111 §4.1).
 
-- `Vary: *` 응답은 캐시되지 않습니다.
+- `Vary: *` 응답은 캐시되지 않으며 현재 키에 남아 있던 기존 엔트리도
+  무효화합니다.
 - `Vary: Accept-Language` 같은 명시 헤더는 저장 시점의 요청 헤더 값을 함께 캡처해
   이후 lookup 에서 동일 값일 때만 hit 으로 인정합니다.
 - `Vary` 헤더가 없는 응답은 저장 조건을 통과한 경우 기존 키 정책
@@ -218,12 +223,17 @@ await client.cancelAll(matching: feed)  // feed 태그만 취소
 - `Cache-Control: no-store` 와 `Cache-Control: private` 는 현재 키를 무효화하고
   저장하지 않습니다. `Cache-Control: no-cache` 는 저장하되 매 lookup 마다
   재검증을 강제합니다.
+- `304 Not Modified` 의 `ETag` 는 strong/weak validator 규칙으로 저장 응답을
+  식별해야 합니다. 식별하지 못하면 기존 body 에 새 validator 를 붙이지 않고
+  재검증 실패로 처리합니다.
 - `Authorization` 요청의 응답은 origin 이 `Cache-Control: public`,
   `must-revalidate`, `s-maxage` 중 하나로 명시적으로 허용할 때만 저장됩니다.
 - `POST`, `PUT`, `PATCH`, `DELETE` 같은 unsafe method 가 `2xx`/`3xx` 응답을
   받으면 RFC 9111 §4.4 에 따라 같은 target URI 의 캐시 변형을 모두
-  무효화합니다. `.disabled` 와 `.networkOnly` 정책은 캐시 메타데이터를
-  건드리지 않습니다.
+  무효화합니다. 같은 `NetworkConfiguration` 의 복사본으로 만든 client 들은
+  캐시 mutation fence 를 공유하므로 한 client 의 오래된 GET 이 다른 client 의
+  mutation 이후 캐시를 되살릴 수 없습니다. `.disabled` 와 `.networkOnly`
+  정책은 캐시 메타데이터를 건드리지 않습니다.
 
 ---
 
@@ -358,6 +368,8 @@ InnoNetwork 기반 클라이언트를 출시하기 전에 점검해야 할 운�
 - 마이그레이션 정책: [../MIGRATION_POLICY.md](../MIGRATION_POLICY.md)
 - 5.0 마이그레이션 가이드: [../Migration-5.0.0.md](../Migration-5.0.0.md)
 - 5.1 릴리즈 노트: [../releases/5.1.0.md](../releases/5.1.0.md)
+- 6.0 마이그레이션 가이드: [../Migration-6.0.0.md](../Migration-6.0.0.md)
+- 6.0 릴리즈 노트 초안: [../releases/6.0.0.md](../releases/6.0.0.md)
 - 5.0 릴리즈 노트: [../releases/5.0.0.md](../releases/5.0.0.md)
 - 로드맵: [../ROADMAP.md](../ROADMAP.md)
 

@@ -4,6 +4,208 @@ import Testing
 
 @Suite("RFC 9111 Compliant Cache Policy Tests")
 struct RFC9111ComplianceTests {
+    @Test("Age received from an intermediary contributes to current age")
+    func intermediaryAgeContributesToCurrentAge() {
+        let storedAt = Date(timeIntervalSince1970: 10_000)
+        let cached = CachedResponse(
+            data: Data("payload".utf8),
+            headers: [
+                "Cache-Control": "max-age=60, must-revalidate",
+                "Age": "120",
+            ],
+            storedAt: storedAt
+        )
+        let adapter = ResponseCachePolicy.rfc9111Compliant(
+            wrapping: .cacheFirst(maxAge: .seconds(3_600))
+        )
+
+        switch adapter.prepare(cached: cached, now: storedAt.addingTimeInterval(1)) {
+        case .revalidate(let attached):
+            #expect(attached == cached)
+        default:
+            Issue.record("an entry older than max-age at storage must be revalidated")
+        }
+    }
+
+    @Test("Apparent age from Date prevents an expired response from becoming fresh on storage")
+    func apparentAgeContributesToCurrentAge() {
+        let storedAt = Date(timeIntervalSince1970: 10_000)
+        let cached = CachedResponse(
+            data: Data("payload".utf8),
+            headers: [
+                "Date": "Thu, 01 Jan 1970 02:00:00 GMT",
+                "Expires": "Thu, 01 Jan 1970 02:01:00 GMT",
+            ],
+            storedAt: storedAt
+        )
+        let adapter = ResponseCachePolicy.rfc9111Compliant(
+            wrapping: .cacheFirst(maxAge: .seconds(3_600))
+        )
+
+        switch adapter.prepare(cached: cached, now: storedAt.addingTimeInterval(1)) {
+        case .revalidate(let attached):
+            #expect(attached == cached)
+        default:
+            Issue.record("an already-expired origin response must not become fresh when stored")
+        }
+    }
+
+    @Test("RFC freshness is exclusive at the max-age boundary")
+    func maxAgeBoundaryIsStale() {
+        let storedAt = Date(timeIntervalSince1970: 10_000)
+        let cached = CachedResponse(
+            data: Data("payload".utf8),
+            headers: ["Cache-Control": "max-age=60"],
+            storedAt: storedAt
+        )
+        let adapter = ResponseCachePolicy.rfc9111Compliant(
+            wrapping: .cacheFirst(maxAge: .seconds(60))
+        )
+
+        switch adapter.prepare(cached: cached, now: storedAt.addingTimeInterval(60)) {
+        case .revalidate:
+            break
+        default:
+            Issue.record("freshness_lifetime must be greater than current_age")
+        }
+    }
+
+    @Test("Plain cache policy remains independent from RFC Age metadata")
+    func plainPolicyIgnoresRFCResponseAge() {
+        let storedAt = Date(timeIntervalSince1970: 10_000)
+        let cached = CachedResponse(
+            data: Data("payload".utf8),
+            headers: ["Age": "120"],
+            storedAt: storedAt
+        )
+
+        switch ResponseCachePolicy.cacheFirst(maxAge: .seconds(60)).prepare(
+            cached: cached,
+            now: storedAt.addingTimeInterval(1)
+        ) {
+        case .returnCached:
+            break
+        default:
+            Issue.record("the RFC-agnostic policy contract must remain unchanged")
+        }
+    }
+
+    @Test(
+        "Invalid and overflowing Age values fail closed without overflowing",
+        arguments: [
+            "1, 2",
+            "-1",
+            "not-a-number",
+            "999999999999999999999999999999999999999",
+        ])
+    func invalidAgeFailsClosed(age: String) {
+        let storedAt = Date(timeIntervalSince1970: 10_000)
+        let cached = CachedResponse(
+            data: Data("payload".utf8),
+            headers: [
+                "Cache-Control": "max-age=60",
+                "Age": age,
+            ],
+            storedAt: storedAt
+        )
+        let adapter = ResponseCachePolicy.rfc9111Compliant(
+            wrapping: .cacheFirst(maxAge: .seconds(60))
+        )
+
+        switch adapter.prepare(cached: cached, now: storedAt) {
+        case .revalidate:
+            break
+        default:
+            Issue.record("invalid or excessive Age must not extend cache reuse")
+        }
+    }
+
+    @Test("stale-if-error uses corrected current age")
+    func staleIfErrorUsesCorrectedAge() {
+        let storedAt = Date(timeIntervalSince1970: 10_000)
+        let cached = CachedResponse(
+            data: Data("payload".utf8),
+            headers: [
+                "Cache-Control": "max-age=5, stale-if-error=30",
+                "Age": "20",
+            ],
+            storedAt: storedAt
+        )
+        let policy = ResponseCachePolicy.staleIfError(
+            wrapping: .rfc9111Compliant(
+                wrapping: .cacheFirst(maxAge: .seconds(60))
+            )
+        )
+
+        #expect(
+            policy.staleIfErrorFallback(
+                cached: cached,
+                now: storedAt.addingTimeInterval(20)
+            ) == nil
+        )
+    }
+
+    @Test("stale-if-error accepts a valid origin window through either wrapper order")
+    func staleIfErrorAcceptsValidWindowAcrossWrapperOrder() {
+        let storedAt = Date()
+        let cached = CachedResponse(
+            data: Data("payload".utf8),
+            headers: ["Cache-Control": "max-age=5, stale-if-error=30"],
+            storedAt: storedAt
+        )
+        let policies: [ResponseCachePolicy] = [
+            .staleIfError(
+                wrapping: .rfc9111Compliant(
+                    wrapping: .cacheFirst(maxAge: .seconds(10))
+                )
+            ),
+            .rfc9111Compliant(
+                wrapping: .staleIfError(
+                    wrapping: .cacheFirst(maxAge: .seconds(10))
+                )
+            ),
+        ]
+
+        for policy in policies {
+            #expect(
+                policy.staleIfErrorFallback(
+                    cached: cached,
+                    now: storedAt.addingTimeInterval(20)
+                ) == cached
+            )
+        }
+    }
+
+    @Test("stale-if-error fails closed for malformed duplicate expired and must-revalidate directives")
+    func staleIfErrorRejectsUnsafeDirectiveShapes() {
+        let storedAt = Date()
+        let policy = ResponseCachePolicy.staleIfError(
+            wrapping: .cacheFirst(maxAge: .seconds(5))
+        )
+        let cases: [(String, TimeInterval)] = [
+            ("stale-if-error", 10),
+            ("stale-if-error=-1", 10),
+            ("stale-if-error=20, stale-if-error=30", 10),
+            ("stale-if-error=5", 11),
+            ("must-revalidate, stale-if-error=30", 10),
+        ]
+
+        for (cacheControl, age) in cases {
+            let cached = CachedResponse(
+                data: Data("payload".utf8),
+                headers: ["Cache-Control": cacheControl],
+                storedAt: storedAt
+            )
+            #expect(
+                policy.staleIfErrorFallback(
+                    cached: cached,
+                    now: storedAt.addingTimeInterval(age)
+                ) == nil,
+                "Unexpected fallback for \(cacheControl)"
+            )
+        }
+    }
+
 
     // MARK: - no-store
 
@@ -137,6 +339,26 @@ struct RFC9111ComplianceTests {
             break
         default:
             Issue.record("server cannot extend the caller's freshness ceiling")
+        }
+    }
+
+    @Test("Unrepresentable server max-age is clamped before Duration conversion")
+    func unrepresentableServerMaxAgeIsClamped() {
+        let storedAt = Date()
+        let cached = CachedResponse(
+            data: Data("payload".utf8),
+            headers: ["Cache-Control": "max-age=999999999999999999999999999999"],
+            storedAt: storedAt
+        )
+        let adapter = ResponseCachePolicy.rfc9111Compliant(
+            wrapping: .cacheFirst(maxAge: .seconds(60))
+        )
+
+        switch adapter.prepare(cached: cached, now: storedAt.addingTimeInterval(30)) {
+        case .returnCached:
+            break
+        default:
+            Issue.record("an oversized server max-age must clamp without overriding the caller ceiling")
         }
     }
 

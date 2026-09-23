@@ -24,7 +24,6 @@ documentation-smoke
 consumer-examples
 openapi-generator
 bounded-tests
-apple-hls-conformance
 runtime-coverage
 macro-coverage
 guarded-benchmarks
@@ -42,6 +41,10 @@ bash "$runner" --help | grep -Fq -- '--full'
 grep -Fq 'run_package_xcodebuild docbuild' "$runner"
 grep -Fq 'prepare_package_xcodebuild_view' "$runner"
 grep -Fq "grep -Eo 'Test run with [0-9]+ tests?'" \
+  "$repo_root/Scripts/run_bounded_parallel_tests.sh"
+grep -Fq 'swift package describe --type json' \
+  "$repo_root/Scripts/run_bounded_parallel_tests.sh"
+grep -Fq 'Ignoring stale test bundles not declared by the current Package.swift' \
   "$repo_root/Scripts/run_bounded_parallel_tests.sh"
 summary_count="$({
   printf '%s\n' 'Test run with 1 test in 1 suite passed.'
