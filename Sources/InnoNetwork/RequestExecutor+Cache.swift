@@ -555,13 +555,13 @@ extension RequestExecutor {
     /// that promise "metadata untouched" (`disabled`, `networkOnly`) still skip
     /// the mutation by virtue of `allowsCacheWrite == false`.
     func invalidateUnsafeTargetURIIfNeeded(
-        _ response: Response,
+        statusCode: Int,
         request: URLRequest,
         configuration: NetworkConfiguration,
         runtime: RequestExecutionRuntime
     ) async {
         guard
-            Self.shouldInvalidateCacheForUnsafeMethod(request.httpMethod, statusCode: response.statusCode),
+            Self.shouldInvalidateCacheForUnsafeMethod(request.httpMethod, statusCode: statusCode),
             configuration.responseCachePolicy.allowsCacheWrite,
             let cache = configuration.responseCache,
             let targetURI = ResponseCacheKey.normalizedTargetURI(request.url)
