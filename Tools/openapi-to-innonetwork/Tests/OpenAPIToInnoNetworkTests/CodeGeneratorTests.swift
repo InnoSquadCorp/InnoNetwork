@@ -111,6 +111,20 @@ struct CodeGeneratorTests {
         }
     }
 
+    @Test(
+        "Generated names cannot shadow types referenced by generated source",
+        arguments: ["HTTPMethod", "APIDefinition", "SessionAuthentication", "EmptyResponse", "Date", "Codable"]
+    )
+    func rejectsReferencedTypeNames(name: String) {
+        let document = OpenAPIDocument(
+            paths: ["/items": PathItem(get: Operation(operationId: "ListItems"))],
+            components: Components(schemas: [name: Schema(type: "object")])
+        )
+        #expect(throws: GenerationError.self) {
+            _ = try CodeGenerator(moduleName: "API").generate(from: document)
+        }
+    }
+
     @Test("numeric, reserved, and Unicode type names remain valid and references agree")
     func sanitizesTypeNamesAndReferences() throws {
         let document = OpenAPIDocument(

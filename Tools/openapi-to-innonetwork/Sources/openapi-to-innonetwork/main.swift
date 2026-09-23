@@ -261,6 +261,15 @@ struct CodeGenerator {
         "where", "while", "willSet",
     ]
 
+    // Generated declarations share a module with unqualified protocol,
+    // witness, Foundation, and Swift types used in emitted source.
+    private static let referencedTypeNames: Set<String> = [
+        "APIDefinition", "Bool", "Codable", "Date", "Decodable", "DecodingError",
+        "Decoder", "Double", "EmptyParameter", "EmptyResponse", "Encodable", "Encoder",
+        "Equatable", "Float", "HTTPMethod", "Int", "Int64", "Sendable",
+        "SessionAuthentication", "String", "URL",
+    ]
+
     func generate(from document: OpenAPIDocument) throws -> [GeneratedFile] {
         var files: [GeneratedFile] = []
         var generatedNames: [String: String] = [:]
@@ -300,6 +309,11 @@ struct CodeGenerator {
         // well because generated files also have to coexist on the default
         // case-insensitive Apple file systems.
         let key = name.lowercased()
+        if Self.referencedTypeNames.contains(where: { $0.lowercased() == key }) {
+            throw GenerationError.namingCollision(
+                "\(source) maps to '\(name)', which the generated client uses as a library or standard type. Rename the operationId or schema."
+            )
+        }
         if let existing = names[key] {
             throw GenerationError.namingCollision(
                 "\(existing) and \(source) both map to '\(name).swift'. Rename an operationId or schema."
