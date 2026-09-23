@@ -105,4 +105,34 @@ struct UploadPendingEventIntegrityTests {
         #expect(await task.receipt == nil)
         await manager.shutdown()
     }
+
+    @Test("An extra unknown progress event cannot poison pending restoration")
+    func unknownProgressDoesNotExhaustCapacity() async throws {
+        let policy = UploadResourcePolicy(
+            maximumTrackedTasks: 4,
+            maximumBufferedDelegateEvents: 4,
+            maximumBufferedDelegateBytes: 1_024,
+            maximumPendingUnknownTasks: 1
+        )
+        let channel = UploadDelegateEventChannel(limits: policy)
+        let session = StubUploadURLSession(channel: channel)
+        let manager = UploadManager(
+            configuration: .background(
+                sessionIdentifier: "test.pending.progress", resourcePolicy: policy
+            ),
+            session: session,
+            channel: channel
+        )
+        channel.send(.progress(taskIdentifier: 71, bytesSent: 1, totalBytesSent: 1, expected: 2))
+        await Self.drain(manager, channel)
+        channel.send(.progress(taskIdentifier: 72, bytesSent: 1, totalBytesSent: 1, expected: 2))
+        await Self.drain(manager, channel)
+        Self.complete(channel, identifier: 71, logicalID: "first", request: Self.request())
+        await Self.drain(manager, channel)
+
+        let task = try #require(await manager.task(withId: "first"))
+        #expect(await task.state == .completed)
+        #expect(await task.error == nil)
+        await manager.shutdown()
+    }
 }

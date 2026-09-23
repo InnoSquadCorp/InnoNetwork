@@ -776,6 +776,8 @@ public actor UploadManager {
         if pendingDelegateEvents[identifier] == nil,
             pendingDelegateEvents.count >= configuration.resourcePolicy.maximumPendingUnknownTasks
         {
+            // Progress is lossy; dropping it cannot truncate a receipt.
+            if case .progress = event { return }
             pendingUnknownTaskCapacityExceeded = true
             return
         }
