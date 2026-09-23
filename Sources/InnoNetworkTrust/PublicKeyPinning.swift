@@ -78,7 +78,7 @@ public struct PublicKeyPinningPolicy: Sendable {
     }
 
     func pins(forHost host: String) -> Set<String>? {
-        let normalizedHost = host.lowercased()
+        guard let normalizedHost = Self.canonicalPinHost(host) else { return nil }
         switch hostMatchingStrategy {
         case .unionAllMatches:
             return unionPins(for: normalizedHost)
@@ -128,17 +128,42 @@ public struct PublicKeyPinningPolicy: Sendable {
     ) -> [(host: String, pins: Set<String>, isExact: Bool)] {
         var matches: [(host: String, pins: Set<String>, isExact: Bool)] = []
         for (configuredHost, configuredPins) in pinsByHost {
-            let normalizedConfiguredHost = configuredHost.lowercased()
+            guard let normalizedConfiguredHost = Self.canonicalPinHost(configuredHost) else {
+                continue
+            }
             if normalizedHost == normalizedConfiguredHost {
                 matches.append((normalizedConfiguredHost, configuredPins, true))
                 continue
             }
-            if includesSubdomains, normalizedHost.hasSuffix(".\(normalizedConfiguredHost)") {
+            if includesSubdomains,
+                !Self.isIPLiteral(normalizedHost),
+                !Self.isIPLiteral(normalizedConfiguredHost),
+                normalizedHost.hasSuffix(".\(normalizedConfiguredHost)")
+            {
                 matches.append((normalizedConfiguredHost, configuredPins, false))
             }
         }
 
         return matches
+    }
+
+    /// A root dot changes spelling, not the name covered by a pin. Keep
+    /// literal IP addresses exact (never suffix-matched) and leave the
+    /// original challenge host untouched for system TLS validation.
+    fileprivate static func canonicalPinHost(_ host: String) -> String? {
+        guard !host.isEmpty else { return nil }
+        let withoutRootDot = host.hasSuffix(".") ? String(host.dropLast()) : host
+        guard !withoutRootDot.isEmpty,
+            !withoutRootDot.hasSuffix("."),
+            !withoutRootDot.contains("..")
+        else { return nil }
+        return withoutRootDot.lowercased()
+    }
+
+    private static func isIPLiteral(_ host: String) -> Bool {
+        if host.contains(":") { return true }
+        let octets = host.split(separator: ".", omittingEmptySubsequences: false)
+        return octets.count == 4 && octets.allSatisfy { UInt8($0) != nil }
     }
 
     private func union(_ matches: [Set<String>]) -> Set<String> {
@@ -173,6 +198,9 @@ public struct PublicKeyPinningEvaluator: TrustEvaluating {
         }
 
         let host = challenge.protectionSpace.host.lowercased()
+        guard PublicKeyPinningPolicy.canonicalPinHost(host) != nil else {
+            return .cancel(.hostNotPinned(host))
+        }
         guard let expectedPins = policy.pins(forHost: host) else {
             if policy.allowDefaultEvaluationForUnpinnedHosts {
                 return .performDefaultHandling
