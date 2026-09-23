@@ -70,6 +70,9 @@ that cut and are not part of the 6.0 contract.
 
 ### Fixed for 6.1.0
 
+- Cache mutation generations live only while requests, background refreshes,
+  or deferred recovery own a token. Invalidations no longer leave permanent
+  per-URL tombstones, and disabled/network-only policies allocate no tokens.
 - Custom execution policies that rebuild `Response` preserve transport age.
   Unknown response provenance uses a conservative physical-attempt interval,
   rather than treating an upstream response as newly synthesized.
