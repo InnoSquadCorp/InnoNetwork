@@ -136,7 +136,18 @@ public struct AWSSigV4Interceptor: RequestSigner {
         let firstPass = urlPath.isEmpty ? "/" : Self.uriEncode(urlPath, allowSlash: true)
         // SigV4: S3 uses single-encoded paths; every other service expects
         // the canonical URI to be encoded again (percent signs re-escaped).
-        let path = service.lowercased() == "s3" ? firstPass : Self.uriEncode(firstPass, allowSlash: true)
+        // Foundation's decoded URL.path drops trailing empty components on
+        // macOS. S3 object keys distinguish /key, /key/, and /key//, so sign
+        // the exact encoded path that URLSession will send on the wire.
+        let path: String
+        if service.lowercased() == "s3" {
+            let encodedPath = url.flatMap {
+                URLComponents(url: $0, resolvingAgainstBaseURL: false)?.percentEncodedPath
+            }
+            path = encodedPath.flatMap { $0.isEmpty ? nil : $0 } ?? "/"
+        } else {
+            path = Self.uriEncode(firstPass, allowSlash: true)
+        }
         let query = canonicalQueryString(from: url)
         let (headers, signed) = canonicalHeaders(of: request)
         return "\(method)\n\(path)\n\(query)\n\(headers)\n\(signed)\n\(payloadHash)"

@@ -219,6 +219,28 @@ struct AWSSigV4InterceptorTests {
         #expect(!s3Canonical.contains("/hello%2520world"))
     }
 
+    @Test("S3 signs trailing and repeated slashes as distinct object keys")
+    func s3PreservesExactEncodedPath() async throws {
+        let signer = AWSSigV4Interceptor(
+            accessKeyID: "AKIDEXAMPLE",
+            secretAccessKey: "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY",
+            region: "us-east-1",
+            service: "s3",
+            now: { Self.fixedDate }
+        )
+        let paths = ["/folder", "/folder/", "/folder//", "/a%20b", "/a%2Fb", "/a//b"]
+        var signatures: [String] = []
+        for path in paths {
+            var request = URLRequest(url: try #require(URL(string: "https://example.amazonaws.com\(path)")))
+            request.httpMethod = "GET"
+            let canonical = signer.canonicalRequest(for: request)
+            #expect(canonical.split(separator: "\n", omittingEmptySubsequences: false)[1] == Substring(path))
+            let signed = try await Self.signedRequest(request, using: signer)
+            signatures.append(try #require(signed.value(forHTTPHeaderField: "Authorization")))
+        }
+        #expect(Set(signatures).count == paths.count)
+    }
+
     @Test
     func s3EmitsPayloadHashForEmptyDataAndFileBodies() async throws {
         let interceptor = AWSSigV4Interceptor(
