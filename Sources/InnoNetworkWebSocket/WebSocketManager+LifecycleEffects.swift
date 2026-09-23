@@ -55,7 +55,8 @@ extension WebSocketManager {
         }
 
         guard await acquireTaskLifecycleGate(taskID: task.id) else { return }
-        defer { releaseTaskLifecycleGate(taskID: task.id) }
+        var ownsLifecycleGate = true
+        defer { if ownsLifecycleGate { releaseTaskLifecycleGate(taskID: task.id) } }
 
         guard await isCurrentTransportCandidate(task, generation: prepared.generation) else { return }
         await runtimeRegistry.cancelHeartbeatTask(for: task.id)
@@ -63,6 +64,12 @@ extension WebSocketManager {
         // immediately before synchronously creating the Foundation task so a
         // terminal transition that won that interval cannot create transport.
         guard await isCurrentTransportCandidate(task, generation: prepared.generation) else { return }
+        if await reconnectCoordinator.hasExpiredReconnectWindow(task: task) {
+            let transition = await task.applyLifecycleEvent(.reconnectWindowExpired)
+            ownsLifecycleGate = false
+            await executeLifecycleEffectsAfterLockedApply(transition, for: task)
+            return
+        }
         guard let urlTask = makeWebSocketTaskIfRunning(with: prepared.request) else { return }
         urlTask.maximumMessageSize = configuration.maximumMessageSize
         delegate.registerRedirectProtectedHeaderNames(
@@ -82,6 +89,13 @@ extension WebSocketManager {
         guard await isCurrentTransportCandidate(task, generation: prepared.generation) else {
             delegate.removeRedirectProtectedHeaderNames(for: urlTask.taskIdentifier)
             await runtimeRegistry.removeTaskRuntime(taskId: task.id)
+            return
+        }
+        if await reconnectCoordinator.hasExpiredReconnectWindow(task: task) {
+            delegate.removeRedirectProtectedHeaderNames(for: urlTask.taskIdentifier)
+            let transition = await task.applyLifecycleEvent(.reconnectWindowExpired)
+            ownsLifecycleGate = false
+            await executeLifecycleEffectsAfterLockedApply(transition, for: task)
             return
         }
         guard resumeWebSocketTaskIfRunning(urlTask) else {

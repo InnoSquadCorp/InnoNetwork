@@ -44,7 +44,12 @@ package enum WebSocketLifecycleReducer: StateReducer {
         case .reconnectTimerFired:
             return reconnectTimerFired(from: state)
         case .reconnectWindowExpired:
-            guard case .reconnecting(_, _, true, _, _, _) = state else {
+            switch state {
+            case .reconnecting(_, _, true, _, _, _):
+                break
+            case .connecting(_, let attempt, true) where attempt > 0:
+                break
+            default:
                 return .init(state: state, effects: [.ignoreStaleCallback])
             }
             return .init(

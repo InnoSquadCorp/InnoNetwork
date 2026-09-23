@@ -15,9 +15,12 @@ extension WebSocketManager {
             await task.state == .reconnecting
         else { return }
 
-        await reconnectCoordinator.attemptReconnect(task: task, onBudgetExceeded: { [weak self] task in
-            await self?.startReconnecting(task, expectedGeneration: generation, budgetExpired: true)
-        }) { [weak self] task in
+        await reconnectCoordinator.attemptReconnect(
+            task: task,
+            onBudgetExceeded: { [weak self] task in
+                await self?.startReconnecting(task, expectedGeneration: generation, budgetExpired: true)
+            }
+        ) { [weak self] task in
             await self?.startReconnecting(task, expectedGeneration: generation)
         }
     }

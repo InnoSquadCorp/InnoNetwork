@@ -35,9 +35,12 @@ struct WebSocketReconnectDeadlineTests {
         await task.restoreStateForTesting(.reconnecting)
         #expect(await coordinator.reconnectAction(task: task) == .retry)
         let completion = Completion()
-        await coordinator.attemptReconnect(task: task, onBudgetExceeded: { _ in
-            await completion.finish(expired: true)
-        }) { _ in
+        await coordinator.attemptReconnect(
+            task: task,
+            onBudgetExceeded: { _ in
+                await completion.finish(expired: true)
+            }
+        ) { _ in
             await completion.finish(expired: false)
         }
         try #require(await clock.waitForWaiters(count: 1))
@@ -66,9 +69,12 @@ struct WebSocketReconnectDeadlineTests {
         await task.restoreStateForTesting(.reconnecting)
         _ = await coordinator.reconnectAction(task: task)
         let completion = Completion()
-        await coordinator.attemptReconnect(task: task, onBudgetExceeded: { _ in
-            await completion.finish(expired: true)
-        }) { _ in
+        await coordinator.attemptReconnect(
+            task: task,
+            onBudgetExceeded: { _ in
+                await completion.finish(expired: true)
+            }
+        ) { _ in
             await completion.finish(expired: false)
         }
         try #require(await clock.waitForWaiters(count: 1))
