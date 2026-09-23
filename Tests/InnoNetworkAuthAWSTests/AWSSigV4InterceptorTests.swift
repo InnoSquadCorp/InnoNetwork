@@ -228,13 +228,22 @@ struct AWSSigV4InterceptorTests {
             service: "s3",
             now: { Self.fixedDate }
         )
-        let paths = ["/folder", "/folder/", "/folder//", "/a%20b", "/a%2Fb", "/a//b"]
+        let paths: [(raw: String, canonical: String)] = [
+            ("/folder", "/folder"),
+            ("/folder/", "/folder/"),
+            ("/folder//", "/folder//"),
+            ("/a%20b", "/a%20b"),
+            ("/a%2fb", "/a%2Fb"),
+            ("/a//b", "/a//b"),
+            ("/a!b", "/a%21b"),
+            ("/a@b", "/a%40b"),
+        ]
         var signatures: [String] = []
         for path in paths {
-            var request = URLRequest(url: try #require(URL(string: "https://example.amazonaws.com\(path)")))
+            var request = URLRequest(url: try #require(URL(string: "https://example.amazonaws.com\(path.raw)")))
             request.httpMethod = "GET"
             let canonical = signer.canonicalRequest(for: request)
-            #expect(canonical.split(separator: "\n", omittingEmptySubsequences: false)[1] == Substring(path))
+            #expect(canonical.split(separator: "\n", omittingEmptySubsequences: false)[1] == Substring(path.canonical))
             let signed = try await Self.signedRequest(request, using: signer)
             signatures.append(try #require(signed.value(forHTTPHeaderField: "Authorization")))
         }
