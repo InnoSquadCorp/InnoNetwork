@@ -13,10 +13,10 @@ import Yams
 //   - one Swift file per operation with an APIDefinition-conforming
 //     struct whose Parameter / APIResponse associated types are wired
 //     to the generated schema types when the spec uses $ref.
-// The input subset still focuses on object schemas with primitive +
-// array + nested-$ref properties; full OpenAPI feature coverage
-// (oneOf / allOf / discriminators / nullable / parameter location
-// fan-out) is a future expansion.
+// The 6.0 preview adds declared scalar path parameters, explicit bearer
+// security requirements, object allOf, discriminated oneOf and nullable
+// properties. Unsupported contracts fail generation; this is not a complete
+// OpenAPI implementation or a general JSON Schema validator.
 
 struct CLIOptions {
     var inputPath: String
@@ -82,6 +82,7 @@ enum GenerationError: Error, CustomStringConvertible {
     case parseFailure(String)
     case unsupportedPath(String)
     case unsupportedSchema(String)
+    case unsupportedSecurity(String)
     case namingCollision(String)
 
     var description: String {
@@ -93,6 +94,7 @@ enum GenerationError: Error, CustomStringConvertible {
         case .unsupportedPath(let msg): return "Unsupported OpenAPI feature: \(msg)"
         case .unsupportedSchema(let msg): return "Unsupported OpenAPI feature: \(msg)"
         case .namingCollision(let msg): return "Generated name collision: \(msg)"
+        case .unsupportedSecurity(let msg): return "Unsupported security: \(msg)"
         }
     }
 }
@@ -102,15 +104,32 @@ enum GenerationError: Error, CustomStringConvertible {
 struct OpenAPIDocument: Decodable, Equatable {
     var paths: [String: PathItem]
     var components: Components?
+    var security: [[String: [String]]]?
 
-    init(paths: [String: PathItem], components: Components? = nil) {
+    init(paths: [String: PathItem], components: Components? = nil, security: [[String: [String]]]? = nil) {
         self.paths = paths
         self.components = components
+        self.security = security
     }
 }
 
 struct Components: Decodable, Equatable {
     var schemas: [String: Schema]?
+    var securitySchemes: [String: SecurityScheme]? = nil
+}
+
+struct SecurityScheme: Decodable, Equatable {
+    var type: String
+    var scheme: String?
+}
+
+struct PathParameter: Decodable, Equatable {
+    var name: String
+    var `in`: String
+    var required: Bool?
+    var schema: Schema?
+    var style: String?
+    var explode: Bool?
 }
 
 struct PathItem: Decodable, Equatable {
@@ -119,19 +138,22 @@ struct PathItem: Decodable, Equatable {
     var put: Operation?
     var patch: Operation?
     var delete: Operation?
+    var parameters: [PathParameter]?
 
     init(
         get: Operation? = nil,
         post: Operation? = nil,
         put: Operation? = nil,
         patch: Operation? = nil,
-        delete: Operation? = nil
+        delete: Operation? = nil,
+        parameters: [PathParameter]? = nil
     ) {
         self.get = get
         self.post = post
         self.put = put
         self.patch = patch
         self.delete = delete
+        self.parameters = parameters
     }
 
     var operationsByMethod: [(method: String, op: Operation)] {
@@ -150,17 +172,23 @@ struct Operation: Decodable, Equatable {
     var summary: String?
     var requestBody: RequestBody?
     var responses: [String: ResponseObject]?
+    var parameters: [PathParameter]?
+    var security: [[String: [String]]]?
 
     init(
         operationId: String? = nil,
         summary: String? = nil,
         requestBody: RequestBody? = nil,
-        responses: [String: ResponseObject]? = nil
+        responses: [String: ResponseObject]? = nil,
+        parameters: [PathParameter]? = nil,
+        security: [[String: [String]]]? = nil
     ) {
         self.operationId = operationId
         self.summary = summary
         self.requestBody = requestBody
         self.responses = responses
+        self.parameters = parameters
+        self.security = security
     }
 }
 
@@ -178,9 +206,8 @@ struct MediaType: Decodable, Equatable {
 }
 
 /// Schema subset: object with properties, primitives, arrays, $ref.
-/// Other variants (oneOf / allOf / discriminator / nullable) decode as
-/// `.unsupported` so the generator can skip them while still producing
-/// usable scaffolding for the parts of the spec it understands.
+/// Composition and nullable contracts are validated before rendering.
+/// This serialization subset is not a general JSON Schema validator.
 struct Schema: Decodable, Equatable {
     var ref: String?
     var type: String?
@@ -188,6 +215,11 @@ struct Schema: Decodable, Equatable {
     var required: [String]?
     var items: Box<Schema>?
     var format: String?
+    var allOf: [Schema]?
+    var oneOf: [Schema]?
+    var anyOf: [Schema]?
+    var nullable: Bool?
+    var discriminator: Discriminator?
 
     enum CodingKeys: String, CodingKey {
         case ref = "$ref"
@@ -196,6 +228,7 @@ struct Schema: Decodable, Equatable {
         case required
         case items
         case format
+        case allOf, oneOf, anyOf, nullable, discriminator
     }
 
     init(
@@ -204,7 +237,12 @@ struct Schema: Decodable, Equatable {
         properties: [String: Schema]? = nil,
         required: [String]? = nil,
         items: Box<Schema>? = nil,
-        format: String? = nil
+        format: String? = nil,
+        allOf: [Schema]? = nil,
+        oneOf: [Schema]? = nil,
+        anyOf: [Schema]? = nil,
+        nullable: Bool? = nil,
+        discriminator: Discriminator? = nil
     ) {
         self.ref = ref
         self.type = type
@@ -212,7 +250,17 @@ struct Schema: Decodable, Equatable {
         self.required = required
         self.items = items
         self.format = format
+        self.allOf = allOf
+        self.oneOf = oneOf
+        self.anyOf = anyOf
+        self.nullable = nullable
+        self.discriminator = discriminator
     }
+}
+
+struct Discriminator: Decodable, Equatable {
+    var propertyName: String
+    var mapping: [String: String]?
 }
 
 /// Heap-indirection wrapper so `Schema` can recursively contain itself
@@ -267,7 +315,7 @@ struct CodeGenerator {
         "APIDefinition", "Bool", "Codable", "Date", "Decodable", "DecodingError",
         "Decoder", "Double", "EmptyParameter", "EmptyResponse", "Encodable", "Encoder",
         "Equatable", "Float", "HTTPMethod", "Int", "Int64", "Sendable",
-        "SessionAuthentication", "String", "URL",
+        "SessionAuthentication", "String", "URL", "EndpointPathEncoding", "EncodingError",
     ]
 
     func generate(from document: OpenAPIDocument) throws -> [GeneratedFile] {
@@ -276,10 +324,15 @@ struct CodeGenerator {
         var needsAnyCodable = false
         if let schemas = document.components?.schemas {
             for (name, schema) in schemas.sorted(by: { $0.key < $1.key }) {
+                let schema = try normalizedSchema(schema, schemas: schemas, expanding: [name])
                 let typeName = sanitize(name)
                 try reserveGeneratedName(typeName, source: "schema '\(name)'", in: &generatedNames)
-                files.append(try renderSchema(name: typeName, schema: schema))
-                needsAnyCodable = needsAnyCodable || schemaNeedsAnyCodable(schema)
+                if schema.oneOf != nil {
+                    files.append(try renderUnion(name: typeName, schema: schema, schemas: schemas))
+                } else {
+                    files.append(try renderSchema(name: typeName, schema: schema))
+                    needsAnyCodable = needsAnyCodable || schemaNeedsAnyCodable(schema)
+                }
             }
         }
         if needsAnyCodable {
@@ -288,19 +341,35 @@ struct CodeGenerator {
         }
         for (path, item) in document.paths.sorted(by: { $0.key < $1.key }) {
             for (method, op) in item.operationsByMethod {
+                let operationSchemas =
+                    [op.requestBody?.content?["application/json"]?.schema]
+                    + (op.responses ?? [:]).values.map { $0.content?["application/json"]?.schema }
+                for schema in operationSchemas.compactMap({ $0 }) {
+                    _ = try normalizedSchema(schema, schemas: document.components?.schemas ?? [:], expanding: [])
+                    guard swiftTypeName(for: schema, fallback: nil) != nil else {
+                        throw GenerationError.unsupportedSchema(
+                            "Operation bodies must use primitive/array types or a named component reference")
+                    }
+                }
                 let typeName = sanitize(op.operationId ?? "\(method.lowercased())\(path)")
                 try reserveGeneratedName(
                     typeName,
                     source: "\(method) \(path) (operationId '\(op.operationId ?? "<missing>")')",
                     in: &generatedNames
                 )
-                files.append(try renderOperation(typeName: typeName, method: method, path: path, op: op))
+                files.append(
+                    try renderOperation(
+                        typeName: typeName, method: method, path: path, op: op,
+                        pathParameters: item.parameters ?? [],
+                        authentication: authentication(
+                            for: op.security ?? document.security,
+                            schemes: document.components?.securitySchemes ?? [:])))
             }
         }
         return files
     }
 
-    private func reserveGeneratedName(
+    func reserveGeneratedName(
         _ name: String,
         source: String,
         in names: inout [String: String]
@@ -324,7 +393,14 @@ struct CodeGenerator {
 
     // MARK: Schema → Codable struct
 
-    private func renderSchema(name: String, schema: Schema) throws -> GeneratedFile {
+    func renderSchema(name: String, schema: Schema) throws -> GeneratedFile {
+        guard schema.nullable != true else {
+            throw GenerationError.unsupportedSchema("Nullable component roots require a hand-written model: \(name)")
+        }
+        if let type = swiftTypeName(for: schema, fallback: nil) {
+            return GeneratedFile(
+                filename: "\(name).swift", contents: "import Foundation\npublic typealias \(name) = \(type)\n")
+        }
         var lines: [String] = []
         lines.append(generatedHeader(comment: "Schema for \(name)"))
         lines.append("")
@@ -335,14 +411,14 @@ struct CodeGenerator {
             let required = Set(schema.required ?? [])
             let sortedProps = try schemaPropertyMappings(schemaName: name, properties: properties)
             for (propName, id, propSchema) in sortedProps {
-                let optional = !required.contains(propName)
+                let optional = !required.contains(propName) || propSchema.nullable == true
                 let swiftType = swiftTypeName(for: propSchema, fallback: "AnyCodable") ?? "AnyCodable"
                 let typeAnnotation = optional ? "\(swiftType)?" : swiftType
                 lines.append("    public var \(id): \(typeAnnotation)")
             }
             lines.append("")
             let initParams = sortedProps.map { prop -> String in
-                let optional = !required.contains(prop.name)
+                let optional = !required.contains(prop.name) || prop.schema.nullable == true
                 let swiftType = swiftTypeName(for: prop.schema, fallback: "AnyCodable") ?? "AnyCodable"
                 let typeAnnotation = optional ? "\(swiftType)? = nil" : swiftType
                 return "\(prop.id): \(typeAnnotation)"
@@ -352,7 +428,8 @@ struct CodeGenerator {
                 lines.append("        self.\(id) = \(id)")
             }
             lines.append("    }")
-            if sortedProps.contains(where: { $0.id != $0.name }) {
+            let hasRequiredNullable = sortedProps.contains { required.contains($0.name) && $0.schema.nullable == true }
+            if sortedProps.contains(where: { $0.id != $0.name }) || hasRequiredNullable {
                 lines.append("")
                 lines.append("    private enum CodingKeys: String, CodingKey {")
                 for (propName, id, _) in sortedProps {
@@ -364,6 +441,31 @@ struct CodeGenerator {
                 }
                 lines.append("    }")
             }
+            if hasRequiredNullable {
+                lines.append("    public init(from decoder: any Decoder) throws {")
+                lines.append("        let container = try decoder.container(keyedBy: CodingKeys.self)")
+                for prop in sortedProps {
+                    let type = swiftTypeName(for: prop.schema, fallback: "AnyCodable") ?? "AnyCodable"
+                    let optional = !required.contains(prop.name) || prop.schema.nullable == true
+                    if required.contains(prop.name), prop.schema.nullable == true {
+                        lines.append(
+                            "        guard container.contains(.\(prop.id)) else { throw DecodingError.keyNotFound(CodingKeys.\(prop.id), .init(codingPath: decoder.codingPath, debugDescription: \"Missing required nullable property\")) }"
+                        )
+                    }
+                    lines.append(
+                        "        self.\(prop.id) = try container.\(optional ? "decodeIfPresent" : "decode")(\(type).self, forKey: .\(prop.id))"
+                    )
+                }
+                lines.append("    }")
+                lines.append("    public func encode(to encoder: any Encoder) throws {")
+                lines.append("        var container = encoder.container(keyedBy: CodingKeys.self)")
+                for prop in sortedProps {
+                    lines.append(
+                        "        try container.\(required.contains(prop.name) ? "encode" : "encodeIfPresent")(self.\(prop.id), forKey: .\(prop.id))"
+                    )
+                }
+                lines.append("    }")
+            }
         } else {
             lines.append("    public init() {}")
         }
@@ -371,7 +473,7 @@ struct CodeGenerator {
         return GeneratedFile(filename: "\(name).swift", contents: lines.joined(separator: "\n") + "\n")
     }
 
-    private func schemaPropertyMappings(
+    func schemaPropertyMappings(
         schemaName: String,
         properties: [String: Schema]
     ) throws -> [(name: String, id: String, schema: Schema)] {
@@ -392,7 +494,7 @@ struct CodeGenerator {
         return mappings
     }
 
-    private func renderAnyCodable() -> GeneratedFile {
+    func renderAnyCodable() -> GeneratedFile {
         let contents = """
             \(generatedHeader(comment: "Fallback type for unsupported schema properties"))
 
@@ -458,15 +560,15 @@ struct CodeGenerator {
 
     // MARK: Operation → APIDefinition struct
 
-    private func renderOperation(typeName: String, method: String, path: String, op: Operation) throws -> GeneratedFile
-    {
-        // Reject `{name}` style path templates so they cannot be silently
-        // emitted as a literal Swift string — a request hitting the
-        // generated endpoint would post to `/users/{id}` verbatim and the
-        // server would return 404 or a parameter-not-bound error. The
-        // generator does not yet support path parameter substitution; the
-        // user must rewrite the path or post-process the generated code.
-        if let range = path.range(of: #"\{[^/{}]*\}"#, options: .regularExpression) {
+    func renderOperation(
+        typeName: String, method: String, path: String, op: Operation,
+        pathParameters: [PathParameter], authentication: String
+    ) throws -> GeneratedFile {
+        // A template without declared parameters must never become a literal
+        // endpoint. Fully declared scalar parameters are bound below.
+        if let range = path.range(of: #"\{[^/{}]*\}"#, options: .regularExpression),
+            pathParameters.isEmpty && (op.parameters ?? []).isEmpty
+        {
             // `*` (not `+`) so `{}` is rejected too. An empty placeholder is
             // pointless but, before this, slipped past both this gate and
             // the forbidden-scalar set below — defeating the validator's
@@ -474,8 +576,7 @@ struct CodeGenerator {
             let placeholder = String(path[range])
             throw GenerationError.unsupportedPath(
                 "path template '\(placeholder)' in '\(path)' is not supported. "
-                    + "Remove path parameters from the OpenAPI spec or generate a stripped variant; "
-                    + "the openapi-to-innonetwork subset does not bind {name} placeholders. "
+                    + "Declare each placeholder as a required scalar path parameter. "
                     + "See Tools/openapi-to-innonetwork/README.md for the supported subset."
             )
         }
@@ -500,6 +601,7 @@ struct CodeGenerator {
             )
         }
 
+        let boundPath = try bindPath(path, inherited: pathParameters, operation: op.parameters ?? [])
         let parameter = op.requestBody?.content?["application/json"]?.schema
         let parameterType = parameter.flatMap { swiftTypeName(for: $0, fallback: nil) } ?? "EmptyParameter"
 
@@ -550,16 +652,20 @@ struct CodeGenerator {
         if parameterType != "EmptyParameter" {
             lines.append("    public let parameters: \(parameterType)?")
         }
+        for argument in boundPath.arguments {
+            lines.append("    public let \(argument.name): \(argument.type)")
+        }
         lines.append("    public var method: HTTPMethod { .\(method.lowercased()) }")
-        lines.append("    public var path: String { \"\(path)\" }")
-        // The preview subset does not interpret OpenAPI security schemes.
-        // Emit the protocol witness explicitly instead of relying on a
-        // library default that could drift across generated clients.
-        lines.append("    public var sessionAuthentication: SessionAuthentication { .anonymous }")
+        lines.append("    public var path: String { \"\(boundPath.literal)\" }")
+        // Emit the validated security contract explicitly.
+        lines.append("    public var sessionAuthentication: SessionAuthentication { .\(authentication) }")
         lines.append("")
-        if parameterType != "EmptyParameter" {
-            lines.append("    public init(parameters: \(parameterType)? = nil) {")
-            lines.append("        self.parameters = parameters")
+        var initParameters = boundPath.arguments.map { "\($0.name): \($0.type)" }
+        if parameterType != "EmptyParameter" { initParameters.append("parameters: \(parameterType)? = nil") }
+        if !initParameters.isEmpty {
+            lines.append("    public init(\(initParameters.joined(separator: ", "))) {")
+            for argument in boundPath.arguments { lines.append("        self.\(argument.name) = \(argument.name)") }
+            if parameterType != "EmptyParameter" { lines.append("        self.parameters = parameters") }
             lines.append("    }")
         } else {
             lines.append("    public init() {}")
@@ -570,14 +676,14 @@ struct CodeGenerator {
 
     // MARK: Helpers
 
-    private func generatedHeader(comment: String) -> String {
+    func generatedHeader(comment: String) -> String {
         (["// Generated by openapi-to-innonetwork. DO NOT EDIT BY HAND."]
             + commentLines("Module: \(moduleName)", prefix: "// ")
             + commentLines(comment, prefix: "// "))
             .joined(separator: "\n")
     }
 
-    private func commentLines(_ raw: String, prefix: String) -> [String] {
+    func commentLines(_ raw: String, prefix: String) -> [String] {
         var normalized = ""
         var precedingWasCarriageReturn = false
         for scalar in raw.unicodeScalars {
@@ -598,9 +704,11 @@ struct CodeGenerator {
         return normalized.components(separatedBy: "\n").map { prefix + $0 }
     }
 
-    private func swiftTypeName(for schema: Schema, fallback: String?) -> String? {
+    func swiftTypeName(for schema: Schema, fallback: String?) -> String? {
         if let ref = schema.ref {
-            return sanitize(ref.split(separator: "/").last.map(String.init) ?? "")
+            let name = String(ref.dropFirst("#/components/schemas/".count))
+                .replacingOccurrences(of: "~1", with: "/").replacingOccurrences(of: "~0", with: "~")
+            return sanitize(name)
         }
         switch schema.type {
         case "string":
@@ -628,7 +736,7 @@ struct CodeGenerator {
         }
     }
 
-    private func schemaNeedsAnyCodable(_ schema: Schema) -> Bool {
+    func schemaNeedsAnyCodable(_ schema: Schema) -> Bool {
         if schema.ref != nil {
             return false
         }
@@ -646,7 +754,7 @@ struct CodeGenerator {
         }
     }
 
-    private func sanitize(_ raw: String) -> String {
+    func sanitize(_ raw: String) -> String {
         var result = ""
         var capitalizeNext = true
         for scalar in raw.unicodeScalars {
@@ -671,7 +779,7 @@ struct CodeGenerator {
         return result
     }
 
-    private func safeIdentifier(_ raw: String) -> String {
+    func safeIdentifier(_ raw: String) -> String {
         let allowed = CharacterSet.alphanumerics.union(.init(charactersIn: "_"))
         var result = ""
         var capitalizeNext = false
@@ -696,7 +804,7 @@ struct CodeGenerator {
         return result
     }
 
-    private func swiftStringLiteralContent(_ raw: String) -> String {
+    func swiftStringLiteralContent(_ raw: String) -> String {
         var result = ""
         for scalar in raw.unicodeScalars {
             switch scalar.value {

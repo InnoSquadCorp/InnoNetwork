@@ -24,6 +24,16 @@ xcrun swift build --target InnoNetwork
 bin_path="$(xcrun swift build --show-bin-path)"
 xcrun swiftc -typecheck -I "$bin_path" -I "$bin_path/Modules" "$generated"/*.swift
 
+contracts="$test_dir/contracts"
+xcrun swift run --package-path "$tool_dir" openapi-to-innonetwork \
+  --input "$fixtures/contracts.json" --output "$contracts" --module-name Contracts
+xcrun swiftc -typecheck -I "$bin_path" -I "$bin_path/Modules" "$contracts"/*.swift
+xcrun swiftc -parse-as-library \
+  "$contracts/AnimalBase.swift" "$contracts/Cat.swift" "$contracts/Dog.swift" \
+  "$contracts/Pet.swift" "$contracts/NullableRecord.swift" \
+  "$fixtures/contracts-runtime.swift" -o "$test_dir/contracts-runtime"
+"$test_dir/contracts-runtime"
+
 if xcrun swift run --package-path "$tool_dir" openapi-to-innonetwork \
   --input "$fixtures/colliding-operation-names.json" \
   --output "$test_dir/collision" \

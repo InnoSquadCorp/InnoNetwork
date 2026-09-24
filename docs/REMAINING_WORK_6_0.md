@@ -36,3 +36,9 @@ device verification or publication.
   opt-in controls, both cache-only wrapper orders, 304 validation and stale-error
   refusal. The new policy case is Provisionally Stable: 1,616 total / 1,277
   provisional declarations; Stable remains 306 and SPI remains 33.
+- Stage 3: generator supports declared scalar path parameters, inherited and
+  overridden HTTP bearer requirements, object allOf, named discriminated oneOf,
+  and nullable properties. Unsupported security/composition forms fail rather
+  than weaken a contract. Full OpenAPI/JSON Schema validation is not claimed.
+  Unit tests, generated-client typechecking and generated Codable execution
+  cover the supported subset.

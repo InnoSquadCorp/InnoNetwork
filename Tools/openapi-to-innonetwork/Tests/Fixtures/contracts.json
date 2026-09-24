@@ -1,0 +1,22 @@
+{
+  "openapi": "3.0.3",
+  "security": [{"session": []}],
+  "components": {
+    "securitySchemes": {"session": {"type": "http", "scheme": "bearer"}},
+    "schemas": {
+      "AnimalBase": {"type": "object", "required": ["kind"], "properties": {"kind": {"type": "string"}}},
+      "Cat": {"allOf": [{"$ref": "#/components/schemas/AnimalBase"}, {"type": "object", "required": ["lives"], "properties": {"lives": {"type": "integer"}}}]},
+      "Dog": {"type": "object", "required": ["kind", "barks"], "properties": {"kind": {"type": "string"}, "barks": {"type": "boolean"}}},
+      "Pet": {"oneOf": [{"$ref": "#/components/schemas/Cat"}, {"$ref": "#/components/schemas/Dog"}], "discriminator": {"propertyName": "kind", "mapping": {"cat": "#/components/schemas/Cat", "dog": "#/components/schemas/Dog"}}},
+      "NullableRecord": {"type": "object", "required": ["note"], "properties": {"note": {"type": "string", "nullable": true}, "count": {"type": "integer"}}}
+    }
+  },
+  "paths": {
+    "/pets/{petId}": {
+      "parameters": [{"name": "petId", "in": "path", "required": true, "schema": {"type": "string"}}],
+      "get": {"operationId": "fetchPet", "responses": {"200": {"content": {"application/json": {"schema": {"$ref": "#/components/schemas/Pet"}}}}}}
+    },
+    "/health": {"get": {"operationId": "publicHealth", "security": []}},
+    "/optional": {"get": {"operationId": "optionalSession", "security": [{}, {"session": []}]}}
+  }
+}

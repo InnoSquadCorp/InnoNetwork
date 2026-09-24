@@ -18,15 +18,14 @@ and whether the request must use the full InnoNetwork execution pipeline.
 
 ## `Tools/openapi-to-innonetwork`
 
-The provisional 5.x tool accepts JSON or YAML input, emits Codable schema structs
+The provisional 6.0 tool accepts JSON or YAML input, emits Codable schema structs
 for `components.schemas`, and wires typed `Parameter` / `APIResponse` aliases
-when operations use `$ref`. It explicitly emits
-`sessionAuthentication: SessionAuthentication { .anonymous }` for every
-operation and rejects path templates; security-scheme mapping and broader
-OpenAPI coverage remain follow-up work. The generator does not infer auth from
-operation names, headers, or status codes. Replace auth-required operations
-with app-owned definitions or run deterministic post-processing after every
-generation before shipping them.
+when operations use `$ref`. Declared scalar path parameters become safely encoded
+constructor arguments. Root/operation HTTP bearer requirements map explicitly
+to required, optional or anonymous session authentication; unsupported security
+requirements fail generation. Object `allOf`, named discriminated `oneOf` and
+nullable properties are supported within the documented subset. Required nullable
+keys preserve present-null versus missing on decode/encode.
 
 ```bash
 cd Tools/openapi-to-innonetwork
@@ -38,11 +37,11 @@ swift run openapi-to-innonetwork \
 
 The generator emits one Swift file per `components.schemas` entry before
 emitting operation files. Operations without supported request or response
-shapes fall back to `EmptyParameter` / `EmptyResponse` so adopters can fill the
-gaps during integration. It checks generated names across schemas, operations,
+shapes use `EmptyParameter` / `EmptyResponse` only when those schemas are absent;
+unsupported declared JSON body shapes fail generation. It checks generated names across schemas, operations,
 and fallback models before writing output, and fails on a collision rather
 than silently replacing a file. The local release preflight also parses and
-typechecks generated output from representative CLI fixtures.
+typechecks generated output and executes discriminator/nullable roundtrip fixtures.
 
 JSON and YAML inputs are both supported. YAML decoding uses Yams inside the
 standalone `Tools/` package. The root package does not resolve Yams or a code

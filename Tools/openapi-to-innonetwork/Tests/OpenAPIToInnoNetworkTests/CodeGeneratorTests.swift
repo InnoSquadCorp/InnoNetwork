@@ -282,7 +282,8 @@ struct CodeGeneratorTests {
                         "tags": Schema(type: "array", items: Box(Schema(type: "string"))),
                     ],
                     required: ["id", "name", "profile"]
-                )
+                ),
+                "Profile": Schema(type: "object"),
             ])
         )
         let generator = CodeGenerator(moduleName: "API")
