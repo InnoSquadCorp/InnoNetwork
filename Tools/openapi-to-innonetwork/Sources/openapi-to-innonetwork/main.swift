@@ -121,6 +121,16 @@ struct Components: Decodable, Equatable {
 struct SecurityScheme: Decodable, Equatable {
     var type: String
     var scheme: String?
+    var name: String? = nil
+    var `in`: String? = nil
+    var flows: [String: OAuthFlow]? = nil
+}
+
+struct OAuthFlow: Decodable, Equatable {
+    var authorizationUrl: String?
+    var tokenUrl: String?
+    var refreshUrl: String?
+    var scopes: [String: String]
 }
 
 struct PathParameter: Decodable, Equatable {

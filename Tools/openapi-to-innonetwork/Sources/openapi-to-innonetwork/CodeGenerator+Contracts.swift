@@ -13,25 +13,7 @@ extension CodeGenerator {
     }
 
     func authentication(for requirements: [[String: [String]]]?, schemes: [String: SecurityScheme]) throws -> String {
-        guard let requirements, !requirements.isEmpty else { return "anonymous" }
-        var anonymous = false
-        var bearer = false
-        for requirement in requirements {
-            if requirement.isEmpty {
-                anonymous = true
-                continue
-            }
-            guard requirement.count == 1, let (name, scopes) = requirement.first,
-                scopes.isEmpty, let scheme = schemes[name], scheme.type == "http",
-                scheme.scheme?.lowercased() == "bearer"
-            else {
-                throw GenerationError.unsupportedSecurity(
-                    "Only HTTP bearer requirements and explicit anonymous alternatives are supported. API keys, OAuth scopes, references and AND requirements need an application-owned adapter."
-                )
-            }
-            bearer = true
-        }
-        return bearer ? (anonymous ? "optional" : "required") : "anonymous"
+        try SecurityIR(requirements: requirements, schemes: schemes).legacySessionAuthentication()
     }
 
     func bindPath(_ path: String, inherited: [PathParameter], operation: [PathParameter]) throws

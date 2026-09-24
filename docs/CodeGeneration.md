@@ -27,6 +27,13 @@ requirements fail generation. Object `allOf`, named discriminated `oneOf` and
 nullable properties are supported within the documented subset. Required nullable
 keys preserve present-null versus missing on decode/encode.
 
+Security parsing first preserves scheme identity, exact OAuth scope spelling,
+API-key placement and AND/OR groups in a bounded, non-secret intermediate model.
+The legacy bearer renderer accepts only one distinct bearer scheme; two named
+bearer alternatives now fail instead of being silently treated as one session.
+API key/OAuth/multiple-auth runtime generation remains gated on the dedicated
+credential-provider implementation; parsing metadata is not runtime support.
+
 ```bash
 cd Tools/openapi-to-innonetwork
 swift run openapi-to-innonetwork \

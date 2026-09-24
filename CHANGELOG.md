@@ -27,6 +27,9 @@ The previously planned 6.1 candidates are included in this 6.0 release scope.
 
 ### Fixed — release candidate review
 
+- The preview generator preserves security requirements in a bounded non-secret
+  IR and rejects distinct bearer alternatives on the legacy session path rather
+  than erasing the identity choice. Extended credential execution is still gated.
 - VCR recording, replay identity, and mismatch diagnostics remove URL
   user-info and fragments. Legacy cassette URLs normalize in memory while
   preserving sequential replay; fixture files require an explicit resave.
