@@ -67,6 +67,7 @@ ResponseCachePolicy.cacheFirst
 ResponseCachePolicy.disabled
 ResponseCachePolicy.networkOnly
 ResponseCachePolicy.rfc9111Compliant
+ResponseCachePolicy.requestFreshness
 ResponseCachePolicy.requestOnlyIfCached
 ResponseCachePolicy.staleIfError
 ResponseCachePolicy.staleWhileRevalidate
