@@ -110,6 +110,10 @@ private enum RecoverySmoke {
         let checkpointDirectory = directory.appendingPathComponent("checkpoints", isDirectory: true)
         let store = try FileResumableUploadCheckpointStore(directory: checkpointDirectory)
         if phase.hasPrefix("resume-") {
+            let orphanDirectory = directory.appendingPathComponent("snapshots/innonetwork-resumable-v1")
+            try require(
+                try FileManager.default.contentsOfDirectory(atPath: orphanDirectory.path).count == 1,
+                "crashed process leaves exactly one recoverable orphan")
             let checkpoint = try await store.load(uploadID: "fixture-job")
             try require(
                 checkpoint?.confirmedOffset == (phase == "resume-chunk" ? 4 : 10), "last acknowledged checkpoint")
@@ -142,6 +146,10 @@ private enum RecoverySmoke {
         try require(result.bytesConfirmed == 10, "completed byte count")
         let checkpoint = try await store.load(uploadID: "fixture-job")
         try require(checkpoint == nil, "successful recovery removes checkpoint")
+        let snapshotDirectory = directory.appendingPathComponent("snapshots/innonetwork-resumable-v1")
+        try require(
+            try FileManager.default.contentsOfDirectory(atPath: snapshotDirectory.path).isEmpty,
+            "fresh process reclaims orphan and completed snapshot")
         print("resumable recovery \(phase): PASS")
     }
 }

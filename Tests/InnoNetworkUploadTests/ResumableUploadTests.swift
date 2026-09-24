@@ -235,7 +235,8 @@ struct ResumableUploadTests {
 
         #expect(await adapter.uploaded == Data("abcd".utf8))
         #expect(result.fileSHA256 == "88d4266fd4e6338d13b845fcf289579d209c897823b9217da3e161936f031589")
-        let leftovers = (try? FileManager.default.contentsOfDirectory(atPath: snapshots.path)) ?? []
+        let leftovers = try FileManager.default.contentsOfDirectory(
+            atPath: snapshots.appendingPathComponent("innonetwork-resumable-v1").path)
         #expect(leftovers.isEmpty)
     }
 

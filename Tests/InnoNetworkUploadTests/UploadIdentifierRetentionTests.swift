@@ -16,7 +16,8 @@ struct UploadIdentifierRetentionTests {
             maximumBufferedDelegateEvents: 4,
             maximumBufferedDelegateBytes: 1_024,
             maximumPendingUnknownTasks: 1,
-            maximumRetainedTerminalTasks: 0
+            maximumRetainedTerminalTasks: 0,
+            maximumIdentifierRanges: iterations
         )
         let channel = UploadDelegateEventChannel(limits: policy)
         let session = StatelessUploadURLSession(channel: channel, identifierStride: identifierStride)
@@ -82,7 +83,8 @@ struct UploadIdentifierRetentionTests {
             maximumTrackedTasks: 1,
             maximumBufferedDelegateEvents: 1,
             maximumBufferedDelegateBytes: 1,
-            maximumPendingUnknownTasks: 1
+            maximumPendingUnknownTasks: 1,
+            maximumIdentifierRanges: iterations
         )
         let channel = UploadDelegateEventChannel(limits: policy)
         for index in 1...iterations {
@@ -100,6 +102,72 @@ struct UploadIdentifierRetentionTests {
         channel.send(.data(taskIdentifier: 2_001, data: Data([1, 2])))
         #expect(await channel.next() == nil)
         #expect(channel.overflowedIdentifierRangeCount == 0)
+    }
+
+    @Test("sparse history exhaustion rejects admissions but drains registered tasks")
+    func boundedSparseHistory() async throws {
+        let policy = UploadResourcePolicy(
+            maximumTrackedTasks: 4, maximumBufferedDelegateEvents: 16,
+            maximumBufferedDelegateBytes: 1024, maximumPendingUnknownTasks: 4,
+            maximumRetainedTerminalTasks: 0, maximumIdentifierRanges: 1
+        )
+        let channel = UploadDelegateEventChannel(limits: policy)
+        let session = StatelessUploadURLSession(channel: channel, identifierStride: 2)
+        let manager = UploadManager(
+            configuration: .background(sessionIdentifier: "bounded-history", resourcePolicy: policy),
+            session: session, channel: channel
+        )
+        let file = try makeTemporaryUploadFile()
+        defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
+        var request = URLRequest(url: URL(string: "https://upload.example.test/file")!)
+        request.httpMethod = "POST"
+        let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+        for _ in 0..<3 { _ = try await manager.upload(request, fromFile: file) }
+        for identifier in [2, 4, 6, 4, 2] {
+            channel.send(
+                .completed(
+                    taskIdentifier: identifier, taskDescription: "late",
+                    originalRequest: request, currentRequest: request, response: response, error: nil))
+            await withCheckedContinuation { continuation in
+                manager.handleBackgroundEvents { continuation.resume() }
+                channel.send(.backgroundEventsFinished)
+            }
+        }
+        #expect(await manager.retainedSystemIdentifierRangeCount == 1)
+        #expect(await manager.allTasks().isEmpty)
+        await #expect(throws: UploadError.resourceLimitExceeded(limit: 1)) {
+            try await manager.upload(request, fromFile: file)
+        }
+        #expect(session.lastIdentifier == 6)
+        await manager.shutdown()
+    }
+
+    @Test("overflow history exhaustion fails closed and preserves lifecycle acknowledgements")
+    func boundedOverflowHistory() async {
+        let policy = UploadResourcePolicy(
+            maximumTrackedTasks: 1, maximumBufferedDelegateEvents: 1,
+            maximumBufferedDelegateBytes: 1, maximumPendingUnknownTasks: 1,
+            maximumIdentifierRanges: 1
+        )
+        let channel = UploadDelegateEventChannel(limits: policy)
+        channel.send(.data(taskIdentifier: 2, data: Data([1, 2])))
+        guard case .overflow = await channel.next() else {
+            Issue.record("Expected overflow")
+            return
+        }
+        channel.send(.data(taskIdentifier: 4, data: Data([1, 2])))
+        guard case .capacityExceeded = await channel.next() else {
+            Issue.record("Expected bounded failure")
+            return
+        }
+        for id in 0..<10_000 { channel.send(.data(taskIdentifier: id, data: Data([1, 2]))) }
+        channel.send(.invalidated)
+        guard case .invalidated = await channel.next() else {
+            Issue.record("Lost lifecycle event")
+            return
+        }
+        #expect(channel.overflowedIdentifierRangeCount == 1)
+        channel.finish()
     }
 }
 

@@ -23,27 +23,27 @@ Stable compatibility promise.
 
 The 5.0.0 release baseline remains the compatibility reference for the
 currently tagged 5.x line; this table tracks the approved unified 6.0 scope
-with 1,614 public declarations in the root package.
+with 1,615 public declarations in the root package.
 
 | Product | Public declarations |
 |---|---:|
 | `InnoNetwork` (core) | 1049 |
 | `InnoNetworkWebSocket` | 164 |
 | `InnoNetworkDownload` | 94 |
-| `InnoNetworkUpload` | 109 |
+| `InnoNetworkUpload` | 110 |
 | `InnoNetworkTestSupport` | 84 |
 | `InnoNetworkPersistentCache` | 51 |
 | `InnoNetworkOpenAPI` | 36 |
 | `InnoNetworkTrust` | 17 |
 | `InnoNetworkAuthAWS` | 10 |
-| **Total** | **1,614** |
+| **Total** | **1,615** |
 
 | Compatibility tier | Public declarations |
 |---|---:|
 | Stable consumer API | 306 |
-| Provisionally Stable consumer API | 1,275 |
+| Provisionally Stable consumer API | 1,276 |
 | `@_spi(GeneratedClientSupport)` | 33 |
-| **Total** | **1,614** |
+| **Total** | **1,615** |
 
 ## Why this matters
 
@@ -52,7 +52,7 @@ Moving the four HLS modules to InnoStream and folding the temporary
 3,254-declaration snapshot to an intermediate 1,407 declarations. The approved
 6.0 scope also includes deadlines, upload controls, cache controls, bounded
 streaming/cursors, admission, advanced quota, tracing, resumable uploads, and
-their contract fixes, bringing the release baseline to 1,614 declarations.
+their contract fixes, bringing the release baseline to 1,615 declarations.
 These advanced additions remain Provisionally Stable until real server and
 consumer evidence supports promotion. The intermediate count is historical,
 not a separate release or the 6.0 release gate.

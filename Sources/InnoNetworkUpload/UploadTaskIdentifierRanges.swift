@@ -24,7 +24,7 @@ struct UploadTaskIdentifierRanges: Sendable {
     }
 
     @discardableResult
-    mutating func insert(_ identifier: Int) -> Bool {
+    mutating func insert(_ identifier: Int, maximumRangeCount: Int = .max) -> Bool {
         var lower = 0
         var upper = ranges.count
         while lower < upper {
@@ -37,6 +37,14 @@ struct UploadTaskIdentifierRanges: Sendable {
         }
         var index = lower
         if index > 0, ranges[index - 1].contains(identifier) { return false }
+
+        let joinsPrevious =
+            index > 0 && ranges[index - 1].upperBound != Int.max
+            && ranges[index - 1].upperBound + 1 == identifier
+        let joinsNext =
+            index < ranges.count && identifier != Int.max
+            && identifier + 1 == ranges[index].lowerBound
+        guard joinsPrevious || joinsNext || ranges.count < maximumRangeCount else { return false }
 
         var first = identifier
         var last = identifier

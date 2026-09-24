@@ -14,6 +14,7 @@ package enum UploadDelegateEvent: Sendable {
         error: SendableUnderlyingError?
     )
     case overflow(taskIdentifier: Int, byteLimit: Int)
+    case capacityExceeded
     case backgroundEventsFinished
     case invalidated
 
@@ -24,7 +25,7 @@ package enum UploadDelegateEvent: Sendable {
             .completed(let identifier, _, _, _, _, _),
             .overflow(let identifier, _):
             identifier
-        case .backgroundEventsFinished, .invalidated:
+        case .backgroundEventsFinished, .invalidated, .capacityExceeded:
             nil
         }
     }
@@ -45,6 +46,7 @@ package final class UploadDelegateEventChannel: Sendable {
         var bufferedBytes = 0
         var overflowedTaskIdentifiers = UploadTaskIdentifierRanges()
         var isFinished = false
+        var rejectsTransferEvents = false
     }
 
     private enum Action {
@@ -85,6 +87,7 @@ package final class UploadDelegateEventChannel: Sendable {
     package func send(_ event: UploadDelegateEvent) {
         let action = state.withLock { state -> Action in
             guard !state.isFinished else { return .none }
+            if state.rejectsTransferEvents, event.taskIdentifier != nil { return .none }
             if let waiter = state.waiter {
                 state.waiter = nil
                 return .resume(waiter, event)
@@ -122,6 +125,24 @@ package final class UploadDelegateEventChannel: Sendable {
                 }
             }
 
+            // Lifecycle acknowledgements are idempotent and must not turn
+            // duplicate callbacks into an unbounded queue.
+            if case .invalidated = event,
+                state.queue.contains(where: { if case .invalidated = $0 { true } else { false } })
+            {
+                return .none
+            }
+            if case .backgroundEventsFinished = event,
+                state.queue.contains(where: { if case .backgroundEventsFinished = $0 { true } else { false } })
+            {
+                return .none
+            }
+            let (reserve, overflow) = limits.maximumBufferedDelegateEvents.addingReportingOverflow(
+                limits.maximumTrackedTasks)
+            if event.taskIdentifier != nil, !overflow, state.queue.count >= reserve {
+                rejectTransfers(state: &state)
+                return .none
+            }
             state.queue.append(event)
             state.bufferedBytes += event.bufferedByteCount
             return .none
@@ -146,7 +167,18 @@ package final class UploadDelegateEventChannel: Sendable {
     }
 
     private func enqueueOverflow(for identifier: Int, state: inout State) {
-        guard state.overflowedTaskIdentifiers.insert(identifier) else { return }
+        guard !state.overflowedTaskIdentifiers.contains(identifier) else { return }
+        guard state.overflowedTaskIdentifiers.insert(identifier, maximumRangeCount: limits.maximumIdentifierRanges)
+        else {
+            rejectTransfers(state: &state)
+            return
+        }
+        let (reserve, overflow) = limits.maximumBufferedDelegateEvents.addingReportingOverflow(
+            limits.maximumTrackedTasks)
+        if !overflow, state.queue.count >= reserve {
+            rejectTransfers(state: &state)
+            return
+        }
         state.queue.removeAll { event in
             guard event.taskIdentifier == identifier else { return false }
             state.bufferedBytes -= event.bufferedByteCount
@@ -157,11 +189,19 @@ package final class UploadDelegateEventChannel: Sendable {
         )
     }
 
+    private func rejectTransfers(state: inout State) {
+        guard !state.rejectsTransferEvents else { return }
+        state.rejectsTransferEvents = true
+        state.queue.removeAll { $0.taskIdentifier != nil }
+        state.bufferedBytes = 0
+        state.queue.append(.capacityExceeded)
+    }
+
     private func isTransferEvent(_ event: UploadDelegateEvent) -> Bool {
         switch event {
         case .progress, .data:
             true
-        case .completed, .overflow, .backgroundEventsFinished, .invalidated:
+        case .completed, .overflow, .backgroundEventsFinished, .invalidated, .capacityExceeded:
             false
         }
     }
