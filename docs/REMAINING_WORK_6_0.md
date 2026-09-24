@@ -32,3 +32,7 @@ device verification or publication.
   fixtures passed including orphan reclamation. The identifier limit is one new
   Provisionally Stable property: 1,615 total / 1,276 provisional declarations.
   Physical-device and real-server checks remain open.
+- Stage 2: 131 cache/resilience tests passed, including request constraints,
+  opt-in controls, both cache-only wrapper orders, 304 validation and stale-error
+  refusal. The new policy case is Provisionally Stable: 1,616 total / 1,277
+  provisional declarations; Stable remains 306 and SPI remains 33.

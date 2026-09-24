@@ -25,6 +25,7 @@ them.
 | `Cache-Control: stale-if-error=N` | ✅ Opt-in | `ResponseCachePolicy.staleIfError(wrapping:)` requires both caller opt-in and an origin-provided window. It excludes mandatory revalidation and rechecks the final age after retry and transport delay before recovery. |
 | `Cache-Control: must-revalidate` | ⚠️ Implicit | Behaves identically to `no-cache` because the cache always revalidates `requiresRevalidation` entries. When the policy is wrapped via `ResponseCachePolicy.rfc9111Compliant(wrapping:)` the directive additionally forces `.returnStaleAndRevalidate` → `.revalidate`, denying the stale window. |
 | `Cache-Control: only-if-cached` | ✅ Opt-in | `ResponseCachePolicy.requestOnlyIfCached(wrapping:)` returns a reusable entry without transport and fails locally on a miss or mandatory revalidation. It also suppresses a stale-while-revalidate background leg. |
+| Request `no-cache`, `max-age`, `min-fresh` | ✅ Opt-in | `requestFreshness(wrapping:)` forces foreground validation when constraints fail. Numeric directives use corrected Age and the smaller caller/origin lifetime. `max-age=0`, invalid values, and duplicate numeric directives force validation. Stale recovery cannot override these constraints. Other policies retain their previous behavior. |
 | `Cache-Control: immutable` | ❌ Not consumed | Tracked as a future-major candidate; safe to ignore because the freshness window is policy-driven. |
 | `Expires` | ⚠️ Adapter-only | Consumed by `ResponseCachePolicy.rfc9111Compliant(wrapping:)` when no valid `max-age` exists. The adapter uses `Expires - Date`, falling back to `Expires - storedAt`; invalid values are stale. Default policies remain caller-window driven. |
 | `Vary` | ✅ Honored | Captured at write time as `varyHeaders` and consulted on every lookup. `Vary: *` skips the write and invalidates a previous entry for the current key. A changed `Vary` on `304` invalidates the old selection snapshot while the validating caller receives merged response metadata. |
@@ -35,6 +36,18 @@ them.
 | `Age` | ✅ Emitted on reuse | Cache hits and stale recovery return current Age without rewriting stored metadata. Merged 304 responses report their new validation age. Stored initial age includes origin transport response delay, measured from physical dispatch, but excludes local policy, admission, and quota waits. |
 
 ## Unsafe Method Invalidation
+
+Request constraints compose in either wrapper order, for example:
+
+```swift
+.requestOnlyIfCached(wrapping: .requestFreshness(
+    wrapping: .rfc9111Compliant(wrapping: .cacheFirst(maxAge: .seconds(60)))
+))
+```
+
+`no-cache, only-if-cached` therefore fails locally, with no network or background
+refresh. A successful 304 remains usable for the current validating request.
+Request `max-stale` and legacy `Pragma` interpretation are outside this adapter.
 
 RFC 9111 §4.4 requires caches to invalidate stored responses for the
 request target URI after a non-error response to an unsafe request method.

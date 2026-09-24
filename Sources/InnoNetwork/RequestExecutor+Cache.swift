@@ -34,6 +34,7 @@ extension RequestExecutor {
         )
         let preparation = configuration.responseCachePolicy.prepare(
             cached: cached,
+            request: request,
             now: runtime.clock.now()
         )
         if onlyIfCached {
@@ -48,6 +49,8 @@ extension RequestExecutor {
         }
         if case .revalidate(let candidate) = preparation,
             let candidate,
+            configuration.responseCachePolicy.permitsRequestFreshness(
+                request, cached: candidate, now: runtime.clock.now()),
             let fallback = configuration.responseCachePolicy.staleIfErrorFallback(
                 cached: candidate,
                 now: runtime.clock.now()
@@ -286,6 +289,8 @@ extension RequestExecutor {
                 sensitiveHeaderNames: configuration.responseCacheSensitiveHeaderNames
             ),
             current.matchesRepresentation(of: candidate),
+            configuration.responseCachePolicy.permitsRequestFreshness(
+                request, cached: current, now: runtime.clock.now()),
             configuration.responseCachePolicy.staleIfErrorFallback(
                 cached: current, now: runtime.clock.now()
             ) != nil

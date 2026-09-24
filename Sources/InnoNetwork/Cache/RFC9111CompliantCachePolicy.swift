@@ -94,6 +94,8 @@ package extension ResponseCachePolicy {
             return .staleIfError(wrapping: inner.applyingMaxAge(serverMaxAge: serverMaxAge))
         case .requestOnlyIfCached(let inner):
             return .requestOnlyIfCached(wrapping: inner.applyingMaxAge(serverMaxAge: serverMaxAge))
+        case .requestFreshness(let inner):
+            return .requestFreshness(wrapping: inner.applyingMaxAge(serverMaxAge: serverMaxAge))
         }
     }
 

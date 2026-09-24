@@ -209,6 +209,7 @@ InnoNetwork	swift.enum.case	ResponseCachePolicy.cacheFirst(maxAge:)
 InnoNetwork	swift.enum.case	ResponseCachePolicy.disabled
 InnoNetwork	swift.enum.case	ResponseCachePolicy.networkOnly
 InnoNetwork	swift.enum.case	ResponseCachePolicy.rfc9111Compliant(wrapping:)
+InnoNetwork	swift.enum.case	ResponseCachePolicy.requestFreshness(wrapping:)
 InnoNetwork	swift.enum.case	ResponseCachePolicy.requestOnlyIfCached(wrapping:)
 InnoNetwork	swift.enum.case	ResponseCachePolicy.staleIfError(wrapping:)
 InnoNetwork	swift.enum.case	ResponseCachePolicy.staleWhileRevalidate(maxAge:staleWindow:)

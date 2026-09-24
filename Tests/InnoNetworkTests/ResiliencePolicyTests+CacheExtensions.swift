@@ -352,6 +352,59 @@ extension ResiliencePolicyTests {
     }
 }
 
+extension ResiliencePolicyTests {
+    @Test(
+        "request freshness forces foreground validation and forbids stale recovery",
+        arguments: ["no-cache", "max-age=0", "min-fresh=60", "max-age=oops"])
+    func requestFreshnessCannotRecoverStale(control: String) async throws {
+        let cache = try await resilienceStaleIfErrorCache(name: "must-not-return")
+        let session = try ResilienceSequenceURLSession(queue: [resilienceQueuedResponse(statusCode: 503)])
+        let client = DefaultNetworkClient(
+            configuration: resilienceCacheExtensionConfiguration(
+                policy: .requestFreshness(wrapping: .staleIfError(wrapping: .cacheFirst(maxAge: .seconds(1)))),
+                cache: cache, cacheControl: control
+            ), session: session
+        )
+        await #expect(throws: NetworkError.self) { _ = try await client.request(ResilienceGetRequest()) }
+        #expect(await session.requestCount == 1)
+    }
+
+    @Test("cache-only plus no-cache fails before transport in either wrapper order", arguments: [true, false])
+    func cacheOnlyFreshnessOrder(freshnessOutside: Bool) async throws {
+        let leaf = ResponseCachePolicy.cacheFirst(maxAge: .seconds(60))
+        let policy: ResponseCachePolicy =
+            freshnessOutside
+            ? .requestFreshness(wrapping: .requestOnlyIfCached(wrapping: leaf))
+            : .requestOnlyIfCached(wrapping: .requestFreshness(wrapping: leaf))
+        let cache = InMemoryResponseCache()
+        await cache.set(
+            resilienceUserCacheKey(),
+            CachedResponse(data: try JSONEncoder().encode(ResilienceUser(id: 1, name: "fresh"))))
+        let session = ResilienceSequenceURLSession(queue: [])
+        let client = DefaultNetworkClient(
+            configuration: resilienceCacheExtensionConfiguration(
+                policy: policy, cache: cache, cacheControl: "only-if-cached, no-cache"), session: session)
+        await #expect(throws: NetworkError.self) { _ = try await client.request(ResilienceGetRequest()) }
+        #expect(await session.requestCount == 0)
+    }
+
+    @Test("freshness supports successful conditional revalidation")
+    func requestFreshnessAccepts304() async throws {
+        let cache = InMemoryResponseCache()
+        let user = ResilienceUser(id: 1, name: "validated")
+        await cache.set(
+            resilienceUserCacheKey(), CachedResponse(data: try JSONEncoder().encode(user), headers: ["ETag": "\"v1\""]))
+        let session = try ResilienceSequenceURLSession(queue: [resilienceQueuedResponse(statusCode: 304)])
+        let client = DefaultNetworkClient(
+            configuration: resilienceCacheExtensionConfiguration(
+                policy: .requestFreshness(wrapping: .cacheFirst(maxAge: .seconds(60))), cache: cache,
+                cacheControl: "no-cache"), session: session)
+        #expect(try await client.request(ResilienceGetRequest()) == user)
+        #expect(await session.requestCount == 1)
+        #expect(await session.capturedRequests.first?.value(forHTTPHeaderField: "If-None-Match") == "\"v1\"")
+    }
+}
+
 private func resilienceCacheExtensionConfiguration(
     policy: ResponseCachePolicy,
     cache: any ResponseCache,

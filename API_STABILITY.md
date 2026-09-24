@@ -167,8 +167,8 @@ acquiring a 6.x Stable compatibility promise.
 - `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`
 - `RefreshTokenPolicy`, `RequestCoalescingPolicy`, retry, response cache, redirect, encoding utility, and circuit breaker policy surfaces
   This includes the 6.0
-  `ResponseCachePolicy.staleIfError(wrapping:)` and
-  `requestOnlyIfCached(wrapping:)` cases; both remain explicitly opt-in and
+  `ResponseCachePolicy.staleIfError(wrapping:)`, `requestFreshness(wrapping:)`, and
+  `requestOnlyIfCached(wrapping:)` cases; all remain explicitly opt-in and
   Provisionally Stable
 - `MultipartResponseDecoder` buffered multipart response parsing surface
 - `MultipartStreamingResponseDecoder` streaming multipart response parsing surface
@@ -432,6 +432,11 @@ general handshake retry policy would retry an ordinary transport timeout.
 - `ResponseCachePolicy.requestOnlyIfCached(wrapping:)` — the request directive
   is consumed only under this wrapper. A miss or forced revalidation remains
   a local typed failure and never starts transport or background refresh.
+- `ResponseCachePolicy.requestFreshness(wrapping:)` — opt-in request `no-cache`,
+  `max-age` and `min-fresh`. Invalid/duplicate numeric directives and `max-age=0`
+  require successful foreground validation. Numeric constraints use corrected
+  response age and the smaller caller/origin freshness window. They cannot be
+  bypassed by stale recovery, asynchronous refresh or cache-only mode.
 - `NetworkErrorCode` — raw values use the
   `com.innosquad.innonetwork.NetworkError` domain exclusively; Foundation
   `URLError` codes are preserved only as underlying metadata.
@@ -561,8 +566,8 @@ below keeps the high-level compatibility classification readable. Historical
 5.x HLS sections document the migration source but are no longer included in
 the current machine-checked inventory.
 
-The machine-checked snapshot currently partitions all 1,615 declarations into
-306 Stable consumer declarations, 1,276 Provisionally Stable consumer
+The machine-checked snapshot currently partitions all 1,616 declarations into
+306 Stable consumer declarations, 1,277 Provisionally Stable consumer
 declarations, and 33 opt-in SPI declarations. The three sets are disjoint and
 exhaustive. `Scripts/symbols/stable-rules.tsv` maps the Stable ledger to symbol
 paths, while the compiler-authored SPI flag is snapshotted in
