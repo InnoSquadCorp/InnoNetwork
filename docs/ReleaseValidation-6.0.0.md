@@ -1,7 +1,9 @@
 # 6.0 Release Hardening and Operational Acceptance
 
 Scope baseline: main `7b52580430881e7b222f589aee7a30e409ed17da`.
-This follow-up keeps the approved 6.0 feature scope and API classifications.
+The initial follow-up kept the approved 6.0 feature scope. The user subsequently
+approved request-freshness and generator extensions; see `REMAINING_WORK_6_0.md`
+for their ordered delivery. New runtime APIs remain Provisionally Stable.
 It is not a release-ready declaration and does not publish a tag.
 
 ## Implemented checks
@@ -18,7 +20,7 @@ the change. The channel-finish assertions likewise fail before its cleanup fix.
 The recovery adapter is a deterministic file-backed stand-in, not a production
 HTTP backend. Abrupt fixture exit is deliberate and affects only that worker.
 
-## Fresh local evidence — 2026-09-24
+## Earlier local evidence — 2026-09-24, before the additional scope
 
 The validated runtime, test, fixture, manifest, and workflow files are captured
 by `1330ace10f6c6bd56f675f36ff2cdcc183f0cb2b` (including VCR change `558a10f`).
@@ -48,6 +50,27 @@ Final-candidate remote CI and device/backend acceptance were not run.
 
 ## Reproduce
 
+Additional-scope verification on 2026-09-24 covers runtime changes through
+`e19e2bd` and generator changes through `32ae536`, plus the committed soak probes:
+
+- Full serial suite: 1,849 registered tests, 1,845 passed, 4 external skips;
+  all 8 test-product summaries passed, command exit 0.
+- Generator: 20 tests passed; generated operations typecheck; executable
+  composition/nullable roundtrip and negative contracts passed.
+- iOS Simulator `InnoNetwork-Package` build: succeeded with signing disabled.
+- Bounded-duration component soak: 4,847,266 reconnect attempts and 4,114,034
+  ordered streaming deliveries, 30 seconds each. The span buffer never exceeded
+  32, terminal request/attempt state cleared, and exported plus dropped counts
+  equalled produced spans. Cancellation released the streaming producer.
+- Two fresh-process resume fixtures passed, including orphan snapshot cleanup.
+
+New logs use `/tmp/innonetwork6-remaining-`: `full-final.log`, `soak.log`,
+`codegen-final2.log`, `generated-final2.log`, `ios.log`,
+`recovery-final.log`, `docs-final.log` and `format-final.log`.
+The soak is a component-state bound, not heap/RSS measurement or a production
+service certification. Final remote CI, consumers and the other three device
+platform builds remain separate gates.
+
 Run from the repository root:
 
 ```sh
@@ -57,29 +80,33 @@ bash Scripts/test_resumable_process_recovery.sh
 bash Scripts/tests/test_run_local_release_preflight.sh
 bash Scripts/format.sh --lint
 INNO_UPLOAD_SOAK_ITERATIONS=10000 xcrun swift test --skip-build --no-parallel --filter UploadIdentifierRetentionTests
+INNO_STREAM_SOAK_SECONDS=30 xcrun swift test --jobs 2 --no-parallel --filter StreamingResourceSoakTests
 ```
 
 The process fixture runs in CI, release validation, and the local preflight's
 documentation-smoke gate. It leaves a small credential-free evidence directory
-containing checkpoints/backend state and the interrupted worker's private
-snapshot. It never terminates a compiler, build, test runner, or unrelated app.
+containing checkpoints/backend state. The resumed worker now reclaims the
+interrupted worker's orphan snapshot. It never terminates a compiler, build,
+test runner, or unrelated app.
 
 The long-run test defaults to 1,000 operations per pattern; explicit runs allow
 1–100,000. A run with N sequential IDs needs one range; N isolated IDs need N
-ranges until shutdown. These are exact state-size assertions, not a constant
-heap bound. Whole-command RSS includes SwiftPM and test-runner overhead and
+ranges until shutdown when the test explicitly configures that capacity.
+Production defaults cap each identifier history at 4,096 ranges, with fail-closed
+admission on exhaustion. Whole-command RSS includes SwiftPM and test-runner overhead and
 must not be reported as the ID container's allocation size. A finite
-`maximumRetainedTerminalTasks` is not a ceiling on callback-suppression history.
+`maximumRetainedTerminalTasks` is not the callback-history ceiling;
+`maximumIdentifierRanges` is the separate bound.
 
 ## External acceptance matrix — still required for the relevant adoption
 
 | Boundary | Procedure and acceptance evidence | Current limitation |
 | --- | --- | --- |
-| iOS background daemon | On a dedicated physical iPhone, suspend/resume an upload/download; exercise system termination and relaunch, user-paused restoration, and exactly-once completion. Record device/OS/app/library revisions and server byte counts. Test explicit user force-quit separately because its OS behavior differs. | The listed physical iPhone is unavailable; simulator and macOS tests do not close this row. |
+| iOS background daemon | On a dedicated physical iPhone, suspend/resume an upload/download; exercise system termination and relaunch, user-paused restoration, and exactly-once completion. Record device/OS/app/library revisions and server byte counts. Test explicit user force-quit separately because its OS behavior differs. | Rechecked on 2026-09-24: xctrace lists woody iPhone as offline. The user has been asked to connect a development-enabled test device; simulator and macOS checks do not close this row. |
 | Protected storage | While the physical device is locked, exercise configured protection classes, delayed callbacks and relaunch. Verify unreadable files fail without corrupting checkpoints and become usable when permitted. | No physical-device run or power-loss test was performed. |
 | Real resumable service | With a dedicated test account and disposable object, interrupt before/after each acknowledgement, expire credentials, change source identity, and retry finalization. Verify server offsets/checksum and no duplicate creation or credential persistence. | The local durable adapter proves engine recovery, not a specific backend's contract. Test service/account has not been supplied. |
 | Real quota/identity provider | Replay a documented quota/burst pattern, cancellation and 429/Retry-After behavior; exercise realm-separated credential refresh. Record rate/latency and server observations without credentials. | No service-specific quota model or IdP account has been supplied. Keep advanced APIs Provisionally Stable. |
-| Long-lived streaming/export | Use a bounded-duration load and a slow/failing exporter; capture memory trend, drops, completion and cancellation behavior, with a named consumer adapter. | Short deterministic regressions and the upload workload are not an overnight stream/export soak or real exporter certification. |
+| Long-lived streaming/export | Use a bounded-duration load and a slow/failing exporter; capture memory trend, drops, completion and cancellation behavior, with a named consumer adapter. | Local 30-second component workloads now cover blocked export, exact drops, bounded retained state and cancellation. App RSS trends, overnight load and a real exporter remain unverified. |
 | Publication | Re-run final-SHA remote checks, close consumer gates, then change Draft to Ready and follow tagged companion-dependency validation order. | This local hardening invalidates using the earlier main CI as final-candidate proof. No tag is published by these checks. |
 
 Do not store account secrets or real payloads in fixtures. Obtain the dedicated
@@ -88,10 +115,13 @@ lifecycle. Feature-scoped managers should shut down once work is finished;
 shutdown cancels active transfers, so do not rotate during background work to
 reclaim history.
 
-## Deliberately separate feature proposals
+## Approved additional scope
 
-Request freshness directives (such as request `no-cache` and `min-fresh`) and
-preview-generator path/auth/schema expansion remain separate adoption-driven
-proposals. They are not silently added to this hardening change. A concrete
-consumer requirement, compatibility decision, negative tests, and API ledger
-update are required before adding them to a release scope.
+The user approved request freshness and preview-generator path/auth/schema
+extensions after the initial hardening report. They are now implemented in
+`bb5d425` and `38e5480`, after upload resource hardening `c6de363`.
+Request freshness is opt-in; generated authentication supports explicit HTTP
+bearer requirements and rejects unsupported security forms. Composition support
+is the documented serialization subset, not full JSON Schema validation.
+The candidate inventory is 1,616 declarations: 306 Stable, 1,277 Provisionally
+Stable and 33 SPI. Publication/device/service gates remain independent.

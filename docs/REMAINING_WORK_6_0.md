@@ -42,3 +42,18 @@ device verification or publication.
   than weaken a contract. Full OpenAPI/JSON Schema validation is not claimed.
   Unit tests, generated-client typechecking and generated Codable execution
   cover the supported subset.
+- Stage 4: two 30-second component workloads passed. A blocked exporter received
+  4,847,266 completed attempts, with at most 32 buffered spans and exact
+  exported-plus-dropped accounting. Backpressured streaming delivered 4,114,034
+  ordered values and cancelled cleanly. The full preflight now repeats this
+  bounded-duration gate; ordinary tests use 1,000 iterations. These state-size
+  assertions are not an application RSS trend or a real exporter certification.
+- Stage 5: BLOCKED on external prerequisites. xctrace reports the physical iPhone
+  offline; no disposable backend account, endpoint or quota/IdP contract has been
+  supplied. Both prerequisites were requested. No device installation or server
+  mutation was attempted.
+- Stage 6: full macOS suite passed (1,845 actual passes; 4 explicit external skips),
+  iOS Simulator whole-package build passed, generator tests passed (20), and
+  generated output typecheck/roundtrip passed. Final docs/API/release fixtures and
+  formatting are recorded in the release validation document. Remote CI,
+  final consumer builds, and tvOS/watchOS/visionOS were not rerun for this candidate.

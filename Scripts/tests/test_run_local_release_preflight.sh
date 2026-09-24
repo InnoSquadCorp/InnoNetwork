@@ -24,6 +24,7 @@ documentation-smoke
 consumer-examples
 openapi-generator
 bounded-tests
+streaming-resource-soak
 runtime-coverage
 macro-coverage
 guarded-benchmarks

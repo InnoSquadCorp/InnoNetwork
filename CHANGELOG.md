@@ -10,6 +10,21 @@ Versioning.
 All changes below form the unreleased `6.0.0` draft and have not been tagged.
 The previously planned 6.1 candidates are included in this 6.0 release scope.
 
+### Added — approved follow-up scope
+
+- Opt-in `ResponseCachePolicy.requestFreshness(wrapping:)` applies request
+  `no-cache`, `max-age` and `min-fresh` across cache hits, cache-only requests,
+  background refresh and stale-error recovery.
+- The preview OpenAPI generator binds declared scalar path parameters, maps
+  explicit HTTP bearer security, flattens object `allOf`, generates named
+  discriminated `oneOf` models, and preserves required nullable keys. Unsupported
+  security/composition contracts fail generation.
+- `UploadResourcePolicy.maximumIdentifierRanges` bounds callback history while
+  refusing late task re-adoption. Resumable snapshots use cross-process leases
+  and reclaim only managed orphan files on the next invocation.
+- Sustained streaming/reconnect tests account for bounded span queues, dropped
+  spans, ordered backpressure and cancellation without retaining every payload.
+
 ### Fixed — release candidate review
 
 - VCR recording, replay identity, and mismatch diagnostics remove URL
