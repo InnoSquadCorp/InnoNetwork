@@ -51,7 +51,7 @@ public struct VCRRedactionPolicy: Sendable, Equatable {
 public struct VCRRequest: Codable, Hashable, Sendable {
     /// HTTP method, defaulting to `GET` when the request does not specify one.
     public let method: String
-    /// Absolute URL string after configured query redaction.
+    /// Absolute URL after user-info/fragment removal and configured query redaction.
     public let url: String
     /// Lower-cased header map after configured header redaction.
     public let headers: [String: String]
@@ -148,6 +148,9 @@ public struct VCRCassette: Codable, Equatable, Sendable {
 /// already exist in memory and are checked before the response pipeline. Record
 /// mode forwards to a backing session and therefore fails closed under bounded
 /// streaming; use an explicitly reviewed buffered policy while recording.
+/// URL user-info and fragments never participate in recorded request identity.
+/// Legacy cassette URLs are normalized in memory; the caller-owned cassette
+/// and its on-disk file are not modified.
 public final class VCRURLSession: URLSessionProtocol, Sendable {
     private struct State {
         var cassette: VCRCassette
@@ -200,8 +203,21 @@ public final class VCRURLSession: URLSessionProtocol, Sendable {
         self.mode = mode
         self.recordingSession = recordingTransport
         self.redactionPolicy = redactionPolicy
+        let normalized = VCRCassette(
+            interactions: cassette.interactions.map { interaction in
+                VCRInteraction(
+                    request: VCRRequest(
+                        method: interaction.request.method,
+                        url: Self.privacySafeURLComponents(URL(string: interaction.request.url))?.url?.absoluteString
+                            ?? "",
+                        headers: interaction.request.headers,
+                        bodySHA256: interaction.request.bodySHA256
+                    ),
+                    response: interaction.response
+                )
+            })
         self.state = OSAllocatedUnfairLock(
-            initialState: State(cassette: cassette, replayCursor: cassette.interactions.startIndex)
+            initialState: State(cassette: normalized, replayCursor: normalized.interactions.startIndex)
         )
     }
 
@@ -308,16 +324,23 @@ public final class VCRURLSession: URLSessionProtocol, Sendable {
     }
 
     private func sanitizedURLString(_ url: URL?) -> String {
-        guard let url, var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
-            return url?.absoluteString ?? ""
-        }
+        guard var components = Self.privacySafeURLComponents(url) else { return "" }
         components.queryItems = components.queryItems?.map { item in
             guard redactionPolicy.sensitiveQueryItemNames.contains(item.name.lowercased()) else {
                 return item
             }
             return URLQueryItem(name: item.name, value: redactionPolicy.replacement)
         }
-        return components.url?.absoluteString ?? url.absoluteString
+        // A failed reconstruction must never fall back to the original secret-bearing URL.
+        return components.url?.absoluteString ?? ""
+    }
+
+    private static func privacySafeURLComponents(_ url: URL?) -> URLComponents? {
+        guard let url, var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
+        components.user = nil
+        components.password = nil
+        components.fragment = nil
+        return components
     }
 
     private func sanitizeHeaders(_ headers: [AnyHashable: Any]) -> [String: String] {

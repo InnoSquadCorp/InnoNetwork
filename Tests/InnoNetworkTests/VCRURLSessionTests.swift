@@ -97,6 +97,118 @@ struct VCRURLSessionTests {
         #expect(vcr.cassette.interactions.isEmpty)
     }
 
+    @Test("recording removes URL credentials and fragments without changing transport")
+    func recordingRemovesURLIdentitySecrets() async throws {
+        let url = try #require(
+            URL(
+                string:
+                    "https://fixture-user:fixture-password@api.example.com/a%2Fb?keep=1&token=query-secret#fragment-secret"
+            )
+        )
+        let backing = MockURLSession()
+        backing.setMockResponse(statusCode: 200, data: Data("ok".utf8))
+        let recorder = VCRURLSession(mode: .record, recordingSession: backing)
+        _ = try await recorder.data(for: URLRequest(url: url))
+
+        #expect(backing.capturedRequest?.url == url)
+        let recorded = try #require(recorder.cassette.interactions.first)
+        #expect(recorded.request.url == "https://api.example.com/a%2Fb?keep=1&token=%3Credacted%3E")
+        let serialized = String(decoding: try JSONEncoder().encode(recorder.cassette), as: UTF8.self)
+        for secret in ["fixture-user", "fixture-password", "fragment-secret", "query-secret"] {
+            #expect(!serialized.contains(secret))
+        }
+
+        let replay = VCRURLSession(cassette: recorder.cassette, mode: .replay)
+        let (data, _) = try await replay.data(for: URLRequest(url: url))
+        #expect(data == Data("ok".utf8))
+    }
+
+    @Test("legacy cassette URLs migrate in memory and keep sequential replay")
+    func legacyCassetteURLsMigrateWithoutSkipping() async throws {
+        let legacy = VCRCassette(interactions: [
+            VCRInteraction(
+                request: VCRRequest(
+                    method: "GET", url: "https://old-user:old-password@api.example.com/item#old-fragment", headers: [:]
+                ),
+                response: VCRResponse(statusCode: 200, body: Data("first".utf8))
+            ),
+            VCRInteraction(
+                request: VCRRequest(method: "GET", url: "https://api.example.com/item#other-fragment", headers: [:]),
+                response: VCRResponse(statusCode: 200, body: Data("second".utf8))
+            ),
+        ])
+        let replay = VCRURLSession(cassette: legacy, mode: .replay)
+        let serialized = String(decoding: try JSONEncoder().encode(replay.cassette), as: UTF8.self)
+        for secret in ["old-user", "old-password", "old-fragment", "other-fragment"] {
+            #expect(!serialized.contains(secret))
+        }
+        #expect(legacy.interactions[0].request.url.contains("old-password"))
+        let request = URLRequest(url: try #require(URL(string: "https://api.example.com/item")))
+        let (first, _) = try await replay.data(for: request)
+        let (second, _) = try await replay.data(for: request)
+        #expect(first == Data("first".utf8))
+        #expect(second == Data("second".utf8))
+        await #expect(throws: NetworkError.self) { _ = try await replay.data(for: request) }
+    }
+
+    @Test("replay mismatch diagnostics never expose URL credentials or fragments")
+    func replayMismatchRedactsURLIdentitySecrets() async throws {
+        let replay = VCRURLSession(mode: .replay)
+        let request = URLRequest(
+            url: try #require(
+                URL(string: "https://fixture-user:fixture-password@api.example.com/missing#fragment-secret"))
+        )
+        do {
+            _ = try await replay.data(for: request)
+            Issue.record("Expected a cassette mismatch")
+        } catch {
+            let message = String(describing: error)
+            #expect(message.contains("https://api.example.com/missing"))
+            for secret in ["fixture-user", "fixture-password", "fragment-secret"] {
+                #expect(!message.contains(secret))
+            }
+        }
+    }
+
+    @Test("resaving a migrated cassette sanitizes URLs without rewriting the source file")
+    func migratedCassetteDiskRoundTrip() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("vcr-migration-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let originalURL = directory.appendingPathComponent("original.json")
+        let migratedURL = directory.appendingPathComponent("migrated.json")
+        let original = VCRCassette(interactions: [
+            VCRInteraction(
+                request: VCRRequest(method: "POST", url: "https://old:secret@api.example.com/a#private", headers: [:]),
+                response: VCRResponse(statusCode: 202, body: Data("caller-reviewed-body".utf8))
+            )
+        ])
+        try original.write(to: originalURL)
+        let originalBytes = try Data(contentsOf: originalURL)
+        let session = VCRURLSession(cassette: try VCRCassette.load(from: originalURL), mode: .replay)
+        try session.cassette.write(to: migratedURL)
+        let migrated = try VCRCassette.load(from: migratedURL)
+        #expect(try Data(contentsOf: originalURL) == originalBytes)
+        #expect(migrated.interactions.first?.request.url == "https://api.example.com/a")
+        #expect(migrated.interactions.first?.response == original.interactions.first?.response)
+        #expect(VCRURLSession(cassette: migrated, mode: .replay).cassette == migrated)
+    }
+
+    @Test("URL privacy removal is independent of configured query redaction")
+    func customQueryPolicyKeepsPublicURLIdentity() async throws {
+        let url = try #require(URL(string: "https://name:password@[::1]:8443/a%2Fb?keep=a%26b&token=public#private"))
+        let backing = MockURLSession()
+        backing.setMockResponse(statusCode: 200, data: Data())
+        let recorder = VCRURLSession(
+            mode: .record, recordingSession: backing,
+            redactionPolicy: VCRRedactionPolicy(sensitiveQueryItemNames: [])
+        )
+        _ = try await recorder.data(for: URLRequest(url: url))
+        #expect(
+            recorder.cassette.interactions.first?.request.url
+                == "https://[::1]:8443/a%2Fb?keep=a%26b&token=public"
+        )
+    }
+
     @Test("bounded streaming replays an already-buffered VCR cassette")
     func boundedStreamingAllowsVCRReplayMode() async throws {
         let baseURL = URL(string: "https://api.example.com")!

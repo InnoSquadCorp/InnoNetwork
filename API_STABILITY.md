@@ -275,6 +275,10 @@ general handshake retry policy would retry an ordinary transport timeout.
 - `InnoNetworkTestSupport` — additional helpers may be added; existing
   symbols stay source-compatible within 6.x. VCR-style cassette helpers are
   intended for test targets and may gain new matching/redaction knobs.
+  In 6.0, VCR request identity always removes URL user-info and fragments.
+  Legacy cassette URLs normalize in memory; original files and response
+  bodies are not rewritten. Migration guidance covers resaving reviewed
+  fixtures and separating authentication scenarios.
 - `EndpointBuilder`, `AnyEncodable`, `NetworkContext`, `CorrelationIDInterceptor` —
   builder shape may grow new chainable methods.
 - `EndpointPathEncoding` — may add new helpers for placeholder encoding;

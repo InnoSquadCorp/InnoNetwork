@@ -141,6 +141,16 @@ See the [streaming guide](../Sources/InnoNetwork/InnoNetwork.docc/Articles/Strea
 and [span export guide](../Sources/InnoNetwork/InnoNetwork.docc/Articles/ObservabilityExporters.md)
 for configuration and lifetime examples.
 
+## VCR fixture privacy
+
+VCR recording and replay remove URL user-info and fragments from request
+identity and mismatch diagnostics. Existing cassette URLs normalize in memory
+when passed to `VCRURLSession`, preserving sequential response order. Save the
+session's `cassette` snapshot to migrate a reviewed fixture; raw
+`VCRCassette.load` and `write` do not sanitize the original file. Separate
+authentication scenarios into different cassettes instead of relying on URL
+credentials to distinguish requests. Response bodies still require review.
+
 ## Validation order
 
 1. Build InnoNetwork and InnoStream together with `INNONETWORK_LOCAL_PATH`.
