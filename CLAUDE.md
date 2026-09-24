@@ -121,7 +121,7 @@ swift test --list-tests
 
 ## Architecture
 
-전체 13개 product. 신규 기여 시 진입 파일과 책임만 빠르게 파악하세요.
+전체 9개 product. 신규 기여 시 진입 파일과 책임만 빠르게 파악하세요.
 
 ### Sources/InnoNetwork (Core)
 - `APIDefinition.swift` / `APIDefinition+Macro.swift` — endpoint 선언 프로토콜 + `@APIDefinition` 매크로
@@ -160,7 +160,7 @@ swift test --list-tests
 - `UploadSessionDelegate.swift` — 진행률·응답·redirect delegate bridge
 
 ### Sources/InnoNetwork/V6
-- `OperationNetworkClient.swift` — 6.0 operation-first 실행 프리뷰와 5.x client adapter
+- `OperationNetworkClient.swift` — 6.0 operation-first 실행 계약과 기존 client adapter
 - `NetworkOperation.swift` — 취소 가능한 typed value handle과 bounded lifecycle event
 - `NetworkFailure.swift` — payload를 보존하지 않는 value-only 실패·복구 분류
 - `NetworkClientConfiguration.swift` — secure/production configuration façade와 migration bridge

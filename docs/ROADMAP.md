@@ -2,29 +2,32 @@
 
 ## 6.0.0 Release Boundary
 
-`6.0.0` is still an unreleased draft. Its scope is the compatibility reset
-already described in `docs/releases/6.0.0.md`: the operation-first contract
-moves into `InnoNetwork`, HLS moves to InnoStream, and recovery decisions gain
-explicit HTTP, authentication, and replay-safety context. No item in the 6.1
-candidate list below is a blocker for that release.
+`6.0.0` is still an unreleased draft. The approved scope combines the
+compatibility reset and all previously planned 6.1 candidates in one release.
+The operation-first contract moves into `InnoNetwork`, HLS moves to InnoStream,
+and recovery decisions gain explicit HTTP, authentication, and replay-safety
+context. Deadlines, bounded admission, advanced rate limiting, streaming
+controls, span export, cache controls, and resumable uploads are all part of
+6.0, with a baseline of 1,614 public declarations: 306 Stable, 1,275
+Provisionally Stable, and 33 SPI. See `docs/releases/6.0.0.md` for the scope.
 
 The root `@APIDefinition(method:path:auth:)` macro, default-enabled `Macros`
 trait, and `traits: []` opt-out are Stable in this 6.0 boundary. Their 5.x
 adoption and permanent macro, diagnostic, and consumer gates satisfy the
-promotion criteria; they are not deferred to 6.1.
+promotion criteria. Including the advanced features in 6.0 does not promote
+them to Stable; their ledger classifications and adoption gates remain.
 
 The 6.0 exit gate is evidence, not another feature pass: the API allowlists,
 package preflight, non-HLS consumers, InnoStream local integration, companion
 packages, and finally clean remote-tag consumers must all agree with the
 published contract.
 
-## 6.1.0 Candidate Scope
+## 6.0.0 Included Capabilities
 
-The first minor after 6.0 should be additive and operationally narrow. A
-candidate enters implementation only with an API sketch, a named adopter or
-reproducible protocol gap, negative-path tests, and a measurement or fixture
-that can become a permanent gate. Items are ordered by expected consumer
-value, not by implementation convenience.
+All implemented capabilities below belong to the unified 6.0 release. Future
+6.x additions require an API sketch, a named adopter or reproducible protocol
+gap, negative-path tests, and a measurement or fixture that can become a
+permanent gate. Stable promotion remains a separate evidence-based decision.
 
 ### Priority 0 — correctness and adoption evidence
 
@@ -33,7 +36,7 @@ value, not by implementation convenience.
    preserved, malformed dates fail closed, and `304` substitution follows the
    same bounded path after persistent-cache reopen. Unsafe methods and Vary
    mismatches continue to bypass conditional reuse.
-2. **End-to-end operation deadline — implemented for the 6.1 candidate.**
+2. **End-to-end operation deadline — included in 6.0.**
    `NetworkOperationDeadline` applies one monotonic budget across request
    preparation, authentication, cache lookup, policy admission, reachability,
    retry delay, transport, and decoding. Expiry cancels built-in client work
@@ -51,7 +54,7 @@ value, not by implementation convenience.
 
 ### Priority 1 — explicit opt-in capabilities
 
-1. **Directive-aware cache controls — implemented for the 6.1 candidate.**
+1. **Directive-aware cache controls — included in 6.0.**
    `staleIfError(wrapping:)` requires both an explicit caller wrapper and a
    valid response `stale-if-error=N` directive, preserves caller/server
    freshness ceilings, and returns stale data only after the retry policy
@@ -60,9 +63,9 @@ value, not by implementation convenience.
    entry without transport, and fails locally when revalidation would be
    required. Cancellation, trust, configuration, decoding, and body-limit
    failures never use stale data; authenticated entries still follow the
-   existing admission and identity rules. `immutable`, synthesized `Age`, and
-   default-policy consumption remain separate decisions.
-2. **Managed-upload controls — implemented for the 6.1 candidate.** Pause and
+   existing admission and identity rules. Reused responses report current
+   `Age`; `immutable` and default-policy consumption remain separate decisions.
+2. **Managed-upload controls — included in 6.0.** Pause and
    resume are idempotent, background restoration persists user-paused intent,
    and retry requires the original stable `Idempotency-Key` plus an explicitly
    refreshed request and readable source file. A retry reuses only the logical
@@ -70,7 +73,7 @@ value, not by implementation convenience.
    change destination or method and cannot restart cancelled or completed
    uploads. This surface remains Provisionally Stable pending external adopter
    evidence.
-3. **Caller-owned streaming cursors — implemented locally.** The additive
+3. **Caller-owned streaming cursors — included in 6.0.** The additive
    `StreamingResumePolicy.cursor` supports NDJSON and other line-oriented
    protocols with a validated reconnect header, a 4 KiB cursor cap, and
    transient-only bounded resume. Lossy buffering and automatic redirects are
@@ -78,8 +81,8 @@ value, not by implementation convenience.
    event limit cover interrupted/concurrent streams and multiline memory growth.
    Real TCP disconnect fixtures validate custom cursors and explicit resets;
    server replay/deduplication still belongs to the application.
-4. **Exporter-neutral request span lifecycle — implemented for the 6.1
-   candidate.** `NetworkSpanObserver` relates logical requests and physical
+4. **Exporter-neutral request span lifecycle — included in 6.0.**
+   `NetworkSpanObserver` relates logical requests and physical
    dispatch attempts without importing a vendor SDK or exposing request and
    response bodies. Cache hits, coalesced followers, and failures before
    dispatch retain a logical span but do not invent a transport attempt.
@@ -87,7 +90,7 @@ value, not by implementation convenience.
 
 ### Priority 2 — operational scheduling
 
-- **Advanced rate limiting — implemented for the 6.1 candidate.** The opt-in
+- **Advanced rate limiting — included in 6.0.** The opt-in
   policy provides monotonic token-bucket and exact sliding-window scheduling,
   bounded origin state, cancellation-aware waiting, and conservative
   `Retry-After` or versioned draft-11 feedback. Numeric configurations fail
@@ -95,11 +98,16 @@ value, not by implementation convenience.
   and quota is rechecked after concurrency admission at the actual dispatch
   boundary. Keep this surface Provisionally Stable until a real adopter's
   server quota model and production traffic evidence validate the choice.
+- **Bounded admission and resumable uploads — included in 6.0.** Request and
+  stream admission have separate capacity and absolute queue deadlines.
+  `ResumableUploadEngine` uses server-confirmed offsets, one immutable source
+  snapshot, and atomic credential-free checkpoints. Backend-specific crash
+  recovery and real adapter adoption remain explicit validation boundaries.
 
 ### Admission and release gates
 
-- Each feature ships independently; an unfinished Priority 1 item does not
-  hold the minor release.
+- All included features share the 6.0 release gate. Their provisional status
+  describes API evolution and does not waive correctness or regression gates.
 - Public additions update symbol allowlists, API stability classification,
   changelog, migration examples, and DocC in the same commit.
 - HTTP behavior needs deterministic URLProtocol fixtures plus persistent-cache
@@ -110,7 +118,7 @@ value, not by implementation convenience.
 - At least one real consumer must build without SPI for any surface proposed
   for Stable promotion.
 
-### Explicitly outside 6.1
+### Explicitly outside 6.0
 
 - HLS parsing, playback, download, FairPlay, and live DVR remain owned by
   InnoStream.
@@ -119,12 +127,12 @@ value, not by implementation convenience.
 - Renaming configuration packs, reshaping `NetworkError`, or removing
   provisional declarations requires a later major release.
 - Automatic replay of unsafe requests, automatic reuse of opaque body streams,
-  and a claim of complete RFC 9111 compliance are not minor-release goals.
+  and a claim of complete RFC 9111 compliance are not 6.0 release goals.
 
 ## Historical release context
 
 Everything below this heading is retained as design history for the 4.x and
-5.x lines. It is not the active 6.1 backlog.
+5.x lines. It is not the active 6.0 scope or a committed 6.1 backlog.
 
 ## 5.0.0 Release Scope
 

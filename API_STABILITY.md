@@ -166,7 +166,7 @@ acquiring a 6.x Stable compatibility promise.
   and the `VCRCassette` / `VCRURLSession` record-and-replay family)
 - `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`
 - `RefreshTokenPolicy`, `RequestCoalescingPolicy`, retry, response cache, redirect, encoding utility, and circuit breaker policy surfaces
-  This includes the additive 6.1
+  This includes the 6.0
   `ResponseCachePolicy.staleIfError(wrapping:)` and
   `requestOnlyIfCached(wrapping:)` cases; both remain explicitly opt-in and
   Provisionally Stable
@@ -174,11 +174,11 @@ acquiring a 6.x Stable compatibility promise.
 - `MultipartStreamingResponseDecoder` streaming multipart response parsing surface
 - `InnoNetworkOpenAPI` companion product
 - `InnoNetworkUpload` companion product and its public file-upload, progress, restoration, bounded response, event, and error symbols
-  plus the additive 6.1 pause/resume, durable paused-intent, and
+  plus the 6.0 pause/resume, durable paused-intent, and
   idempotency-key-guarded retry controls
 - operation-first `NetworkClientConfiguration`, `OperationNetworkClient`,
   `NetworkOperation`, `NetworkOperationReplaySafety`, and value-only
-  `NetworkFailure` root-module contracts, including the additive 6.1
+  `NetworkFailure` root-module contracts, including the 6.0
   `NetworkOperationDeadline`, `NetworkOperationDeadlineStage`, deadline-aware
   `start` overloads, and `NetworkFailure.deadlineStage`
 - bounded companion transport contracts: `BoundedNetworkTransfer`,
@@ -192,7 +192,7 @@ acquiring a 6.x Stable compatibility promise.
 - `StreamingBufferingPolicy`, `StreamingOutputSequence`, `TraceContextInterceptor`, `W3CTraceContext`, `CurlCommandOptions`, `IdempotencyKeyPolicy`, and `RequestPriority`
 - `StreamingAPIDefinition.makeDecoder()`, `StreamingResumePolicy.cursor`, and
   `ServerSentEventDecoder.reset()` / `decode(line:maximumEventBytes:)` are
-  additive 6.1 Provisionally Stable surfaces. The default factory preserves
+  6.0 Provisionally Stable surfaces. The default factory preserves
   existing stateless `decode(line:)` implementations; stateful consumers must
   migrate to a response-scoped factory for reconnect/concurrent-use isolation.
 - `HTTPHeaderName<Variant>` phantom-typed header key surface and its predefined `SingleValueHeader` / `RepeatableHeader` markers (also referenced as `HTTPHeaderName` / `HTTPHeaderVariant` for contract-sync purposes)
@@ -206,7 +206,7 @@ acquiring a 6.x Stable compatibility promise.
 - `ResponseCachePolicy.rfc9111Compliant(wrapping:)` directive-aware adapter (4.0.0 baseline)
   This also includes the additive
   `ResponseCachePolicy.staleIfError(wrapping:)` and
-  `requestOnlyIfCached(wrapping:)` opt-in cache-control adapters (6.1 candidate)
+  `requestOnlyIfCached(wrapping:)` opt-in cache-control adapters (6.0)
 - `DownloadPersistencePack.init(...sharedContainerIdentifier:...)` (4.0.0 behavior carried into the 5.0 pack contract)
 - `ResponseCache.invalidateTargetURI(_:)` and RFC 9111 unsafe-method target URI invalidation (4.0.0 baseline)
 - `TransportPack.init(...streamingLineByteLimit:...)` (4.0.0 behavior carried into the 5.0 pack contract)
@@ -237,11 +237,11 @@ Promotion from Provisionally Stable to Stable requires all of the following:
 | `ResponseCachePolicy.rfc9111Compliant(wrapping:)` | 6.x minor | The subset is documented as RFC 9111-aware, with directive tests for the supported rules. |
 | `CachedResponse.rfc9111InitialAge` persistence contract | Later 6.x minor | Built-in persistence and external-consumer round trips preserve freshness decisions without package access. |
 | Root `@APIDefinition` macro | Stable in 6.0.0 | InnoSample and Mulbyul adoption, expansion and diagnostic fixtures, the independent macro smoke, and the `traits: []` build prove the explicit-struct and opt-out contracts. |
-| 6.1 admission, advanced quota, and structured decisions | Later 6.x minor | Bounded/cancellation and dispatch-time tests are present; server-contract validation and production quota evidence remain. |
-| 6.1 streaming timeout and control-frame APIs | Later 6.x minor | Virtual-time budgets and SSE wire fixtures are present; consumer reconnect validation remains. |
-| 6.1 span export and resumable-upload APIs | Later 6.x minor | Backpressure, physical-attempt, interruption, and immutable-byte tests are present; crash/restart backend fixtures and real adapter adoption remain. |
+| 6.0 admission, advanced quota, and structured decisions | Later 6.x minor | Bounded/cancellation and dispatch-time tests are present; server-contract validation and production quota evidence remain. |
+| 6.0 streaming timeout and control-frame APIs | Later 6.x minor | Virtual-time budgets and SSE wire fixtures are present; consumer reconnect validation remains. |
+| 6.0 span export and resumable-upload APIs | Later 6.x minor | Backpressure, physical-attempt, interruption, and immutable-byte tests are present; crash/restart backend fixtures and real adapter adoption remain. |
 
-The 6.1 candidate rows cover `RequestAdmissionPolicy`,
+The 6.0 rows cover `RequestAdmissionPolicy`,
 `AdvancedRateLimitPolicy`, `NetworkDecision`, `StreamingTimeoutPolicy`,
 `StreamingDecodedFrame`, `StreamingFrameControl`,
 `StreamingResumePolicy.serverSentEvents`, `NetworkSpanObserver`,

@@ -27,8 +27,9 @@ optional product selected only when that capability is required.
 > actively security-supported line. `6.0.0` is an unreleased draft on this
 > branch; do not point production dependencies at `main`. The API examples
 > below describe the developing 6.0 contract and may not compile against 5.x.
-> Additive 6.1 candidates are developed only after the local 6.0 release cut
-> and remain unreleased as well.
+> The previously planned 6.1 candidates are included in this 6.0 release scope.
+> The approved baseline contains 1,614 public declarations; advanced additions
+> remain Provisionally Stable unless the stability ledger explicitly says otherwise.
 
 ## Product Selection Guide
 
@@ -77,11 +78,11 @@ and value-only failure types previously previewed by `InnoNetworkNext` now ship
 in the root `InnoNetwork` module. Remove the preview product and replace
 `import InnoNetworkNext` with `import InnoNetwork`.
 
-The 6.1 candidate adds an opt-in `NetworkOperationDeadline` to buffered
+InnoNetwork 6.0 adds an opt-in `NetworkOperationDeadline` to buffered
 operation-first requests. One monotonic duration covers admission, retries,
 transport, and decoding; `NetworkFailure.deadlineStage` reports only the
 coarse stage that exhausted the budget. Existing calls without a deadline keep
-their 6.0 behavior.
+their behavior without an operation-wide deadline.
 
 The four HLS products moved to the independently versioned
 [InnoStream](https://github.com/InnoSquadCorp/InnoStream) package. Their product

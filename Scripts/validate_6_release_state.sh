@@ -48,7 +48,9 @@ required_paths=(
   Scripts/symbols/tier-budgets.tsv
   Sources/InnoNetwork/InnoNetwork.docc/MigrationTo6.md
   docs/Migration-6.0.0.md
+  docs/ROADMAP.md
   docs/releases/6.0.0.md
+  docs/releases/6.1.0.md
   docs/site/index.html
 )
 
@@ -88,6 +90,8 @@ tier_budgets="$validation_root/Scripts/symbols/tier-budgets.tsv"
 docc_migration="$validation_root/Sources/InnoNetwork/InnoNetwork.docc/MigrationTo6.md"
 migration="$validation_root/docs/Migration-6.0.0.md"
 notes="$validation_root/docs/releases/6.0.0.md"
+roadmap="$validation_root/docs/ROADMAP.md"
+superseded_notes="$validation_root/docs/releases/6.1.0.md"
 site="$validation_root/docs/site/index.html"
 
 require_line() {
@@ -125,6 +129,30 @@ require_contains '## Stable macro-first endpoint contract' "$docc_migration"
 require_contains '### Root Macro Surface (Stable in 6.0)' "$api"
 require_contains '<strong>9 Products</strong>' "$site"
 
+# Scope approval is independent of draft/ready publication state. Keep both
+# states bound to the same approved API inventory and unified release scope.
+scope_statement='The previously planned 6.1 candidates are included in this 6.0 release scope.'
+for scope_document in "$readme" "$changelog" "$notes" "$superseded_notes"; do
+  require_contains "$scope_statement" "$scope_document"
+done
+require_line '## 6.0.0 Included Capabilities' "$roadmap"
+forbid_contains '## 6.1.0 Candidate Scope' "$roadmap"
+require_line 'Status: Superseded by 6.0.0 scope (unreleased)' "$superseded_notes"
+[[ "$(sed -n '1p' "$superseded_notes")" == '<!-- release-status: draft -->' ]] \
+  || fail 'superseded 6.1 notes must remain unpublished'
+forbid_contains '<!-- release-status: ready -->' "$superseded_notes"
+require_contains '1,614 declarations: 306 Stable,' "$notes"
+require_contains '1,275 Provisionally Stable, and 33 SPI.' "$notes"
+require_line '| **Total** | **1,614** |' "$symbols"
+require_line '| Stable consumer API | 306 |' "$symbols"
+require_line '| Provisionally Stable consumer API | 1,275 |' "$symbols"
+require_line '| `@_spi(GeneratedClientSupport)` | 33 |' "$symbols"
+require_line $'TOTAL\t1614' "$budgets"
+require_line $'STABLE_CONSUMER\t306' "$tier_budgets"
+require_line $'PROVISIONAL\t1275' "$tier_budgets"
+require_line $'SPI\t33' "$tier_budgets"
+require_line $'TOTAL\t1614' "$tier_budgets"
+
 if [[ "$state" == "draft" ]]; then
   require_line "Status: Draft (unreleased)" "$notes"
   require_line "Release date: TBD" "$notes"
@@ -149,15 +177,6 @@ else
   require_line "## [6.0.0] - $release_date" "$changelog"
   require_contains '`6.x` is the actively supported tagged public release line.' "$security"
   require_contains '## Current sizes (InnoNetwork 6.0.0 release baseline)' "$symbols"
-  require_line '| **Total** | **1,407** |' "$symbols"
-  require_line '| Stable consumer API | 306 |' "$symbols"
-  require_line '| Provisionally Stable consumer API | 1,068 |' "$symbols"
-  require_line '| `@_spi(GeneratedClientSupport)` | 33 |' "$symbols"
-  require_line $'TOTAL\t1407' "$budgets"
-  require_line $'STABLE_CONSUMER\t306' "$tier_budgets"
-  require_line $'PROVISIONAL\t1068' "$tier_budgets"
-  require_line $'SPI\t33' "$tier_budgets"
-  require_line $'TOTAL\t1407' "$tier_budgets"
   require_contains 'This guide describes the released InnoNetwork 6.0 compatibility reset.' "$migration"
   require_contains 'latest tagged stable release is 6.0.0' "$site"
   forbid_contains 'Release date: TBD' "$notes"

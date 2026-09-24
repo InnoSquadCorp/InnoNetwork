@@ -63,10 +63,11 @@ carrier for trace IDs, correlation IDs, and baggage. `CorrelationIDInterceptor`
 and `TraceContextInterceptor` can copy that context into request headers without
 threading metadata through every client call.
 
-The remaining 6.1 candidate is narrower: relate request, retry, refresh, cache,
-and transfer events to a parent/child span lifecycle through an exporter-neutral
-adapter. It must reuse the existing task-local carrier, avoid a vendor SDK
-dependency, and keep request and response bodies out of telemetry.
+The 6.0 scope also includes `NetworkSpanObserver`, which relates logical
+requests and physical transport attempts through an exporter-neutral adapter.
+It reuses the existing task-local carrier, avoids a vendor SDK dependency,
+and keeps request and response bodies out of telemetry. The span-export
+surface remains Provisionally Stable.
 
 ### Other
 
