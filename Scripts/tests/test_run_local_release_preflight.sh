@@ -40,6 +40,10 @@ diff -u "$work_dir/expected-full.txt" "$work_dir/actual-full.txt"
 bash "$runner" --help | grep -Fq -- '--full'
 grep -Fq 'run_package_xcodebuild docbuild' "$runner"
 grep -Fq 'prepare_package_xcodebuild_view' "$runner"
+for entry_point in "$runner" \
+  "$repo_root/.github/workflows/ci.yml" "$repo_root/.github/workflows/release.yml"; do
+  grep -Fq 'bash Scripts/test_resumable_process_recovery.sh' "$entry_point"
+done
 grep -Fq "grep -Eo 'Test run with [0-9]+ tests?'" \
   "$repo_root/Scripts/run_bounded_parallel_tests.sh"
 grep -Fq 'swift package describe --type json' \

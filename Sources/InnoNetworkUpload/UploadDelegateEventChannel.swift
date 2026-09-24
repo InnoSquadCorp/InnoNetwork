@@ -135,6 +135,9 @@ package final class UploadDelegateEventChannel: Sendable {
             state.isFinished = true
             state.queue.removeAll(keepingCapacity: false)
             state.bufferedBytes = 0
+            // No future event can be admitted after finish, so delayed-callback
+            // suppression no longer needs to retain exact identifier history.
+            state.overflowedTaskIdentifiers.removeAll()
             guard let waiter = state.waiter else { return .none }
             state.waiter = nil
             return .resume(waiter, nil)

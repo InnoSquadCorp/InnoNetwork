@@ -213,6 +213,7 @@ run_static_contracts() {
 run_documentation_smoke() {
   xcrun swift build --target InnoNetworkDocSmoke
   xcrun swift run InnoNetworkDocSmoke
+  bash Scripts/test_resumable_process_recovery.sh
 }
 
 run_consumer_examples() {

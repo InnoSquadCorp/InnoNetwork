@@ -93,6 +93,19 @@ and Foundation's ordinary suspended state. Restoration therefore keeps a
 user-paused task in ``UploadState/paused`` while still resuming an active task
 that Foundation happened to suspend.
 
+### Long-lived manager resources
+
+`maximumRetainedTerminalTasks` bounds logical task history, not the exact
+system-task ID history needed to reject delayed callbacks. Consecutive retired
+IDs compress into one interval; sparse IDs require one interval per isolated
+ID. This is not a fixed memory ceiling for an indefinitely retained manager.
+Do not erase IDs while callbacks from that session can still arrive.
+
+Use a feature-scoped manager and call `shutdown()` when its work is finished.
+Shutdown cancels active transfers; do not rotate a manager in the middle of
+background work merely to reclaim history. Manager retirement history clears
+on shutdown, and delegate overflow history clears when its channel finishes.
+
 A retry is allowed only after failure. Supply the request and file again so
 credentials, pre-signed URLs, and source availability are freshly validated:
 
@@ -137,6 +150,14 @@ failure, or cancellation. Adapter finalization must be idempotent for a session
 and file identity: once the server reports success, checkpoint removal is
 best-effort so local cleanup failure cannot misreport the remote outcome, and a
 later invocation may repeat finalization before cleanup succeeds.
+
+Abrupt process termination cannot run snapshot cleanup; a private temporary
+snapshot can remain until the temporary directory is reclaimed. This is not
+a promise of power-loss durability or an app-owned snapshot retention policy.
+The process-recovery fixture isolates those snapshots in its own evidence
+directory and verifies both lost chunk acknowledgements and lost finalization
+acknowledgements. See the repository's `docs/ReleaseValidation-6.0.0.md` for
+commands and the separate real-device/backend acceptance matrix.
 
 ## Security contract
 

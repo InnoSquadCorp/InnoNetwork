@@ -308,6 +308,12 @@ let package = Package(
             path: "SmokeTests/InnoNetworkOpenAPISmoke",
             swiftSettings: strictSettings
         ),
+        .executableTarget(
+            name: "InnoNetworkResumableRecoverySmoke",
+            dependencies: ["InnoNetworkUpload"],
+            path: "SmokeTests/InnoNetworkResumableRecoverySmoke",
+            swiftSettings: strictSettings
+        ),
         .testTarget(
             name: "InnoNetworkTests",
             dependencies: [
