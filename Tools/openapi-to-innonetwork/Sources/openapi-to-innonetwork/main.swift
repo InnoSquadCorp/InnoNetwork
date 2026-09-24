@@ -324,6 +324,7 @@ struct CodeGenerator {
         var needsAnyCodable = false
         if let schemas = document.components?.schemas {
             for (name, schema) in schemas.sorted(by: { $0.key < $1.key }) {
+                try validateAliasChain(name: name, schemas: schemas)
                 let schema = try normalizedSchema(schema, schemas: schemas, expanding: [name])
                 let typeName = sanitize(name)
                 try reserveGeneratedName(typeName, source: "schema '\(name)'", in: &generatedNames)
@@ -346,7 +347,7 @@ struct CodeGenerator {
                     + (op.responses ?? [:]).values.map { $0.content?["application/json"]?.schema }
                 for schema in operationSchemas.compactMap({ $0 }) {
                     _ = try normalizedSchema(schema, schemas: document.components?.schemas ?? [:], expanding: [])
-                    guard swiftTypeName(for: schema, fallback: nil) != nil else {
+                    guard schema.nullable != true, swiftTypeName(for: schema, fallback: nil) != nil else {
                         throw GenerationError.unsupportedSchema(
                             "Operation bodies must use primitive/array types or a named component reference")
                     }

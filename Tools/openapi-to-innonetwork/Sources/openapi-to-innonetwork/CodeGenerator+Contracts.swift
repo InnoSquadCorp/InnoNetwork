@@ -1,6 +1,17 @@
 import Foundation
 
 extension CodeGenerator {
+    func validateAliasChain(name: String, schemas: [String: Schema]) throws {
+        var seen: Set<String> = [name]
+        var current = name
+        while let reference = schemas[current]?.ref {
+            current = try referenceName(reference, schemas: schemas)
+            guard seen.insert(current).inserted else {
+                throw GenerationError.unsupportedSchema("Cyclic component alias: \(current)")
+            }
+        }
+    }
+
     func authentication(for requirements: [[String: [String]]]?, schemes: [String: SecurityScheme]) throws -> String {
         guard let requirements, !requirements.isEmpty else { return "anonymous" }
         var anonymous = false

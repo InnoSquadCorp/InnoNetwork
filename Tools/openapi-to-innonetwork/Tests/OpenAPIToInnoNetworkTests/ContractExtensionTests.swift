@@ -47,6 +47,7 @@ struct ContractExtensionTests {
         for schemas in [
             #""A":{"allOf":[{"type":"object","properties":{"id":{"type":"integer"}}},{"type":"object","properties":{"id":{"type":"string"}}}]}"#,
             ##""A":{"allOf":[{"$ref":"#/components/schemas/A"}]}"##,
+            ##""A":{"$ref":"#/components/schemas/B"},"B":{"$ref":"#/components/schemas/A"}"##,
             #""A":{"oneOf":[{"type":"string"},{"type":"integer"}]}"#,
             #""A":{"anyOf":[{"type":"string"},{"type":"integer"}]}"#,
         ] {
@@ -67,5 +68,20 @@ struct ContractExtensionTests {
                 #"{"paths":{"/a/{id}":{"get":{"parameters":[{"name":"id","in":"path","required":false,"schema":{"type":"string"}}]}}}}"#
             )
         }
+    }
+
+    @Test("nullable response roots fail explicitly instead of producing a nonnullable type")
+    func nullableBodyRoot() throws {
+        let document = OpenAPIDocument(paths: [
+            "/value": PathItem(
+                get: Operation(
+                    responses: [
+                        "200": ResponseObject(content: [
+                            "application/json": MediaType(
+                                schema: Schema(type: "string", nullable: true))
+                        ])
+                    ]))
+        ])
+        #expect(throws: GenerationError.self) { try CodeGenerator(moduleName: "API").generate(from: document) }
     }
 }
