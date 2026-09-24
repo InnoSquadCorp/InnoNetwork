@@ -58,7 +58,7 @@ let operation = client.start(
 )
 ```
 
-Starting in the additive 6.1 candidate, a buffered operation can also own one
+Starting in 6.0, a buffered operation can also own one
 end-to-end monotonic deadline:
 
 ```swift

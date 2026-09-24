@@ -7,11 +7,27 @@ Versioning.
 
 ## [Unreleased]
 
-Changes through the local `6.0.0` release cut form the unreleased `6.0.0` draft and have not been tagged.
-Entries explicitly labelled for `6.1.0` are additive candidates layered after
-that cut and are not part of the 6.0 contract.
+All changes below form the unreleased `6.0.0` draft and have not been tagged.
+The previously planned 6.1 candidates are included in this 6.0 release scope.
 
-### Added for 6.1.0
+### Fixed — release candidate review
+
+- Pinning canonicalizes a trailing DNS root dot and rejects leading-dot host
+  rules, preventing equivalent host spellings from bypassing configured pins.
+- Unsafe response invalidation occurs before local response handling, and GET
+  coalescing is partitioned by cache mutation generation. Persistent cache
+  lookup retains Vary selection headers, and reused responses report current Age.
+- Upload restoration does not re-adopt completed snapshot tasks and applies
+  terminal retention to rejected restores. Pending delegate-event overflow
+  drops lossy progress first and fails closed if required events cannot fit.
+- AWS SigV4 preserves S3 path segments and canonicalizes reserved characters
+  without normalizing object-key identity. Mutable VCR redaction names are
+  normalized before recording.
+- OpenAPI generation rejects namespace collisions, reserves generated-client
+  names, sanitizes type identifiers, and keeps multiline metadata inside
+  comments. CI and release gates compile the generated output.
+
+### Added — advanced capabilities
 
 - Bounded request admission now provides global/origin concurrency, finite
   pending queues, cancellation-safe queue deadlines, and separate long-lived
@@ -68,7 +84,7 @@ that cut and are not part of the 6.0 contract.
   revalidation. Both controls are opt-in; cancellation, trust,
   configuration, decoding, and body-limit failures remain non-recoverable.
 
-### Fixed for 6.1.0
+### Fixed — execution and lifecycle
 
 - WebSocket reconnect sleeps are capped by the remaining cumulative budget.
   Timer wake-up and lifecycle admission both reject expired reconnects,
@@ -227,7 +243,7 @@ that cut and are not part of the 6.0 contract.
   snapshots on every terminal path, and do not report a completed remote
   finalize as failed solely because local checkpoint cleanup failed.
 
-### Added for 6.0.0
+### Added — core and companion contracts
 
 - `NetworkSnapshot` now reports Low Data Mode, expensive-path, DNS, IPv4,
   IPv6, and typed unsatisfied-reason state. `NetworkMonitoring.snapshots()`

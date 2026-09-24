@@ -4,6 +4,11 @@ This guide describes the unreleased InnoNetwork 6.0 draft. There is no
 `6.0.0` tag yet; keep production applications on `5.1.0` until the release
 notes are marked ready and the tag is published.
 
+The previously planned 6.1 candidates are included in this 6.0 release scope.
+The unified baseline contains 1,614 public declarations. `@APIDefinition`
+remains Stable; the advanced additions below retain their Provisionally
+Stable classifications.
+
 ## Package boundary changes
 
 InnoNetwork 6 removes the temporary `InnoNetworkNext` preview product and the
@@ -89,6 +94,52 @@ let operation = client.start(
 A 401 recommends `.reauthenticate` only for session-authenticated endpoints.
 A 403 remains terminal. Reauthentication never authorizes automatic replay;
 the application still decides whether to start another operation.
+
+## Advanced capability migration
+
+The opt-in features in the following section are also part of 6.0; they do not
+require a later 6.1 dependency.
+
+- **Operation deadlines:** opt into `NetworkOperationDeadline` on buffered
+  operation starts when the whole operation needs one monotonic budget.
+  `NetworkFailure.deadlineStage` describes the exhausted stage. Existing
+  starts without a deadline keep their behavior. Separately returned streams
+  use `StreamingTimeoutPolicy`, not the buffered operation deadline.
+- **Streaming decoders:** stateful `StreamingAPIDefinition` implementations
+  should provide `makeDecoder()` so each response and reconnect owns isolated
+  decoder state. Stateless `decode(line:)` implementations remain compatible.
+  SSE now preserves empty data and significant newlines, inherits IDs, and
+  handles CR/LF/CRLF framing. Review consumers that depended on the old parser
+  behavior. Cursor resume requires lossless buffering and an application-owned
+  replay/deduplication contract; invalid cursors cannot trigger fallback resume.
+- **Cache persistence:** custom stores should persist and restore
+  `CachedResponse.rfc9111InitialAge` along with the existing response fields.
+  This preserves upstream age and transport delay across reopen. The built-in
+  persistent cache handles legacy records conservatively. `staleIfError` and
+  `requestOnlyIfCached` remain explicit policy wrappers; no-cache and no-store
+  restrictions, validator matching, and concurrent invalidation apply to them.
+- **Admission and quotas:** configure `RequestAdmissionPolicy` and
+  `AdvancedRateLimitPolicy` explicitly. Token-bucket and sliding-window
+  algorithms are alternatives selected for the application's server quota
+  contract. IETF RateLimit draft-11 feedback is separately opt-in; valid
+  `Retry-After` takes precedence. These policies do not infer a server's quota.
+- **Managed uploads:** pause/resume preserves durable user intent. Retrying a
+  failed upload requires refreshed inputs with the original destination,
+  case-sensitive HTTP method, and application-owned `Idempotency-Key`.
+  `ResumableUploadEngine` is a separate adapter-based capability that commits
+  server-confirmed offsets from one immutable file snapshot. Validate the
+  application's backend adapter and crash/restart behavior before adoption.
+- **Span export:** `NetworkSpanObserver` exports logical requests and physical
+  attempts through a bounded queue. Cache hits and coalesced followers have
+  logical spans without invented transport attempts. Applications own exporter
+  lifetime and shutdown; request and response bodies are excluded.
+
+See the [streaming guide](../Sources/InnoNetwork/InnoNetwork.docc/Articles/StreamingGuide.md),
+[cache guide](../Sources/InnoNetwork/InnoNetwork.docc/Articles/CachingStrategies.md),
+[admission and quota guide](../Sources/InnoNetwork/InnoNetwork.docc/Articles/AdmissionAndRateLimiting.md),
+[upload guide](../Sources/InnoNetworkUpload/InnoNetworkUpload.docc/InnoNetworkUpload.md),
+and [span export guide](../Sources/InnoNetwork/InnoNetwork.docc/Articles/ObservabilityExporters.md)
+for configuration and lifetime examples.
 
 ## Validation order
 

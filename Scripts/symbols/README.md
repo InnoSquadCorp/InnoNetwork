@@ -22,8 +22,8 @@ Stable compatibility promise.
 ## Current sizes (InnoNetwork 6 development baseline)
 
 The 5.0.0 release baseline remains the compatibility reference for the
-currently tagged 5.x line; this table tracks the 6.1 candidate layered after
-the planned 6.0 boundary with 1,614 public declarations in the root package.
+currently tagged 5.x line; this table tracks the approved unified 6.0 scope
+with 1,614 public declarations in the root package.
 
 | Product | Public declarations |
 |---|---:|
@@ -47,13 +47,15 @@ the planned 6.0 boundary with 1,614 public declarations in the root package.
 
 ## Why this matters
 
-The 6.0 split reduced this repository's machine-checked surface from 3,254 to
-1,407 declarations by moving the four HLS modules to InnoStream and folding
-the temporary `InnoNetworkNext` module into the root product. The additive 6.1
-deadline, upload-control, cache-control, bounded streaming/cursor, admission,
-advanced quota, tracing, and resumable-upload candidates raise the development
-snapshot to 1,614 declarations. The 180 new declarations remain Provisionally
-Stable until real server and consumer evidence supports promotion.
+Moving the four HLS modules to InnoStream and folding the temporary
+`InnoNetworkNext` module into the root product first reduced the historical
+3,254-declaration snapshot to an intermediate 1,407 declarations. The approved
+6.0 scope also includes deadlines, upload controls, cache controls, bounded
+streaming/cursors, admission, advanced quota, tracing, resumable uploads, and
+their contract fixes, bringing the release baseline to 1,614 declarations.
+These advanced additions remain Provisionally Stable until real server and
+consumer evidence supports promotion. The intermediate count is historical,
+not a separate release or the 6.0 release gate.
 
 At release, every public symbol becomes:
 

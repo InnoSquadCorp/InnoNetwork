@@ -98,8 +98,8 @@ require_line "## Internal/Operational" "$api_stability"
 require_contains 'baseline caps inline' "$api_stability"
 require_contains '`safeDefaults` and the `advanced` preset' "$api_stability"
 require_line '## 6.0.0 Release Boundary' "$roadmap"
-require_line '## 6.1.0 Candidate Scope' "$roadmap"
-require_contains 'No item in the 6.1' "$roadmap"
+require_line '## 6.0.0 Included Capabilities' "$roadmap"
+require_contains 'compatibility reset and all previously planned 6.1 candidates in one release.' "$roadmap"
 require_contains 'HLS parsing, playback, download, FairPlay, and live DVR remain owned by' "$roadmap"
 
 if [[ "$docs_release_state" == "draft" ]]; then
