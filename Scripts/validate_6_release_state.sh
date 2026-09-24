@@ -44,6 +44,8 @@ required_paths=(
   CHANGELOG.md
   SECURITY.md
   Scripts/symbols/README.md
+  Scripts/symbols/budgets.tsv
+  Scripts/symbols/tier-budgets.tsv
   Sources/InnoNetwork/InnoNetwork.docc/MigrationTo6.md
   docs/Migration-6.0.0.md
   docs/releases/6.0.0.md
@@ -81,6 +83,8 @@ readme="$validation_root/README.md"
 changelog="$validation_root/CHANGELOG.md"
 security="$validation_root/SECURITY.md"
 symbols="$validation_root/Scripts/symbols/README.md"
+budgets="$validation_root/Scripts/symbols/budgets.tsv"
+tier_budgets="$validation_root/Scripts/symbols/tier-budgets.tsv"
 docc_migration="$validation_root/Sources/InnoNetwork/InnoNetwork.docc/MigrationTo6.md"
 migration="$validation_root/docs/Migration-6.0.0.md"
 notes="$validation_root/docs/releases/6.0.0.md"
@@ -145,6 +149,15 @@ else
   require_line "## [6.0.0] - $release_date" "$changelog"
   require_contains '`6.x` is the actively supported tagged public release line.' "$security"
   require_contains '## Current sizes (InnoNetwork 6.0.0 release baseline)' "$symbols"
+  require_line '| **Total** | **1,407** |' "$symbols"
+  require_line '| Stable consumer API | 306 |' "$symbols"
+  require_line '| Provisionally Stable consumer API | 1,068 |' "$symbols"
+  require_line '| `@_spi(GeneratedClientSupport)` | 33 |' "$symbols"
+  require_line $'TOTAL\t1407' "$budgets"
+  require_line $'STABLE_CONSUMER\t306' "$tier_budgets"
+  require_line $'PROVISIONAL\t1068' "$tier_budgets"
+  require_line $'SPI\t33' "$tier_budgets"
+  require_line $'TOTAL\t1407' "$tier_budgets"
   require_contains 'This guide describes the released InnoNetwork 6.0 compatibility reset.' "$migration"
   require_contains 'latest tagged stable release is 6.0.0' "$site"
   forbid_contains 'Release date: TBD' "$notes"
