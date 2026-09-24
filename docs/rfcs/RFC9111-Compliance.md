@@ -32,7 +32,7 @@ them.
 | `Authorization` (request key) | ✅ Honored | Refused by default (`storesAuthenticatedResponses = false`). Even after opt-in, storage requires `Cache-Control: public`, `must-revalidate`, or `s-maxage` per RFC 9111 §3.5. |
 | `ETag` | ✅ Honored | Captured for conditional revalidation via `If-None-Match`. A `304` is matched using RFC 9110 strong/weak entity-tag rules and rejected when its validator cannot identify the stored response. |
 | `Last-Modified` | ✅ Honored | When `max-age` and `Expires` are absent, `ResponseCachePolicy.rfc9111Compliant(wrapping:)` applies the RFC 9111 §4.2.2 10% heuristic freshness calculation capped at 24 hours. Stale entries carrying a valid HTTP-date emit `If-Modified-Since`; when `ETag` is also present the request sends both validators. Malformed values are preserved as response metadata but never emitted as conditional request headers. |
-| `Age` | ❌ Not emitted | The cache does not synthesize an `Age` header on cached responses. Stored initial age includes origin transport response delay, measured from physical dispatch, but excludes local policy, admission, and quota waits. |
+| `Age` | ✅ Emitted on reuse | Cache hits and stale recovery return current Age without rewriting stored metadata. Merged 304 responses report their new validation age. Stored initial age includes origin transport response delay, measured from physical dispatch, but excludes local policy, admission, and quota waits. |
 
 ## Unsafe Method Invalidation
 
@@ -129,9 +129,11 @@ lifetime, not only post-init activity.
    already exist; a future major could also accept the response directive
    directly so APIs that emit it transparently get stale-while-revalidate
    behavior.
-3. **`Age` header synthesis.** Some downstream caches (or operator tools)
-   inspect the `Age` header to detect stale-while-revalidate hits; a future
-   release could emit it on cache hits.
+
+`Age` header synthesis is implemented in 6.0, not a deferred feature.
+`returnedCacheHitUpdatesAgeHeader`, `staleIfErrorUpdatesAgeHeader`, and
+`mergedNotModifiedResetsRFCResponseAge` cover reuse, recovery, and validation
+without double-counting stored initial age.
 
 The full code path lives in
 [`Sources/InnoNetwork/Cache/ResponseCachePolicy.swift`](../../Sources/InnoNetwork/Cache/ResponseCachePolicy.swift)

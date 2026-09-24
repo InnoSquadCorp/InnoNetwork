@@ -12,6 +12,15 @@ The previously planned 6.1 candidates are included in this 6.0 release scope.
 
 ### Fixed — release candidate review
 
+- VCR recording, replay identity, and mismatch diagnostics remove URL
+  user-info and fragments. Legacy cassette URLs normalize in memory while
+  preserving sequential replay; fixture files require an explicit resave.
+- The RFC cache matrix now documents implemented Age synthesis, with a
+  documentation-contract guard against the obsolete unsupported claim.
+- Finished upload delegate channels release overflow-ID history. Long-run
+  tests cover contiguous/sparse IDs, late callback suppression, and shutdown.
+- A deterministic fresh-process fixture checks resumable recovery after lost
+  chunk and finalize acknowledgements; CI and local/release gates run it.
 - Pinning canonicalizes a trailing DNS root dot and rejects leading-dot host
   rules, preventing equivalent host spellings from bypassing configured pins.
 - Unsafe response invalidation occurs before local response handling, and GET
