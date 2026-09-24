@@ -14,7 +14,7 @@ package enum UploadDelegateEvent: Sendable {
         error: SendableUnderlyingError?
     )
     case overflow(taskIdentifier: Int, byteLimit: Int)
-    case capacityExceeded
+    case capacityExceeded(limit: Int)
     case backgroundEventsFinished
     case invalidated
 
@@ -140,7 +140,7 @@ package final class UploadDelegateEventChannel: Sendable {
             let (reserve, overflow) = limits.maximumBufferedDelegateEvents.addingReportingOverflow(
                 limits.maximumTrackedTasks)
             if event.taskIdentifier != nil, !overflow, state.queue.count >= reserve {
-                rejectTransfers(state: &state)
+                rejectTransfers(state: &state, limit: reserve)
                 return .none
             }
             state.queue.append(event)
@@ -170,13 +170,13 @@ package final class UploadDelegateEventChannel: Sendable {
         guard !state.overflowedTaskIdentifiers.contains(identifier) else { return }
         guard state.overflowedTaskIdentifiers.insert(identifier, maximumRangeCount: limits.maximumIdentifierRanges)
         else {
-            rejectTransfers(state: &state)
+            rejectTransfers(state: &state, limit: limits.maximumIdentifierRanges)
             return
         }
         let (reserve, overflow) = limits.maximumBufferedDelegateEvents.addingReportingOverflow(
             limits.maximumTrackedTasks)
         if !overflow, state.queue.count >= reserve {
-            rejectTransfers(state: &state)
+            rejectTransfers(state: &state, limit: reserve)
             return
         }
         state.queue.removeAll { event in
@@ -189,12 +189,12 @@ package final class UploadDelegateEventChannel: Sendable {
         )
     }
 
-    private func rejectTransfers(state: inout State) {
+    private func rejectTransfers(state: inout State, limit: Int) {
         guard !state.rejectsTransferEvents else { return }
         state.rejectsTransferEvents = true
         state.queue.removeAll { $0.taskIdentifier != nil }
         state.bufferedBytes = 0
-        state.queue.append(.capacityExceeded)
+        state.queue.append(.capacityExceeded(limit: limit))
     }
 
     private func isTransferEvent(_ event: UploadDelegateEvent) -> Bool {

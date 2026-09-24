@@ -169,6 +169,29 @@ struct UploadIdentifierRetentionTests {
         #expect(channel.overflowedIdentifierRangeCount == 1)
         channel.finish()
     }
+
+    @Test("delegate capacity failure cancels active tasks and reports the exhausted bound")
+    func capacityFailureTerminatesRegisteredTasks() async throws {
+        let channel = UploadDelegateEventChannel()
+        let session = StatelessUploadURLSession(channel: channel)
+        let manager = UploadManager(configuration: .safeDefaults(), session: session, channel: channel)
+        let file = try makeTemporaryUploadFile()
+        defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
+        var request = URLRequest(url: URL(string: "https://upload.example.test/file")!)
+        request.httpMethod = "POST"
+        let operation = try await manager.upload(request, fromFile: file)
+        channel.send(.capacityExceeded(limit: 3))
+        await withCheckedContinuation { continuation in
+            manager.handleBackgroundEvents { continuation.resume() }
+            channel.send(.backgroundEventsFinished)
+        }
+        #expect(await operation.task.error == .delegateBufferExceeded(limit: 3))
+        await #expect(throws: UploadError.delegateBufferExceeded(limit: 3)) {
+            try await manager.upload(request, fromFile: file)
+        }
+        #expect(session.lastIdentifier == 1)
+        await manager.shutdown()
+    }
 }
 
 private final class StatelessUploadURLSession: UploadURLSession, @unchecked Sendable {
