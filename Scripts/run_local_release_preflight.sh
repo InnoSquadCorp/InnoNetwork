@@ -196,7 +196,7 @@ run_static_contracts() {
   bash Scripts/check_guarded_benchmark_contract.sh
   python3 Scripts/check_macro_build_baseline_contract.py
   bash Scripts/check_docs_contract_sync.sh
-  bash Scripts/validate_6_release_state.sh --expect draft
+  bash Scripts/validate_6_release_state.sh
   bash Scripts/check_stable_examples.sh
   python3 Scripts/check_example_platform_floors.py
   python3 Scripts/check_apple_platform_build_contract.py
