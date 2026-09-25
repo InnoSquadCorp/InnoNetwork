@@ -120,6 +120,13 @@ struct SecurityIRTests {
         let ir = try SecurityIR(requirements: [["oauth": ["write", "Read"]]], schemes: ["oauth": scheme])
         #expect(ir.alternatives[0][0].scopes == ["Read", "write"])
         #expect(ir.alternatives[0][0].kind == .oauth2)
+        #expect(try ir.runtimeAlternativesLiteral() == "[[.oauth2(id: \"oauth\", scopes: [\"Read\", \"write\"])]]")
+        let source = try CodeGenerator(moduleName: "Fixture").renderOperation(
+            typeName: "Scoped", method: "GET", path: "/scoped", op: Operation(), pathParameters: [],
+            authentication: "anonymous", security: ir
+        ).contents
+        #expect(source.contains("RequestSecurityProviding"))
+        #expect(source.contains(".oauth2(id: \"oauth\", scopes: [\"Read\", \"write\"])"))
         #expect(throws: GenerationError.self) {
             try SecurityIR(requirements: [["oauth": ["read"]]], schemes: ["oauth": scheme])
         }

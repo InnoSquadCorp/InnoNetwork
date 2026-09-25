@@ -28,7 +28,7 @@ optional product selected only when that capability is required.
 > branch; do not point production dependencies at `main`. The API examples
 > below describe the developing 6.0 contract and may not compile against 5.x.
 > The previously planned 6.1 candidates are included in this 6.0 release scope.
-> The approved baseline contains 1,649 public declarations; advanced additions
+> The approved baseline contains 1,656 public declarations; advanced additions
 > remain Provisionally Stable unless the stability ledger explicitly says otherwise.
 
 ## Product Selection Guide

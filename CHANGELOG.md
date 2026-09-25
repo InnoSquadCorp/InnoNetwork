@@ -20,7 +20,11 @@ The previously planned 6.1 candidates are included in this 6.0 release scope.
   VCR dynamically redacts declared credential slots and forwards request context.
 - Preview OpenAPI output connects API-key and multiple-auth requirements to
   that provider contract, retaining root inheritance, overrides and anonymous
-  alternatives. OAuth scope/refresh and `anyOf` remain pending stages.
+  alternatives, including scoped OAuth bearer. Preserved JSON/`anyOf` remain pending.
+- Scoped OAuth validates exact grants and expiry, supports one identity-bound
+  renewal per logical request, and isolates bounded in-flight renewal by
+  configuration, scheme, scopes and principal. GET/HEAD may replay one explicit
+  invalid-token rejection; insufficient scopes never escalate automatically.
 - Opt-in `ResponseCachePolicy.requestFreshness(wrapping:)` applies request
   `no-cache`, `max-age` and `min-fresh` across cache hits, cache-only requests,
   background refresh and stale-error recovery.

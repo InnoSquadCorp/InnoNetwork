@@ -24,6 +24,18 @@ public protocol RequestCredentialProvider: Sendable {
     ) async throws -> RequestSecurity.Credential
 }
 
+/// Optional OAuth renewal, without login UI or permission escalation.
+///
+/// Persist the replacement in application-owned storage before returning. Core
+/// shares overlapping renewals only within the same `RequestSecurity` value,
+/// origin, scheme, exact requested scopes and selected realm/principal.
+public protocol OAuthCredentialRefreshing: RequestCredentialProvider {
+    /// Renews for the frozen identity and declared scopes, never server-suggested scopes.
+    func refreshCredential(
+        for scheme: RequestSecurity.Scheme, selection: RequestSecurity.Selection, origin: URL
+    ) async throws -> RequestSecurity.Credential
+}
+
 /// Bounded AND/OR authentication metadata, with application-owned credentials.
 ///
 /// Each inner array is AND; the provider explicitly selects one outer OR entry.
@@ -46,11 +58,13 @@ public struct RequestSecurity: Sendable {
         case apiKey(id: String, name: String, location: Location)
         /// An opaque bearer credential in Authorization.
         case bearer(id: String)
+        /// OAuth bearer with exact, case-sensitive required scopes.
+        case oauth2(id: String, scopes: [String])
 
         /// The specification's case-sensitive security scheme identifier.
         public var id: String {
             switch self {
-            case .apiKey(let id, _, _), .bearer(let id): return id
+            case .apiKey(let id, _, _), .bearer(let id), .oauth2(let id, _): return id
             }
         }
     }
@@ -77,12 +91,21 @@ public struct RequestSecurity: Sendable {
         let value: String
         let realm: String
         let principal: String
+        let grantedScopes: [String]?
+        let expiresAt: Date?
 
         /// Creates an opaque credential. Identity must equal the frozen selection.
-        public init(value: String, realm: String, principal: String) {
+        /// OAuth additionally requires provider-attested granted scopes and a
+        /// finite expiry; nil means unknown, not unrestricted or non-expiring.
+        public init(
+            value: String, realm: String, principal: String,
+            grantedScopes: [String]? = nil, expiresAt: Date? = nil
+        ) {
             self.value = value
             self.realm = realm
             self.principal = principal
+            self.grantedScopes = grantedScopes
+            self.expiresAt = expiresAt
         }
 
         /// Secret-safe description.
@@ -94,6 +117,7 @@ public struct RequestSecurity: Sendable {
     let origin: URL
     let alternatives: [[Scheme]]
     let provider: any RequestCredentialProvider
+    let oauthRefreshes = OAuthCredentialRefreshCoordinator()
 
     /// Creates a validated requirement bound to one HTTPS origin.
     ///
@@ -124,6 +148,12 @@ public struct RequestSecurity: Sendable {
                 let slot: String
                 switch scheme {
                 case .bearer:
+                    slot = "header:authorization"
+                case .oauth2(_, let scopes):
+                    guard scopes.count <= 64, scopes.allSatisfy(Self.validScope), Set(scopes).count == scopes.count
+                    else {
+                        throw RequestSecurityFailure.invalidRequirements
+                    }
                     slot = "header:authorization"
                 case .apiKey(_, let name, let location):
                     guard Self.validToken(name) else { throw RequestSecurityFailure.invalidRequirements }
@@ -180,6 +210,13 @@ public struct RequestSecurity: Sendable {
                     || "!#$%&'*+-.^_`|~".utf8.contains(byte)
             }
     }
+
+    static func validScope(_ value: String) -> Bool {
+        !value.isEmpty && value.utf8.count <= 256
+            && value.utf8.allSatisfy {
+                $0 == 0x21 || (0x23...0x5B).contains($0) || (0x5D...0x7E).contains($0)
+            }
+    }
 }
 
 /// Secret-free failures at the opt-in request credential boundary.
@@ -202,6 +239,14 @@ public enum RequestSecurityFailure: Int, Error, Sendable {
     case credentialConflict
     /// Legacy auth or an unsupported execution surface conflicts with this contract.
     case unsupportedExecution
+    /// OAuth requires provider-attested scopes and a finite expiry date.
+    case scopeMetadataUnavailable
+    /// The attested scope set does not cover the declared requirement.
+    case insufficientScope
+    /// The token has expired and cannot be renewed within this logical request.
+    case credentialExpired
+    /// Renewal failed, exceeded its concurrency bound or returned invalid metadata.
+    case refreshFailed
 
     var networkError: NetworkError {
         .underlying(

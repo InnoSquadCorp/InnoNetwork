@@ -1063,7 +1063,7 @@ InnoNetwork	swift.enum.case	RequestSecurityFailure.invalidRequirements
 InnoNetwork	swift.enum.case	RequestSecurityFailure.originMismatch
 InnoNetwork	swift.enum.case	RequestSecurityFailure.selectionFailed
 InnoNetwork	swift.enum.case	RequestSecurityFailure.unsupportedExecution
-InnoNetwork	swift.init	RequestSecurity.Credential.init(value:realm:principal:)
+InnoNetwork	swift.init	RequestSecurity.Credential.init(value:realm:principal:grantedScopes:expiresAt:)
 InnoNetwork	swift.init	RequestSecurity.Selection.init(alternative:realm:principal:)
 InnoNetwork	swift.init	RequestSecurity.init(origin:alternatives:provider:allowsQueryCredentials:allowsCookieCredentials:)
 InnoNetwork	swift.init	RequestSecurityFailure.init(rawValue:)
@@ -1081,3 +1081,10 @@ InnoNetwork	swift.protocol	RequestSecurityProviding
 InnoNetwork	swift.struct	RequestSecurity
 InnoNetwork	swift.struct	RequestSecurity.Credential
 InnoNetwork	swift.struct	RequestSecurity.Selection
+InnoNetwork	swift.enum.case	RequestSecurity.Scheme.oauth2(id:scopes:)
+InnoNetwork	swift.enum.case	RequestSecurityFailure.credentialExpired
+InnoNetwork	swift.enum.case	RequestSecurityFailure.insufficientScope
+InnoNetwork	swift.enum.case	RequestSecurityFailure.refreshFailed
+InnoNetwork	swift.enum.case	RequestSecurityFailure.scopeMetadataUnavailable
+InnoNetwork	swift.method	OAuthCredentialRefreshing.refreshCredential(for:selection:origin:)
+InnoNetwork	swift.protocol	OAuthCredentialRefreshing

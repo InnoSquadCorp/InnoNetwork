@@ -1722,6 +1722,8 @@ for symbol in "${expected_provisionally[@]}"; do
         "$repo_root/Sources/InnoNetwork/Auth/RequestSecurity.swift"
       require_contains 'public protocol RequestCredentialProvider: Sendable' \
         "$repo_root/Sources/InnoNetwork/Auth/RequestSecurity.swift"
+      require_contains 'public protocol OAuthCredentialRefreshing: RequestCredentialProvider' \
+        "$repo_root/Sources/InnoNetwork/Auth/RequestSecurity.swift"
       require_contains 'public struct RequestSecurity: Sendable' \
         "$repo_root/Sources/InnoNetwork/Auth/RequestSecurity.swift"
       require_contains 'public enum RequestSecurityFailure: Int, Error, Sendable' \

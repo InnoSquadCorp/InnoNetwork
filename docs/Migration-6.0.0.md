@@ -5,7 +5,7 @@ This guide describes the unreleased InnoNetwork 6.0 draft. There is no
 notes are marked ready and the tag is published.
 
 The previously planned 6.1 candidates are included in this 6.0 release scope.
-The unified baseline contains 1,649 public declarations. `@APIDefinition`
+The unified baseline contains 1,656 public declarations. `@APIDefinition`
 remains Stable; the advanced additions below retain their Provisionally
 Stable classifications.
 
@@ -17,7 +17,9 @@ migration. New API-key and explicit AND/OR endpoints additionally conform to
 an application-owned `RequestCredentialProvider`. Generated constructors ask for
 the HTTPS credential origin and provider; query/cookie declarations require
 explicit opt-in flags. These requests disable sharing and automatic redirects.
-OAuth scope/refresh and streaming through this new contract are not supported yet.
+Scoped OAuth additionally requires attested granted scopes and expiry. Optional
+`OAuthCredentialRefreshing` supplies identity-bound renewal; the library never
+widens scopes or launches login UI. Streaming through this contract remains unsupported.
 See [request credentials](../Sources/InnoNetwork/InnoNetwork.docc/Articles/RequestCredentials.md).
 
 ## Package boundary changes

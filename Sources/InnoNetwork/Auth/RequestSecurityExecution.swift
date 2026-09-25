@@ -8,6 +8,8 @@ package protocol CredentialExecutable: Sendable {
 package actor RequestSecurityExecution {
     private let security: RequestSecurity
     private var selection: RequestSecurity.Selection?
+    private var oauthRefreshRequested = false
+    private var didRefreshOAuth = false
 
     package init(_ security: RequestSecurity) { self.security = security }
 
@@ -32,13 +34,51 @@ package actor RequestSecurityExecution {
             selection = chosen
         }
         guard let selection else { throw RequestSecurityFailure.selectionFailed.networkError }
-        return PreparedRequestSecurity(security: security, selection: selection)
+        return PreparedRequestSecurity(security: security, selection: selection, execution: self)
+    }
+
+    func scheduleOAuthRefresh() -> Bool {
+        guard !didRefreshOAuth, !oauthRefreshRequested else { return false }
+        oauthRefreshRequested = true
+        return true
+    }
+
+    func needsOAuthRefresh() -> Bool { oauthRefreshRequested }
+
+    func refreshOAuth(for scheme: RequestSecurity.Scheme) async throws -> RequestSecurity.Credential {
+        guard !didRefreshOAuth, let selection,
+            let provider = security.provider as? any OAuthCredentialRefreshing
+        else { throw RequestSecurityFailure.credentialExpired.networkError }
+        didRefreshOAuth = true
+        oauthRefreshRequested = false
+        do {
+            let credential = try await security.oauthRefreshes.refresh(
+                scheme: scheme, selection: selection
+            ) {
+                try await provider.refreshCredential(for: scheme, selection: selection, origin: self.security.origin)
+            }
+            try Task.checkCancellation()
+            return credential
+        } catch {
+            if NetworkError.isCancellation(error) || Task.isCancelled { throw CancellationError() }
+            throw RequestSecurityFailure.refreshFailed.networkError
+        }
+    }
+}
+
+struct RequestCredentialApplication: Sendable {
+    let request: URLRequest
+    let expiresAt: Date?
+
+    func validateExpiry(at now: Date) throws {
+        if let expiresAt, expiresAt <= now { throw RequestSecurityFailure.credentialExpired.networkError }
     }
 }
 
 struct PreparedRequestSecurity: Sendable {
     let security: RequestSecurity
     let selection: RequestSecurity.Selection
+    let execution: RequestSecurityExecution
 
     var schemes: [RequestSecurity.Scheme] { security.alternatives[selection.alternative] }
 
@@ -46,7 +86,7 @@ struct PreparedRequestSecurity: Sendable {
         var result = CredentialRedaction()
         for scheme in schemes {
             switch scheme {
-            case .bearer: result.headers.insert("authorization")
+            case .bearer, .oauth2: result.headers.insert("authorization")
             case .apiKey(_, let name, let location):
                 switch location {
                 case .header: result.headers.insert(name.lowercased())
@@ -58,7 +98,7 @@ struct PreparedRequestSecurity: Sendable {
         return result
     }
 
-    func apply(to request: URLRequest) async throws -> URLRequest {
+    func apply(to request: URLRequest, clock: any InnoNetworkClock) async throws -> RequestCredentialApplication {
         guard let url = request.url, RequestSecurity.canonicalOrigin(url) == security.origin else {
             throw RequestSecurityFailure.originMismatch.networkError
         }
@@ -72,14 +112,26 @@ struct PreparedRequestSecurity: Sendable {
         // Check every slot before invoking a provider. Never partially send AND.
         for scheme in schemes { try checkVacant(scheme, request: request) }
         var credentials: [(RequestSecurity.Scheme, String)] = []
+        var expiry: Date?
         for scheme in schemes {
             try Task.checkCancellation()
-            let credential: RequestSecurity.Credential
+            var credential: RequestSecurity.Credential
+            let forceRefresh: Bool
+            if case .oauth2 = scheme {
+                forceRefresh = await execution.needsOAuthRefresh()
+            } else {
+                forceRefresh = false
+            }
             do {
-                credential = try await security.provider.credential(
-                    for: scheme, selection: selection, origin: security.origin)
+                if forceRefresh {
+                    credential = try await execution.refreshOAuth(for: scheme)
+                } else {
+                    credential = try await security.provider.credential(
+                        for: scheme, selection: selection, origin: security.origin)
+                }
             } catch {
                 if NetworkError.isCancellation(error) || Task.isCancelled { throw CancellationError() }
+                if forceRefresh { throw error }
                 throw RequestSecurityFailure.credentialUnavailable.networkError
             }
             try Task.checkCancellation()
@@ -89,6 +141,22 @@ struct PreparedRequestSecurity: Sendable {
             guard validValue(credential.value, for: scheme) else {
                 throw RequestSecurityFailure.credentialUnavailable.networkError
             }
+            if case .oauth2(_, let scopes) = scheme {
+                try validateOAuth(credential, scopes: scopes)
+                if let expiresAt = credential.expiresAt, expiresAt <= clock.now() {
+                    credential = try await execution.refreshOAuth(for: scheme)
+                    try Task.checkCancellation()
+                    guard credential.realm == selection.realm, credential.principal == selection.principal else {
+                        throw RequestSecurityFailure.identityChanged.networkError
+                    }
+                    guard validValue(credential.value, for: scheme) else {
+                        throw RequestSecurityFailure.refreshFailed.networkError
+                    }
+                    try validateOAuth(credential, scopes: scopes)
+                }
+                expiry = credential.expiresAt
+                try RequestCredentialApplication(request: request, expiresAt: expiry).validateExpiry(at: clock.now())
+            }
             credentials.append((scheme, credential.value))
         }
         var result = request
@@ -96,7 +164,7 @@ struct PreparedRequestSecurity: Sendable {
         result.httpShouldHandleCookies = false
         for (scheme, value) in credentials {
             switch scheme {
-            case .bearer: result.setValue("Bearer " + value, forHTTPHeaderField: "Authorization")
+            case .bearer, .oauth2: result.setValue("Bearer " + value, forHTTPHeaderField: "Authorization")
             case .apiKey(_, let name, let location):
                 switch location {
                 case .header: result.setValue(value, forHTTPHeaderField: name)
@@ -114,13 +182,37 @@ struct PreparedRequestSecurity: Sendable {
                 }
             }
         }
-        return result
+        let application = RequestCredentialApplication(request: result, expiresAt: expiry)
+        try application.validateExpiry(at: clock.now())
+        return application
+    }
+
+    private func validateOAuth(_ credential: RequestSecurity.Credential, scopes: [String]) throws {
+        guard let granted = credential.grantedScopes, granted.count <= 256,
+            granted.allSatisfy(RequestSecurity.validScope), Set(granted).count == granted.count,
+            let expiry = credential.expiresAt, expiry.timeIntervalSince1970.isFinite
+        else { throw RequestSecurityFailure.scopeMetadataUnavailable.networkError }
+        guard Set(scopes).isSubset(of: Set(granted)) else {
+            throw RequestSecurityFailure.insufficientScope.networkError
+        }
+    }
+
+    func scheduleOAuthReplay(response: HTTPURLResponse?, method: String?) async -> Bool {
+        guard security.provider is any OAuthCredentialRefreshing,
+            method == "GET" || method == "HEAD", response?.statusCode == 401,
+            schemes.contains(where: {
+                if case .oauth2 = $0 { return true }
+                return false
+            }),
+            OAuthBearerChallenge.error(in: response?.value(forHTTPHeaderField: "WWW-Authenticate")) == "invalid_token"
+        else { return false }
+        return await execution.scheduleOAuthRefresh()
     }
 
     private func checkVacant(_ scheme: RequestSecurity.Scheme, request: URLRequest) throws {
         let conflict: Bool
         switch scheme {
-        case .bearer: conflict = request.value(forHTTPHeaderField: "Authorization") != nil
+        case .bearer, .oauth2: conflict = request.value(forHTTPHeaderField: "Authorization") != nil
         case .apiKey(_, let name, let location):
             switch location {
             case .header: conflict = request.value(forHTTPHeaderField: name) != nil
@@ -141,11 +233,13 @@ struct PreparedRequestSecurity: Sendable {
             value.unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) })
         else { return false }
         switch scheme {
-        case .bearer:
-            return value.utf8.allSatisfy { byte in
-                (65...90).contains(byte) || (97...122).contains(byte) || (48...57).contains(byte)
-                    || "-._~+/=".utf8.contains(byte)
-            }
+        case .bearer, .oauth2:
+            let parts = value.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+            return !parts[0].isEmpty && (parts.count == 1 || parts[1].allSatisfy { $0 == "=" })
+                && parts[0].utf8.allSatisfy { byte in
+                    (65...90).contains(byte) || (97...122).contains(byte) || (48...57).contains(byte)
+                        || "-._~+/".utf8.contains(byte)
+                }
         case .apiKey(_, _, .header): return value.utf8.allSatisfy { (32...126).contains($0) }
         case .apiKey(_, _, .cookie):
             return value.utf8.allSatisfy { (33...126).contains($0) && !"\";,\\".utf8.contains($0) }

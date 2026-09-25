@@ -328,6 +328,24 @@ struct RequestSecurityTests {
         #expect(session.capturedRequest == nil)
     }
 
+    @Test("bearer padding is trailing-only and cannot replace the token body")
+    func bearerSyntax() async throws {
+        for value in ["=bad", "abc=bad", "=="] {
+            await expectFailure(
+                CredentialEndpoint(
+                    requestSecurity: try security(
+                        CredentialProviderFixture(value: value), alternatives: [[.bearer(id: "b")]])),
+                code: .credentialUnavailable)
+        }
+        let session = MockURLSession()
+        session.setMockResponse(statusCode: 200)
+        _ = try await client(session).request(
+            CredentialEndpoint(
+                requestSecurity: security(CredentialProviderFixture(value: "abc=="), alternatives: [[.bearer(id: "b")]])
+            ))
+        #expect(session.capturedRequest?.value(forHTTPHeaderField: "Authorization") == "Bearer abc==")
+    }
+
     @Test("cancellation after a non-cooperating provider never dispatches")
     func cancellation() async throws {
         actor SuspendedProvider: RequestCredentialProvider {
@@ -489,7 +507,8 @@ struct RequestSecurityTests {
             allowsQueryCredentials: true)
         let prepared = try await RequestSecurityExecution(query).prepare(for: URLRequest(url: origin))
         await #expect(throws: NetworkError.self) {
-            try await prepared.apply(to: URLRequest(url: URL(string: "https://api.example.com/?cu%73tom=caller")!))
+            try await prepared.apply(
+                to: URLRequest(url: URL(string: "https://api.example.com/?cu%73tom=caller")!), clock: TestClock())
         }
     }
 }

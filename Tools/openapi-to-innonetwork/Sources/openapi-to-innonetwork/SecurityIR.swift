@@ -109,7 +109,6 @@ struct SecurityIR: Equatable {
     }
 
     /// Provider-backed rendering retains every scheme identity and alternative.
-    /// OAuth remains closed until the scoped refresh runtime is available.
     func runtimeAlternativesLiteral() throws -> String {
         func literal(_ value: String) -> String {
             // JSON string escaping is also valid Swift except interpolations.
@@ -123,17 +122,17 @@ struct SecurityIR: Equatable {
             return "\"" + escaped + "\""
         }
         return "["
-            + (try alternatives.map { alternative in
+            + (alternatives.map { alternative in
                 "["
-                    + (try alternative.map { requirement in
+                    + (alternative.map { requirement in
                         switch requirement.kind {
                         case .bearer: return ".bearer(id: \(literal(requirement.schemeID)))"
                         case .apiKey(let name, let location):
                             return
                                 ".apiKey(id: \(literal(requirement.schemeID)), name: \(literal(name)), location: .\(location.rawValue))"
                         case .oauth2:
-                            throw GenerationError.unsupportedSecurity(
-                                "OAuth requires the scoped credential-provider adapter")
+                            let scopes = "[" + requirement.scopes.map(literal).joined(separator: ", ") + "]"
+                            return ".oauth2(id: \(literal(requirement.schemeID)), scopes: \(scopes))"
                         }
                     }).joined(separator: ", ") + "]"
             }).joined(separator: ", ") + "]"

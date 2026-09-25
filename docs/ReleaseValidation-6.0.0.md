@@ -123,14 +123,15 @@ extensions after the initial hardening report. They are now implemented in
 Request freshness is opt-in; generated authentication supports explicit HTTP
 bearer requirements and rejects unsupported security forms. Composition support
 is the documented serialization subset, not full JSON Schema validation.
-The candidate inventory is 1,649 declarations: 306 Stable, 1,310 Provisionally
+The candidate inventory is 1,656 declarations: 306 Stable, 1,317 Provisionally
 Stable and 33 SPI. Publication/device/service gates remain independent.
 
 ### Named-credential extension (2026-09-25)
 
 The subsequent approved extension adds the origin-bound provider contract and
-generator output for API keys plus explicit API-key/bearer AND/OR selection.
-OAuth scope/refresh and JSON validation/anyOf are still pending; do not describe
+generator output for API keys, scoped OAuth and explicit AND/OR selection.
+OAuth validates grants/expiry and isolates bounded renewal without escalation.
+JSON validation/anyOf are still pending; do not describe
 the full extension plan as complete. See `OPENAPI_EXPANSION_EXECUTION.md` for
 candidate-specific tests and boundaries. This runtime change requires fresh
 final-consumer/platform evidence after the remaining stages; the earlier

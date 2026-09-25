@@ -37,7 +37,11 @@ cookie declarations additionally require explicit opt-in flags. Requirements
 are embedded as non-secret metadata, never as credentials. Selection is frozen
 across retries, AND acquisition is atomic, and failures never fall back to another
 alternative. Cache/coalescing/automatic redirects are disabled for this path.
-OAuth generation remains gated until scoped credentials and refresh are ready.
+OAuth requirements retain exact scopes and require provider-attested grants and
+expiry. Optional `OAuthCredentialRefreshing` renews for the frozen identity;
+insufficient scopes never trigger escalation. Login and token storage stay in
+the application. Reactive renewal/replay is limited to GET/HEAD and one explicit
+invalid-token challenge per logical request.
 See [request credentials](../Sources/InnoNetwork/InnoNetwork.docc/Articles/RequestCredentials.md)
 for ownership, diagnostics, redaction and unsupported execution surfaces.
 

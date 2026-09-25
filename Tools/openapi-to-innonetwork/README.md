@@ -21,7 +21,7 @@ and tracks the remaining surface for follow-up work:
 | Response status codes | ✅ `200`/`201` body schema; `202`/`204` → `EmptyResponse` |
 | Schema property types | ✅ string / integer / number / boolean / array / `$ref` (incl. format hints: `int64`, `date-time`, `uri`) |
 | Session authentication | ✅ Root/operation HTTP bearer requirements → required, optional or anonymous; unsupported requirements fail generation |
-| Named credentials | ✅ Header API key, opt-in query/cookie, opaque bearer AND/OR via application-owned provider; OAuth scope/refresh pending |
+| Named credentials | ✅ Header API key, opt-in query/cookie, bearer and scoped OAuth AND/OR via application-owned provider |
 | Schema composition | ✅ Object `allOf`, named discriminated `oneOf`, nullable scalar/reference properties; see restrictions below |
 | Path templating (`/users/{id}`) | ✅ Required scalar simple-style arguments, independently percent-encoded |
 | SPI integration | ⚠️ not used; the standard `APIDefinition` surface is the integration point |
@@ -62,8 +62,10 @@ boundaries are enforced at generation time, not silently degraded.
   Query/cookie declarations require explicit `allowsQueryCredentials` or
   `allowsCookieCredentials` flags, even when selecting another OR branch.
   Credential-slot conflicts and reserved header names fail generation. Unknown
-  schemes, basic auth, OAuth scopes and external references still fail rather
-  than become anonymous. This tool does not implement an OAuth login flow.
+  schemes, basic auth and external references still fail rather than become
+  anonymous. OAuth requirements preserve exact scopes and require provider-
+  attested grants/expiry; optional `OAuthCredentialRefreshing` handles bounded
+  renewal. This tool does not implement an OAuth login flow or IdP token store.
 - Component object `allOf` flattens properties and unions required keys.
   Conflicting properties, non-object branches and composition cycles fail.
   Named `oneOf` components require local references plus a discriminator that

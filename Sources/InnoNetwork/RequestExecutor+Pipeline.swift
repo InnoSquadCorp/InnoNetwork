@@ -146,6 +146,14 @@ extension RequestExecutor {
             }
             let networkResponse = timedNetworkResponse.response
 
+            if let security,
+                await security.scheduleOAuthReplay(response: networkResponse.response, method: request.httpMethod)
+            {
+                // Only one renewal per logical request. Re-run admission and
+                // reacquire every AND credential; never reuse a partial envelope.
+                continue
+            }
+
             if let substitution = try await convertNotModifiedIfNeeded(
                 networkResponse,
                 cacheKey: cacheKey,
@@ -460,19 +468,23 @@ extension RequestExecutor {
             securedContext.credentialRedaction = security.redaction
             securedContext.credentialPreparation = { unsigned in
                 NetworkOperationDeadlineContext.mark(.authentication)
-                let authenticated = try await security.apply(to: unsigned.preparingForSignedTransport())
+                let application = try await security.apply(
+                    to: unsigned.preparingForSignedTransport(), clock: runtime.clock)
+                let authenticated = application.request
+                let signed: URLRequest
                 do {
-                    let signed = try await applyRequestSigners(
+                    signed = try await applyRequestSigners(
                         requestSigners, to: authenticated, bodySource: preparedBody.bodySource
                     )
-                    try security.validateAfterSigning(signed, authenticated: authenticated)
-                    NetworkOperationDeadlineContext.mark(.transport)
-                    return signed
                 } catch {
                     if NetworkError.isCancellation(error) || Task.isCancelled { throw CancellationError() }
                     // A signer can echo the secret request in an arbitrary error.
                     throw RequestSecurityFailure.credentialConflict.networkError
                 }
+                try security.validateAfterSigning(signed, authenticated: authenticated)
+                try application.validateExpiry(at: runtime.clock.now())
+                NetworkOperationDeadlineContext.mark(.transport)
+                return signed
             }
             return try await performTransport(
                 request: request, identityRequest: request, bodySource: preparedBody.bodySource,
