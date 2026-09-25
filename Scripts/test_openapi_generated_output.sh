@@ -34,6 +34,29 @@ xcrun swiftc -parse-as-library \
   "$fixtures/contracts-runtime.swift" -o "$test_dir/contracts-runtime"
 "$test_dir/contracts-runtime"
 
+security="$test_dir/security"
+xcrun swift run --package-path "$tool_dir" openapi-to-innonetwork \
+  --input "$fixtures/security.json" --output "$security" --module-name Security
+xcrun swift run --package-path "$tool_dir" openapi-to-innonetwork \
+  --input "$fixtures/security.json" --output "$test_dir/security-again" --module-name Security
+diff -ru "$security" "$test_dir/security-again"
+xcrun swiftc -typecheck -I "$bin_path" -I "$bin_path/Modules" "$security"/*.swift
+# SwiftPM's Apple build system emits an aggregate object; the native build
+# system used by older supported toolchains emits per-source objects instead.
+core_objects=()
+if [[ -f "$bin_path/InnoNetwork.o" ]]; then
+  core_objects+=("$bin_path/InnoNetwork.o")
+else
+  while IFS= read -r object; do core_objects+=("$object"); done < <(
+    find "$bin_path/InnoNetwork.build" -name '*.o' -type f | sort
+  )
+fi
+test "${#core_objects[@]}" -gt 0
+xcrun swiftc -parse-as-library -I "$bin_path" -I "$bin_path/Modules" \
+  "$security"/*.swift "$fixtures/security-runtime.swift" "${core_objects[@]}" \
+  -o "$test_dir/security-runtime"
+"$test_dir/security-runtime"
+
 if xcrun swift run --package-path "$tool_dir" openapi-to-innonetwork \
   --input "$fixtures/colliding-operation-names.json" \
   --output "$test_dir/collision" \

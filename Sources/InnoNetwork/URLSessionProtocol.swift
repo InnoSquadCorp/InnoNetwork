@@ -139,7 +139,7 @@ package extension URLSessionProtocol {
 
 extension URLSession: URLSessionProtocol {
     package func data(for request: URLRequest, context: NetworkRequestContext) async throws -> (Data, URLResponse) {
-        try validateRedirectControllableSession()
+        try validateRedirectControllableSession(context: context)
         // Always install the delegate so the configured ``RedirectPolicy``
         // can enforce downgrade, unsafe replay, and sensitive-header
         // boundaries. URLSession's native redirect handling does not apply
@@ -169,7 +169,7 @@ extension URLSession: URLSessionProtocol {
     package func bytes(for request: URLRequest, context: NetworkRequestContext) async throws -> (
         URLSession.AsyncBytes, URLResponse
     ) {
-        try validateRedirectControllableSession()
+        try validateRedirectControllableSession(context: context)
         let delegate = RequestTaskDelegate(
             request: request,
             context: context,
@@ -197,7 +197,7 @@ extension URLSession: URLSessionProtocol {
             Data, URLResponse
         )
     {
-        try validateRedirectControllableSession()
+        try validateRedirectControllableSession(context: context)
         let delegate = RequestTaskDelegate(
             request: request,
             context: context,
@@ -276,7 +276,7 @@ extension URLSession: BoundedFileUploadSession {
         uploadingFileAt fileURL: URL,
         context: NetworkRequestContext
     ) async throws -> (URLSession.AsyncBytes, URLResponse) {
-        try validateRedirectControllableSession()
+        try validateRedirectControllableSession(context: context)
         let streamingRequest = try makeFileUploadStreamingRequest(
             from: request,
             uploadingFileAt: fileURL
@@ -314,7 +314,14 @@ private extension URLSession {
         )
     }
 
-    func validateRedirectControllableSession() throws {
+    func validateRedirectControllableSession(context: NetworkRequestContext) throws {
+        if let redaction = context.credentialRedaction {
+            let reserved = redaction.headers.union(["authorization", "proxy-authorization", "cookie"])
+            let sessionHeaders = Set(redirectSensitiveSessionHeaderNames.map { $0.lowercased() })
+            guard reserved.isDisjoint(with: sessionHeaders) else {
+                throw RequestSecurityFailure.credentialConflict.networkError
+            }
+        }
         guard configuration.identifier == nil else {
             throw NetworkError.configuration(
                 reason: .invalidRequest(
@@ -380,6 +387,17 @@ private final class RequestTaskDelegate: NSObject, URLSessionDataDelegate {
         didReceive challenge: URLAuthenticationChallenge,
         completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
     ) {
+        if context.credentialRedaction != nil,
+            challenge.protectionSpace.authenticationMethod != NSURLAuthenticationMethodServerTrust
+        {
+            // Do not let a credential store choose a second account/method.
+            // Reuse the task-policy failure channel so Foundation's cancelled
+            // challenge cannot be mistaken for caller cancellation or retried
+            // as an arbitrary transport error.
+            redirectFailureLock.withLock { $0 = RequestSecurityFailure.unsupportedExecution.networkError }
+            completionHandler(.cancelAuthenticationChallenge, nil)
+            return
+        }
         let disposition = TrustEvaluator.evaluate(challenge: challenge, policy: context.trustPolicy)
         switch disposition {
         case .performDefaultHandling:
@@ -468,7 +486,7 @@ extension URLSession: ChunkedTransferSession {
         context: NetworkRequestContext,
         maxBytes: Int64?
     ) async throws -> ChunkedTransfer {
-        try validateRedirectControllableSession()
+        try validateRedirectControllableSession(context: context)
         let policyDelegate = RequestTaskDelegate(
             request: request,
             context: context,
@@ -487,7 +505,7 @@ extension URLSession: ChunkedTransferSession {
         context: NetworkRequestContext,
         maxBytes: Int64?
     ) async throws -> ChunkedTransfer {
-        try validateRedirectControllableSession()
+        try validateRedirectControllableSession(context: context)
         let streamingRequest = try makeFileUploadStreamingRequest(
             from: request,
             uploadingFileAt: fileURL

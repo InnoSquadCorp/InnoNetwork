@@ -108,6 +108,37 @@ struct SecurityIR: Equatable {
         return bearerIDs.isEmpty ? "anonymous" : (anonymous ? "optional" : "required")
     }
 
+    /// Provider-backed rendering retains every scheme identity and alternative.
+    /// OAuth remains closed until the scoped refresh runtime is available.
+    func runtimeAlternativesLiteral() throws -> String {
+        func literal(_ value: String) -> String {
+            // JSON string escaping is also valid Swift except interpolations.
+            let escaped = value.unicodeScalars.map { scalar -> String in
+                switch scalar.value {
+                case 0x22: return "\\\""
+                case 0x5C: return "\\\\"
+                default: return String(scalar)
+                }
+            }.joined()
+            return "\"" + escaped + "\""
+        }
+        return "["
+            + (try alternatives.map { alternative in
+                "["
+                    + (try alternative.map { requirement in
+                        switch requirement.kind {
+                        case .bearer: return ".bearer(id: \(literal(requirement.schemeID)))"
+                        case .apiKey(let name, let location):
+                            return
+                                ".apiKey(id: \(literal(requirement.schemeID)), name: \(literal(name)), location: .\(location.rawValue))"
+                        case .oauth2:
+                            throw GenerationError.unsupportedSecurity(
+                                "OAuth requires the scoped credential-provider adapter")
+                        }
+                    }).joined(separator: ", ") + "]"
+            }).joined(separator: ", ") + "]"
+    }
+
     private static func declaredScopes(in flows: [String: OAuthFlow]?) throws -> Set<String> {
         guard let flows, !flows.isEmpty, flows.count <= 4 else {
             throw GenerationError.unsupportedSecurity("OAuth requires a declared flow")
@@ -149,12 +180,15 @@ struct SecurityIR: Equatable {
 
     private static func validWireName(_ value: String, location: Requirement.Location) -> Bool {
         guard validIdentifier(value) else { return false }
-        if location == .query { return !value.contains(where: { $0.isWhitespace }) }
         let token = CharacterSet(
             charactersIn: "!#$%&'*+-.^_`|~0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz")
         guard value.unicodeScalars.allSatisfy(token.contains) else { return false }
         if location == .header {
-            return !["host", "content-length", "transfer-encoding", "connection", "proxy-authorization"].contains(
+            return ![
+                "host", "content-length", "transfer-encoding", "connection", "proxy-authorization",
+                "proxy-authenticate", "cookie", "set-cookie", "trailer", "te", "upgrade", "keep-alive",
+                "cache-control", "content-type", "accept-encoding", "idempotency-key",
+            ].contains(
                 value.lowercased())
         }
         return true

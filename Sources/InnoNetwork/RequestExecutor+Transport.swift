@@ -351,7 +351,9 @@ extension RequestExecutor {
             if let rateReservation {
                 await runtime.rateLimit?.finish(rateReservation)
             }
-            if NetworkError.isCancellation(error) {
+            if NetworkError.isCancellation(error)
+                || (error as? NetworkError)?.underlyingError?.domain == "InnoNetwork.RequestSecurity"
+            {
                 await runtime.circuitBreakers.abandon(circuitProbe)
             } else {
                 await runtime.circuitBreakers.recordFailure(
@@ -382,6 +384,20 @@ extension RequestExecutor {
         clock: any InnoNetworkClock,
         runtime: RequestExecutionRuntime
     ) async throws -> TransportResult {
+        if let preparation = context.credentialPreparation {
+            let secured = try await preparation(request)
+            try Task.checkCancellation()
+            var transportContext = context
+            transportContext.credentialPreparation = nil
+            return try await CredentialRedaction.$current.withValue(context.credentialRedaction) {
+                do {
+                    return try await transport(
+                        request: secured, bodySource: bodySource, configuration: configuration,
+                        context: transportContext, clock: clock, runtime: runtime
+                    )
+                } catch { throw CredentialRedaction.failure(error) }
+            }
+        }
         let requestStartedAt = clock.now()
         let attemptStartedAt = Date()
         do {
@@ -431,7 +447,7 @@ extension RequestExecutor {
             try enforceResponseBodyLimit(data: data, configuration: configuration)
             return TransportResult(
                 data: data,
-                response: httpResponse,
+                response: try context.credentialRedaction?.response(httpResponse) ?? httpResponse,
                 startedAt: requestStartedAt,
                 completedAt: clock.now()
             )

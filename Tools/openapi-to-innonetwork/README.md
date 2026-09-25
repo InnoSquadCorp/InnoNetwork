@@ -21,6 +21,7 @@ and tracks the remaining surface for follow-up work:
 | Response status codes | ✅ `200`/`201` body schema; `202`/`204` → `EmptyResponse` |
 | Schema property types | ✅ string / integer / number / boolean / array / `$ref` (incl. format hints: `int64`, `date-time`, `uri`) |
 | Session authentication | ✅ Root/operation HTTP bearer requirements → required, optional or anonymous; unsupported requirements fail generation |
+| Named credentials | ✅ Header API key, opt-in query/cookie, opaque bearer AND/OR via application-owned provider; OAuth scope/refresh pending |
 | Schema composition | ✅ Object `allOf`, named discriminated `oneOf`, nullable scalar/reference properties; see restrictions below |
 | Path templating (`/users/{id}`) | ✅ Required scalar simple-style arguments, independently percent-encoded |
 | SPI integration | ⚠️ not used; the standard `APIDefinition` surface is the integration point |
@@ -55,10 +56,14 @@ boundaries are enforced at generation time, not silently degraded.
 - Root security is inherited unless an operation supplies `security`. An empty
   array means anonymous; an HTTP bearer requirement means `.required`; adding
   an empty requirement alternative means `.optional`. Configure the client's
-  `RefreshTokenPolicy` to supply the bearer token. Unknown schemes, API keys,
-  basic auth, OAuth scopes, external references and multi-scheme AND requirements
-  fail generation rather than become anonymous. Those need an application-owned
-  adapter; this tool does not implement an OAuth login flow.
+  `RefreshTokenPolicy` to supply a single legacy bearer token. API keys, distinct
+  bearer alternatives and mixed AND/OR generate `RequestSecurityProviding` with
+  an explicit application-owned provider and HTTPS origin constructor argument.
+  Query/cookie declarations require explicit `allowsQueryCredentials` or
+  `allowsCookieCredentials` flags, even when selecting another OR branch.
+  Credential-slot conflicts and reserved header names fail generation. Unknown
+  schemes, basic auth, OAuth scopes and external references still fail rather
+  than become anonymous. This tool does not implement an OAuth login flow.
 - Component object `allOf` flattens properties and unions required keys.
   Conflicting properties, non-object branches and composition cycles fail.
   Named `oneOf` components require local references plus a discriminator that

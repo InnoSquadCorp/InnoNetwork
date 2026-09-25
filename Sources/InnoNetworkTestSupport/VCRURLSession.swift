@@ -228,6 +228,16 @@ public final class VCRURLSession: URLSessionProtocol, Sendable {
 
     /// Executes the request by recording through the backing session or replaying from the cassette.
     public func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+        try await data(for: request, recordingContext: nil)
+    }
+
+    package func data(for request: URLRequest, context: NetworkRequestContext) async throws -> (Data, URLResponse) {
+        try await data(for: request, recordingContext: context)
+    }
+
+    private func data(for request: URLRequest, recordingContext: NetworkRequestContext?) async throws -> (
+        Data, URLResponse
+    ) {
         let sanitizedRequest = sanitize(request)
         switch mode {
         case .replay:
@@ -262,7 +272,12 @@ public final class VCRURLSession: URLSessionProtocol, Sendable {
                         "VCRURLSession record mode requires a recordingSession."
                     ))
             }
-            let (data, response) = try await recordingSession.data(for: request)
+            let (data, response): (Data, URLResponse)
+            if let recordingContext {
+                (data, response) = try await recordingSession.data(for: request, context: recordingContext)
+            } else {
+                (data, response) = try await recordingSession.data(for: request)
+            }
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw NetworkError.underlying(
                     SendableUnderlyingError(
@@ -326,7 +341,10 @@ public final class VCRURLSession: URLSessionProtocol, Sendable {
     private func sanitizedURLString(_ url: URL?) -> String {
         guard var components = Self.privacySafeURLComponents(url) else { return "" }
         components.queryItems = components.queryItems?.map { item in
-            guard redactionPolicy.sensitiveQueryItemNames.contains(item.name.lowercased()) else {
+            guard
+                redactionPolicy.sensitiveQueryItemNames.contains(item.name.lowercased())
+                    || CredentialRedaction.current?.queryItems.contains(item.name) == true
+            else {
                 return item
             }
             return URLQueryItem(name: item.name, value: redactionPolicy.replacement)
@@ -350,7 +368,8 @@ public final class VCRURLSession: URLSessionProtocol, Sendable {
             let lowered = name.lowercased()
             let value = String(describing: value)
             sanitized[lowered] =
-                redactionPolicy.sensitiveHeaderNames.contains(lowered)
+                (redactionPolicy.sensitiveHeaderNames.contains(lowered)
+                    || CredentialRedaction.current?.headers.contains(lowered) == true)
                 ? redactionPolicy.replacement
                 : value
         }

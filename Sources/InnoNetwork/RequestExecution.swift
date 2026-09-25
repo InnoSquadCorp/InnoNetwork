@@ -128,8 +128,9 @@ import OSLog
     var allowsConstrainedNetworkAccessOverride: Bool? { nil }
 }
 
-package struct APISingleRequestExecutable<Base: APIDefinition>: SingleRequestExecutable {
+package struct APISingleRequestExecutable<Base: APIDefinition>: SingleRequestExecutable, CredentialExecutable {
     let base: Base
+    package let credentialExecution: RequestSecurityExecution?
     // `APIDefinition.transport` may be computed and its default factories
     // create fresh coders. Keep one policy for payload preparation and decode,
     // including every retry attempt in this request execution.
@@ -138,6 +139,9 @@ package struct APISingleRequestExecutable<Base: APIDefinition>: SingleRequestExe
     package init(base: Base) {
         self.base = base
         self.transport = base.transport
+        self.credentialExecution = (base as? any RequestSecurityProviding).map {
+            RequestSecurityExecution($0.requestSecurity)
+        }
     }
 
     package var logger: NetworkLogger { base.logger }
@@ -209,12 +213,22 @@ package struct APISingleRequestExecutable<Base: APIDefinition>: SingleRequestExe
     }
 }
 
-package struct MultipartSingleRequestExecutable<Base: MultipartAPIDefinition>: SingleRequestExecutable {
+package struct MultipartSingleRequestExecutable<Base: MultipartAPIDefinition>: SingleRequestExecutable,
+    CredentialExecutable
+{
     private static var logger: Logger {
         Logger(subsystem: "innosquad.network", category: "Multipart")
     }
 
     let base: Base
+    package let credentialExecution: RequestSecurityExecution?
+
+    package init(base: Base) {
+        self.base = base
+        self.credentialExecution = (base as? any RequestSecurityProviding).map {
+            RequestSecurityExecution($0.requestSecurity)
+        }
+    }
 
     package var logger: NetworkLogger { base.logger }
     package var requestInterceptors: [RequestInterceptor] { base.requestInterceptors }

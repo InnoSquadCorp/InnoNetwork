@@ -72,6 +72,9 @@ package struct StreamingExecutor: Sendable {
         let timeoutPolicy = request.timeoutPolicy
         let logicalStart = executionRuntime.clock.monotonicNow()
         do {
+            guard !(request is any RequestSecurityProviding) else {
+                throw RequestSecurityFailure.unsupportedExecution.networkError
+            }
             try Self.validateSessionAuthentication(request, configuration: configuration)
             try resumePolicy.validate()
         } catch {

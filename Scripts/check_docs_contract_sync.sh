@@ -209,6 +209,7 @@ expected_provisionally=(
 '`WebSocketError.unsupportedProtocolFeature`'
 '`WebSocketProtocolFeature`'
 '`RequestSigner` and `RequestBody` late body-aware signing contract'
+'`RequestSecurityProviding`, `RequestCredentialProvider`, `RequestSecurity`'
 '`JWTBearerInterceptor` reference signer for request-minted JWT bearer tokens'
 '`InnoNetworkAuthAWS` companion product and `AWSSigV4Interceptor` reference signer for single-shot AWS SigV4 signing'
 '`StreamingBufferingPolicy`, `StreamingOutputSequence`, `TraceContextInterceptor`, `W3CTraceContext`, `CurlCommandOptions`, `IdempotencyKeyPolicy`, and `RequestPriority`'
@@ -1714,6 +1715,17 @@ for symbol in "${expected_provisionally[@]}"; do
     '`JWTBearerInterceptor` reference signer for request-minted JWT bearer tokens')
       require_contains 'public struct JWTBearerInterceptor: RequestSigner' \
         "$repo_root/Sources/InnoNetwork/Auth/JWTBearerInterceptor.swift"
+      continue
+      ;;
+    '`RequestSecurityProviding`, `RequestCredentialProvider`, `RequestSecurity`')
+      require_contains 'public protocol RequestSecurityProviding: Sendable' \
+        "$repo_root/Sources/InnoNetwork/Auth/RequestSecurity.swift"
+      require_contains 'public protocol RequestCredentialProvider: Sendable' \
+        "$repo_root/Sources/InnoNetwork/Auth/RequestSecurity.swift"
+      require_contains 'public struct RequestSecurity: Sendable' \
+        "$repo_root/Sources/InnoNetwork/Auth/RequestSecurity.swift"
+      require_contains 'public enum RequestSecurityFailure: Int, Error, Sendable' \
+        "$repo_root/Sources/InnoNetwork/Auth/RequestSecurity.swift"
       continue
       ;;
     '`InnoNetworkAuthAWS` companion product and `AWSSigV4Interceptor` reference signer for single-shot AWS SigV4 signing')

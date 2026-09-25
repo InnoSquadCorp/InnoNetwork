@@ -117,3 +117,12 @@ WebSocketError.unknown
 WebSocketError.unsupportedProtocolFeature
 
 WebSocketProtocolFeature.permessageDeflate
+
+# RequestSecurity nested enum cases also remain guarded by symbol allowlists.
+RequestSecurityFailure.invalidRequirements
+RequestSecurityFailure.originMismatch
+RequestSecurityFailure.selectionFailed
+RequestSecurityFailure.credentialUnavailable
+RequestSecurityFailure.identityChanged
+RequestSecurityFailure.credentialConflict
+RequestSecurityFailure.unsupportedExecution

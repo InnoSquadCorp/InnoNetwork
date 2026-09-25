@@ -187,6 +187,15 @@ acquiring a 6.x Stable compatibility promise.
 - `WebSocketError.unsupportedProtocolFeature`
 - `WebSocketProtocolFeature`
 - `RequestSigner` and `RequestBody` late body-aware signing contract
+- `RequestSecurityProviding`, `RequestCredentialProvider`, `RequestSecurity`
+  (including `Location`, `Scheme`, `Selection`, `Credential`), and
+  `RequestSecurityFailure` are opt-in 6.0 Provisionally Stable contracts.
+  Selection is frozen per logical request; credential acquisition occurs after
+  admission and before signing. HTTPS origin, identity and wire-slot conflicts
+  fail closed. Header API keys, explicit query/cookie keys, opaque bearer and
+  atomic AND/explicit OR are supported for buffered/multipart requests only.
+  Streaming, OAuth scope/refresh and authenticated response sharing are not yet
+  supported by this new contract. Existing session bearer behavior is unchanged.
 - `JWTBearerInterceptor` reference signer for request-minted JWT bearer tokens
 - `InnoNetworkAuthAWS` companion product and `AWSSigV4Interceptor` reference signer for single-shot AWS SigV4 signing
 - `StreamingBufferingPolicy`, `StreamingOutputSequence`, `TraceContextInterceptor`, `W3CTraceContext`, `CurlCommandOptions`, `IdempotencyKeyPolicy`, and `RequestPriority`
@@ -566,8 +575,8 @@ below keeps the high-level compatibility classification readable. Historical
 5.x HLS sections document the migration source but are no longer included in
 the current machine-checked inventory.
 
-The machine-checked snapshot currently partitions all 1,616 declarations into
-306 Stable consumer declarations, 1,277 Provisionally Stable consumer
+The machine-checked snapshot currently partitions all 1,649 declarations into
+306 Stable consumer declarations, 1,310 Provisionally Stable consumer
 declarations, and 33 opt-in SPI declarations. The three sets are disjoint and
 exhaustive. `Scripts/symbols/stable-rules.tsv` maps the Stable ledger to symbol
 paths, while the compiler-authored SPI flag is snapshotted in
@@ -576,6 +585,10 @@ Stable.
 
 ### InnoNetwork
 
+- Named credential declarations: `RequestSecurityProviding`,
+  `RequestCredentialProvider`, `RequestSecurity`, `RequestSecurity.Location`,
+  `RequestSecurity.Scheme`, `RequestSecurity.Selection`,
+  `RequestSecurity.Credential`, and `RequestSecurityFailure`.
 - `APIDefinition`, `AnyEncodable`, `AnyRequestExecutionPolicy`,
   `AnyResponseDecoder`, `AuthenticationRealm`,
   `CachedResponse`, `CacheRevalidationState`, `CancellationTag`,

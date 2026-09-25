@@ -190,6 +190,10 @@ public struct ExponentialBackoffRetryPolicy: RetryPolicy {
                 || response.statusCode == 429
                 || (500...599).contains(response.statusCode)
         case .underlying(let error, _):
+            // Provider failures require application action. Treating them as
+            // transient transport errors could reacquire a different identity
+            // after a failed selection or repeatedly ask for missing secrets.
+            guard error.domain != "InnoNetwork.RequestSecurity" else { return false }
             return !NetworkError.isCancellation(error)
         case .reachability:
             // Connectivity-class URLErrors (`notConnectedToInternet`,

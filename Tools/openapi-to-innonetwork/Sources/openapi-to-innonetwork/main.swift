@@ -326,6 +326,7 @@ struct CodeGenerator {
         "Decoder", "Double", "EmptyParameter", "EmptyResponse", "Encodable", "Encoder",
         "Equatable", "Float", "HTTPMethod", "Int", "Int64", "Sendable",
         "SessionAuthentication", "String", "URL", "EndpointPathEncoding", "EncodingError",
+        "RequestSecurityProviding", "RequestSecurity", "RequestCredentialProvider",
     ]
 
     func generate(from document: OpenAPIDocument) throws -> [GeneratedFile] {
@@ -368,13 +369,17 @@ struct CodeGenerator {
                     source: "\(method) \(path) (operationId '\(op.operationId ?? "<missing>")')",
                     in: &generatedNames
                 )
+                let security = try SecurityIR(
+                    requirements: op.security ?? document.security,
+                    schemes: document.components?.securitySchemes ?? [:]
+                )
+                let legacyAuthentication = try? security.legacySessionAuthentication()
                 files.append(
                     try renderOperation(
                         typeName: typeName, method: method, path: path, op: op,
                         pathParameters: item.parameters ?? [],
-                        authentication: authentication(
-                            for: op.security ?? document.security,
-                            schemes: document.components?.securitySchemes ?? [:])))
+                        authentication: legacyAuthentication ?? "anonymous",
+                        security: legacyAuthentication == nil ? security : nil))
             }
         }
         return files
@@ -573,7 +578,7 @@ struct CodeGenerator {
 
     func renderOperation(
         typeName: String, method: String, path: String, op: Operation,
-        pathParameters: [PathParameter], authentication: String
+        pathParameters: [PathParameter], authentication: String, security: SecurityIR? = nil
     ) throws -> GeneratedFile {
         // A template without declared parameters must never become a literal
         // endpoint. Fully declared scalar parameters are bound below.
@@ -656,10 +661,13 @@ struct CodeGenerator {
         if let responseSource {
             lines.append("/// Response source: \(responseSource).")
         }
-        lines.append("public struct \(typeName): APIDefinition {")
+        let securityLiteral = try security?.runtimeAlternativesLiteral()
+        let conformance = security == nil ? "APIDefinition" : "APIDefinition, RequestSecurityProviding"
+        lines.append("public struct \(typeName): \(conformance) {")
         lines.append("    public typealias Parameter = \(parameterType)")
         lines.append("    public typealias APIResponse = \(responseType)")
         lines.append("")
+        if security != nil { lines.append("    public let requestSecurity: RequestSecurity") }
         if parameterType != "EmptyParameter" {
             lines.append("    public let parameters: \(parameterType)?")
         }
@@ -672,9 +680,25 @@ struct CodeGenerator {
         lines.append("    public var sessionAuthentication: SessionAuthentication { .\(authentication) }")
         lines.append("")
         var initParameters = boundPath.arguments.map { "\($0.name): \($0.type)" }
+        if security != nil {
+            initParameters += [
+                "credentialOrigin: URL", "credentialProvider: any RequestCredentialProvider",
+                "allowsQueryCredentials: Bool = false", "allowsCookieCredentials: Bool = false",
+            ]
+        }
         if parameterType != "EmptyParameter" { initParameters.append("parameters: \(parameterType)? = nil") }
         if !initParameters.isEmpty {
-            lines.append("    public init(\(initParameters.joined(separator: ", "))) {")
+            let throwing = security == nil ? "" : " throws"
+            lines.append("    public init(\(initParameters.joined(separator: ", ")))\(throwing) {")
+            if let securityLiteral {
+                lines.append("        self.requestSecurity = try RequestSecurity(")
+                lines.append(
+                    "            origin: credentialOrigin, alternatives: \(securityLiteral), provider: credentialProvider,"
+                )
+                lines.append(
+                    "            allowsQueryCredentials: allowsQueryCredentials, allowsCookieCredentials: allowsCookieCredentials)"
+                )
+            }
             for argument in boundPath.arguments { lines.append("        self.\(argument.name) = \(argument.name)") }
             if parameterType != "EmptyParameter" { lines.append("        self.parameters = parameters") }
             lines.append("    }")

@@ -8,7 +8,7 @@ The operation-first contract moves into `InnoNetwork`, HLS moves to InnoStream,
 and recovery decisions gain explicit HTTP, authentication, and replay-safety
 context. Deadlines, bounded admission, advanced rate limiting, streaming
 controls, span export, cache controls, and resumable uploads are all part of
-6.0, with a baseline of 1,616 public declarations: 306 Stable, 1,277
+6.0, with a baseline of 1,649 public declarations: 306 Stable, 1,310
 Provisionally Stable, and 33 SPI. See `docs/releases/6.0.0.md` for the scope.
 
 The root `@APIDefinition(method:path:auth:)` macro, default-enabled `Macros`
@@ -21,6 +21,11 @@ The 6.0 exit gate is evidence, not another feature pass: the API allowlists,
 package preflight, non-HLS consumers, InnoStream local integration, companion
 packages, and finally clean remote-tag consumers must all agree with the
 published contract.
+
+The later approved OpenAPI extension is tracked in
+`docs/OPENAPI_EXPANSION_EXECUTION.md`. Provider execution, API keys and opaque
+bearer AND/OR are implemented locally; OAuth scopes/refresh and bounded JSON
+validation/anyOf remain required implementation stages before final validation.
 
 ## 6.0.0 Included Capabilities
 

@@ -23,11 +23,11 @@ Stable compatibility promise.
 
 The 5.0.0 release baseline remains the compatibility reference for the
 currently tagged 5.x line; this table tracks the approved unified 6.0 scope
-with 1,616 public declarations in the root package.
+with 1,649 public declarations in the root package.
 
 | Product | Public declarations |
 |---|---:|
-| `InnoNetwork` (core) | 1050 |
+| `InnoNetwork` (core) | 1083 |
 | `InnoNetworkWebSocket` | 164 |
 | `InnoNetworkDownload` | 94 |
 | `InnoNetworkUpload` | 110 |
@@ -36,14 +36,14 @@ with 1,616 public declarations in the root package.
 | `InnoNetworkOpenAPI` | 36 |
 | `InnoNetworkTrust` | 17 |
 | `InnoNetworkAuthAWS` | 10 |
-| **Total** | **1,616** |
+| **Total** | **1,649** |
 
 | Compatibility tier | Public declarations |
 |---|---:|
 | Stable consumer API | 306 |
-| Provisionally Stable consumer API | 1,277 |
+| Provisionally Stable consumer API | 1,310 |
 | `@_spi(GeneratedClientSupport)` | 33 |
-| **Total** | **1,616** |
+| **Total** | **1,649** |
 
 ## Why this matters
 
@@ -52,10 +52,15 @@ Moving the four HLS modules to InnoStream and folding the temporary
 3,254-declaration snapshot to an intermediate 1,407 declarations. The approved
 6.0 scope also includes deadlines, upload controls, cache controls, bounded
 streaming/cursors, admission, advanced quota, tracing, resumable uploads, and
-their contract fixes, bringing the release baseline to 1,616 declarations.
+their contract fixes, bringing the release baseline to 1,649 declarations.
 These advanced additions remain Provisionally Stable until real server and
 consumer evidence supports promotion. The intermediate count is historical,
 not a separate release or the 6.0 release gate.
+
+The approved OpenAPI extension adds 33 Provisionally Stable declarations for
+origin-bound credential selection, API-key/bearer requirements and safe failures.
+This is an explicit budget increase from the prior 1,616-declaration snapshot,
+not a promotion of the generator or the new runtime contracts to Stable.
 
 At release, every public symbol becomes:
 

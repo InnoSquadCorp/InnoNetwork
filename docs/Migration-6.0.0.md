@@ -5,9 +5,20 @@ This guide describes the unreleased InnoNetwork 6.0 draft. There is no
 notes are marked ready and the tag is published.
 
 The previously planned 6.1 candidates are included in this 6.0 release scope.
-The unified baseline contains 1,616 public declarations. `@APIDefinition`
+The unified baseline contains 1,649 public declarations. `@APIDefinition`
 remains Stable; the advanced additions below retain their Provisionally
 Stable classifications.
+
+## Named request credentials (opt-in)
+
+Existing `SessionAuthentication` and `@APIDefinition` declarations need no
+migration. New API-key and explicit AND/OR endpoints additionally conform to
+`RequestSecurityProviding`, use `.anonymous` session authentication, and receive
+an application-owned `RequestCredentialProvider`. Generated constructors ask for
+the HTTPS credential origin and provider; query/cookie declarations require
+explicit opt-in flags. These requests disable sharing and automatic redirects.
+OAuth scope/refresh and streaming through this new contract are not supported yet.
+See [request credentials](../Sources/InnoNetwork/InnoNetwork.docc/Articles/RequestCredentials.md).
 
 ## Package boundary changes
 

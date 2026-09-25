@@ -29,10 +29,17 @@ keys preserve present-null versus missing on decode/encode.
 
 Security parsing first preserves scheme identity, exact OAuth scope spelling,
 API-key placement and AND/OR groups in a bounded, non-secret intermediate model.
-The legacy bearer renderer accepts only one distinct bearer scheme; two named
-bearer alternatives now fail instead of being silently treated as one session.
-API key/OAuth/multiple-auth runtime generation remains gated on the dedicated
-credential-provider implementation; parsing metadata is not runtime support.
+The legacy bearer renderer accepts one distinct bearer scheme. API keys,
+distinct bearer alternatives and mixed AND/OR use `RequestSecurityProviding`
+instead of collapsing identities. Generated constructors require an HTTPS
+`credentialOrigin` and application-owned `RequestCredentialProvider`; query and
+cookie declarations additionally require explicit opt-in flags. Requirements
+are embedded as non-secret metadata, never as credentials. Selection is frozen
+across retries, AND acquisition is atomic, and failures never fall back to another
+alternative. Cache/coalescing/automatic redirects are disabled for this path.
+OAuth generation remains gated until scoped credentials and refresh are ready.
+See [request credentials](../Sources/InnoNetwork/InnoNetwork.docc/Articles/RequestCredentials.md)
+for ownership, diagnostics, redaction and unsupported execution surfaces.
 
 ```bash
 cd Tools/openapi-to-innonetwork

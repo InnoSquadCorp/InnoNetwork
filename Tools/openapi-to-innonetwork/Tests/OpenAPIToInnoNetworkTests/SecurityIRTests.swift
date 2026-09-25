@@ -8,6 +8,31 @@ struct SecurityIRTests {
     private let bearer = SecurityScheme(type: "http", scheme: "bearer")
     private let key = SecurityScheme(type: "apiKey", name: "X-Access", in: "header")
 
+    @Test("provider output preserves AND, OR, anonymous and opt-in placement")
+    func providerOutput() throws {
+        let ir = try SecurityIR(requirements: [["a": [], "key": []], [:]], schemes: ["a": bearer, "key": key])
+        #expect(
+            try ir.runtimeAlternativesLiteral()
+                == "[[.bearer(id: \"a\"), .apiKey(id: \"key\", name: \"X-Access\", location: .header)], []]")
+        let source = try CodeGenerator(moduleName: "Fixture").renderOperation(
+            typeName: "Secured", method: "GET", path: "/secure", op: Operation(), pathParameters: [],
+            authentication: "anonymous", security: ir
+        ).contents
+        #expect(source.contains("APIDefinition, RequestSecurityProviding"))
+        #expect(source.contains("credentialProvider: any RequestCredentialProvider"))
+        #expect(source.contains("allowsQueryCredentials: Bool = false"))
+        #expect(source.contains("allowsCookieCredentials: Bool = false"))
+        #expect(source.contains("public let requestSecurity: RequestSecurity"))
+        #expect(source.contains("throws {"))
+    }
+
+    @Test("scheme strings cannot inject interpolation into generated source")
+    func literalEscaping() throws {
+        let id = "key\\(injected)\""
+        let ir = try SecurityIR(requirements: [[id: []]], schemes: [id: key])
+        #expect(try ir.runtimeAlternativesLiteral().contains("key\\\\(injected)\\\""))
+    }
+
     @Test("AND is atomic metadata, OR order is preserved, members are deterministic")
     func alternatives() throws {
         let ir = try SecurityIR(

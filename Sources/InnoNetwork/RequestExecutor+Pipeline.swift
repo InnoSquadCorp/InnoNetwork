@@ -37,6 +37,7 @@ extension RequestExecutor {
         refreshCoordinator: RefreshTokenCoordinator?,
         bodySource: BodySource,
         requestSigners: [RequestSigner],
+        security: PreparedRequestSecurity? = nil,
         configuration: NetworkConfiguration,
         context: NetworkRequestContext,
         runtime: RequestExecutionRuntime,
@@ -63,7 +64,7 @@ extension RequestExecutor {
             // a stable, non-secret principal partition, an unsigned request is
             // not a safe cache identity: two endpoint signers could otherwise
             // share one response before the second signer is even invoked.
-            let allowsRequestSharing = requestSigners.isEmpty
+            let allowsRequestSharing = requestSigners.isEmpty && security == nil
             // The key only ever feeds cache lookup, revalidation, and store —
             // every consumer additionally guards on a configured
             // `responseCache` — so skip the header/URL normalization cost
@@ -122,6 +123,7 @@ extension RequestExecutor {
                     request: request,
                     bodySource: bodySource,
                     requestSigners: requestSigners,
+                    security: security,
                     configuration: configuration,
                     context: context,
                     runtime: runtime,
@@ -439,6 +441,7 @@ extension RequestExecutor {
         request: URLRequest,
         bodySource: BodySource,
         requestSigners: [RequestSigner],
+        security: PreparedRequestSecurity? = nil,
         configuration: NetworkConfiguration,
         context: NetworkRequestContext,
         runtime: RequestExecutionRuntime,
@@ -450,6 +453,32 @@ extension RequestExecutor {
             if let snapshotURL = preparedBody.snapshotURL {
                 try? FileManager.default.removeItem(at: snapshotURL)
             }
+        }
+
+        if let security {
+            var securedContext = context.restrictingSignedRequestSharing()
+            securedContext.credentialRedaction = security.redaction
+            securedContext.credentialPreparation = { unsigned in
+                NetworkOperationDeadlineContext.mark(.authentication)
+                let authenticated = try await security.apply(to: unsigned.preparingForSignedTransport())
+                do {
+                    let signed = try await applyRequestSigners(
+                        requestSigners, to: authenticated, bodySource: preparedBody.bodySource
+                    )
+                    try security.validateAfterSigning(signed, authenticated: authenticated)
+                    NetworkOperationDeadlineContext.mark(.transport)
+                    return signed
+                } catch {
+                    if NetworkError.isCancellation(error) || Task.isCancelled { throw CancellationError() }
+                    // A signer can echo the secret request in an arbitrary error.
+                    throw RequestSecurityFailure.credentialConflict.networkError
+                }
+            }
+            return try await performTransport(
+                request: request, identityRequest: request, bodySource: preparedBody.bodySource,
+                configuration: configuration, context: securedContext, runtime: runtime,
+                requestID: requestID, allowsRequestCoalescing: false
+            )
         }
 
         let requestForSigning =

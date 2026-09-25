@@ -6,6 +6,31 @@ import Testing
 
 @Suite("APIDefinition macro to DefaultNetworkClient E2E")
 struct APIDefinitionMacroClientE2ETests {
+    @Test("Stable macro manual payload contract supports origin-bound credentials")
+    func macroWithOriginBoundCredentials() async throws {
+        let session = MockURLSession()
+        let expected = MacroClientUser(id: 44, name: "Named credential")
+        try session.setMockJSON(expected)
+        let client = DefaultNetworkClient(
+            configuration: makeMacroClientTestConfiguration(),
+            session: session
+        )
+        let security = try RequestSecurity(
+            origin: URL(string: "https://api.example.com")!,
+            alternatives: [[.apiKey(id: "service-key", name: "X-Service-Key", location: .header)]],
+            provider: MacroClientCredentialProvider()
+        )
+
+        let response = try await client.request(MacroClientNamedCredential(requestSecurity: security))
+
+        #expect(response == expected)
+        let request = try #require(session.capturedRequest)
+        #expect(request.url?.absoluteString == "https://api.example.com/v1/secured-user")
+        #expect(request.value(forHTTPHeaderField: "X-Service-Key") == "macro-fixture-credential")
+        #expect(request.httpBody == nil)
+        #expect(request.url?.query == nil)
+    }
+
     @Test("Generated endpoint crosses a real URLSession and URLProtocol boundary")
     func generatedEndpointCrossesURLProtocolBoundary() async throws {
         let baseURL = URL(string: "https://macro-e2e-\(UUID().uuidString).example.com/v1")!
@@ -203,6 +228,27 @@ private struct MacroClientRequiredUser {
     typealias APIResponse = MacroClientUser
 
     let id: Int
+}
+
+@APIDefinition(method: .get, path: "/secured-user", auth: .anonymous)
+private struct MacroClientNamedCredential: RequestSecurityProviding {
+    typealias APIResponse = MacroClientUser
+    typealias Parameter = EmptyParameter
+
+    var parameters: EmptyParameter? { nil }
+    let requestSecurity: RequestSecurity
+}
+
+private struct MacroClientCredentialProvider: RequestCredentialProvider {
+    func select(alternatives: [[RequestSecurity.Scheme]], origin: URL) async throws -> RequestSecurity.Selection {
+        .init(alternative: 0, realm: "fixture", principal: "user")
+    }
+
+    func credential(
+        for scheme: RequestSecurity.Scheme, selection: RequestSecurity.Selection, origin: URL
+    ) async throws -> RequestSecurity.Credential {
+        .init(value: "macro-fixture-credential", realm: selection.realm, principal: selection.principal)
+    }
 }
 
 private actor MacroClientAuthTrace {

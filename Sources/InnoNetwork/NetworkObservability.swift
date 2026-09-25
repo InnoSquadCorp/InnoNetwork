@@ -255,6 +255,9 @@ public struct NetworkRequestContext: Sendable {
     /// Signed requests must not enter URLSession's shared response cache until
     /// the signer contract can contribute a stable principal partition.
     package let allowsURLCacheStorage: Bool
+    /// New credentials and signatures are acquired after local admission waits.
+    package var credentialPreparation: (@Sendable (URLRequest) async throws -> URLRequest)? = nil
+    package var credentialRedaction: CredentialRedaction? = nil
 
     public init(
         requestID: UUID = UUID(),

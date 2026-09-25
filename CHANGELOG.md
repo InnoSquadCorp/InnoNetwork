@@ -12,6 +12,15 @@ The previously planned 6.1 candidates are included in this 6.0 release scope.
 
 ### Added — approved follow-up scope
 
+- Provisionally Stable origin-bound request credential providers: header API
+  keys, explicitly enabled query/cookie keys, opaque bearer, atomic AND and
+  explicit OR selection. Identity is frozen across retries; credentials are
+  acquired after admission and before signers. The path bypasses sharing,
+  cookie jars and automatic redirects, and rejects conflicting auth contracts.
+  VCR dynamically redacts declared credential slots and forwards request context.
+- Preview OpenAPI output connects API-key and multiple-auth requirements to
+  that provider contract, retaining root inheritance, overrides and anonymous
+  alternatives. OAuth scope/refresh and `anyOf` remain pending stages.
 - Opt-in `ResponseCachePolicy.requestFreshness(wrapping:)` applies request
   `no-cache`, `max-age` and `min-fresh` across cache hits, cache-only requests,
   background refresh and stale-error recovery.
@@ -29,7 +38,8 @@ The previously planned 6.1 candidates are included in this 6.0 release scope.
 
 - The preview generator preserves security requirements in a bounded non-secret
   IR and rejects distinct bearer alternatives on the legacy session path rather
-  than erasing the identity choice. Extended credential execution is still gated.
+  than erasing the identity choice. Extended requirements now use the separate
+  provider path; OAuth scope/refresh remains gated.
 - VCR recording, replay identity, and mismatch diagnostics remove URL
   user-info and fragments. Legacy cassette URLs normalize in memory while
   preserving sequential replay; fixture files require an explicit resave.

@@ -67,6 +67,7 @@ private struct PreparedExecutionRequest {
     let refreshCoordinator: RefreshTokenCoordinator?
     let bodySource: BodySource
     let requestSigners: [RequestSigner]
+    let security: PreparedRequestSecurity?
     let cleanupFileURL: URL?
     let context: NetworkRequestContext
 }
@@ -229,6 +230,13 @@ package struct RequestExecutor {
     ) async throws -> PreparedExecutionRequest {
         NetworkOperationDeadlineContext.mark(.requestPreparation)
         try validateSessionAuthentication(executable, configuration: configuration)
+        let credentialExecution = (executable as? any CredentialExecutable)?.credentialExecution
+        if executable is any RequestSecurityProviding, credentialExecution == nil {
+            throw RequestSecurityFailure.unsupportedExecution.networkError
+        }
+        if credentialExecution != nil, executable.sessionAuthentication != .anonymous {
+            throw RequestSecurityFailure.unsupportedExecution.networkError
+        }
         let built = try requestBuilder.build(executable, configuration: configuration)
         var request = built.request
         let cleanupFileURL: URL?
@@ -294,6 +302,9 @@ package struct RequestExecutor {
 
             NetworkOperationDeadlineContext.mark(.requestPreparation)
 
+            if credentialExecution != nil { NetworkOperationDeadlineContext.mark(.authentication) }
+            let security = try await credentialExecution?.prepare(for: request)
+            NetworkOperationDeadlineContext.mark(.requestPreparation)
             let requestSigners = configuration.requestSigners + executable.requestSigners
             await notifyRequestAdapted(
                 request, retryIndex: retryIndex, requestID: requestID, configuration: configuration)
@@ -318,6 +329,7 @@ package struct RequestExecutor {
                 refreshCoordinator: refreshCoordinator,
                 bodySource: built.bodySource,
                 requestSigners: requestSigners,
+                security: security,
                 cleanupFileURL: cleanupFileURL,
                 context: context
             )
@@ -348,6 +360,7 @@ package struct RequestExecutor {
             refreshCoordinator: prepared.refreshCoordinator,
             bodySource: prepared.bodySource,
             requestSigners: prepared.requestSigners,
+            security: prepared.security,
             configuration: configuration,
             context: prepared.context,
             runtime: runtime,
