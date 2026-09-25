@@ -32,8 +32,8 @@ must fail generation, not be silently ignored.
 | security IR | PASS, `c453d55` | 29 generator tests, typecheck, runtime roundtrip, two-run identical output |
 | provider execution boundary | PASS, `52e372f` | cancellation, origin, redaction, identity, sharing and signing order |
 | API key | PASS, `52e372f` | missing/conflicting key, header then explicit query/cookie, redirects |
-| OAuth scope | pending | exact scopes, unknown metadata, expiry, isolated refresh, no escalation |
-| AND/OR authentication | API key/bearer PASS, `52e372f`; OAuth combinations pending | atomic AND, explicit OR choice, anonymous alternative, retry identity |
+| OAuth scope | PASS, `ae19c7d` | exact scopes, unknown metadata, expiry, isolated refresh, no escalation |
+| AND/OR authentication | PASS, `52e372f` / `ae19c7d` | atomic AND, explicit OR choice, anonymous alternative, retry identity |
 | preserved JSON and bounded validator | pending | number precision, unknown fields, depth/work limits |
 | named local-reference anyOf | pending | zero/one/multiple matches, encode validation, typed views |
 | final release preflight/consumers | pending | final revision, all local gates; remote/device gates separate |
@@ -174,7 +174,62 @@ bodies are not arbitrary secret scrubbers: do not record sensitive/credential-
 echoing payloads. These limitations are part of the DocC contract, not claimed
 as redacted by the field-name mechanism.
 
-Next implementation stage: OAuth scope/expiry metadata and isolated refresh,
-then bounded preserved JSON and named local-reference `anyOf`. This batch is
+At the end of this batch, the next stage was OAuth scope/expiry metadata and
+isolated refresh, followed by bounded preserved JSON and named local-reference
+`anyOf`. This batch is
 not the final release validation and does not refresh the earlier app/device/
 service/platform evidence. No push, merge, tag or Release is implied.
+
+## Third implementation batch: scoped OAuth
+
+Implementation commit: `ae19c7d`.
+
+Adds `.oauth2(id:scopes:)`, defaulted granted-scope/expiry metadata on opaque
+credentials, and the optional `OAuthCredentialRefreshing` protocol. Unknown,
+malformed or insufficient grants fail before transport. Scope spelling is exact;
+server-suggested scopes never replace the declared requirement. The library does
+not decode a JWT as proof of permission or launch login UI.
+
+Expired tokens can renew once per logical request. The same one-renewal budget
+also bounds reactive GET/HEAD replay after one unambiguous `401` Bearer
+`invalid_token` challenge. Unsafe methods, ambiguous challenges and insufficient
+scopes do not trigger automatic replay/escalation. Identity and expiry are
+checked again after renewal, other AND members and asynchronous signers.
+
+Overlapping renewal work shares only within a reused `RequestSecurity` value,
+partitioned by scheme, exact scopes, realm and principal. Origin/provider are
+fixed by the owning configuration. The coordinator retains no completed token
+cache and bounds work to 64 groups/128 waiters per group. Waiter cancellation
+does not cancel peers; the final cancellation cancels the provider task. Apps
+still coordinate refresh-token rotation across independent configurations and
+own token persistence, IdP-wide cooldown and issuer/audience attestation.
+
+The public budget increases by seven to 1,656 total / 306 Stable / 1,317
+Provisionally Stable / 33 SPI. The unreleased credential initializer gains
+defaulted metadata arguments, preserving existing source calls. Stable
+`@APIDefinition` and legacy session authentication are unchanged.
+
+Fresh verification:
+
+- 41 focused tests across scoped OAuth, named credentials, existing realm auth
+  and request signing passed. They include missing metadata, exact scope case,
+  wrong identity, secret-safe failures, expiry during signing, one-renewal budget,
+  quoted-header parser attacks, cancellation isolation and both concurrency caps.
+- Root bounded suite: 1,879 registered, 1,875 passed and four live-only skipped.
+- 31 generator tests passed. Generated source typechecks, is byte-identical
+  across two runs, and executes ten native URLSession/URLProtocol requests,
+  including OAuth+API-key AND, explicit OAuth OR and a 401/renewal/replay sequence.
+- The complete static-contracts gate passed, including public API/docs budgets,
+  enum ledger, trait builds and negative macro fixtures. Release-state negative
+  fixtures passed. All nine public product DocC archives built and passed the
+  archive contract with the scoped OAuth documentation.
+
+Logs use `/tmp/innonetwork6-oauth-` with suffixes `tests.log`, `full-tests-final.log`,
+`generator-final.log`, `generated.log`, `static.log`, `release-fixtures.log` and
+`docc.log`. Final formatting also passed (`lint-final.log`, 492 Swift files).
+These are local, ephemeral evidence, not real IdP acceptance or CI.
+
+Next: preserved JSON/validator, named local-reference `anyOf`, then the complete
+final-revision release preflight and consumer matrix. Physical-device/service
+acceptance and remote publication remain separate gates; no push or release
+is authorized by this batch.
