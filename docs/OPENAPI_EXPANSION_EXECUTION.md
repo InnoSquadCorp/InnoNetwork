@@ -30,10 +30,10 @@ must fail generation, not be silently ignored.
 | six WatchKit consumer migrations | PASS, isolated commits below | all six full app builds, executable/plist checks, simulator install/launch |
 | current Appbyul dependency migration | PASS, consumer `959f72b` | full iOS app build, CoreNetwork 20 + tabs 3 tests, DI/layer/localization, simulator launch |
 | security IR | PASS, `c453d55` | 29 generator tests, typecheck, runtime roundtrip, two-run identical output |
-| provider execution boundary | pending | cancellation, origin, redaction, identity, sharing and signing order |
-| API key | pending | missing/conflicting key, header then explicit query/cookie, redirects |
+| provider execution boundary | PASS, `52e372f` | cancellation, origin, redaction, identity, sharing and signing order |
+| API key | PASS, `52e372f` | missing/conflicting key, header then explicit query/cookie, redirects |
 | OAuth scope | pending | exact scopes, unknown metadata, expiry, isolated refresh, no escalation |
-| AND/OR authentication | pending | atomic AND, explicit OR choice, anonymous alternative, retry identity |
+| AND/OR authentication | API key/bearer PASS, `52e372f`; OAuth combinations pending | atomic AND, explicit OR choice, anonymous alternative, retry identity |
 | preserved JSON and bounded validator | pending | number precision, unknown fields, depth/work limits |
 | named local-reference anyOf | pending | zero/one/multiple matches, encode validation, typed views |
 | final release preflight/consumers | pending | final revision, all local gates; remote/device gates separate |
@@ -114,3 +114,67 @@ App and watch builds used the `65c3acf` runtime archive. `git diff 65c3acf c453d
 -- Sources` is empty: this batch changes root release metadata and the standalone
 generator only. Default Appbyul remote dependency resolution separately passed at
 the pinned `7b52580`; the new 6.0 public tag does not exist yet.
+
+## Second implementation batch: credential execution
+
+Implementation commit: `52e372f`. Fresh local evidence on its source tree:
+
+- Root bounded suite: 1,868 registered, 1,864 passed, four live-only tests skipped.
+- Focused credential/adjacent regressions: 68 tests passed; macro suite: 54 passed,
+  including the Stable macro's manual-payload contract with a named credential.
+- Generator suite: 31 passed; generated output typechecks and executes six
+  API-key/AND/OR requests, with identical output on the second generation.
+- Static contracts, formatting, release-state negative fixtures and documentation
+  helper fixtures passed. All nine public product DocC archives built and passed
+  the archive contract, including the new request-credentials article.
+
+Logs: `/tmp/innonetwork6-credential-full-tests-final.log`,
+`/tmp/innonetwork6-credential-last-regression.log`,
+`/tmp/innonetwork6-credential-macro.log`,
+`/tmp/innonetwork6-credential-generator-tests-final.log`,
+`/tmp/innonetwork6-credential-generated-final.log`,
+`/tmp/innonetwork6-credential-static.log`,
+`/tmp/innonetwork6-credential-docc.log`. Logs are local ephemeral artifacts,
+not remote CI or a substitute for the remaining live acceptance gates.
+
+The new opt-in provider boundary leaves Stable `SessionAuthentication` and
+`@APIDefinition` unchanged. It adds 33 Provisionally Stable declarations:
+1,649 total / 306 Stable / 1,310 Provisional / 33 SPI. The API budget, enum
+guard, declaration ledger, release-state assertions and negative fixtures all
+track this explicit addition; historical earlier-stage counts remain historical.
+
+Selection is owned by one logical request and retained across retries. Secrets
+are acquired only after local admission, injected atomically, then signed in
+the existing configuration-before-endpoint order. HTTPS origin, frozen
+principal/realm, duplicate slots and overlapping legacy/default session auth
+fail closed. Provider/signer failure descriptions are discarded. Native
+authentication challenges cannot select a second authentication method.
+
+The API-key stage includes header and explicitly enabled query/cookie placement.
+The same execution primitive now supports API-key/bearer AND and explicit OR,
+including an explicitly selected anonymous alternative. OAuth combinations are
+still pending, not silently rendered as bearer. New credential requests bypass
+cache/coalescing/URLCache, cookie jars and all automatic redirects. Authenticated
+sharing is intentionally not implemented in this stage.
+
+| Validation boundary | Evidence |
+| --- | --- |
+| normal header/query/cookie and AND/OR | new runtime tests plus six generated requests through native URLSession/URLProtocol |
+| missing/invalid credentials, partial AND, slot conflicts, invalid selection | no-dispatch assertions and passing controls |
+| account change, retry, origin mutation | fixed selection, per-attempt acquisition, identity/origin rejection |
+| cancellation/admission/resource ceilings | cancelled provider cannot dispatch; queued request has no credentials; name/group/value limits |
+| observation and VCR | unsigned public request, redacted response URL, dynamic cassette fields, sanitized error text |
+| execution surfaces | buffered/multipart succeed; streaming rejects before provider selection |
+| native session defaults | conflicting Authorization/Cookie/custom-key defaults rejected before native tasks |
+| generated contract | inherited/overridden security, explicit opt-ins, actual typecheck, six-request runtime, byte-identical second output |
+
+Application callbacks are trusted. In particular, raw Foundation metrics can
+contain wire request snapshots; metrics reporters must scrub them. VCR response
+bodies are not arbitrary secret scrubbers: do not record sensitive/credential-
+echoing payloads. These limitations are part of the DocC contract, not claimed
+as redacted by the field-name mechanism.
+
+Next implementation stage: OAuth scope/expiry metadata and isolated refresh,
+then bounded preserved JSON and named local-reference `anyOf`. This batch is
+not the final release validation and does not refresh the earlier app/device/
+service/platform evidence. No push, merge, tag or Release is implied.
