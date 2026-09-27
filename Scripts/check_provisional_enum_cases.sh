@@ -54,7 +54,7 @@ def split_cases(case_part: str) -> list[str]:
 
 
 case_name_pattern = re.compile(r"`?([A-Za-z_][A-Za-z0-9_]*)`?")
-enum_pattern = re.compile(r"\bpublic\s+enum\s+([A-Za-z_][A-Za-z0-9_]*)\b")
+enum_pattern = re.compile(r"\bpublic\s+(?:indirect\s+)?enum\s+([A-Za-z_][A-Za-z0-9_]*)\b")
 
 for source in (repo_root / "Sources").rglob("*.swift"):
     current_enum = None

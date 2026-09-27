@@ -579,8 +579,8 @@ below keeps the high-level compatibility classification readable. Historical
 5.x HLS sections document the migration source but are no longer included in
 the current machine-checked inventory.
 
-The machine-checked snapshot currently partitions all 1,656 declarations into
-306 Stable consumer declarations, 1,317 Provisionally Stable consumer
+The machine-checked snapshot currently partitions all 1,690 declarations into
+306 Stable consumer declarations, 1,351 Provisionally Stable consumer
 declarations, and 33 opt-in SPI declarations. The three sets are disjoint and
 exhaustive. `Scripts/symbols/stable-rules.tsv` maps the Stable ledger to symbol
 paths, while the compiler-authored SPI flag is snapshotted in
@@ -589,6 +589,10 @@ Stable.
 
 ### InnoNetwork
 
+- Preserved JSON declarations (Provisionally Stable): `PreservedJSON`,
+  `PreservedJSONCoding`, `JSONSchema`, `JSONProcessingLimits`, and `JSONProcessingError`.
+  See [the wire/validation contract](docs/PRESERVED_JSON.md); Foundation codecs
+  deliberately reject preserved values rather than round their numbers.
 - Named credential declarations: `RequestSecurityProviding`,
   `RequestCredentialProvider`, `RequestSecurity`, `RequestSecurity.Location`,
   `RequestSecurity.Scheme`, `RequestSecurity.Selection`,

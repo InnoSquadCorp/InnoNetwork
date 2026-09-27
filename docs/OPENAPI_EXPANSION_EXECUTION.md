@@ -34,7 +34,7 @@ must fail generation, not be silently ignored.
 | API key | PASS, `52e372f` | missing/conflicting key, header then explicit query/cookie, redirects |
 | OAuth scope | PASS, `ae19c7d` | exact scopes, unknown metadata, expiry, isolated refresh, no escalation |
 | AND/OR authentication | PASS, `52e372f` / `ae19c7d` | atomic AND, explicit OR choice, anonymous alternative, retry identity |
-| preserved JSON and bounded validator | pending | number precision, unknown fields, depth/work limits |
+| preserved JSON and bounded validator | implemented, local foundation validation below | number precision, unknown fields, depth/work limits |
 | named local-reference anyOf | pending | zero/one/multiple matches, encode validation, typed views |
 | final release preflight/consumers | pending | final revision, all local gates; remote/device gates separate |
 
@@ -44,6 +44,16 @@ The optional proposal appendix (external refs, full 3.1, Basic/OIDC login,
 non-JSON responses, etc.) is not implicitly claimed as implemented by these stages.
 
 ## External acceptance boundaries
+
+### Preserved JSON foundation, 2026-09-28
+
+Added the exact-byte document, document-aware Codable bridge, and bounded schema
+subset in `docs/PRESERVED_JSON.md`. Twelve focused tests pass, including ordinary
+Codable controls, nested raw subtrees, numeric/Unicode adversarial input, and
+zero/one/multiple matches. Logs: `/tmp/innonetwork6-json-stage1-tests.log`.
+The fresh symbol graph adds 34 Provisionally Stable declarations: total 1,690 /
+Stable 306 / Provisional 1,351 / SPI 33. Generator anyOf and final release gates
+remain pending; this does not renew consumer or external evidence.
 
 A connected development iPhone, dedicated resumable/quota/IdP services and an
 actual exporter/collector are still required. Mock results do not close these

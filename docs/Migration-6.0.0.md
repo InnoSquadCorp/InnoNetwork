@@ -5,7 +5,7 @@ This guide describes the unreleased InnoNetwork 6.0 draft. There is no
 notes are marked ready and the tag is published.
 
 The previously planned 6.1 candidates are included in this 6.0 release scope.
-The unified baseline contains 1,656 public declarations. `@APIDefinition`
+The unified baseline contains 1,690 public declarations. `@APIDefinition`
 remains Stable; the advanced additions below retain their Provisionally
 Stable classifications.
 
