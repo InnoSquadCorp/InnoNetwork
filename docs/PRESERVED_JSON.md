@@ -57,15 +57,19 @@ errors are application-owned diagnostic surfaces.
 ## Specification and evidence
 
 The strict grammar follows [RFC 8259](https://www.rfc-editor.org/rfc/rfc8259).
-The planned generator subset uses the [OpenAPI 3.0 Schema Object](https://spec.openapis.org/oas/v3.0.3.html#schema-object),
+The generator subset uses the [OpenAPI 3.0 Schema Object](https://spec.openapis.org/oas/v3.0.3.html#schema-object),
 not the complete 3.1 dialect. Nullable-required and multiple-match semantics are
 tested separately from successful Codable decoding.
 
-2026-09-28 fresh evidence: 12 focused tests cover exact numeric/unknown-field
+2026-09-28 fresh evidence at `e53ec95`: 15 focused tests cover exact numeric/unknown-field
 roundtrips, invalid input, duplicate/Unicode boundaries, zero/one/multiple matches,
 integer mathematics, limits, nested Codable containers, ordinary scalar controls,
 unsupported codecs, recursive container limits and 10,000-element accumulation.
-This is foundation evidence, not final release/consumer acceptance.
+They also cover canonical dates in mixed models, failed unkeyed-read retry and
+repeated nested encoding-container reuse, with Foundation passing controls.
+The generated runtime fixture covers nested anyOf, canonical dates and exact
+request-body bytes. See `OPENAPI_EXPANSION_EXECUTION.md` for final-candidate local
+verification and the still-separate remote/device/service acceptance gates.
 
 ## Generated anyOf usage
 

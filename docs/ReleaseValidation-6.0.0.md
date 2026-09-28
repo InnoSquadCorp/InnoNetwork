@@ -102,7 +102,7 @@ must not be reported as the ID container's allocation size. A finite
 
 | Boundary | Procedure and acceptance evidence | Current limitation |
 | --- | --- | --- |
-| iOS background daemon | On a dedicated physical iPhone, suspend/resume an upload/download; exercise system termination and relaunch, user-paused restoration, and exactly-once completion. Record device/OS/app/library revisions and server byte counts. Test explicit user force-quit separately because its OS behavior differs. | Rechecked on 2026-09-24: xctrace lists woody iPhone as offline. The user has been asked to connect a development-enabled test device; simulator and macOS checks do not close this row. |
+| iOS background daemon | On a dedicated physical iPhone, suspend/resume an upload/download; exercise system termination and relaunch, user-paused restoration, and exactly-once completion. Record device/OS/app/library revisions and server byte counts. Test explicit user force-quit separately because its OS behavior differs. | Discovery on 2026-09-25 found the iPhone connected/paired with Developer Mode enabled. Test-app installation was requested but not performed; this is prerequisite evidence, not device acceptance or a current connection claim. Simulator and macOS checks do not close this row. |
 | Protected storage | While the physical device is locked, exercise configured protection classes, delayed callbacks and relaunch. Verify unreadable files fail without corrupting checkpoints and become usable when permitted. | No physical-device run or power-loss test was performed. |
 | Real resumable service | With a dedicated test account and disposable object, interrupt before/after each acknowledgement, expire credentials, change source identity, and retry finalization. Verify server offsets/checksum and no duplicate creation or credential persistence. | The local durable adapter proves engine recovery, not a specific backend's contract. Test service/account has not been supplied. |
 | Real quota/identity provider | Replay a documented quota/burst pattern, cancellation and 429/Retry-After behavior; exercise realm-separated credential refresh. Record rate/latency and server observations without credentials. | No service-specific quota model or IdP account has been supplied. Keep advanced APIs Provisionally Stable. |
@@ -131,8 +131,9 @@ Stable and 33 SPI. Publication/device/service gates remain independent.
 The subsequent approved extension adds the origin-bound provider contract and
 generator output for API keys, scoped OAuth and explicit AND/OR selection.
 OAuth validates grants/expiry and isolates bounded renewal without escalation.
-JSON validation/anyOf are still pending; do not describe
-the full extension plan as complete. See `OPENAPI_EXPANSION_EXECUTION.md` for
-candidate-specific tests and boundaries. This runtime change requires fresh
-final-consumer/platform evidence after the remaining stages; the earlier
-`65c3acf` app builds do not validate the new provider path.
+The subsequent preserved-JSON and named-reference anyOf stages are implemented
+through `e53ec95`, including mixed-model dates and Codable container fixes.
+See `OPENAPI_EXPANSION_EXECUTION.md` for the final-code local gates and renewed
+seven-app compile evidence. Earlier `65c3acf` simulator launches remain historical;
+app compilation does not prove adoption of the new provider path. Remote CI,
+physical-device acceptance and dedicated service/IdP/exporter gates remain open.

@@ -25,8 +25,10 @@ published contract.
 The later approved OpenAPI extension is tracked in
 `docs/OPENAPI_EXPANSION_EXECUTION.md`. Provider execution, API keys and opaque
 bearer/scoped OAuth AND/OR are implemented locally, including grants/expiry and
-bounded isolated renewal. Preserved JSON validation/anyOf remain required
-implementation stages before final validation.
+bounded isolated renewal. Exact-byte preserved JSON, bounded validation and
+named local-reference `anyOf` are also implemented. The generator remains Preview
+with an explicit OpenAPI 3.0 subset. Final-code local evidence and the separate
+remote/device/service acceptance boundaries are recorded in that execution ledger.
 
 ## 6.0.0 Included Capabilities
 

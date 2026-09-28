@@ -35,15 +35,101 @@ must fail generation, not be silently ignored.
 | OAuth scope | PASS, `ae19c7d` | exact scopes, unknown metadata, expiry, isolated refresh, no escalation |
 | AND/OR authentication | PASS, `52e372f` / `ae19c7d` | atomic AND, explicit OR choice, anonymous alternative, retry identity |
 | preserved JSON and bounded validator | PASS, `f00e430` | number precision, unknown fields, depth/work limits |
-| named local-reference anyOf | implemented, focused validation below | zero/one/multiple matches, encode validation, typed views |
-| final release preflight/consumers | pending | final revision, all local gates; remote/device gates separate |
+| named local-reference anyOf | PASS, `7a7cc87`, `3b200cf`, `e53ec95` | zero/one/multiple matches, encode validation, typed views, canonical dates, container retries/reuse |
+| final release preflight/consumers | local PASS at `e53ec95` | all 14 local gates, seven full app builds; remote/device/service gates remain open |
 
 Each generator stage requires parser diagnostics, deterministic output, actual
 Swift typecheck and runtime tests, including failing cases and passing controls.
 The optional proposal appendix (external refs, full 3.1, Basic/OIDC login,
 non-JSON responses, etc.) is not implicitly claimed as implemented by these stages.
 
-## External acceptance boundaries
+## Verification and acceptance boundaries
+
+### Final-code local verification, 2026-09-28
+
+Source revision: `e53ec9533673e3340f65c7d6d7789d23a181d13c`. The following
+evidence is fresh on this fixed executable-code revision. A later documentation
+commit records results without changing the tested source, tests or tooling.
+
+- Fast preflight: all seven gates passed. The bounded suite registered 1,894
+  tests: 1,890 passed and four live-only tests were skipped by that command.
+  A separate `INNO_LIVE=1` run passed all four public HTTP/WebSocket tests.
+- Generator: 39 tests passed. Two-run output equality, Swift 6 typechecking,
+  negative generation and both runtime fixtures passed. Four anyOf and ten
+  credential requests crossed URLSession/URLProtocol; these are synthetic
+  transport fixtures, not real IdP/service acceptance.
+- Consumer examples: all 11 packages built; macro and OpenAPI adopter smokes ran.
+  Static API/enum/docs/format/trait checks, release-script negative fixtures and
+  fresh-process resumable recovery also passed in the fast gate set.
+- Six additional full-mode gates passed sequentially with exit 0 and the same
+  clean source revision at both ends: streaming soak, runtime coverage, macro
+  coverage, SBOMs, all-product DocC, and Apple platform builds. Runtime line
+  coverage is 88.42%; macro coverage is 90.11%. These are measured coverage,
+  not an assertion that every behavior is covered.
+- The bounded component soak ran for 30 seconds each: 7,035,405 reconnect/export
+  attempts and 5,544,924 ordered streaming deliveries, exact accounting and
+  cancellation. This is not app RSS, overnight load or an external exporter test.
+- Nine public product DocC archives passed the archive contract. macOS and iOS
+  Simulator package builds passed; all nine public library targets compiled for
+  tvOS, watchOS and visionOS. Default and core-only SBOMs identify this source SHA.
+- Final same-runner guarded benchmark passed: 23 benchmarks, zero guard failures,
+  three interleaved base/head pairs, existing 20% regression threshold and no
+  waiver. Base: `a4aaaba8b41553033f5d1f23fa94af85b52b4c3a`; candidate code:
+  `e53ec95`. The largest guarded throughput decline was request coalescing at
+  16.31%, followed by cache revalidation at 12.80%. Passing the agreed threshold
+  does not mean no performance movement. These existing benchmark paths do not
+  establish a dedicated throughput promise for the new preserved-JSON codec.
+
+Together the seven fast and seven additional gates close all 14 local preflight
+gates for this code revision. No earlier mixed run or remote CI was substituted.
+
+Commands are the committed `Scripts/run_local_release_preflight.sh --fast` and
+the seven additional gates defined by its `--full` mode. The six non-benchmark
+full-mode gates used an ephemeral function-only copy diff-checked against that
+script, with the repository root fixed explicitly. This split avoids attributing
+the earlier mixed-revision full run to the final code.
+
+Evidence: `/tmp/innonetwork6-e53ec95-fast-preflight.log`,
+`/tmp/innonetwork6-e53ec95-live-tests.log`,
+`/tmp/innonetwork6-e53ec95-docc-check.log`,
+`/tmp/innonetwork6-e53ec95-benchmarks.log`,
+`/tmp/innonetwork6-final-verification.cbHwJQ/final-gates-receipt.md`,
+and `.build/local-release-preflight/` coverage/SBOM/DocC/platform artifacts.
+The six-gate stdout was streamed, not saved as a complete log; the receipt records
+its command exit and artifacts, not a reconstructed transcript. The earlier
+`/tmp/innonetwork6-anyof-full-preflight.log` is intermediate evidence only.
+
+#### Final-code consumer compilation
+
+All seven full iOS Simulator app builds passed against separate archives of
+`e53ec95`. Their source revisions are listed below. Build logs confirm compilation
+of the new JSON source paths, and an exact Sources-directory comparison confirms
+each runtime snapshot matches the final candidate. No original consumer source
+or lockfile was changed; before/after status and lock hashes match.
+
+| Consumer | Consumer source | Resolved snapshot lock SHA-256 |
+| --- | --- | --- |
+| Appbyul | `959f72b` | `aba89ed1369be61a0db0574c9bcbe1788ec14fefa7d03bdfa950f08fcaa26ebc` |
+| Bora | `47ac952` | `06b264162bd6ffbdee1338a6c38a7b50b9eda44c7ea9c00792c6728730b8ba88` |
+| CargoAirline | `d6c7688` | `0df9a77ad2221b07931ad2b0af2da646b3a6f52be849fc8f08f8d43374f3b054` |
+| Circe | `ed8d88b` | `e3574f2c70cc6d423e150cedbbcc4727ebd86de2de3479d2243eab27e1a79fe4` |
+| Echo | `4ae7482` | `13e1e50fc6d680018d4f7108c0fb3271eb7a52ff66cc2baeb902ff017542e0d7` |
+| Huginn | `a0d2a25` | `471c885644b8176a008b3f94d75db94fda831defdd59ad1d547374e92968fb82` |
+| Ithaca | `39508b7` | `aef83982ecd8581de46ea1c24a3f2a48835ed9cfe424d0ecba5a8ae8f03fcfd8` |
+
+Snapshots and logs: `/tmp/innonetwork6-json-consumers.RKjD8a/`, including
+`final-consumer-check.log` and per-app `*-build.log`. Appbyul uses its pinned
+Tuist 4.206.0; the others use 4.175.0. Bora, Circe and Ithaca initially hit Tuist's
+`ModuleMaps` directory EEXIST during generation; regeneration in the same
+disposable snapshot passed, followed by successful builds without source edits.
+This was a generation-harness failure, not an InnoNetwork compiler failure.
+
+Dependency graphs were resolved inside the snapshots; they are not asserted to
+match the root package pins or the original dirty consumer lockfiles. The hashes
+above identify those actual validation graphs. These builds renew compile
+compatibility only. Earlier simulator launches, other portfolio consumers and
+companion-package tests are not silently renewed. No physical-device install,
+dedicated backend/IdP/exporter test, remote CI, push, merge or release was performed.
 
 ### Named anyOf integration, 2026-09-28
 
@@ -86,8 +172,9 @@ subset in `docs/PRESERVED_JSON.md`. Twelve focused tests pass, including ordinar
 Codable controls, nested raw subtrees, numeric/Unicode adversarial input, and
 zero/one/multiple matches. Logs: `/tmp/innonetwork6-json-stage1-tests.log`.
 The fresh symbol graph adds 34 Provisionally Stable declarations: total 1,690 /
-Stable 306 / Provisional 1,351 / SPI 33. Generator anyOf and final release gates
-remain pending; this does not renew consumer or external evidence.
+Stable 306 / Provisional 1,351 / SPI 33. At this foundation-only revision,
+generator anyOf and final release gates were still pending; this historical
+batch did not renew consumer or external evidence.
 
 A connected development iPhone, dedicated resumable/quota/IdP services and an
 actual exporter/collector are still required. Mock results do not close these
