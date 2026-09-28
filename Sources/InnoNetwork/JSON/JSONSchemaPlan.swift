@@ -80,6 +80,7 @@ struct JSONSchemaRule: Sendable {
     var exclusiveMaximum = false
     var multipleOf: JSONSchemaNumber?
     var sizes: [String: Int] = [:]
+    var pattern: JSONSchemaPattern?
 }
 
 struct JSONSchemaCompiler {
@@ -97,12 +98,19 @@ struct JSONSchemaCompiler {
             "enum", "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf",
             "minLength", "maxLength", "minItems", "maxItems", "minProperties", "maxProperties",
             "title", "description", "example", "deprecated", "externalDocs",
+            "pattern", "format",
         ]
         for name in members.keys {
             try budget.charge(name.utf8.count + 1)
             guard supported.contains(name) else { throw JSONProcessingError.unsupportedSchema }
         }
         var rule = JSONSchemaRule()
+        if let pattern = members["pattern"] {
+            rule.pattern = try JSONSchemaPattern(scalar(String.self, document, pattern), budget: &budget)
+        }
+        // Format is annotation-only in compiled plans; never infer assertions
+        // from Foundation decoders or silently reinterpret a regex dialect.
+        if let format = members["format"] { _ = try scalar(String.self, document, format) }
         if let reference = members["$ref"] {
             let name = try scalar(String.self, document, reference)
             guard members.keys.allSatisfy({ ["$ref", "title", "description"].contains($0) }) else {
@@ -251,10 +259,11 @@ struct JSONPlanValidator {
                 }
             }
         case .string:
-            if !rule.sizes.isEmpty {
+            if !rule.sizes.isEmpty || rule.pattern != nil {
                 try budget.charge(node.range.count)
                 let text = try JSONDecoder().decode(String.self, from: document.data.subdata(in: node.range))
                 if !size(text.unicodeScalars.count, "Length", rule) { return false }
+                if let pattern = rule.pattern, try !pattern.matches(text, budget: &budget) { return false }
             }
         case .array(let children):
             if !size(children.count, "Items", rule) { return false }

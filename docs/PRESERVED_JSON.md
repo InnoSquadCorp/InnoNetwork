@@ -90,6 +90,24 @@ JSON and JSON-compatible YAML retain numeric lexemes. YAML aliases, merge keys,
 custom scalar tags and non-JSON numbers (hexadecimal, infinity, NaN) are rejected.
 No silent conversion through binary floating point occurs.
 
+### Bounded pattern subset
+
+Compiled `pattern` uses Unicode scalar matching and unanchored search, with
+optional leading `^` and trailing `$`. Supported syntax: literal characters,
+dot (except ECMAScript line terminators), positive/negative character classes
+and ranges, `*`, `+`, `?`, `{m}`, `{m,n}`, `{m,}`, `\d`/`\D`, `\w`/`\W`, escaped
+syntax characters and `\n`/`\r`/`\t`/`\f`/`\v`. Negated shorthand classes inside
+brackets, groups, alternation, backreferences, lookaround, Unicode/property
+escapes, flags and lazy quantifiers are not supported and fail compilation.
+Use literal Unicode characters (JSON escapes are decoded before regex parsing).
+This is an explicit ECMA-262 Unicode-mode subset, not ICU or full ECMAScript.
+
+The engine uses non-backtracking state sets, at most 4,096 states, and the shared
+validation-work budget for every transition/class test. A timeout is not the
+resource control. Unsupported patterns in nonmatching branches still fail
+compilation. `format` is a string annotation only in compiled plans; it does not
+assert email/date/URI validity or transform the preserved wire value.
+
 The strict grammar follows [RFC 8259](https://www.rfc-editor.org/rfc/rfc8259).
 The generator subset uses the [OpenAPI 3.0 Schema Object](https://spec.openapis.org/oas/v3.0.3.html#schema-object),
 not the complete 3.1 dialect. Nullable-required and multiple-match semantics are

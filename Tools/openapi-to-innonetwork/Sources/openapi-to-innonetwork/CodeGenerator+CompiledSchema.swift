@@ -5,6 +5,7 @@ extension CodeGenerator {
     static let compiledKeywords: Set<String> = [
         "enum", "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf",
         "minLength", "maxLength", "minItems", "maxItems", "minProperties", "maxProperties",
+        "pattern",
     ]
 
     func needsCompiledSchema(_ schema: Schema, schemas: [String: Schema], visited: Set<String> = []) throws -> Bool {

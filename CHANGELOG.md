@@ -36,6 +36,9 @@ The previously planned 6.1 candidates are included in this 6.0 release scope.
 - Provisionally Stable `JSONSchemaPlan` compiles exact enum/numeric/size
   constraints for Preview preserved component models. JSON-compatible YAML
   retains original number tokens; unsupported YAML constructs fail explicitly.
+- Compiled schema patterns use an explicit Unicode-mode ECMA-262 subset with
+  bounded non-backtracking execution. Unsupported regex syntax fails generation;
+  compiled `format` remains annotation-only.
 - `RequestEncodingPolicy.preservedJSON(limits:)` is an explicit 6.0 encoding
   choice; exhaustive switches over the Stable enum must handle the added case.
 - Scoped OAuth validates exact grants and expiry, supports one identity-bound
