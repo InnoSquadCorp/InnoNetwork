@@ -88,6 +88,39 @@ Xcode 27.0 (27A266a), Apple Swift 6.4, arm64 macOS host. Final combined log:
   controls. `git diff --check` passes; pinned upstream test data is unchanged
   except trailing-whitespace normalization in one JSON fixture.
 
-Final JSON performance guard results follow separately. The prior report's
-whole-runtime performance numbers are reused historical evidence, not remeasured
-cache/coalescing gains from this schema work.
+## Final performance and handoff
+
+Executable candidate: `4805744eb8f1e1ea9cfc1eb6dd14ee68cafea9fc`. The final
+report-only commit does not change the tested executable sources. Local commits:
+`f2b57e1` (codec), `5165ffe` (exact constraints), `88cc5f9` (patterns), `0609715`
+(recursive graphs), `4805744` (explicit 3.1 subset and integration hardening).
+
+The dedicated JSON lane rebuilt the reviewed `b358692` source and this candidate
+in Release mode, then ran three interleaved pairs. All five guards passed the
+existing 20% threshold with no waiver or baseline reset. Results:
+`/tmp/innonetwork-schema-final-benchmarks/results.json`; command log:
+`/tmp/innonetwork-schema-final-benchmark.log`.
+
+| JSON workload | Paired median throughput delta | Pair spread |
+| --- | --- | --- |
+| Parse preserved | -0.20% | 1.4% |
+| Decode mixed | -0.51% | 3.1% |
+| Encode mixed | -1.71% | 0.9% |
+| Existing all-branch matching | -0.77% | 2.1% |
+| Work-limit rejection | -3.31% | 21.8% |
+
+The rejection workload's spread exceeds its median movement; do not treat this
+as a precise stable regression or an optimization claim. These are the five
+existing codec/schema workloads, not a dedicated throughput baseline for every
+new compiled-plan construct. The latter has exactness and bounded-work tests.
+The prior report's whole-runtime performance numbers are reused historical
+evidence, not remeasured cache/coalescing gains from this schema work.
+
+All approved implementation stages are locally complete. No push, PR, merge,
+tag, or release was performed. Existing `Derived/` and `InnoNetwork.xcodeproj/`
+remain untracked and untouched. Final-candidate multi-platform/full-app builds,
+hosted CI, public-live tests, physical-device and dedicated IdP/exporter/server
+acceptance remain unexecuted here; earlier evidence is not promoted to this SHA.
+The release remains Draft. Local passes do not establish defect-free behavior
+or unconditional release readiness. Supported and deliberately rejected scope
+is in [the support matrix](SCHEMA_SUPPORT_MATRIX.md).
