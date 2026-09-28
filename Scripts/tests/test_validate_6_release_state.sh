@@ -77,5 +77,39 @@ assert_scope_change_rejected docs/ROADMAP.md \
 assert_scope_change_rejected docs/releases/6.1.0.md \
   's/release-status: draft/release-status: ready/' 'publishable superseded notes'
 
+assert_scope_change_rejected docs/releases/6.0.0.md \
+  "s/release-status: $current_state/release-status: $opposite_state/" 'a marker-only transition'
+
+if [[ "$current_state" == "ready" ]]; then
+  assert_scope_change_rejected docs/releases/6.0.0.md \
+    '/Confirm the matching tag and GitHub Release before adopting 6.0.0./d' \
+    'ready contents without the publication boundary'
+  assert_scope_change_rejected docs/releases/6.0.0.md \
+    's/^Release date: .*/Release date: TBD/' 'ready contents without a date'
+
+  assert_publication_claim_rejected() {
+    local relative_path="$1"
+    local claim="$2"
+    printf '\n%s\n' "$claim" >> "$scratch/$relative_path"
+    if bash "$scratch/Scripts/validate_6_release_state.sh" \
+      --expect ready > "$scratch/rejection.log" 2>&1; then
+      echo "6.0 release-state test: ready falsely claimed publication in $relative_path" >&2
+      exit 1
+    fi
+    grep -Fq 'unexpected' "$scratch/rejection.log"
+    bash "$scratch/Scripts/validate_6_release_state.sh" --expect ready --ref HEAD >/dev/null
+    cp "$repo_root/$relative_path" "$scratch/$relative_path"
+  }
+
+  assert_publication_claim_rejected README.md \
+    '`6.0.0` is the latest tagged stable release'
+  assert_publication_claim_rejected SECURITY.md \
+    '`6.x` is the actively supported tagged public release line.'
+  assert_publication_claim_rejected docs/Migration-6.0.0.md \
+    'This guide describes the released InnoNetwork 6.0 compatibility reset.'
+  assert_publication_claim_rejected docs/site/index.html \
+    'The latest tagged stable release is 6.0.0.'
+fi
+
 bash "$scratch/Scripts/validate_6_release_state.sh" --expect "$current_state"
 echo "6.0 release-state tests: OK"

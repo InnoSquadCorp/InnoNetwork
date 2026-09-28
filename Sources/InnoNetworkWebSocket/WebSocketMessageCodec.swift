@@ -206,7 +206,7 @@ public struct WebSocketTypedChannel<Codec>: Sendable where Codec: WebSocketMessa
     /// Returns a lazy typed view over inbound application messages.
     ///
     /// Connection, heartbeat, and send-pressure events remain available from
-    /// ``events(for:)`` and are skipped by this sequence. A frame decoding
+    /// ``WebSocketManager/events(for:)`` and are skipped by this sequence. A frame decoding
     /// failure is thrown from the iterator without disconnecting the socket.
     public func messages() async -> WebSocketDecodedMessages<Codec> {
         let source = await manager.events(for: task)

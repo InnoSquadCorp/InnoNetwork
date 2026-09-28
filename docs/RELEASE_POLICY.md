@@ -26,6 +26,11 @@
    and release-date claims. `Scripts/validate_docs_release_state.sh` guards the
    historical 5.0 transition and `Scripts/validate_6_release_state.sh` guards
    the 6.0 transition; both reject a marker-only or mixed Git tree.
+   For 6.0, `ready` approves the contents, not a claim that the tag or GitHub
+   Release already exists. Documentation must keep adoption and support changes
+   conditional on actual publication. The ready release date is the intended
+   release date; re-confirm it before tagging. Published tag/Release identity,
+   timestamp, signatures, and artifacts provide separate publication evidence.
 3. Before tagging, run the `Release` workflow manually from `main`. A manual
    dispatch executes the full validation and five-platform matrix, produces
    candidate artifacts, and structurally skips the signing/publication job.

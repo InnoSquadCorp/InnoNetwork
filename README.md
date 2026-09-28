@@ -23,10 +23,10 @@ Everything else—including Download, Upload, WebSocket,
 persistent cache, OpenAPI, AWS signing, pinning, and test support—is an
 optional product selected only when that capability is required.
 
-> **Release status:** `5.1.0` is the latest tagged stable release and the
-> actively security-supported line. `6.0.0` is an unreleased draft on this
-> branch; do not point production dependencies at `main`. The API examples
-> below describe the developing 6.0 contract and may not compile against 5.x.
+> **Release readiness:** `6.0.0` is approved for release; readiness is not publication.
+> Confirm the matching tag and GitHub Release before adopting the version below.
+> Until then, retain the tagged 5.x dependency; do not use moving `main` in
+> production. These examples describe 6.0 and may not compile against 5.x.
 > The previously planned 6.1 candidates are included in this 6.0 release scope.
 > The approved baseline contains 1,700 public declarations; advanced additions
 > remain Provisionally Stable unless the stability ledger explicitly says otherwise.
@@ -179,20 +179,20 @@ Does this endpoint belong in the application's named API catalog?
 
 ### Install
 
-For released applications, consume the tagged 5.x line:
+After confirming that the `6.0.0` tag and GitHub Release are published, use:
 
 ```swift
 dependencies: [
     .package(
         url: "https://github.com/InnoSquadCorp/InnoNetwork.git",
-        .upToNextMajor(from: "5.1.0")
+        .upToNextMajor(from: "6.0.0")
     )
 ]
 ```
 
-The 6.0 examples in this branch are prerelease documentation. After the
-`6.0.0` tag exists, new adopters can change the lower bound to `6.0.0`; until
-then, use a local checkout only for explicit migration validation.
+Use the declaration above only after `6.0.0` is published. Before that, use a
+local checkout for explicit migration validation and retain the existing
+tagged dependency in production.
 
 > InnoNetwork also intentionally requires Swift 6.2+ and current Apple OS
 > baselines (iOS 16, macOS 14, tvOS 16, watchOS 9, visionOS 1). That keeps
@@ -202,8 +202,8 @@ then, use a local checkout only for explicit migration validation.
 
 ### First 30 Minutes: Explicit Endpoints, Macro-Assisted
 
-The following API uses the released 5.x contract. For the previous 4.x API,
-start with the 4.0 release and migration documents instead.
+The following examples use the approved 6.0 contract. For the previous 5.x or
+4.x API, consult the corresponding tag and migration documents instead.
 
 ```swift
 import Foundation
@@ -1205,9 +1205,9 @@ examples.
 
 ## Stability
 
-Public releases follow semantic versioning. `5.1.0` is the latest tagged
-stable release; `5.0.0` remains the compatibility baseline for the 5.x
-contract. `6.0.0` remains an unreleased compatibility-reset draft.
+Public releases follow semantic versioning. `6.0.0` is the approved
+compatibility-reset baseline for 6.x; `5.0.0` remains the compatibility
+baseline for the 5.x contract. Approval and publication are separate states.
 
 - Stable public API: [API_STABILITY.md](API_STABILITY.md)
 - Release rules and compatibility policy: [docs/RELEASE_POLICY.md](docs/RELEASE_POLICY.md)
@@ -1392,7 +1392,7 @@ Operational items to verify before shipping a client built on InnoNetwork.
 - 5.0 Migration Guide: [docs/Migration-5.0.0.md](docs/Migration-5.0.0.md)
 - 5.1 Release Notes: [docs/releases/5.1.0.md](docs/releases/5.1.0.md)
 - 6.0 Migration Guide: [docs/Migration-6.0.0.md](docs/Migration-6.0.0.md)
-- Draft 6.0 Release Notes: [docs/releases/6.0.0.md](docs/releases/6.0.0.md)
+- 6.0 Release Notes: [docs/releases/6.0.0.md](docs/releases/6.0.0.md)
 - Alamofire Migration Cookbook: [docs/MigrationFromAlamofire.md](docs/MigrationFromAlamofire.md)
 - Moya Migration Cookbook: [docs/MigrationFromMoya.md](docs/MigrationFromMoya.md)
 - DocC Deployment: [docs/DocC_Deployment.md](docs/DocC_Deployment.md)

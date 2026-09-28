@@ -52,9 +52,9 @@ public struct UploadResourcePolicy: Sendable, Equatable {
 /// Configures file-upload transport, response buffering, and event delivery.
 ///
 /// The configuration is an opaque command. Use ``safeDefaults()`` for a
-/// foreground session, ``advanced(allowsCellularAccess:maximumResponseBytes:acceptableStatusCodes:eventDeliveryPolicy:eventMetricsReporter:)``
+/// foreground session, ``advanced(allowsCellularAccess:maximumResponseBytes:acceptableStatusCodes:eventDeliveryPolicy:eventMetricsReporter:resourcePolicy:)``
 /// for a tuned foreground session, or
-/// ``background(sessionIdentifier:sharedContainerIdentifier:allowsCellularAccess:maximumResponseBytes:acceptableStatusCodes:eventDeliveryPolicy:eventMetricsReporter:)``
+/// ``background(sessionIdentifier:sharedContainerIdentifier:allowsCellularAccess:maximumResponseBytes:acceptableStatusCodes:eventDeliveryPolicy:eventMetricsReporter:resourcePolicy:)``
 /// for process-independent transfer continuation.
 public struct UploadConfiguration: Sendable {
     package enum SessionMode: Sendable, Equatable {

@@ -19,11 +19,11 @@ are snapshotted separately; every remaining consumer declaration defaults to
 Provisionally Stable. A new public symbol therefore cannot silently inherit a
 Stable compatibility promise.
 
-## Current sizes (InnoNetwork 6 development baseline)
+## Current sizes (InnoNetwork 6.0.0 release baseline)
 
-The 5.0.0 release baseline remains the compatibility reference for the
-currently tagged 5.x line; this table tracks the approved unified 6.0 scope
-with 1,700 public declarations in the root package.
+This table is the approved unified 6.0 compatibility baseline with
+1,700 public declarations in the root package. Readiness does not prove publication;
+the 5.0.0 baseline remains the compatibility reference for the 5.x line.
 
 | Product | Public declarations |
 |---|---:|
