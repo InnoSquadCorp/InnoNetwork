@@ -98,7 +98,7 @@ fixture="$work_dir/archive-fixture"
 archive_origin="$work_dir/archive-origin.git"
 archive_ref=refs/heads/benchmark-baselines/json-6.0
 mkdir -p "$fixture/Sources/InnoNetwork/JSON" "$fixture/Scripts" "$fixture/Benchmarks/Baselines"
-git -C "$fixture" init -q
+git -C "$fixture" init -q --initial-branch original
 git -C "$fixture" config user.name 'Benchmark Fixture'
 git -C "$fixture" config user.email 'fixture@example.invalid'
 printf '// preserved JSON fixture\n' > "$fixture/Sources/InnoNetwork/JSON/PreservedJSON.swift"
