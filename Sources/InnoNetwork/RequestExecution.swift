@@ -177,6 +177,8 @@ package struct APISingleRequestExecutable<Base: APIDefinition>: SingleRequestExe
             return .queryItems(try encodeQueryItems(parameters, encoder: encoder, rootKey: rootKey))
         case .json(let encoder):
             return .data(try encoder.encode(parameters))
+        case .preservedJSON(let limits):
+            return .data(try PreservedJSONCoding.encode(parameters, limits: limits))
         case .formURLEncoded(let encoder, let rootKey):
             return .data(try encodeForm(parameters, encoder: encoder, rootKey: rootKey))
         }

@@ -127,4 +127,38 @@ struct PreservedJSONCodingTests {
         let encoded = try PreservedJSONCoding.encode(values)
         #expect(try PreservedJSONCoding.decode([Int].self, from: encoded) == values)
     }
+
+    @Test("Custom response decoding failures retain response context and cancellation semantics")
+    func customDecodeBoundary() throws {
+        let response = Response(
+            statusCode: 200, data: Data("{}".utf8),
+            response: HTTPURLResponse(
+                url: URL(string: "https://example.com")!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+        let invalid = TransportPolicy<Int>.custom(encoding: .none) { _, _ in
+            throw JSONProcessingError.noMatchingSchema
+        }
+        do {
+            _ = try invalid.responseDecoder.decode(data: response.data, response: response)
+            Issue.record("Validation failure was accepted")
+        } catch NetworkError.decoding(let stage, _, let context) {
+            #expect(stage == .responseBody)
+            #expect(context == response)
+        }
+        if case .custom(let decode) = invalid.responseDecoding {
+            #expect(throws: NetworkError.self) { try decode(response.data, response) }
+        } else {
+            Issue.record("Lost custom decoding strategy")
+        }
+        let canceled = TransportPolicy<Int>.custom(encoding: .none) { _, _ in throw CancellationError() }
+        #expect(throws: CancellationError.self) {
+            try canceled.responseDecoder.decode(data: Data(), response: response)
+        }
+        let explicit = TransportPolicy<Int>.custom(encoding: .none) { _, _ in
+            throw NetworkError.configuration(reason: .invalidRequest("fixture"))
+        }
+        do {
+            _ = try explicit.responseDecoder.decode(data: Data(), response: response)
+            Issue.record("Explicit network error was accepted")
+        } catch NetworkError.configuration {}
+    }
 }

@@ -89,9 +89,7 @@ extension CodeGenerator {
     }
 
     func normalizedSchema(_ schema: Schema, schemas: [String: Schema], expanding: Set<String>) throws -> Schema {
-        guard schema.anyOf == nil else {
-            throw GenerationError.unsupportedSchema("anyOf is ambiguous; use a named discriminated oneOf")
-        }
+        if schema.anyOf != nil { try validateAnyOfShape(schema) }
         if let reference = schema.ref { _ = try referenceName(reference, schemas: schemas) }
         if schema.oneOf != nil {
             guard schema.discriminator != nil, schema.allOf == nil, schema.properties == nil else {
@@ -117,7 +115,8 @@ extension CodeGenerator {
                     expanded = schemas[name]!
                 }
                 let normalized = try normalizedSchema(expanded, schemas: schemas, expanding: visited)
-                guard normalized.ref == nil, normalized.oneOf == nil, normalized.nullable != true,
+                guard normalized.ref == nil, normalized.oneOf == nil, normalized.anyOf == nil,
+                    normalized.nullable != true,
                     normalized.type == "object" || (normalized.type == nil && normalized.properties != nil)
                 else { throw GenerationError.unsupportedSchema("allOf branch is not an object") }
                 for (name, value) in normalized.properties ?? [:] {

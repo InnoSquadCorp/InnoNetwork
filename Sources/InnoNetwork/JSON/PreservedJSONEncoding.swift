@@ -108,7 +108,8 @@ struct JSONValueEncoder: Encoder {
                 if index > 0 { try append(Data([44]), to: &data) }
                 try append(JSONEncoder().encode(key), to: &data)
                 try append(Data([58]), to: &data)
-                try render(members[key]!, into: &data, depth: depth + 1)
+                guard let member = members[key] else { throw JSONProcessingError.invalidJSON }
+                try render(member, into: &data, depth: depth + 1)
             }
             try append(Data([125]), to: &data)
         case .array(let storage):
@@ -170,7 +171,7 @@ private struct JSONKeyedEncoder<Key: CodingKey>: KeyedEncodingContainerProtocol 
         encoder.child(key).unkeyedContainer()
     }
     mutating func superEncoder(forKey key: Key) -> any Encoder { encoder.child(key) }
-    mutating func superEncoder() -> any Encoder { encoder.child(JSONIndexKey(stringValue: "super")!) }
+    mutating func superEncoder() -> any Encoder { encoder.child(JSONIndexKey("super")) }
 }
 
 private struct JSONUnkeyedEncoder: UnkeyedEncodingContainer {

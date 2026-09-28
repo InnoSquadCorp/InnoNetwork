@@ -57,6 +57,26 @@ xcrun swiftc -parse-as-library -I "$bin_path" -I "$bin_path/Modules" \
   -o "$test_dir/security-runtime"
 "$test_dir/security-runtime"
 
+anyof="$test_dir/anyof"
+xcrun swift run --package-path "$tool_dir" openapi-to-innonetwork \
+  --input "$fixtures/anyof.json" --output "$anyof" --module-name AnyOf
+xcrun swift run --package-path "$tool_dir" openapi-to-innonetwork \
+  --input "$fixtures/anyof.json" --output "$test_dir/anyof-again" --module-name AnyOf
+diff -ru "$anyof" "$test_dir/anyof-again"
+xcrun swiftc -swift-version 6 -typecheck -I "$bin_path" -I "$bin_path/Modules" "$anyof"/*.swift
+xcrun swiftc -swift-version 6 -parse-as-library -I "$bin_path" -I "$bin_path/Modules" \
+  "$anyof"/*.swift "$fixtures/anyof-runtime.swift" "${core_objects[@]}" \
+  -o "$test_dir/anyof-runtime"
+"$test_dir/anyof-runtime"
+if xcrun swift run --package-path "$tool_dir" openapi-to-innonetwork \
+  --input "$fixtures/anyof-unsupported.json" --output "$test_dir/unsupported-anyof" \
+  > "$test_dir/unsupported.stdout" 2> "$test_dir/unsupported.stderr"; then
+  echo 'Generator silently discarded an anyOf constraint.' >&2
+  exit 1
+fi
+grep -Fq 'anyOf cannot validate keywords: minimum' "$test_dir/unsupported.stderr"
+test ! -e "$test_dir/unsupported-anyof"
+
 if xcrun swift run --package-path "$tool_dir" openapi-to-innonetwork \
   --input "$fixtures/colliding-operation-names.json" \
   --output "$test_dir/collision" \

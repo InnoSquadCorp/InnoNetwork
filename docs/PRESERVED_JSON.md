@@ -3,6 +3,10 @@
 `PreservedJSON`, `PreservedJSONCoding`, `JSONSchema`, `JSONProcessingLimits`, and
 `JSONProcessingError` are Provisionally Stable, opt-in contracts. Existing JSON
 transports and the Stable `@APIDefinition` macro are unchanged by this foundation.
+Generator integration adds `RequestEncodingPolicy.preservedJSON(limits:)` for
+body-capable methods. Existing `.json` behavior is unchanged. The custom response
+transport now wraps unexpected decoding errors with response context, preserving
+explicit `NetworkError` and `CancellationError` values.
 
 ## Wire fidelity
 
@@ -62,3 +66,17 @@ roundtrips, invalid input, duplicate/Unicode boundaries, zero/one/multiple match
 integer mathematics, limits, nested Codable containers, ordinary scalar controls,
 unsupported codecs, recursive container limits and 10,000-element accumulation.
 This is foundation evidence, not final release/consumer acceptance.
+
+## Generated anyOf usage
+
+```swift
+let choice = try Choice(json: PreservedJSON(data: receivedBytes))
+let allMatches = choice.matchingBranches
+let identifierView = try choice.asBranch0() // nil when branch 0 did not match
+let wireBytes = try PreservedJSONCoding.encode(choice)
+```
+
+JSON and match sets are immutable: changes require a new validated wrapper.
+Typed views never replace its wire representation. Use the generated endpoint
+or dedicated codec, not ordinary `JSONEncoder`. Generated defaults use the limits
+above; custom lower transport limits can reject an otherwise valid document.

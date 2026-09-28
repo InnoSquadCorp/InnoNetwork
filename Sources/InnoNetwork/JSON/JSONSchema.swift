@@ -97,7 +97,7 @@ private struct JSONSchemaValidator {
                 if members[name] == nil { return false }
             }
             for name in members.keys.sorted() {
-                let value = members[name]!
+                guard let value = members[name] else { throw JSONProcessingError.invalidJSON }
                 try charge(depth: depth)
                 if let child = properties[name] {
                     if try !matches(child, node: value, depth: depth + 1) { return false }

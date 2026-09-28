@@ -34,8 +34,8 @@ must fail generation, not be silently ignored.
 | API key | PASS, `52e372f` | missing/conflicting key, header then explicit query/cookie, redirects |
 | OAuth scope | PASS, `ae19c7d` | exact scopes, unknown metadata, expiry, isolated refresh, no escalation |
 | AND/OR authentication | PASS, `52e372f` / `ae19c7d` | atomic AND, explicit OR choice, anonymous alternative, retry identity |
-| preserved JSON and bounded validator | implemented, local foundation validation below | number precision, unknown fields, depth/work limits |
-| named local-reference anyOf | pending | zero/one/multiple matches, encode validation, typed views |
+| preserved JSON and bounded validator | PASS, `f00e430` | number precision, unknown fields, depth/work limits |
+| named local-reference anyOf | implemented, focused validation below | zero/one/multiple matches, encode validation, typed views |
 | final release preflight/consumers | pending | final revision, all local gates; remote/device gates separate |
 
 Each generator stage requires parser diagnostics, deterministic output, actual
@@ -44,6 +44,25 @@ The optional proposal appendix (external refs, full 3.1, Basic/OIDC login,
 non-JSON responses, etc.) is not implicitly claimed as implemented by these stages.
 
 ## External acceptance boundaries
+
+### Named anyOf integration, 2026-09-28
+
+Generated wrappers preserve every match, expose immutable JSON and throwing typed
+views, and revalidate encoding. Strict OpenAPI 3.0 validation IR rejects unknown
+constraints, non-boolean additionalProperties, ref siblings, formats and recursive
+graphs. Nested models/arrays, API-key requests and 204 outputs use the preserved
+codec. The generated fixture passes 4 actual URLSession/URLProtocol requests plus
+zero/one/multiple-match, numeric-range and exact-body roundtrip checks; the legacy
+credential fixture still passes 10 requests. Generated anyOf output is checked
+twice for determinism and compiled in Swift 6 mode.
+
+Integration found that custom decoder errors lacked promised response context.
+`TransportPolicy.custom` now wraps unexpected errors as decoding failures, while
+preserving cancellation and explicit NetworkError; focused tests cover all three.
+The one new Stable encoding case brings the inventory to 1,691 / Stable 307 /
+Provisional 1,351 / SPI 33; existing Stable declarations and macro are unchanged.
+Logs: `/tmp/innonetwork6-anyof-output-final.log`,
+`/tmp/innonetwork6-anyof-core-final.log`. Full final-revision gates remain separate.
 
 ### Preserved JSON foundation, 2026-09-28
 

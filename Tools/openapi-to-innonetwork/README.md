@@ -22,7 +22,7 @@ and tracks the remaining surface for follow-up work:
 | Schema property types | ✅ string / integer / number / boolean / array / `$ref` (incl. format hints: `int64`, `date-time`, `uri`) |
 | Session authentication | ✅ Root/operation HTTP bearer requirements → required, optional or anonymous; unsupported requirements fail generation |
 | Named credentials | ✅ Header API key, opt-in query/cookie, bearer and scoped OAuth AND/OR via application-owned provider |
-| Schema composition | ✅ Object `allOf`, named discriminated `oneOf`, nullable scalar/reference properties; see restrictions below |
+| Schema composition | ✅ Object `allOf`, named discriminated `oneOf`, preserved named-reference `anyOf`, nullable properties; see restrictions below |
 | Path templating (`/users/{id}`) | ✅ Required scalar simple-style arguments, independently percent-encoded |
 | SPI integration | ⚠️ not used; the standard `APIDefinition` surface is the integration point |
 
@@ -74,11 +74,25 @@ boundaries are enforced at generation time, not silently degraded.
   tag does not match its case. Explicit mappings or component names are supported.
 - Nullable properties become optionals. Required nullable keys must still be
   present during decoding and are encoded as explicit null when nil. Nullable
-  component roots/items, inline compositions, nondiscriminated `oneOf` and
-  `anyOf` fail. Ordinary unstructured object properties retain `AnyCodable`.
+  component roots/items, inline compositions and nondiscriminated `oneOf` fail.
+  Ordinary unstructured object properties retain `AnyCodable`.
+- OpenAPI 3.0 named `anyOf` components accept 2...32 distinct local-reference
+  branches. Wrappers retain `json: PreservedJSON` and all `matchingBranches`
+  indices; `asBranch0()`, etc. return optional, throwing typed views. Zero matches
+  fail; encoding revalidates the immutable document. Swift numeric range conversion
+  can fail in a view without changing its raw document. Nested models/arrays and
+  generated operations automatically use the preserved codec, including credential
+  authentication, JSON request bodies and 204 outputs.
+- The anyOf graph supports explicit primitive types, object properties, required
+  and nullable fields, boolean additionalProperties, and homogeneous arrays.
+  Unknown keywords (including enum, bounds, patterns), formats, non-boolean
+  additionalProperties, ref siblings, recursive graphs, allOf/oneOf within the
+  validation graph, inline alternatives and the 3.1 dialect fail generation before
+  writing files. Graph depth is below 32; expansion/property-name work is at most
+  4,096. See [runtime limits and wire fidelity](../../docs/PRESERVED_JSON.md).
 - Generated Codable models are serialization models, not a complete JSON Schema
   validator (numeric bounds, patterns, additional-property constraints and all
-  schema keywords are not enforced). Server variables, non-JSON content and
+  schema keywords are not enforced outside the explicit anyOf graph). Server variables, non-JSON content and
   general OpenAPI 3.1/JSON Schema coverage are outside this preview.
 
 ### Compatibility note

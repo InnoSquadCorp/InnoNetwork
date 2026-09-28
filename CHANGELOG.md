@@ -20,7 +20,14 @@ The previously planned 6.1 candidates are included in this 6.0 release scope.
   VCR dynamically redacts declared credential slots and forwards request context.
 - Preview OpenAPI output connects API-key and multiple-auth requirements to
   that provider contract, retaining root inheritance, overrides and anonymous
-  alternatives, including scoped OAuth bearer. Preserved JSON/`anyOf` remain pending.
+  alternatives, including scoped OAuth bearer.
+- Provisionally Stable exact-byte preserved JSON, document-aware Codable and
+  bounded schema validation retain arbitrary numeric tokens and unknown fields.
+  Preview named local-reference `anyOf` models expose every matching branch and
+  throwing typed views, including nested models and authenticated request bodies.
+  Unsupported constraints and recursive graphs fail before output is written.
+- `RequestEncodingPolicy.preservedJSON(limits:)` is an explicit 6.0 encoding
+  choice; exhaustive switches over the Stable enum must handle the added case.
 - Scoped OAuth validates exact grants and expiry, supports one identity-bound
   renewal per logical request, and isolates bounded in-flight renewal by
   configuration, scheme, scopes and principal. GET/HEAD may replay one explicit
@@ -43,7 +50,9 @@ The previously planned 6.1 candidates are included in this 6.0 release scope.
 - The preview generator preserves security requirements in a bounded non-secret
   IR and rejects distinct bearer alternatives on the legacy session path rather
   than erasing the identity choice. Extended requirements now use the separate
-  provider path; OAuth scope/refresh remains gated.
+  provider path, including scoped OAuth and isolated renewal.
+- Custom response transports classify unexpected decoding errors with response
+  context while retaining explicit network errors and cancellation.
 - VCR recording, replay identity, and mismatch diagnostics remove URL
   user-info and fragments. Legacy cassette URLs normalize in memory while
   preserving sequential replay; fixture files require an explicit resave.

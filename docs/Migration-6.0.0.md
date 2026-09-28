@@ -5,11 +5,19 @@ This guide describes the unreleased InnoNetwork 6.0 draft. There is no
 notes are marked ready and the tag is published.
 
 The previously planned 6.1 candidates are included in this 6.0 release scope.
-The unified baseline contains 1,690 public declarations. `@APIDefinition`
+The unified baseline contains 1,691 public declarations. `@APIDefinition`
 remains Stable; the advanced additions below retain their Provisionally
 Stable classifications.
 
 ## Named request credentials (opt-in)
+
+The new `RequestEncodingPolicy.preservedJSON(limits:)` case supports generated
+anyOf bodies. Exhaustive switches over this Stable enum must handle the new 6.0
+case. Existing `.json` endpoints are unchanged. Preserved models must use
+`PreservedJSONCoding`; Foundation codecs fail explicitly. This adds one Stable
+case without changing the Stable macro. Custom response decoder failures now
+carry `NetworkError.decoding` response context; explicit network errors and
+cancellation retain their identity. See [the detailed contract](PRESERVED_JSON.md).
 
 Existing `SessionAuthentication` and `@APIDefinition` declarations need no
 migration. New API-key and explicit AND/OR endpoints additionally conform to

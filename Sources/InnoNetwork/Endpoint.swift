@@ -272,6 +272,10 @@ extension EndpointBuilder where Response == EmptyResponse {
         switch transport.requestEncoding {
         case .json(let encoder):
             return .json(encoder: encoder)
+        case .preservedJSON(let limits):
+            return .custom(encoding: .preservedJSON(limits: limits)) { data, _ in
+                try PreservedJSONCoding.decode(T.self, from: data, limits: limits)
+            }
         case .query(let encoder, let rootKey):
             return .query(encoder: encoder, rootKey: rootKey)
         case .formURLEncoded(let encoder, let rootKey):
@@ -333,7 +337,7 @@ extension RequestEncodingPolicy {
     /// an encoded request body exists.
     var contentTypeHeader: String? {
         switch self {
-        case .json:
+        case .json, .preservedJSON:
             return "\(ContentType.json.rawValue); charset=UTF-8"
         case .formURLEncoded:
             return "\(ContentType.formUrlEncoded.rawValue); charset=UTF-8"

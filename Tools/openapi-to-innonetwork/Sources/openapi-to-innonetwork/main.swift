@@ -102,11 +102,16 @@ enum GenerationError: Error, CustomStringConvertible {
 // MARK: - OpenAPI subset model
 
 struct OpenAPIDocument: Decodable, Equatable {
+    var openapi: String?
     var paths: [String: PathItem]
     var components: Components?
     var security: [[String: [String]]]?
 
-    init(paths: [String: PathItem], components: Components? = nil, security: [[String: [String]]]? = nil) {
+    init(
+        paths: [String: PathItem], components: Components? = nil, security: [[String: [String]]]? = nil,
+        openapi: String? = nil
+    ) {
+        self.openapi = openapi
         self.paths = paths
         self.components = components
         self.security = security
@@ -230,6 +235,8 @@ struct Schema: Decodable, Equatable {
     var anyOf: [Schema]?
     var nullable: Bool?
     var discriminator: Discriminator?
+    var additionalProperties: Bool?
+    var unsupportedValidationKeywords: Set<String> = []
 
     enum CodingKeys: String, CodingKey {
         case ref = "$ref"
@@ -239,6 +246,7 @@ struct Schema: Decodable, Equatable {
         case items
         case format
         case allOf, oneOf, anyOf, nullable, discriminator
+        case additionalProperties
     }
 
     init(
@@ -252,7 +260,9 @@ struct Schema: Decodable, Equatable {
         oneOf: [Schema]? = nil,
         anyOf: [Schema]? = nil,
         nullable: Bool? = nil,
-        discriminator: Discriminator? = nil
+        discriminator: Discriminator? = nil,
+        additionalProperties: Bool? = nil,
+        unsupportedValidationKeywords: Set<String> = []
     ) {
         self.ref = ref
         self.type = type
@@ -265,7 +275,45 @@ struct Schema: Decodable, Equatable {
         self.anyOf = anyOf
         self.nullable = nullable
         self.discriminator = discriminator
+        self.additionalProperties = additionalProperties
+        self.unsupportedValidationKeywords = unsupportedValidationKeywords
     }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.ref = try container.decodeIfPresent(String.self, forKey: .ref)
+        self.type = try container.decodeIfPresent(String.self, forKey: .type)
+        self.properties = try container.decodeIfPresent([String: Schema].self, forKey: .properties)
+        self.required = try container.decodeIfPresent([String].self, forKey: .required)
+        self.items = try container.decodeIfPresent(Box<Schema>.self, forKey: .items)
+        self.format = try container.decodeIfPresent(String.self, forKey: .format)
+        self.allOf = try container.decodeIfPresent([Schema].self, forKey: .allOf)
+        self.oneOf = try container.decodeIfPresent([Schema].self, forKey: .oneOf)
+        self.anyOf = try container.decodeIfPresent([Schema].self, forKey: .anyOf)
+        self.nullable = try container.decodeIfPresent(Bool.self, forKey: .nullable)
+        self.discriminator = try container.decodeIfPresent(Discriminator.self, forKey: .discriminator)
+        self.additionalProperties = try? container.decode(Bool.self, forKey: .additionalProperties)
+        let keys = try decoder.container(keyedBy: SchemaKeyword.self).allKeys.map(\.stringValue)
+        let supported: Set<String> = [
+            "$ref", "type", "properties", "required", "items", "format", "allOf", "oneOf",
+            "anyOf", "nullable", "discriminator", "additionalProperties", "title", "description", "example",
+            "deprecated", "externalDocs",
+        ]
+        self.unsupportedValidationKeywords = Set(keys).subtracting(supported)
+        if container.contains(.additionalProperties), additionalProperties == nil {
+            unsupportedValidationKeywords.insert("additionalProperties (non-boolean)")
+        }
+        for key in container.allKeys where try container.decodeNil(forKey: key) {
+            unsupportedValidationKeywords.insert("\(key.rawValue) (null)")
+        }
+    }
+}
+
+private struct SchemaKeyword: CodingKey {
+    let stringValue: String
+    var intValue: Int? { nil }
+    init?(stringValue: String) { self.stringValue = stringValue }
+    init?(intValue: Int) { return nil }
 }
 
 struct Discriminator: Decodable, Equatable {
@@ -327,6 +375,8 @@ struct CodeGenerator {
         "Equatable", "Float", "HTTPMethod", "Int", "Int64", "Sendable",
         "SessionAuthentication", "String", "URL", "EndpointPathEncoding", "EncodingError",
         "RequestSecurityProviding", "RequestSecurity", "RequestCredentialProvider",
+        "PreservedJSON", "PreservedJSONCoding", "JSONSchema", "JSONProcessingLimits", "JSONProcessingError",
+        "TransportPolicy",
     ]
 
     func generate(from document: OpenAPIDocument) throws -> [GeneratedFile] {
@@ -339,7 +389,12 @@ struct CodeGenerator {
                 let schema = try normalizedSchema(schema, schemas: schemas, expanding: [name])
                 let typeName = sanitize(name)
                 try reserveGeneratedName(typeName, source: "schema '\(name)'", in: &generatedNames)
-                if schema.oneOf != nil {
+                if schema.anyOf != nil {
+                    if let version = document.openapi, !version.hasPrefix("3.0.") {
+                        throw GenerationError.unsupportedSchema("anyOf currently supports the OpenAPI 3.0 dialect only")
+                    }
+                    files.append(try renderAnyOf(name: typeName, schema: schema, schemas: schemas))
+                } else if schema.oneOf != nil {
                     files.append(try renderUnion(name: typeName, schema: schema, schemas: schemas))
                 } else {
                     files.append(try renderSchema(name: typeName, schema: schema))
@@ -374,12 +429,16 @@ struct CodeGenerator {
                     schemes: document.components?.securitySchemes ?? [:]
                 )
                 let legacyAuthentication = try? security.legacySessionAuthentication()
+                var preservesJSON = false
+                for schema in operationSchemas.compactMap({ $0 }) {
+                    if try containsAnyOf(schema, schemas: document.components?.schemas ?? [:]) { preservesJSON = true }
+                }
                 files.append(
                     try renderOperation(
                         typeName: typeName, method: method, path: path, op: op,
                         pathParameters: item.parameters ?? [],
                         authentication: legacyAuthentication ?? "anonymous",
-                        security: legacyAuthentication == nil ? security : nil))
+                        security: legacyAuthentication == nil ? security : nil, preservesJSON: preservesJSON))
             }
         }
         return files
@@ -578,7 +637,8 @@ struct CodeGenerator {
 
     func renderOperation(
         typeName: String, method: String, path: String, op: Operation,
-        pathParameters: [PathParameter], authentication: String, security: SecurityIR? = nil
+        pathParameters: [PathParameter], authentication: String, security: SecurityIR? = nil,
+        preservesJSON: Bool = false
     ) throws -> GeneratedFile {
         // A template without declared parameters must never become a literal
         // endpoint. Fully declared scalar parameters are bound below.
@@ -620,6 +680,10 @@ struct CodeGenerator {
         let boundPath = try bindPath(path, inherited: pathParameters, operation: op.parameters ?? [])
         let parameter = op.requestBody?.content?["application/json"]?.schema
         let parameterType = parameter.flatMap { swiftTypeName(for: $0, fallback: nil) } ?? "EmptyParameter"
+        if preservesJSON, parameterType != "EmptyParameter", ["GET", "HEAD", "TRACE"].contains(method.uppercased()) {
+            throw GenerationError.unsupportedSchema(
+                "Preserved JSON operation bodies require a body-capable HTTP method")
+        }
 
         // 200/201 carry a body and map to their JSON schema. 202 (Accepted)
         // and 204 (No Content) — RFC 9110 §15.3.3 / §15.3.5 — expressly do
@@ -678,6 +742,20 @@ struct CodeGenerator {
         lines.append("    public var path: String { \"\(boundPath.literal)\" }")
         // Emit the validated security contract explicitly.
         lines.append("    public var sessionAuthentication: SessionAuthentication { .\(authentication) }")
+        if preservesJSON {
+            let encoding = parameterType == "EmptyParameter" ? ".none" : ".preservedJSON(limits: .init())"
+            lines += [
+                "    public var transport: TransportPolicy<APIResponse> {",
+                "        .custom(encoding: \(encoding)) { data, response in",
+            ]
+            if responseType == "EmptyResponse" {
+                lines.append("            if data.isEmpty || response.statusCode == 204 { return EmptyResponse() }")
+            }
+            lines += [
+                "            return try PreservedJSONCoding.decode(APIResponse.self, from: data)",
+                "        }", "    }",
+            ]
+        }
         lines.append("")
         var initParameters = boundPath.arguments.map { "\($0.name): \($0.type)" }
         if security != nil {

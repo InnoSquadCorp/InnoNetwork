@@ -1,0 +1,25 @@
+{
+  "openapi": "3.0.3",
+  "components": {
+    "securitySchemes": {"key": {"type": "apiKey", "in": "header", "name": "X-Fixture-Key"}},
+    "schemas": {
+      "IdentifierView": {"type": "object", "required": ["id"], "properties": {"id": {"type": "integer"}}},
+      "LabelView": {"type": "object", "required": ["name"], "properties": {"name": {"type": "string"}}},
+      "Choice": {"anyOf": [{"$ref": "#/components/schemas/IdentifierView"}, {"$ref": "#/components/schemas/LabelView"}]},
+      "ChoiceEnvelope": {"type": "object", "required": ["value", "list"], "properties": {
+        "value": {"$ref": "#/components/schemas/Choice"}, "list": {"type": "array", "items": {"$ref": "#/components/schemas/Choice"}}
+      }},
+      "WholeNumber": {"type": "integer"}, "RealNumber": {"type": "number"},
+      "NumericChoice": {"anyOf": [{"$ref": "#/components/schemas/WholeNumber"}, {"$ref": "#/components/schemas/RealNumber"}]}
+    }
+  },
+  "paths": {
+    "/choice": {"post": {"operationId": "sendChoice", "security": [{"key": []}],
+      "requestBody": {"content": {"application/json": {"schema": {"$ref": "#/components/schemas/Choice"}}}},
+      "responses": {"200": {"content": {"application/json": {"schema": {"$ref": "#/components/schemas/Choice"}}}}}
+    }},
+    "/envelope": {"get": {"operationId": "readEnvelope", "responses": {"200": {"content": {"application/json": {"schema": {"$ref": "#/components/schemas/ChoiceEnvelope"}}}}}}},
+    "/accepted": {"post": {"operationId": "acceptChoice", "requestBody": {"content": {"application/json": {"schema": {"$ref": "#/components/schemas/Choice"}}}}, "responses": {"204": {}}}},
+    "/invalid": {"get": {"operationId": "invalidChoice", "responses": {"200": {"content": {"application/json": {"schema": {"$ref": "#/components/schemas/Choice"}}}}}}}
+  }
+}

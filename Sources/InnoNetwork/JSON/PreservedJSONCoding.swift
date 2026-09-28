@@ -57,6 +57,10 @@ final class JSONCodingContext {
 struct JSONIndexKey: CodingKey {
     let stringValue: String
     let intValue: Int?
+    init(_ name: String) {
+        stringValue = name
+        intValue = nil
+    }
     init(_ index: Int) {
         stringValue = String(index)
         intValue = index
@@ -179,7 +183,7 @@ private struct JSONKeyedDecoder<Key: CodingKey>: KeyedDecodingContainerProtocol 
     func superDecoder(forKey key: Key) throws -> any Decoder { try child(key) }
     func superDecoder() throws -> any Decoder {
         guard let node = members["super"] else { throw JSONProcessingError.invalidJSON }
-        return decoder.child(node, key: JSONIndexKey(stringValue: "super")!)
+        return decoder.child(node, key: JSONIndexKey("super"))
     }
 }
 

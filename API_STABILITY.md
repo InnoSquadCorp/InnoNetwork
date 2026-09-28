@@ -44,6 +44,10 @@ use `nil` or an empty observer collection instead of public no-op helper types.
 `NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:)`
 and own application reducer types in their feature or architecture layer.
 
+The 6.0 `RequestEncodingPolicy.preservedJSON(limits:)` case is an intentional
+Stable enum addition: exhaustive switches must handle it. The preserved model,
+codec and schema types remain Provisionally Stable.
+
 ## Stable
 
 - `APIDefinition`
@@ -579,8 +583,8 @@ below keeps the high-level compatibility classification readable. Historical
 5.x HLS sections document the migration source but are no longer included in
 the current machine-checked inventory.
 
-The machine-checked snapshot currently partitions all 1,690 declarations into
-306 Stable consumer declarations, 1,351 Provisionally Stable consumer
+The machine-checked snapshot currently partitions all 1,691 declarations into
+307 Stable consumer declarations, 1,351 Provisionally Stable consumer
 declarations, and 33 opt-in SPI declarations. The three sets are disjoint and
 exhaustive. `Scripts/symbols/stable-rules.tsv` maps the Stable ledger to symbol
 paths, while the compiler-authored SPI flag is snapshotted in

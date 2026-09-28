@@ -1122,3 +1122,4 @@ InnoNetwork	swift.struct	PreservedJSON
 InnoNetwork	swift.type.method	JSONSchema.matchingAlternatives(_:document:limits:)
 InnoNetwork	swift.type.method	PreservedJSONCoding.decode(_:from:limits:)
 InnoNetwork	swift.type.method	PreservedJSONCoding.encode(_:limits:)
+InnoNetwork	swift.enum.case	RequestEncodingPolicy.preservedJSON(limits:)

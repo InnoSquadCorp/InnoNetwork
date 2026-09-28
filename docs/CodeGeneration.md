@@ -27,6 +27,13 @@ requirements fail generation. Object `allOf`, named discriminated `oneOf` and
 nullable properties are supported within the documented subset. Required nullable
 keys preserve present-null versus missing on decode/encode.
 
+Named local-reference `anyOf` components preserve JSON with all matching branch
+indices and throwing typed views, not a first-success enum. Their bounded graph
+rejects unsupported constraints at generation time. Operations containing these
+models opt into `PreservedJSONCoding`, including nested models and request bodies;
+ordinary Foundation codecs explicitly reject preserved values. See
+[the preservation and validation contract](PRESERVED_JSON.md).
+
 Security parsing first preserves scheme identity, exact OAuth scope spelling,
 API-key placement and AND/OR groups in a bounded, non-secret intermediate model.
 The legacy bearer renderer accepts one distinct bearer scheme. API keys,
