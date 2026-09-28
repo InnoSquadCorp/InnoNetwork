@@ -201,3 +201,45 @@ The fixture is renamed to `RecoverySmoke.swift`; no public-library source,
 dependency, recovery behavior or compiler safety flag changes. The original
 failure remains recorded, and final-SHA remote platform validation is required
 after this build-compatibility correction.
+
+The same initial CI also exposed a heartbeat test-ordering race. Advancing the
+test clock did not prove that timeout cancellation had completed before the
+blocked dispatch was released, and checking a zero ping count could pass before
+the dispatch decision. The test now observes the timeout callback, releases the
+gate, and waits for the actual dispatch decision before asserting no ping. An
+internal optional completion observer (nil in production) supplies that final
+barrier without changing dispatch/cancellation policy. The test gate registers
+arrival/continuation atomically and remembers release-before-arrival.
+
+Fresh local follow-up: all 15 heartbeat timing tests passed; a separate copy
+with the cancellation guard deliberately removed failed both no-ping assertions,
+and restoring the guard passed all 15 again. Full serial coverage passed 1,917
+registered tests (1,913 ordinary passes; four opt-in live skips). Recovery fixture,
+format/API/docs contracts, local iOS build and nine-product DocC checks passed.
+The performance and consumer evidence above remains bound to `b1dc8d1`; it is
+not relabelled as a new measurement after these CI follow-ups. The final PR SHA
+must receive new remote checks.
+
+### Consumer snapshot results
+
+The 12 non-HLS app snapshots passed their full app builds: Appbyul, BlPia, Bora,
+CargoAirline, Circe, Echo, Huginn, Ithaca, Pythia, Vulcan, Walden and HaruFit.
+Vulcan used macOS; the others used iOS Simulator. Pythia/Vulcan additionally
+passed explicit CoreNetwork builds because their app paths do not exercise
+that module. HaruFit only declares the dependency and has no active call site;
+its app build is not runtime-adoption evidence. Original HEADs, working-tree
+states and consumer lock files were compared and preserved.
+
+Capto `4efbacf` passed macOS/iOS builds and Domain 2, DesignSystem 1 and Download
+43 tests with this Network candidate, Stream `79489f4`, Flow **5.1.1** and Router
+**5.2.1**. The current local Flow 6 / Router 6.x graph does **not** pass: Capto
+still uses the two-argument Reducer and removed NavigationStore/NavigationHost
+contracts. That separate consumer migration is not silently treated as fixed.
+Canonical fixture paths and explicit temporary manifest paths were necessary
+to avoid Tuist reusing a previous graph; mismatched-graph attempts are excluded
+from the passing evidence. No consumer production source or lock was changed.
+
+Protobuf `9d622d7` passed 17 tests plus its standalone consumer. Stream's host
+suite command passed, with environment-dependent HLS acceptance still excluded.
+Local path-based checks do not prove clean published-tag resolution or that
+any consumer migration has been merged into its remote main.
