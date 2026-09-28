@@ -29,7 +29,7 @@ Local implementation/commits only; publication is a separate gate.
 | 0 | Aggregate retained encoding representation; absent/null/present superclass contracts | 14 focused tests passed; two original regressions failed before implementation (`/tmp/innonetwork-schema-codec-{red,final}.log`) |
 | 1 | Enum, exact number bounds/multipleOf, string/item/property counts; generator/runtime together | 23 focused tests (including 22 parameter cases and 3,775 arithmetic comparisons), 41 generator tests, deterministic generated runtime/typecheck, API/docs gate passed. Logs: `/tmp/innonetwork-schema-{stage1-final,generator-stage1d,generated-stage1-final,api-stage1c}.log`. |
 | 2 | Explicit bounded ECMA-compatible pattern subset, unsupported syntax rejection | 7 focused tests, including 19 pattern cases, 10 rejection cases, 40 ASCII differential comparisons and work exhaustion; 41 generator tests and generated runtime passed (`/tmp/innonetwork-schema-pattern*.log`). |
-| 3 | Immutable local reference plan, productive recursion and cycle rejection | Pending |
+| 3 | Immutable local reference plan, productive recursion and cycle rejection | 10 focused tests, self/mutual/anyOf recursion, 20 concurrent validations, zero-progress rejection; 41 generator tests and recursive generated Swift runtime passed (`/tmp/innonetwork-schema-recursion*.log`). |
 | 4 | Explicit 3.1 dialect, boolean schemas, type/null, ref siblings; support matrix | Pending |
 
 The relevant inventory is core JSON, generator/parser/IR, generated consumers,

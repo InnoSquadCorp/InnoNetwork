@@ -39,6 +39,9 @@ The previously planned 6.1 candidates are included in this 6.0 release scope.
 - Compiled schema patterns use an explicit Unicode-mode ECMA-262 subset with
   bounded non-backtracking execution. Unsupported regex syntax fails generation;
   compiled `format` remains annotation-only.
+- Productive local recursive schemas compile to immutable identity graphs and
+  preserved wrappers; zero-progress cycles fail before generation. Validation
+  remains bounded and independent across concurrent callers.
 - `RequestEncodingPolicy.preservedJSON(limits:)` is an explicit 6.0 encoding
   choice; exhaustive switches over the Stable enum must handle the added case.
 - Scoped OAuth validates exact grants and expiry, supports one identity-bound

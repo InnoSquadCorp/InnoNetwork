@@ -108,6 +108,20 @@ resource control. Unsupported patterns in nonmatching branches still fail
 compilation. `format` is a string annotation only in compiled plans; it does not
 assert email/date/URI validity or transform the preserved wire value.
 
+### Local recursion
+
+Plans compile named local references to stable integer identities in an immutable
+graph. Property/item edges consume an instance child and may recurse. Reference/
+anyOf cycles that make no instance progress are rejected at compilation, even if
+another alternative could match. Validation tracks active schema/instance pairs
+and shares depth/work limits across all branches. Independent calls have no
+shared mutable evaluator state.
+
+Generated recursive components use preserved wrappers, avoiding infinitely sized
+Swift value types. A static `Result` caches each immutable plan; initialization
+errors remain throwing, not force-try crashes. External/file references and
+unresolved or malformed local pointers are rejected without IO.
+
 The strict grammar follows [RFC 8259](https://www.rfc-editor.org/rfc/rfc8259).
 The generator subset uses the [OpenAPI 3.0 Schema Object](https://spec.openapis.org/oas/v3.0.3.html#schema-object),
 not the complete 3.1 dialect. Nullable-required and multiple-match semantics are

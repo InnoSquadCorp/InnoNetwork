@@ -17,5 +17,14 @@ import InnoNetwork
             preconditionFailure("Invalid numeric branch accepted")
         } catch JSONProcessingError.noMatchingSchema {}
         print("Compiled schema constraints: exact bytes and zero/one/multiple branches passed")
+        let recursive = Data(#"{"value":1,"child":{"value":2,"child":"leaf"}}"#.utf8)
+        let tree = try PreservedJSONCoding.decode(RecursiveChoice.self, from: recursive)
+        let treeBytes = try PreservedJSONCoding.encode(tree)
+        precondition(tree.matchingBranches == [0] && treeBytes == recursive)
+        do {
+            _ = try RecursiveChoice(json: PreservedJSON(data: Data(#"{"value":1,"child":{"value":false}}"#.utf8)))
+            preconditionFailure("Invalid recursive branch accepted")
+        } catch JSONProcessingError.noMatchingSchema {}
+        print("Compiled recursive models: finite Swift layout and recursive validation passed")
     }
 }

@@ -25,6 +25,7 @@ public struct JSONSchemaPlan: Sendable {
         }
         let checked = try PreservedJSON(data: schema.data, limits: limits)
         root = try compiler.compile(checked, node: checked.root, depth: 1)
+        try compiler.validateProgress()
         rules = compiler.rules
     }
 
@@ -88,10 +89,11 @@ struct JSONSchemaCompiler {
     var budget: JSONSchemaBudget
     var rules: [JSONSchemaRule] = []
     var named: [String: Int] = [:]
-    var visiting: Set<String> = []
 
-    mutating func compile(_ document: PreservedJSON, node: JSONNode, depth: Int) throws -> Int {
+    mutating func compile(_ document: PreservedJSON, node: JSONNode, depth: Int, reserved: Int? = nil) throws -> Int {
         try budget.charge(depth: depth)
+        let index = reserved ?? rules.count
+        if reserved == nil { rules.append(JSONSchemaRule()) }
         guard case .object(let members) = node.value else { throw JSONProcessingError.invalidSchema }
         let supported: Set<String> = [
             "$ref", "type", "properties", "required", "additionalProperties", "items", "anyOf", "nullable",
@@ -120,17 +122,22 @@ struct JSONSchemaCompiler {
             guard name.hasPrefix(prefix) else { throw JSONProcessingError.unsupportedSchema }
             let key = String(name.dropFirst(prefix.count)).replacingOccurrences(of: "~1", with: "/")
                 .replacingOccurrences(of: "~0", with: "~")
-            guard !visiting.contains(key), let definition = definitions[key] else {
+            // Reject invalid pointer escapes instead of inventing a different name.
+            let token = String(name.dropFirst(prefix.count))
+            guard
+                !token.replacingOccurrences(of: "~0", with: "").replacingOccurrences(of: "~1", with: "").contains("~"),
+                !token.contains("/"), let definition = definitions[key]
+            else {
                 throw JSONProcessingError.unsupportedSchema
             }
             if let existing = named[key] {
                 rule.reference = existing
             } else {
-                visiting.insert(key)
-                let checked = try PreservedJSON(data: definition.data, limits: budget.limits)
-                let value = try compile(checked, node: checked.root, depth: depth + 1)
+                let value = rules.count
+                rules.append(JSONSchemaRule())
                 named[key] = value
-                visiting.remove(key)
+                let checked = try PreservedJSON(data: definition.data, limits: budget.limits)
+                _ = try compile(checked, node: checked.root, depth: depth + 1, reserved: value)
                 rule.reference = value
             }
         }
@@ -202,9 +209,26 @@ struct JSONSchemaCompiler {
                 rule.sizes[key] = value
             }
         }
-        let index = rules.count
-        rules.append(rule)
+        rules[index] = rule
         return index
+    }
+
+    /// Only edges that do not consume an instance child participate here. A
+    /// property/items edge is productive recursion; an alias/anyOf cycle is not.
+    mutating func validateProgress() throws {
+        var finished: Set<Int> = []
+        var active: Set<Int> = []
+        func visit(_ index: Int, depth: Int) throws {
+            try budget.charge(depth: depth)
+            guard !active.contains(index) else { throw JSONProcessingError.unsupportedSchema }
+            if finished.contains(index) { return }
+            active.insert(index)
+            let edges = (rules[index].reference.map { [$0] } ?? []) + (rules[index].anyOf ?? [])
+            for child in edges { try visit(child, depth: depth + 1) }
+            active.remove(index)
+            finished.insert(index)
+        }
+        for index in rules.indices { try visit(index, depth: 1) }
     }
 
     func scalar<T: Decodable>(_ type: T.Type, _ document: PreservedJSON, _ node: JSONNode) throws -> T {
@@ -218,9 +242,17 @@ struct JSONPlanValidator {
     let rules: [JSONSchemaRule]
     let document: PreservedJSON
     var budget: JSONSchemaBudget
+    struct Visit: Hashable {
+        let schema: Int
+        let offset: Int
+    }
+    var active: Set<Visit> = []
 
     mutating func matches(_ index: Int, _ node: JSONNode, depth: Int) throws -> Bool {
         try budget.charge(depth: depth)
+        let visit = Visit(schema: index, offset: node.range.lowerBound)
+        guard active.insert(visit).inserted else { throw JSONProcessingError.invalidSchema }
+        defer { active.remove(visit) }
         let rule = rules[index]
         if let reference = rule.reference, try !matches(reference, node, depth: depth + 1) { return false }
         if let type = rule.type {

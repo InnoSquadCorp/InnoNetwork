@@ -15,9 +15,11 @@ extension CodeGenerator {
             if !visited.contains(name) {
                 return try needsCompiledSchema(schemas[name]!, schemas: schemas, visited: visited.union([name]))
             }
+            return true
         }
         let children =
-            Array((schema.properties ?? [:]).values) + (schema.anyOf ?? []) + (schema.items.map { [$0.value] } ?? [])
+            Array((schema.properties ?? [:]).values) + (schema.anyOf ?? []) + (schema.allOf ?? [])
+            + (schema.oneOf ?? []) + (schema.items.map { [$0.value] } ?? [])
         for child in children { if try needsCompiledSchema(child, schemas: schemas, visited: visited) { return true } }
         return false
     }
@@ -38,9 +40,10 @@ extension CodeGenerator {
             generatedHeader(comment: "Compiled preserved schema \(name)"), "import Foundation", "import InnoNetwork",
             "public struct \(name): Codable, Sendable, Equatable {",
             "    public let json: PreservedJSON",
-            "    private static func plan() throws -> JSONSchemaPlan {",
+            "    private static let compiledPlan: Result<JSONSchemaPlan, any Error> = Result {",
             "        try JSONSchemaPlan(schema: PreservedJSON(data: Data(\"\(sourceLiteral)\".utf8)), definitions: [\(definitionLiterals.isEmpty ? ":" : definitionLiterals)])",
             "    }",
+            "    private static func plan() throws -> JSONSchemaPlan { try compiledPlan.get() }",
         ]
         if schema.anyOf != nil { lines.append("    public let matchingBranches: [Int]") }
         lines += ["    public init(json: PreservedJSON) throws {"]

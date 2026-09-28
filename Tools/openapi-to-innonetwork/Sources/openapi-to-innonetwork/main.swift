@@ -379,7 +379,7 @@ struct CodeGenerator {
         "SessionAuthentication", "String", "URL", "EndpointPathEncoding", "EncodingError",
         "RequestSecurityProviding", "RequestSecurity", "RequestCredentialProvider",
         "PreservedJSON", "PreservedJSONCoding", "JSONSchema", "JSONProcessingLimits", "JSONProcessingError",
-        "TransportPolicy", "JSONSchemaPlan",
+        "TransportPolicy", "JSONSchemaPlan", "Result", "Error",
     ]
 
     func generate(from document: OpenAPIDocument) throws -> [GeneratedFile] {
