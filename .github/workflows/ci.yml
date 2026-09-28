@@ -542,6 +542,9 @@ jobs:
           python3 Scripts/check_example_platform_floors.py
           python3 Scripts/tests/test_check_example_platform_floors.py
           bash Scripts/tests/test_build_consumer_examples.sh
+          ruby Scripts/check_consumer_ci_contract.rb
+          ruby Scripts/tests/test_consumer_ci_contract.rb
+          python3 Scripts/tests/test_consumer_ci.py
           python3 Scripts/check_apple_platform_build_contract.py
           python3 Scripts/tests/test_check_apple_platform_build_contract.py
 
@@ -642,6 +645,24 @@ jobs:
 
   consumer-smoke:
     name: Consumer Smoke
+    # Preserve the protected check name. A skipped/cancelled/failed child is
+    # never a successful aggregate (including when an upstream job fails).
+    needs: [consumer-examples, consumer-macros, consumer-openapi]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Require all consumer lanes to succeed
+        env:
+          CONSUMER_JOB_RESULTS: ${{ toJSON(needs) }}
+        run: python3 Scripts/check_consumer_ci_results.py
+
+  consumer-examples:
+    name: Consumer Examples
     runs-on: macos-15
     timeout-minutes: 45
 
@@ -658,6 +679,11 @@ jobs:
           xcodebuild -version
           xcrun swift --version
 
+      - name: Restore isolated consumer build caches
+        uses: ./.github/actions/consumer-cache
+        with:
+          lane: examples
+
       - name: Verify macro trait manifest and default graph
         run: bash Scripts/check_macro_trait_graphs.sh
 
@@ -672,6 +698,23 @@ jobs:
 
       - name: Run OpenAPI adopter smoke
         run: xcrun swift run --package-path Examples/OpenAPIAdopterSmoke
+
+  consumer-macros:
+    name: Consumer Macros
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_26.0.1.app
+
+      - name: Restore isolated consumer build caches
+        uses: ./.github/actions/consumer-cache
+        with:
+          lane: macros
 
       - name: Test macros from source (with code coverage)
         run: |
@@ -698,6 +741,23 @@ jobs:
           path: .build/coverage-macros/
           if-no-files-found: error
 
+  consumer-openapi:
+    name: Consumer OpenAPI
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_26.0.1.app
+
+      - name: Restore isolated consumer build caches
+        uses: ./.github/actions/consumer-cache
+        with:
+          lane: openapi
+
       - name: Build openapi-to-innonetwork CLI
         working-directory: Tools/openapi-to-innonetwork
         run: xcrun swift build
@@ -711,7 +771,7 @@ jobs:
 
   upload-macro-coverage:
     name: Upload Macro Coverage
-    needs: consumer-smoke
+    needs: consumer-macros
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

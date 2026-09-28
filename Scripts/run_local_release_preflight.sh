@@ -76,7 +76,7 @@ if (( list_only == 1 )); then
   exit 0
 fi
 
-required_commands=(git python3 xcrun)
+required_commands=(git python3 ruby xcrun)
 if [[ "$mode" == "full" ]]; then
   required_commands+=(jq xcodebuild)
 fi
@@ -177,6 +177,9 @@ run_release_script_fixtures() {
   python3 Scripts/check_required_status_checks.py
   python3 Scripts/tests/test_check_required_status_checks.py
   bash Scripts/tests/test_build_consumer_examples.sh
+  ruby Scripts/check_consumer_ci_contract.rb
+  ruby Scripts/tests/test_consumer_ci_contract.rb
+  python3 Scripts/tests/test_consumer_ci.py
   python3 Scripts/tests/test_check_example_platform_floors.py
   python3 Scripts/tests/test_check_apple_platform_build_contract.py
   bash Scripts/tests/test_check_docc_archives.sh

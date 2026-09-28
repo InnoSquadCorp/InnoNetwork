@@ -154,6 +154,57 @@ The `CI` workflow must pass all of the following:
     `Scripts/validate_release_candidate.sh`; they can upload candidate evidence
     but cannot sign artifacts or create a GitHub Release.
 
+### Consumer lanes and cache boundaries
+
+The protected `Consumer Smoke` check is an Ubuntu aggregate of three independent
+macOS jobs. It uses `if: always()` and fails unless **all three actual job
+results are `success`**; failure, cancellation, skip, missing or malformed results
+cannot make it green. The 15 required check names remain unchanged.
+
+| Job | Mandatory work |
+| --- | --- |
+| Consumer Examples | Trait graph, clean core opt-out, every discovered independent example, both adopter executables |
+| Consumer Macros | Source-built macro tests and coverage, fresh negative compilation fixtures, coverage artifact |
+| Consumer OpenAPI | Generator build/tests, generated-output typecheck and runtime fixtures |
+
+Macro coverage upload depends directly on its producing lane, not on unrelated
+consumer builds. `Scripts/check_consumer_ci_contract.rb` and its negative fixtures
+guard the workflow wiring; `Scripts/check_consumer_ci_results.py` is the actual
+aggregate gate. The local release preflight also runs these contract tests.
+
+The pinned local composite action fingerprints the **actual** Xcode/Swift,
+macOS SDK build, OS build, architecture, runner image and absolute workspace,
+plus every root/example/negative-fixture/tool manifest and available lockfile,
+and the workflow/cache/builder policy source.
+Each lane has a separate cache prefix; the exact commit adds the immutable entry
+suffix. Restore fallback is restricted to the same fingerprint, never a broad
+OS/toolchain prefix. Package paths are discovered rather than a fixed allowlist.
+Each example keeps its own `.build`; different package graphs never share compiled
+products. The OpenAPI tool keeps its own `.build` too. Root caches contain only
+dependency checkouts/repositories/artifacts: no root compiled products, coverage,
+test results, diagnostics or release evidence. The clean core opt-out and negative
+macro fixtures deliberately remain clean builds. A hit **never skips any build,
+test, diagnostic or runtime check**. Changed sources still go through SwiftPM's
+incremental validation; local cache reuse is not proof of a hosted cache hit.
+
+During iterative work, finish scoped local tests and the local contract/consumer
+preflight before publishing one coherent candidate. Do not push each intermediate
+experiment or duplicate an already queued/running workflow. Final-SHA required
+CI, TSAN, guarded benchmarks and fresh-main release validation are still required;
+previous SHA results and cached outputs are not substitutes.
+
+Splitting removes serial dependencies, but does not create runner capacity.
+The historical run `36410633156` observed four concurrent Apple jobs within that
+run, and `Consumer Smoke` waited 936 seconds before executing for 2,031 seconds.
+This is an observed lower bound, not the organization's configured concurrency
+limit. Repository runner inventory returned zero dedicated runners; organization
+runner inventory requires additional admin permission. No runner labels, quotas,
+protection rules, workflow triggers or release gates were changed for this split.
+Measure queue time separately from execution and cache restore/upload time on a
+future authorized run before claiming a hosted wall-clock improvement.
+Local implementation evidence and three cache-reuse trials are recorded in
+[CIOptimization-2026-09-28.md](CIOptimization-2026-09-28.md).
+
 The release workflow repeats the root lock, platform-floor, all-example,
 platform-build, and full-test gates. It also builds and tests
 `Tools/openapi-to-innonetwork`, matching the CI consumer-smoke contract before
