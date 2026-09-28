@@ -597,6 +597,8 @@ Stable.
   `PreservedJSONCoding`, `JSONSchema`, `JSONProcessingLimits`, and `JSONProcessingError`.
   See [the wire/validation contract](docs/PRESERVED_JSON.md); Foundation codecs
   deliberately reject preserved values rather than round their numbers.
+  `maximumBytes` also bounds the live encoding representation (not peak RSS);
+  both keyed superclass decoder overloads treat missing values as null.
 - Named credential declarations: `RequestSecurityProviding`,
   `RequestCredentialProvider`, `RequestSecurity`, `RequestSecurity.Location`,
   `RequestSecurity.Scheme`, `RequestSecurity.Selection`,

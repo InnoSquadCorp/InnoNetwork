@@ -29,6 +29,8 @@ typed view. Foundation numeric ranges, rounding and coding strategies apply to
 that view only; its creation cannot mutate the preserved document or establish
 schema validity. The dedicated bridge supports default keys, InnoNetwork formatted Date,
 base64 Data and Foundation URL/Decimal handling, not custom coding strategies.
+Both keyed `superDecoder` overloads supply null for an absent superclass key,
+matching Foundation JSONDecoder; ordinary missing-key decoding still throws.
 
 ## Bounded validation
 
@@ -48,6 +50,15 @@ and every alternative. Codec traversal also bounds recursive container calls;
 output is byte-limited while writing and parsed again to enforce nested raw-value
 depth/node limits. Application-provided Codable implementations executing their
 own unbounded work outside the codec are not sandboxed.
+
+Encoding also admits the aggregate live intermediate representation against
+`maximumBytes`: raw buffers, escaped object keys and structural delimiters.
+Replacing a keyed value releases its charge when its last container/encoder
+handle is released; reusing a nested container does not charge it twice.
+An oversized intermediate state fails even if a later overwrite could have made
+the final output smaller. Resource failure is sticky for that encoding call.
+This is not a peak-RSS contract: Foundation scalar temporaries, Swift container
+overhead, the final output copy and application allocations are not counted.
 
 Array/object encoding accumulates reference-backed containers to avoid copying
 the entire growing collection on every insertion. Errors in `JSONProcessingError`

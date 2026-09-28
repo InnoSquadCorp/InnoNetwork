@@ -8,6 +8,21 @@ final class JSONEncodingBox {
         case array(JSONArrayBox)
     }
     var value: Value = .empty
+    let context: JSONCodingContext
+    private var retainedBytes = 0
+
+    init(context: JSONCodingContext) { self.context = context }
+    deinit { context.retainedEncodingBytes -= retainedBytes }
+
+    func reserve(_ bytes: Int) throws {
+        if let failure = context.failure { throw failure }
+        guard bytes <= context.limits.maximumBytes - context.retainedEncodingBytes else {
+            context.failure = .resourceLimit
+            throw JSONProcessingError.resourceLimit
+        }
+        retainedBytes += bytes
+        context.retainedEncodingBytes += bytes
+    }
 }
 
 final class JSONObjectBox { var members: [String: JSONEncodingBox] = [:] }
@@ -15,9 +30,15 @@ final class JSONArrayBox { var elements: [JSONEncodingBox] = [] }
 
 struct JSONValueEncoder: Encoder {
     let context: JSONCodingContext
-    var box = JSONEncodingBox()
+    var box: JSONEncodingBox
     var codingPath: [any CodingKey] = []
     var userInfo: [CodingUserInfoKey: Any] { [:] }
+
+    init(context: JSONCodingContext, box: JSONEncodingBox? = nil, codingPath: [any CodingKey] = []) {
+        self.context = context
+        self.box = box ?? JSONEncodingBox(context: context)
+        self.codingPath = codingPath
+    }
 
     func write<T: Encodable>(_ value: T) throws {
         try context.spend(depth: codingPath.count)
@@ -46,6 +67,7 @@ struct JSONValueEncoder: Encoder {
         try context.spend(depth: codingPath.count)
         guard data.count <= context.limits.maximumBytes else { throw JSONProcessingError.resourceLimit }
         guard case .empty = box.value else { throw JSONProcessingError.invalidJSON }
+        try box.reserve(data.count)
         box.value = .raw(data)
     }
 
@@ -57,29 +79,41 @@ struct JSONValueEncoder: Encoder {
         if reusingContainer, case .object(let storage) = box.value, let existing = storage.members[key.stringValue] {
             return Self(context: context, box: existing, codingPath: codingPath + [key])
         }
-        let next = JSONEncodingBox()
-        if array, case .array(let storage) = box.value {
-            storage.elements.append(next)
-        } else if !array, case .object(let storage) = box.value {
-            guard key.stringValue.utf8.count <= context.limits.maximumBytes else {
-                context.failure = .resourceLimit
-                return Self(context: context, box: next, codingPath: codingPath + [key])
+        let next = JSONEncodingBox(context: context)
+        do {
+            if array, case .array(let storage) = box.value {
+                if !storage.elements.isEmpty { try box.reserve(1) }
+                storage.elements.append(next)
+            } else if !array, case .object(let storage) = box.value {
+                guard key.stringValue.utf8.count <= context.limits.maximumBytes else {
+                    context.failure = .resourceLimit
+                    return Self(context: context, box: next, codingPath: codingPath + [key])
+                }
+                if storage.members[key.stringValue] == nil {
+                    try box.reserve(JSONEncoder().encode(key.stringValue).count + 1 + (storage.members.isEmpty ? 0 : 1))
+                }
+                storage.members[key.stringValue] = next
+            } else {
+                context.failure = .invalidJSON
             }
-            storage.members[key.stringValue] = next
-        } else {
-            context.failure = .invalidJSON
-        }
+        } catch { context.failure = .resourceLimit }
         return Self(context: context, box: next, codingPath: codingPath + [key])
     }
 
     func container<Key: CodingKey>(keyedBy type: Key.Type) -> KeyedEncodingContainer<Key> {
-        if case .empty = box.value { box.value = .object(JSONObjectBox()) }
+        if case .empty = box.value {
+            do { try box.reserve(2) } catch { context.failure = .resourceLimit }
+            box.value = .object(JSONObjectBox())
+        }
         if case .object = box.value {} else { context.failure = .invalidJSON }
         return KeyedEncodingContainer(JSONKeyedEncoder<Key>(encoder: self))
     }
 
     func unkeyedContainer() -> any UnkeyedEncodingContainer {
-        if case .empty = box.value { box.value = .array(JSONArrayBox()) }
+        if case .empty = box.value {
+            do { try box.reserve(2) } catch { context.failure = .resourceLimit }
+            box.value = .array(JSONArrayBox())
+        }
         if case .array = box.value {} else { context.failure = .invalidJSON }
         return JSONUnkeyedEncoder(encoder: self)
     }

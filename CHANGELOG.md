@@ -30,6 +30,9 @@ The previously planned 6.1 candidates are included in this 6.0 release scope.
   Preview named local-reference `anyOf` models expose every matching branch and
   throwing typed views, including nested models and authenticated request bodies.
   Unsupported constraints and recursive graphs fail before output is written.
+- Preserved JSON encoding now rejects aggregate retained buffers early, accounts
+  for overwritten/reused containers, and matches Foundation's absent superclass
+  null behavior for both keyed `superDecoder` overloads.
 - `RequestEncodingPolicy.preservedJSON(limits:)` is an explicit 6.0 encoding
   choice; exhaustive switches over the Stable enum must handle the added case.
 - Scoped OAuth validates exact grants and expiry, supports one identity-bound

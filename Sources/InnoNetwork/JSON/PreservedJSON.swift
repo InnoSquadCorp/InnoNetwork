@@ -3,7 +3,12 @@ import Foundation
 /// Resource limits shared by preserved JSON parsing and schema validation.
 /// Values outside the documented hard ceilings fail, rather than disabling a limit.
 public struct JSONProcessingLimits: Sendable, Equatable {
-    /// Maximum UTF-8 input bytes (hard ceiling: 16 MiB).
+    /// Maximum UTF-8 input/output bytes (hard ceiling: 16 MiB). Encoding also
+    /// bounds the live intermediate representation's raw bytes, escaped keys and
+    /// delimiters by this value, including detached containers still held by the
+    /// caller. Overwrites release their old charge when the old value is released.
+    /// This is not a peak-RSS bound: Foundation scalar temporaries, container
+    /// overhead and arbitrary application `Encodable` work are not included.
     public let maximumBytes: Int
     /// Maximum container/value nesting, counting the root as one (hard ceiling: 128).
     public let maximumDepth: Int

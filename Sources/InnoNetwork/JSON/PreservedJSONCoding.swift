@@ -4,6 +4,7 @@ import Foundation
 /// Unlike Foundation's codecs, these recognize nested `PreservedJSON` values.
 /// Uses default keys, InnoNetwork formatted dates, base64 Data and Foundation URL/Decimal scalar
 /// behavior; configurable Foundation coding strategies are intentionally not exposed.
+/// Missing keyed superclass values decode as null, matching Foundation JSONDecoder.
 public enum PreservedJSONCoding {
     /// Decodes a model while supplying original subdocument bytes to preserved values.
     public static func decode<T: Decodable>(
@@ -33,6 +34,7 @@ final class JSONCodingContext {
     let limits: JSONProcessingLimits
     var work = 0
     var failure: JSONProcessingError?
+    var retainedEncodingBytes = 0
     private var frames = 0
 
     init(limits: JSONProcessingLimits) { self.limits = limits }
@@ -183,10 +185,18 @@ private struct JSONKeyedDecoder<Key: CodingKey>: KeyedDecodingContainerProtocol 
     func nestedUnkeyedContainer(forKey key: Key) throws -> any UnkeyedDecodingContainer {
         try child(key).unkeyedContainer()
     }
-    func superDecoder(forKey key: Key) throws -> any Decoder { try child(key) }
+    private func superclass(_ key: any CodingKey) throws -> any Decoder {
+        try decoder.context.spend(depth: codingPath.count + 1)
+        if let node = members[key.stringValue] { return decoder.child(node, key: key) }
+        // A synthetic null needs its own bytes/range, not a range into the original
+        // object. It shares the caller's work/depth budget and coding path.
+        let null = try PreservedJSON(data: Data("null".utf8))
+        return JSONValueDecoder(
+            document: null, node: null.root, context: decoder.context, codingPath: codingPath + [key])
+    }
+    func superDecoder(forKey key: Key) throws -> any Decoder { try superclass(key) }
     func superDecoder() throws -> any Decoder {
-        guard let node = members["super"] else { throw JSONProcessingError.invalidJSON }
-        return decoder.child(node, key: JSONIndexKey("super"))
+        try superclass(JSONIndexKey("super"))
     }
 }
 
