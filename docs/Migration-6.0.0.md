@@ -9,7 +9,7 @@ The unified baseline contains 1,700 public declarations. `@APIDefinition`
 remains Stable; the advanced additions below retain their Provisionally
 Stable classifications.
 
-## Named request credentials (opt-in)
+## Preserved JSON and preview-generated schemas
 
 The new `RequestEncodingPolicy.preservedJSON(limits:)` case supports generated
 anyOf bodies. Exhaustive switches over this Stable enum must handle the new 6.0
@@ -18,6 +18,26 @@ case. Existing `.json` endpoints are unchanged. Preserved models must use
 case without changing the Stable macro. Custom response decoder failures now
 carry `NetworkError.decoding` response context; explicit network errors and
 cancellation retain their identity. See [the detailed contract](PRESERVED_JSON.md).
+
+Regenerate and compile clients when adopting the Preview generator extensions.
+Constrained or recursive schemas and the explicit 3.1 subset produce immutable
+preserved wrappers with validation at construction, decoding and encoding;
+callers must handle throwing construction instead of assuming mutable typed
+properties. Typed projections are explicit views: they can lose unknown fields
+or numeric precision and do not replace the preserved wire representation.
+
+Declare the supported 3.1 dialect explicitly; 3.0 `nullable` is rejected in 3.1,
+where type/null is used instead. External references, unsupported pattern syntax
+and advanced vocabularies still fail generation before output. Review the
+[schema support matrix](SCHEMA_SUPPORT_MATRIX.md) before regenerating a client.
+These additions do not change the Stable `@APIDefinition` contract.
+
+Encoding now applies the byte limit to aggregate retained intermediate state
+as well as final output. It can fail earlier, including when a later overwrite
+would have reduced the final document; do not rely on oversized temporary
+representations. This is a codec resource contract, not a total-process RSS cap.
+
+## Named request credentials (opt-in)
 
 Existing `SessionAuthentication` and `@APIDefinition` declarations need no
 migration. New API-key and explicit AND/OR endpoints additionally conform to

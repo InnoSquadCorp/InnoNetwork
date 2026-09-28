@@ -137,3 +137,57 @@ See `OPENAPI_EXPANSION_EXECUTION.md` for the final-code local gates and renewed
 seven-app compile evidence. Earlier `65c3acf` simulator launches remain historical;
 app compilation does not prove adoption of the new provider path. Remote CI,
 physical-device acceptance and dedicated service/IdP/exporter gates remain open.
+
+## Root release preparation snapshot — 2026-09-28
+
+Frozen input: `b1dc8d1ea2cc26cc89e77bb0a5c4b7d5f63c1ab3`, after all approved
+schema/codec extensions. This section records completed root checks, not a
+release-ready declaration. The accompanying release-note/migration edits change
+documentation only. Remote `main` was `7b52580430881e7b222f589aee7a30e409ed17da`;
+its earlier CI is not evidence for these 30 local commits.
+
+- `bash Scripts/run_local_release_preflight.sh --full` passed all 14 gates on
+  Xcode 27 / Swift 6.4: script fixtures, dependency lock, static contracts,
+  documentation/process recovery, 11 independent examples, generator/runtime
+  integration, bounded tests, resource soak, runtime and macro coverage,
+  benchmark guards, both SBOM profiles, all-product DocC and five platforms.
+- Root inventory: 1,916 tests, including four opt-in live tests skipped in the
+  ordinary suite. Both bounded shards and serial coverage passed. Generator:
+  45 tests; official schema examples: 355 cases in 18 pinned files.
+- A separate `INNO_LIVE=1` run passed all four public HTTP/WebSocket tests with
+  synthetic payloads. It does not certify a dedicated backend, IdP or exporter.
+- Runtime line coverage: 88.73%; macro line coverage: 90.22%. These percentages
+  describe the instrumented local run, not a proof of defect absence.
+- Runtime guards (14) and dedicated JSON guards (5) passed unchanged 20%
+  thresholds in three interleaved same-runner pairs. Cache revalidation was
+  -13.53%; coalescing +9.58% with 33.6% pair spread, so the latter is not a
+  reliable improvement claim. JSON guarded deltas ranged from -2.92% to -0.68%.
+- Thirty-second resource probes completed 7,133,788 span attempts and 5,574,541
+  ordered stream deliveries, with exact exported/dropped accounting and
+  cancellation completion. They do not measure production RSS or overnight load.
+- macOS/iOS package builds and all nine public targets on tvOS, watchOS and
+  visionOS passed. All nine public-product DocC archives were checked.
+- The live required-check ruleset matched all 15 checked-in requirements, with
+  up-to-date branches required and no configured bypass actor in that ruleset.
+
+The root log is `/tmp/innonetwork-b1dc8d1-release-full.log`; artifacts are in
+`.build/local-release-preflight/`. Consumer/companion snapshots, commands,
+source revisions and logs are under
+`/tmp/innonetwork-b1dc8d1-readiness.fSbEFt/`. Temporary evidence can be removed by
+environment cleanup; commands and the final candidate PR validation summary
+are the reproducible handoff. App builds are tracked separately and are not
+implied by the root package's example builds.
+
+Publication remains Draft. The approved next action is a candidate branch push
+and PR for final-SHA CI, not merge, tag or release. Before publication, complete
+consumer checks and required PR CI, deliberately approve the atomic Ready
+transition, merge through protection, and run the full manual Release workflow
+on fresh `main`. That workflow must pass on the exact commit to be tagged.
+Tagged-dependency checks for InnoStream/Protobuf follow the publication order in
+`RELEASE_POLICY.md`; they cannot be replaced by local path overrides.
+
+Device discovery on 2026-09-28 reported the paired iPhone unavailable. No
+physical-device lifecycle/protected-storage acceptance was performed. Dedicated
+backend, IdP, quota and exporter environments remain unsupplied. These are
+feature-adoption boundaries, not newly diagnosed root-library defects or checks
+silently waived by the local passes above.
