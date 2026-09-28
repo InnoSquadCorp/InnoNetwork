@@ -19,6 +19,10 @@ public enum RequestEncodingPolicy: Sendable {
     /// Encode parameters as a JSON request body using the supplied encoder.
     case json(JSONEncoder)
 
+    /// Encode through ``PreservedJSONCoding`` for models containing preserved JSON.
+    /// This opt-in 6.0 case retains exact number tokens and validates output limits.
+    case preservedJSON(limits: JSONProcessingLimits)
+
     /// Encode parameters as a form-url-encoded request body using the
     /// supplied query encoder. `rootKey` follows the same semantics as
     /// ``query(_:rootKey:)``.

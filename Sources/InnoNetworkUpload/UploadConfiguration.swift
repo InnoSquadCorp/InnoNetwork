@@ -9,6 +9,9 @@ public struct UploadResourcePolicy: Sendable, Equatable {
     public let maximumBufferedDelegateBytes: Int
     public let maximumPendingUnknownTasks: Int
     public let maximumRetainedTerminalTasks: Int?
+    /// Maximum disjoint callback-identifier ranges retained per session.
+    /// Exhaustion stops new admissions; recreate the manager after shutdown.
+    public let maximumIdentifierRanges: Int
 
     /// A conservative process-local resource profile.
     public static let safeDefaults = UploadResourcePolicy(
@@ -25,20 +28,24 @@ public struct UploadResourcePolicy: Sendable, Equatable {
     /// terminal task until the manager is released. A finite value limits
     /// logical task history, not the exact task-identifier tombstones needed
     /// to reject delayed background callbacks. Those identifiers are stored
-    /// as compact adjacent ranges until manager shutdown. Other limits must
+    /// as compact adjacent ranges until manager shutdown, bounded by
+    /// `maximumIdentifierRanges`. Exceeding that bound stops new admissions
+    /// without forgetting late callbacks. Other limits must
     /// be positive and are clamped to one when necessary.
     public init(
         maximumTrackedTasks: Int,
         maximumBufferedDelegateEvents: Int,
         maximumBufferedDelegateBytes: Int,
         maximumPendingUnknownTasks: Int,
-        maximumRetainedTerminalTasks: Int? = nil
+        maximumRetainedTerminalTasks: Int? = nil,
+        maximumIdentifierRanges: Int = 4_096
     ) {
         self.maximumTrackedTasks = max(1, maximumTrackedTasks)
         self.maximumBufferedDelegateEvents = max(1, maximumBufferedDelegateEvents)
         self.maximumBufferedDelegateBytes = max(1, maximumBufferedDelegateBytes)
         self.maximumPendingUnknownTasks = max(1, maximumPendingUnknownTasks)
         self.maximumRetainedTerminalTasks = maximumRetainedTerminalTasks.map { max(0, $0) }
+        self.maximumIdentifierRanges = max(1, maximumIdentifierRanges)
     }
 }
 

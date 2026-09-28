@@ -24,7 +24,11 @@ package enum StreamingOutputBuffering: Sendable {
     }
 }
 
-private final class StreamingOutputAcknowledgement: Sendable {
+// Copies of OSAllocatedUnfairLock share the same allocated state. Carry this
+// handle by value across the stream rather than publishing a second heap
+// object's lock-reference field for each output. Cancellation and consumption
+// still compete under that one lock and resume the waiter at most once.
+private struct StreamingOutputAcknowledgement: Sendable {
     private struct State {
         var waiter: CheckedContinuation<Void, Never>?
         var isReleased = false

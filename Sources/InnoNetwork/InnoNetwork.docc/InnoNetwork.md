@@ -123,6 +123,7 @@ retain those values.
 - <doc:RetryDecisions>
 - <doc:AuthRefresh>
 - <doc:RequestSigning>
+- <doc:RequestCredentials>
 - <doc:OfflineHandling>
 - <doc:CachingStrategies>
 - <doc:AppNetworkingCookbook>

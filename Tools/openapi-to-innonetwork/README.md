@@ -1,4 +1,4 @@
-# openapi-to-innonetwork (5.x preview)
+# openapi-to-innonetwork (6.0 preview)
 
 Generates `APIDefinition`-conforming Swift structs from a JSON-encoded
 OpenAPI 3 subset. Lives outside the root SwiftPM package so the
@@ -6,9 +6,9 @@ runtime library never resolves codegen dependencies.
 
 ## Status
 
-**Preview.** InnoNetwork 5.x includes this tool as a provisional starting point
+**Preview.** InnoNetwork 6.0 includes this tool as a provisional starting point
 so adopters with 100+ endpoint backends can avoid hand-rolling
-`APIDefinition` structs. The tool has no Stable 5.x compatibility promise. The
+`APIDefinition` structs. The tool has no Stable compatibility promise. The
 current state covers the common case (JSON + YAML input, `components.schemas` → Codable
 struct, request/response `$ref` → typed `Parameter` / `APIResponse`)
 and tracks the remaining surface for follow-up work:
@@ -20,9 +20,10 @@ and tracks the remaining surface for follow-up work:
 | Generated shape | ✅ Typed `Parameter` / `APIResponse` from `$ref`; falls back to `EmptyParameter` / `EmptyResponse` when absent |
 | Response status codes | ✅ `200`/`201` body schema; `202`/`204` → `EmptyResponse` |
 | Schema property types | ✅ string / integer / number / boolean / array / `$ref` (incl. format hints: `int64`, `date-time`, `uri`) |
-| Session authentication | ⚠️ always emits `SessionAuthentication.anonymous`; security-scheme mapping is a follow-up |
-| Schema variants (oneOf / allOf / discriminator / nullable) | ⚠️ unsupported; properties using these generate compileable `AnyCodable` placeholders |
-| Path templating (`/users/{id}`) | ❌ rejected at generation time — see "Scope" below |
+| Session authentication | ✅ Root/operation HTTP bearer requirements → required, optional or anonymous; unsupported requirements fail generation |
+| Named credentials | ✅ Header API key, opt-in query/cookie, bearer and scoped OAuth AND/OR via application-owned provider |
+| Schema composition | ✅ Object `allOf`, named discriminated `oneOf`, preserved named-reference `anyOf`, nullable properties; see restrictions below |
+| Path templating (`/users/{id}`) | ✅ Required scalar simple-style arguments, independently percent-encoded |
 | SPI integration | ⚠️ not used; the standard `APIDefinition` surface is the integration point |
 
 ## Scope: Subset of OpenAPI 3.x
@@ -44,38 +45,62 @@ boundaries are enforced at generation time, not silently degraded.
 - Response status codes `200` / `201` (typed body), `202` / `204`
   (`EmptyResponse`)
 
-### Unsupported (explicit)
+### 6.0 contracts and explicit boundaries
 
-- **Path templating** — paths containing `{name}` placeholders (e.g.
-  `/users/{id}`) are rejected with a `GenerationError.unsupportedPath`
-  diagnostic at generation time. Adopters who need template
-  substitution should hand-roll the `path` property on the generated
-  struct (delete the generator-emitted file and check in the
-  hand-written variant). Silent emission was removed in 4.x because
-  generated structs with raw `{id}` literals produced confusing runtime
-  404s; failing the build surfaces the constraint at codegen time.
-- **Schema composition**: `oneOf`, `allOf`, `anyOf`, `discriminator`,
-  `nullable` — properties using these compose into compileable
-  `AnyCodable` placeholders; you cannot recover the polymorphic shape
-  from the generated output.
-- **Server variables**, **security schemes**, **parameter `in: query`
-  / `in: path` / `in: header` schemas**, **content types other than
-  `application/json`** — out of scope for the 5.x preview.
-
-Because security schemes are not interpreted, every generated operation
-declares `sessionAuthentication` as `.anonymous`. Do not ship an authenticated
-operation unchanged. Until configurable mapping exists, either replace that
-operation with an app-owned `APIDefinition` or apply deterministic
-post-processing after every generation to select `.optional` or `.required`.
-The generator never infers this policy from path names, headers, or response
-status codes.
+- Path parameters may be inherited from the path item and overridden by an
+  operation. Required string/integer/boolean parameters using simple style
+  become `path_<name>` constructor arguments. Each uses
+  `EndpointPathEncoding.percentEncodedSegment`; slashes, percent signs and
+  Unicode cannot become path structure. Missing, unused, optional, array/object,
+  non-simple and query/header parameters fail generation.
+- Root security is inherited unless an operation supplies `security`. An empty
+  array means anonymous; an HTTP bearer requirement means `.required`; adding
+  an empty requirement alternative means `.optional`. Configure the client's
+  `RefreshTokenPolicy` to supply a single legacy bearer token. API keys, distinct
+  bearer alternatives and mixed AND/OR generate `RequestSecurityProviding` with
+  an explicit application-owned provider and HTTPS origin constructor argument.
+  Query/cookie declarations require explicit `allowsQueryCredentials` or
+  `allowsCookieCredentials` flags, even when selecting another OR branch.
+  Credential-slot conflicts and reserved header names fail generation. Unknown
+  schemes, basic auth and external references still fail rather than become
+  anonymous. OAuth requirements preserve exact scopes and require provider-
+  attested grants/expiry; optional `OAuthCredentialRefreshing` handles bounded
+  renewal. This tool does not implement an OAuth login flow or IdP token store.
+- Component object `allOf` flattens properties and unions required keys.
+  Conflicting properties, non-object branches and composition cycles fail.
+  Named `oneOf` components require local references plus a discriminator that
+  is a required nonnullable string on each branch. Generated associated-value
+  enums dispatch by tag, reject unknown tags and reject encoding a branch whose
+  tag does not match its case. Explicit mappings or component names are supported.
+- Nullable properties become optionals. Required nullable keys must still be
+  present during decoding and are encoded as explicit null when nil. Nullable
+  component roots/items, inline compositions and nondiscriminated `oneOf` fail.
+  Ordinary unstructured object properties retain `AnyCodable`.
+- OpenAPI 3.0 named `anyOf` components accept 2...32 distinct local-reference
+  branches. Wrappers retain `json: PreservedJSON` and all `matchingBranches`
+  indices; `asBranch0()`, etc. return optional, throwing typed views. Zero matches
+  fail; encoding revalidates the immutable document. Swift numeric range conversion
+  can fail in a view without changing its raw document. Nested models/arrays and
+  generated operations automatically use the preserved codec, including credential
+  authentication, JSON request bodies and 204 outputs.
+- The anyOf graph supports explicit primitive types, object properties, required
+  and nullable fields, boolean additionalProperties, and homogeneous arrays.
+  Unknown keywords (including enum, bounds, patterns), formats, non-boolean
+  additionalProperties, ref siblings, recursive graphs, allOf/oneOf within the
+  validation graph, inline alternatives and the 3.1 dialect fail generation before
+  writing files. Graph depth is below 32; expansion/property-name work is at most
+  4,096. See [runtime limits and wire fidelity](../../docs/PRESERVED_JSON.md).
+- Generated Codable models are serialization models, not a complete JSON Schema
+  validator (numeric bounds, patterns, additional-property constraints and all
+  schema keywords are not enforced outside the explicit anyOf graph). Server variables, non-JSON content and
+  general OpenAPI 3.1/JSON Schema coverage are outside this preview.
 
 ### Compatibility note
 
-The published 4.0.0 baseline already rejects path templates. Users migrating
+The published 4.0.0 baseline rejected path templates. Users migrating
 from an earlier, untagged source snapshot may have generated literal `{name}`
-placeholders; replace those files with a hand-written `path` implementation as
-described in "Scope" above. The release baseline and migration policy are
+placeholders; regenerate from declared path parameters or use a hand-written
+`path` implementation. The historical release baseline and migration policy are
 recorded in [`docs/Migration-4.0.0.md`](../../docs/Migration-4.0.0.md); the 4.1
 tombstone is not a released compatibility boundary.
 
@@ -144,15 +169,10 @@ public struct ListUsers: APIDefinition {
 }
 ```
 
-A spec containing `/users/{id}` would instead fail generation with
-`GenerationError.unsupportedPath` — see the "Scope" section above for
-the migration guidance.
-
-The current 5.x preview still rejects path templating and does not promise a
-delivery version for broader parser support. A future 5.x release may add more
-schema features with an explicit changelog entry, but adopters should choose a
-hand-written `APIDefinition` or `swift-openapi-generator` today when the
-current subset is insufficient.
+A spec containing `/users/{id}` must declare a required scalar `id` path
+parameter. It generates a `path_id` constructor argument. Choose a hand-written
+`APIDefinition` or `swift-openapi-generator` when the documented subset is
+insufficient; support for the entire OpenAPI specification is not implied.
 
 ## Tests
 

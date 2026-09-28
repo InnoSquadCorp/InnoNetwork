@@ -151,7 +151,7 @@ public struct ResumableUploadEngine: Sendable {
     ) async throws -> ResumableUploadResult {
         try Task.checkCancellation()
         let snapshot = try await makeFileSnapshot(at: fileURL)
-        defer { try? FileManager.default.removeItem(at: snapshot.url) }
+        defer { withExtendedLifetime(snapshot.lease) {} }
         let identity = (size: snapshot.size, sha256: snapshot.sha256)
         try Task.checkCancellation()
         var checkpoint: ResumableUploadCheckpoint
@@ -243,7 +243,8 @@ public struct ResumableUploadEngine: Sendable {
     }
 
     private struct FileSnapshot {
-        let url: URL
+        let lease: ResumableSnapshotLease
+        var url: URL { lease.url }
         let size: Int64
         let sha256: String
     }
@@ -251,26 +252,12 @@ public struct ResumableUploadEngine: Sendable {
     private func makeFileSnapshot(at url: URL) async throws -> FileSnapshot {
         guard url.isFileURL else { throw ResumableUploadError.unreadableFile }
         try Task.checkCancellation()
-        let fileManager = FileManager.default
-        try fileManager.createDirectory(at: snapshotDirectory, withIntermediateDirectories: true)
-        let snapshotURL = snapshotDirectory.appendingPathComponent(
-            "innonetwork-resumable-\(UUID().uuidString).snapshot"
-        )
-        guard
-            fileManager.createFile(
-                atPath: snapshotURL.path,
-                contents: nil,
-                attributes: [.posixPermissions: 0o600]
-            )
-        else {
-            throw ResumableUploadError.unreadableFile
-        }
+        let lease = try ResumableSnapshotLease(parent: snapshotDirectory)
         do {
             let source = try FileHandle(forReadingFrom: url)
-            let destination = try FileHandle(forWritingTo: snapshotURL)
+            let destination = lease.handle
             defer {
                 try? source.close()
-                try? destination.close()
             }
             var hasher = SHA256()
             var size: Int64 = 0
@@ -284,12 +271,10 @@ public struct ResumableUploadEngine: Sendable {
             try Task.checkCancellation()
             try destination.synchronize()
             let digest = hasher.finalize().map { String(format: "%02x", $0) }.joined()
-            return FileSnapshot(url: snapshotURL, size: size, sha256: digest)
+            return FileSnapshot(lease: lease, size: size, sha256: digest)
         } catch is CancellationError {
-            try? fileManager.removeItem(at: snapshotURL)
             throw CancellationError()
         } catch {
-            try? fileManager.removeItem(at: snapshotURL)
             throw ResumableUploadError.unreadableFile
         }
     }

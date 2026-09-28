@@ -93,6 +93,23 @@ and Foundation's ordinary suspended state. Restoration therefore keeps a
 user-paused task in ``UploadState/paused`` while still resuming an active task
 that Foundation happened to suspend.
 
+### Long-lived manager resources
+
+`maximumRetainedTerminalTasks` bounds logical task history, not the exact
+system-task ID history needed to reject delayed callbacks. Consecutive retired
+IDs compress into one interval; sparse IDs require one interval per isolated
+ID. `maximumIdentifierRanges` (default 4,096) bounds each manager/channel history.
+If a new disjoint range would exceed the limit, the manager rejects new uploads
+and retries with `resourceLimitExceeded`, refuses unknown callback adoption, and
+allows already registered transfers to finish. Channel history or lifecycle-queue
+exhaustion fails registered transfers with `delegateBufferExceeded` because a
+complete receipt can no longer be guaranteed. No tombstones are silently evicted.
+
+Use a feature-scoped manager and call `shutdown()` when its work is finished.
+Shutdown cancels active transfers; do not rotate a manager in the middle of
+background work merely to reclaim history. Manager retirement history clears
+on shutdown, and delegate overflow history clears when its channel finishes.
+
 A retry is allowed only after failure. Supply the request and file again so
 credentials, pre-signed URLs, and source availability are freshly validated:
 
@@ -137,6 +154,17 @@ failure, or cancellation. Adapter finalization must be idempotent for a session
 and file identity: once the server reports success, checkpoint removal is
 best-effort so local cleanup failure cannot misreport the remote outcome, and a
 later invocation may repeat finalization before cleanup succeeds.
+
+Snapshots live in an owner-only `innonetwork-resumable-v1` directory. Each holds
+an exclusive file lease for its entire upload. Before creating a snapshot, a new
+invocation reclaims only unlocked, regular, mode-0600, single-link snapshot files
+with library UUID names. Active uploads, symlinks and foreign names are preserved.
+Legacy snapshots outside this managed directory are not automatically deleted.
+Cleanup after process death runs on the next invocation in the same temporary
+directory; this is not a promise of power-loss durability or OS file protection.
+The process-recovery fixture verifies orphan reclamation and both lost chunk
+acknowledgements and lost finalization acknowledgements. See `docs/ReleaseValidation-6.0.0.md` for
+commands and the separate real-device/backend acceptance matrix.
 
 ## Security contract
 

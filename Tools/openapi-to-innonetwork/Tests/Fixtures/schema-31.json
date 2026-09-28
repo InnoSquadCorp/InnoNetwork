@@ -1,0 +1,21 @@
+{
+  "openapi": "3.1.1",
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "paths": {
+    "/value": {
+      "post": {
+        "operationId": "sendModern",
+        "requestBody": {"content":{"application/json":{"schema":{"$ref":"#/components/schemas/ModernChoice"}}}},
+        "responses": {"200":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/ModernChoice"}}}}}
+      }
+    }
+  },
+  "components": {"schemas": {
+    "Anything": true,
+    "Nothing": false,
+    "MaybeNumber": {"type":["number","null"],"minimum":1},
+    "AtLeastOne": {"type":"number","minimum":1},
+    "AboveOne": {"$ref":"#/components/schemas/AtLeastOne","exclusiveMinimum":1},
+    "ModernChoice": {"anyOf":[{"$ref":"#/components/schemas/MaybeNumber"},{"$ref":"#/components/schemas/AtLeastOne"}]}
+  }}
+}

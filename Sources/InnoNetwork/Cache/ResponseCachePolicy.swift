@@ -70,6 +70,11 @@ public enum ResponseCachePolicy: Sendable, Equatable {
     /// The wrapper is opt-in so existing clients continue forwarding the
     /// directive to their origin without InnoNetwork changing request flow.
     indirect case requestOnlyIfCached(wrapping: ResponseCachePolicy)
+    /// Honors request no-cache, max-age and min-fresh without weakening the
+    /// wrapped policy. Failed freshness constraints force foreground validation
+    /// and prohibit stale-if-error recovery. Combine with requestOnlyIfCached
+    /// to fail locally when those constraints cannot be met without transport.
+    indirect case requestFreshness(wrapping: ResponseCachePolicy)
 }
 
 
@@ -535,7 +540,7 @@ package extension ResponseCachePolicy {
             return true
         case .rfc9111Compliant(let inner),
             .staleIfError(let inner),
-            .requestOnlyIfCached(let inner):
+            .requestOnlyIfCached(let inner), .requestFreshness(let inner):
             return inner.isEnabled
         }
     }
@@ -548,7 +553,7 @@ package extension ResponseCachePolicy {
             return false
         case .rfc9111Compliant(let inner),
             .staleIfError(let inner),
-            .requestOnlyIfCached(let inner):
+            .requestOnlyIfCached(let inner), .requestFreshness(let inner):
             return inner.allowsConditionalRevalidation
         }
     }
@@ -563,7 +568,7 @@ package extension ResponseCachePolicy {
             return false
         case .rfc9111Compliant(let inner),
             .staleIfError(let inner),
-            .requestOnlyIfCached(let inner):
+            .requestOnlyIfCached(let inner), .requestFreshness(let inner):
             return inner.allowsCacheRead
         }
     }
@@ -579,7 +584,7 @@ package extension ResponseCachePolicy {
             return false
         case .rfc9111Compliant(let inner),
             .staleIfError(let inner),
-            .requestOnlyIfCached(let inner):
+            .requestOnlyIfCached(let inner), .requestFreshness(let inner):
             return inner.allowsCacheWrite
         }
     }
@@ -629,7 +634,7 @@ package extension ResponseCachePolicy {
                 now: now,
                 initialAge: cached?.rfc9111InitialAge ?? rfc9111InitialAge
             )
-        case .staleIfError(let inner), .requestOnlyIfCached(let inner):
+        case .staleIfError(let inner), .requestOnlyIfCached(let inner), .requestFreshness(let inner):
             return inner.prepare(
                 cached: cached,
                 now: now,
@@ -642,7 +647,7 @@ package extension ResponseCachePolicy {
         switch self {
         case .requestOnlyIfCached:
             return true
-        case .rfc9111Compliant(let inner), .staleIfError(let inner):
+        case .rfc9111Compliant(let inner), .staleIfError(let inner), .requestFreshness(let inner):
             return inner.honorsRequestOnlyIfCached
         case .disabled, .networkOnly, .cacheFirst, .staleWhileRevalidate:
             return false
@@ -653,7 +658,7 @@ package extension ResponseCachePolicy {
         switch self {
         case .staleIfError:
             return true
-        case .rfc9111Compliant(let inner), .requestOnlyIfCached(let inner):
+        case .rfc9111Compliant(let inner), .requestOnlyIfCached(let inner), .requestFreshness(let inner):
             return inner.containsStaleIfErrorOptIn
         case .disabled, .networkOnly, .cacheFirst, .staleWhileRevalidate:
             return false
@@ -693,20 +698,20 @@ package extension ResponseCachePolicy {
         switch self {
         case .rfc9111Compliant:
             return true
-        case .staleIfError(let inner), .requestOnlyIfCached(let inner):
+        case .staleIfError(let inner), .requestOnlyIfCached(let inner), .requestFreshness(let inner):
             return inner.containsRFC9111Adapter
         case .disabled, .networkOnly, .cacheFirst, .staleWhileRevalidate:
             return false
         }
     }
 
-    private func effectiveFreshnessLifetime(for cached: CachedResponse) -> TimeInterval? {
+    func effectiveFreshnessLifetime(for cached: CachedResponse) -> TimeInterval? {
         switch self {
         case .disabled, .networkOnly:
             return nil
         case .cacheFirst(let maxAge), .staleWhileRevalidate(let maxAge, _):
             return max(0, maxAge.timeInterval)
-        case .staleIfError(let inner), .requestOnlyIfCached(let inner):
+        case .staleIfError(let inner), .requestOnlyIfCached(let inner), .requestFreshness(let inner):
             return inner.effectiveFreshnessLifetime(for: cached)
         case .rfc9111Compliant(let inner):
             guard let innerLifetime = inner.effectiveFreshnessLifetime(for: cached) else {

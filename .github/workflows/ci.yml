@@ -560,6 +560,9 @@ jobs:
       - name: Run documentation smoke target
         run: xcrun swift run InnoNetworkDocSmoke
 
+      - name: Verify resumable upload recovery across process exit
+        run: bash Scripts/test_resumable_process_recovery.sh
+
   apple-platform-build-smoke:
     name: Apple Platform Build Smoke
     runs-on: macos-15

@@ -2,6 +2,50 @@
 
 Record the reason every time `default.json` changes.
 
+## 6.0.0 candidate — longer single-listener observation
+
+- Date: 2026-09-28
+- PR: #125
+- Failure: hosted run `36379606666`, attempt 1, measured -20.97% for
+  `events/task-event-fanout-single`. Its three paired deltas were -20.97%,
+  -36.21%, and +3.60%; the event implementation was unchanged from PR base.
+- Diagnosis: local Time Profiler confirmed per-event task allocation and
+  executor scheduling in the one-listener path. Six same-binary controls had
+  10.4% relative spread at 50,000 deliveries versus 1.8% at 300,000 deliveries.
+  These controls demonstrate sample variability, not the exact cause of an
+  unprofiled hosted failure.
+- Change: quick samples now wait for 300,000 complete deliveries (full:
+  1,000,000). `--only events` supports focused profiling. Both revisions still
+  use the candidate harness, three interleaved pairs, and the unchanged 20%
+  guard. No baseline SHA, absolute floor, or guarded inventory was reset.
+- Runtime: avoid a task group for exactly one listener while retaining the
+  delivery-chain wait; multi-listener fan-out remains concurrent.
+- Validation: see `docs/EVENT_DELIVERY_PERFORMANCE_6_0.md`. Hosted final-SHA
+  validation remains required; rerun success alone is not a root-cause proof.
+
+## 6.0.0 candidate — dedicated preserved JSON source baseline
+
+- Date: 2026-09-28
+- Source revision: `b358692e1e583b5cef1c97bb65208729b313f574`
+- Workloads: preserved parsing, mixed Codable decode/encode, all-branch anyOf,
+  and validation-work exhaustion (five independent guards).
+- Reason: the runtime source baseline predates these APIs. Add an independent
+  source comparison instead of dropping missing baseline entries or resetting
+  the original runtime baseline. `default.json` and runtime source SHA are
+  unchanged; no local absolute ops/s values are promoted into the CI baseline.
+- Enforcement: the default same-runner entry point runs both lanes, with three
+  interleaved pairs and the existing 20% threshold. JSON results are retained in
+  PR comments, trend logs and a separate required signed release artifact.
+- Evidence/provenance: see `docs/PERFORMANCE_AND_EXTENSION_REVIEW_6_0.md`.
+  Local results do not stand in for hosted CI. The baseline SHA is preserved
+  unchanged on `refs/heads/benchmark-baselines/json-6.0` because this repository
+  only allows squash merges. After squash, the runner verifies that the named
+  origin ref still exactly matches `json-source-revision.txt`, fetching that
+  verified ref in a clean main-only clone when necessary. A missing, moved,
+  malformed or concurrently changed ref fails closed; no new baseline is
+  automatically selected. Keep this source archive even after deleting PR
+  branches. The runtime baseline still requires normal ancestor provenance.
+
 ## Template
 
 - Date:

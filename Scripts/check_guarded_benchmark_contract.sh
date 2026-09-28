@@ -26,6 +26,7 @@ def fail(message: str) -> None:
 
 try:
     raw_lines = load_guarded_benchmarks(repo_root)
+    json_lines = load_guarded_benchmarks(repo_root, "json")
 except GuardedBenchmarkContractError as error:
     fail(str(error))
 
@@ -77,6 +78,9 @@ if runner_source.count(
     fail(f"{runner_path} must apply the candidate benchmark harness to the base revision")
 if runner_source.count("--disable-default-traits") != 2:
     fail(f"{runner_path} must build and resolve the runtime benchmark without macro traits")
+for marker in ('scope="runtime"', '--scope json', 'INNO_BENCHMARK_SCOPE="$scope"', '-DINNO_BENCHMARK_PRESERVED_JSON'):
+    if marker not in runner_source:
+        fail(f"{runner_path} must retain the dedicated JSON lane: {marker}")
 
 for relative_path, expected_invocations in consumer_contracts.items():
     source_path = repo_root / relative_path
@@ -92,6 +96,8 @@ for relative_path, expected_invocations in consumer_contracts.items():
             f"{relative_path} bypasses the guarded benchmark runner with "
             "a direct --guard-benchmark declaration"
         )
+    if re.search(r"--scope\s+json\b", source):
+        fail(f"{relative_path} must retain runtime guards, not run only the JSON lane")
     threshold_marker = consumer_threshold_markers[relative_path]
     if threshold_marker not in source:
         fail(f"{relative_path} must keep the guarded benchmark threshold at 20%")
@@ -108,9 +114,12 @@ if not source_revision_path.is_file():
 source_revision = source_revision_path.read_text(encoding="utf-8")
 if re.fullmatch(r"[0-9a-f]{40}\n?", source_revision) is None:
     fail("baseline source revision must be one lowercase 40-character SHA")
+json_source_revision = (repo_root / "Benchmarks/Baselines/json-source-revision.txt").read_text(encoding="utf-8")
+if re.fullmatch(r"[0-9a-f]{40}\n?", json_source_revision) is None:
+    fail("JSON baseline source revision must be one lowercase 40-character SHA")
 
 print(
     "guarded-benchmark-contract: OK "
-    f"({len(raw_lines)} guards across {len(consumer_contracts)} consumers)"
+    f"({len(raw_lines)} runtime + {len(json_lines)} JSON guards across {len(consumer_contracts)} consumers)"
 )
 PY

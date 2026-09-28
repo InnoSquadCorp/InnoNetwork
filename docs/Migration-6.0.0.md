@@ -5,9 +5,50 @@ This guide describes the unreleased InnoNetwork 6.0 draft. There is no
 notes are marked ready and the tag is published.
 
 The previously planned 6.1 candidates are included in this 6.0 release scope.
-The unified baseline contains 1,614 public declarations. `@APIDefinition`
+The unified baseline contains 1,700 public declarations. `@APIDefinition`
 remains Stable; the advanced additions below retain their Provisionally
 Stable classifications.
+
+## Preserved JSON and preview-generated schemas
+
+The new `RequestEncodingPolicy.preservedJSON(limits:)` case supports generated
+anyOf bodies. Exhaustive switches over this Stable enum must handle the new 6.0
+case. Existing `.json` endpoints are unchanged. Preserved models must use
+`PreservedJSONCoding`; Foundation codecs fail explicitly. This adds one Stable
+case without changing the Stable macro. Custom response decoder failures now
+carry `NetworkError.decoding` response context; explicit network errors and
+cancellation retain their identity. See [the detailed contract](PRESERVED_JSON.md).
+
+Regenerate and compile clients when adopting the Preview generator extensions.
+Constrained or recursive schemas and the explicit 3.1 subset produce immutable
+preserved wrappers with validation at construction, decoding and encoding;
+callers must handle throwing construction instead of assuming mutable typed
+properties. Typed projections are explicit views: they can lose unknown fields
+or numeric precision and do not replace the preserved wire representation.
+
+Declare the supported 3.1 dialect explicitly; 3.0 `nullable` is rejected in 3.1,
+where type/null is used instead. External references, unsupported pattern syntax
+and advanced vocabularies still fail generation before output. Review the
+[schema support matrix](SCHEMA_SUPPORT_MATRIX.md) before regenerating a client.
+These additions do not change the Stable `@APIDefinition` contract.
+
+Encoding now applies the byte limit to aggregate retained intermediate state
+as well as final output. It can fail earlier, including when a later overwrite
+would have reduced the final document; do not rely on oversized temporary
+representations. This is a codec resource contract, not a total-process RSS cap.
+
+## Named request credentials (opt-in)
+
+Existing `SessionAuthentication` and `@APIDefinition` declarations need no
+migration. New API-key and explicit AND/OR endpoints additionally conform to
+`RequestSecurityProviding`, use `.anonymous` session authentication, and receive
+an application-owned `RequestCredentialProvider`. Generated constructors ask for
+the HTTPS credential origin and provider; query/cookie declarations require
+explicit opt-in flags. These requests disable sharing and automatic redirects.
+Scoped OAuth additionally requires attested granted scopes and expiry. Optional
+`OAuthCredentialRefreshing` supplies identity-bound renewal; the library never
+widens scopes or launches login UI. Streaming through this contract remains unsupported.
+See [request credentials](../Sources/InnoNetwork/InnoNetwork.docc/Articles/RequestCredentials.md).
 
 ## Package boundary changes
 
@@ -140,6 +181,16 @@ See the [streaming guide](../Sources/InnoNetwork/InnoNetwork.docc/Articles/Strea
 [upload guide](../Sources/InnoNetworkUpload/InnoNetworkUpload.docc/InnoNetworkUpload.md),
 and [span export guide](../Sources/InnoNetwork/InnoNetwork.docc/Articles/ObservabilityExporters.md)
 for configuration and lifetime examples.
+
+## VCR fixture privacy
+
+VCR recording and replay remove URL user-info and fragments from request
+identity and mismatch diagnostics. Existing cassette URLs normalize in memory
+when passed to `VCRURLSession`, preserving sequential response order. Save the
+session's `cassette` snapshot to migrate a reviewed fixture; raw
+`VCRCassette.load` and `write` do not sanitize the original file. Separate
+authentication scenarios into different cassettes instead of relying on URL
+credentials to distinguish requests. Response bodies still require review.
 
 ## Validation order
 

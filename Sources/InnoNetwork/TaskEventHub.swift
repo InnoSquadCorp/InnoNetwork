@@ -437,6 +437,14 @@ package actor TaskEventHub<Event: Sendable> {
     ) async {
         guard !listeners.isEmpty else { return }
 
+        // The common one-listener path still waits for the delivery chain,
+        // but has no fan-out to parallelize. Avoid allocating a task group
+        // and scheduling a child for every individual event.
+        if listeners.count == 1 {
+            await listeners[0].enqueueAndWaitForDelivery(event, enqueuedAt: enqueuedAt)
+            return
+        }
+
         await withTaskGroup(of: Void.self) { group in
             for listener in listeners {
                 group.addTask {

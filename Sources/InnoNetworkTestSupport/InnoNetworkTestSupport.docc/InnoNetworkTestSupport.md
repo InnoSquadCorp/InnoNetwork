@@ -49,6 +49,23 @@ credentials or personal data. Request bodies are represented by a SHA-256
 digest, but response bodies remain part of the recorded cassette and must be
 reviewed before committing fixtures.
 
+URL user-info and fragments are always removed from VCR request identities
+and mismatch diagnostics, independently of the configurable query/header
+redaction policy. The backing transport still receives the original request.
+
+When constructing a ``VCRURLSession`` with a legacy cassette, its request URLs
+are normalized in memory without changing response bodies or replay order.
+The caller's cassette value and existing file remain unchanged. To migrate a
+reviewed fixture, load it, construct the session, and write `session.cassette`
+to a new file before replacing the old fixture. Loading/writing a raw
+``VCRCassette`` alone does not sanitize it. Remove old credential-bearing
+fixtures from distribution and rotate real credentials if they were exposed.
+
+User-info and fragments no longer distinguish otherwise identical requests.
+Use separate cassettes for distinct authentication scenarios; sequential
+replay still consumes exactly the next matching interaction. Query redaction
+and response-body review remain the caller's responsibility.
+
 ## Topics
 
 ### URLSession test double

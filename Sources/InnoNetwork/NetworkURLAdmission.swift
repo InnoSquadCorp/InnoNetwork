@@ -21,21 +21,21 @@ package enum NetworkURLAdmission {
             throw invalidURL("Network URL must be absolute and include a scheme.")
         }
 
-        let allowedSchemes: Set<String>
+        let secureScheme: String
         let insecureScheme: String
         let insecureAllowed: Bool
         switch policy {
         case .http(let allowsInsecure):
-            allowedSchemes = ["https", "http"]
+            secureScheme = "https"
             insecureScheme = "http"
             insecureAllowed = allowsInsecure
         case .webSocket(let allowsInsecure):
-            allowedSchemes = ["wss", "ws"]
+            secureScheme = "wss"
             insecureScheme = "ws"
             insecureAllowed = allowsInsecure
         }
 
-        guard allowedSchemes.contains(scheme) else {
+        guard scheme == secureScheme || scheme == insecureScheme else {
             throw invalidURL("Network URL uses an unsupported scheme.")
         }
         guard scheme != insecureScheme || insecureAllowed else {
@@ -83,6 +83,9 @@ package enum NetworkURLAdmission {
     }
 
     package static func containsDotSegment(_ path: String) -> Bool {
+        // A dot segment needs either a literal dot or a percent escape.
+        // Ordinary paths need no replacement strings or percent-decoding buffer.
+        guard path.utf8.contains(0x2E) || path.utf8.contains(0x25) else { return false }
         var candidate = path
         // Decode only structural ASCII escapes. Unlike Foundation's full
         // percent decoder, an unrelated non-UTF-8 byte cannot make this check
@@ -137,26 +140,30 @@ package enum NetworkURLAdmission {
     /// Colons and percent signs remain valid inside a bracketed IPv6 literal
     /// so IPv6 addresses and RFC 6874 zone identifiers continue to work.
     private static func isStructurallyValidHost(_ host: String) -> Bool {
+        let scalars = host.unicodeScalars
         let isBracketedIPv6 = host.first == "[" && host.last == "]"
-        let interior = isBracketedIPv6 ? host.dropFirst().dropLast() : host[...]
-
-        if host.contains(":") || host.contains("%") {
-            guard isBracketedIPv6 else { return false }
+        let lastIndex = scalars.index(before: scalars.endIndex)
+        for index in scalars.indices {
+            let scalar = scalars[index]
+            switch scalar.value {
+            case 0...0x20, 0x7F, 0x40, 0x2F, 0x5C, 0x3F, 0x23:
+                return false
+            case 0x3A, 0x25:
+                if !isBracketedIPv6 { return false }
+            case 0x5B, 0x5D:
+                if !isBracketedIPv6 || (index != scalars.startIndex && index != lastIndex) {
+                    return false
+                }
+            default:
+                // All ASCII whitespace was handled above. Preserve the
+                // Unicode whitespace policy without a CharacterSet lookup
+                // for every byte of ordinary DNS names.
+                if scalar.value > 0x7F && CharacterSet.whitespacesAndNewlines.contains(scalar) {
+                    return false
+                }
+            }
         }
-        if host.contains("[") || host.contains("]") {
-            guard isBracketedIPv6,
-                !interior.contains("["),
-                !interior.contains("]")
-            else { return false }
-        }
-
-        let ambiguousDelimiters: Set<Unicode.Scalar> = ["@", "/", "\\", "?", "#"]
-        return !host.unicodeScalars.contains { scalar in
-            scalar.value <= 0x20
-                || scalar.value == 0x7F
-                || CharacterSet.whitespacesAndNewlines.contains(scalar)
-                || ambiguousDelimiters.contains(scalar)
-        }
+        return true
     }
 
     private static func hexValue(_ byte: UInt8) -> UInt8? {

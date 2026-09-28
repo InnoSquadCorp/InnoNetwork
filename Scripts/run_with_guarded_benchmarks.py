@@ -33,7 +33,9 @@ def main() -> None:
         )
     )
     try:
-        identifiers = load_guarded_benchmarks(repo_root)
+        identifiers = load_guarded_benchmarks(
+            repo_root, os.environ.get("INNO_BENCHMARK_SCOPE", "runtime")
+        )
     except GuardedBenchmarkContractError as error:
         fail(str(error), 1)
 

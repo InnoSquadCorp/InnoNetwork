@@ -143,8 +143,11 @@ public struct NetworkFailure: Error, Sendable, Equatable {
             )
         case .decoding:
             self.init(kind: .decoding, code: code, recovery: .doNotRetry)
-        case .underlying:
-            self.init(kind: .transport, code: code, recovery: .doNotRetry)
+        case .underlying(let underlying, _):
+            self.init(
+                kind: underlying.domain == "InnoNetwork.RequestSecurity" ? .configuration : .transport,
+                code: code, recovery: .doNotRetry
+            )
         case .reachability:
             self.init(
                 kind: .connectivity,

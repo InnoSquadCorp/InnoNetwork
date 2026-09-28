@@ -6,9 +6,11 @@ cd "$repo_root"
 output_dir="$repo_root/.build/benchmarks"
 base_revision=""
 uses_reviewed_base_revision=0
+archived_source_ref=""
 max_regression_percent="20"
 regression_reason="${INNO_BENCHMARK_REGRESSION_REASON:-}"
 validate_only=0
+scope="runtime"
 
 usage() {
   cat <<'USAGE'
@@ -23,11 +25,21 @@ revision and the current working tree, then enforce the paired-median guard.
   --max-regression-percent  Guard threshold (default: 20).
   --regression-reason TEXT  Record an intentional movement in the comparison.
   --validate-only           Validate revision provenance without building.
+  --scope runtime|json      Default: runtime, followed by the dedicated JSON lane.
+                            JSON always has its own reviewed source baseline.
 USAGE
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --scope)
+      if [[ $# -lt 2 || ( "$2" != "runtime" && "$2" != "json" ) ]]; then
+        echo "same-runner-benchmarks: --scope requires runtime or json" >&2
+        exit 64
+      fi
+      scope="$2"
+      shift
+      ;;
     --base-revision)
       if [[ $# -lt 2 ]]; then
         echo "same-runner-benchmarks: --base-revision requires a value" >&2
@@ -78,12 +90,24 @@ done
 
 if [[ -z "$base_revision" ]]; then
   uses_reviewed_base_revision=1
-  source_revision_path="$repo_root/Benchmarks/Baselines/source-revision.txt"
+  baseline_prefix=""
+  if [[ "$scope" == "json" ]]; then baseline_prefix="json-"; fi
+  source_revision_path="$repo_root/Benchmarks/Baselines/${baseline_prefix}source-revision.txt"
   if [[ ! -f "$source_revision_path" ]]; then
     echo "same-runner-benchmarks: baseline source revision is missing" >&2
     exit 1
   fi
   base_revision="$(<"$source_revision_path")"
+  # A squash-only repository cannot retain an unreleased codec baseline as
+  # an ancestor of main. Preserve that exact source on a named origin ref;
+  # never silently rebaseline to the newly squashed implementation.
+  if [[ "$scope" == "json" && -f "$repo_root/Benchmarks/Baselines/json-source-ref.txt" ]]; then
+    archived_source_ref="$(<"$repo_root/Benchmarks/Baselines/json-source-ref.txt")"
+    if [[ ! "$archived_source_ref" =~ ^refs/heads/benchmark-baselines/[a-zA-Z0-9][a-zA-Z0-9._-]*$ ]]; then
+      echo "same-runner-benchmarks: invalid archived source ref" >&2
+      exit 1
+    fi
+  fi
 fi
 
 if [[ ! "$base_revision" =~ ^[0-9a-f]{40}$ ]]; then
@@ -96,20 +120,46 @@ if [[ ! "$max_regression_percent" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
   exit 64
 fi
 
+head_revision="$(git -C "$repo_root" rev-parse HEAD)"
+uses_verified_archive=0
+if ((uses_reviewed_base_revision == 1)) && [[ -n "$archived_source_ref" ]] \
+  && ! git -C "$repo_root" merge-base --is-ancestor "$base_revision" "$head_revision" 2>/dev/null; then
+  published_ref="$(git -C "$repo_root" ls-remote --exit-code origin "$archived_source_ref")" || {
+    echo "same-runner-benchmarks: archived source ref is unavailable on origin" >&2
+    exit 1
+  }
+  if [[ "$published_ref" != "$base_revision"$'\t'"$archived_source_ref" ]]; then
+    echo "same-runner-benchmarks: archived source ref does not match the reviewed SHA" >&2
+    exit 1
+  fi
+  if ! git -C "$repo_root" cat-file -e "${base_revision}^{commit}" 2>/dev/null; then
+    git -C "$repo_root" fetch --no-tags origin "$archived_source_ref"
+    if [[ "$(git -C "$repo_root" rev-parse FETCH_HEAD)" != "$base_revision" ]]; then
+      echo "same-runner-benchmarks: archived source ref changed during fetch" >&2
+      exit 1
+    fi
+  fi
+  uses_verified_archive=1
+fi
+
 if ! git -C "$repo_root" cat-file -e "${base_revision}^{commit}" 2>/dev/null; then
   echo "same-runner-benchmarks: base revision is unavailable: $base_revision" >&2
   exit 1
 fi
 
-head_revision="$(git -C "$repo_root" rev-parse HEAD)"
-if ((uses_reviewed_base_revision == 1)) \
+if [[ "$scope" == "json" ]] && ! git -C "$repo_root" cat-file -e \
+  "$base_revision:Sources/InnoNetwork/JSON/PreservedJSON.swift" 2>/dev/null; then
+  echo "same-runner-benchmarks: JSON baseline must contain the preserved JSON codec" >&2
+  exit 1
+fi
+if ((uses_reviewed_base_revision == 1 && uses_verified_archive == 0)) \
   && ! git -C "$repo_root" merge-base --is-ancestor "$base_revision" "$head_revision"; then
   echo "same-runner-benchmarks: reviewed base revision is not an ancestor of HEAD" >&2
   exit 1
 fi
 
 if ((validate_only == 1)); then
-  echo "same-runner-benchmarks: OK (base $base_revision, head $head_revision)"
+  echo "same-runner-benchmarks: OK (scope $scope, base $base_revision, head $head_revision, archive $uses_verified_archive)"
   exit 0
 fi
 
@@ -148,6 +198,14 @@ build_root="${RUNNER_TEMP:-$repo_root/.build/same-runner-benchmark-builds}"
 mkdir -p "$build_root"
 base_scratch="$build_root/base-${base_revision:0:12}"
 head_scratch="$build_root/head-${head_revision:0:12}"
+swift_flags=()
+sample_flags=()
+if [[ "$scope" == "json" ]]; then
+  base_scratch+="-json"
+  head_scratch+="-json"
+  swift_flags=(-Xswiftc -DINNO_BENCHMARK_PRESERVED_JSON)
+  sample_flags=(--only json)
+fi
 
 swift_build() {
   local package_path="$1"
@@ -158,7 +216,8 @@ swift_build() {
       --disable-default-traits \
       --product InnoNetworkBenchmarks \
       --scratch-path "$scratch_path" \
-      --cache-path "$cache_path"
+      --cache-path "$cache_path" \
+      ${swift_flags[@]+"${swift_flags[@]}"}
   )
 }
 
@@ -188,6 +247,7 @@ run_sample() {
   local output="$2"
   "$executable" \
     --quick \
+    ${sample_flags[@]+"${sample_flags[@]}"} \
     --json-path "$output" \
     --baseline "$missing_baseline" \
     > "${output%.json}.log"
@@ -216,9 +276,20 @@ comparison_arguments=(
 if [[ -n "$regression_reason" ]]; then
   comparison_arguments+=(--regression-reason "$regression_reason")
 fi
-python3 Scripts/run_with_guarded_benchmarks.py -- "${comparison_arguments[@]}"
+INNO_BENCHMARK_SCOPE="$scope" python3 Scripts/run_with_guarded_benchmarks.py -- "${comparison_arguments[@]}"
 
 python3 Scripts/render_benchmark_comment.py \
   "$output_dir/results.json" \
   "$output_dir/summary.md"
 cat "$output_dir/summary.md"
+
+# Keep the historical runtime baseline unchanged. JSON did not exist there,
+# so it needs an independent source baseline, not an unguarded head-only row.
+if [[ "$scope" == "runtime" ]]; then
+  json_arguments=(--scope json --output-dir "$output_dir/json"
+    --max-regression-percent "$max_regression_percent")
+  if [[ -n "$regression_reason" ]]; then
+    json_arguments+=(--regression-reason "$regression_reason")
+  fi
+  bash "$repo_root/Scripts/run_same_runner_benchmarks.sh" "${json_arguments[@]}"
+fi

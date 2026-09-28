@@ -32,6 +32,8 @@ public actor UploadManager {
     /// Late delegate callbacks for these attempts must never be adopted as a
     /// restored background upload.
     private var retiredSystemIdentifiers = UploadTaskIdentifierRanges()
+    private var identifierCapacityExceeded = false
+    private var delegateCapacityFailure: UploadError?
     private var responseBodies: [Int: Data] = [:]
     private var forcedFailures: [Int: UploadError] = [:]
     private var idempotencyKeys: [String: String] = [:]
@@ -146,6 +148,7 @@ public actor UploadManager {
             _ = await restoreTasks()
         }
         guard !isShutdown else { throw .managerShutdown }
+        try checkIdentifierCapacity()
         try Self.validate(request: request, fileURL: fileURL, configuration: configuration)
 
         guard let url = request.url else {
@@ -170,6 +173,11 @@ public actor UploadManager {
         guard !isShutdown else {
             await eventHub.publishTerminalAndFinish(.failed(.managerShutdown), for: task.id)
             throw .managerShutdown
+        }
+        if identifierCapacityExceeded {
+            let error = capacityFailure
+            await eventHub.publishTerminalAndFinish(.failed(error), for: task.id)
+            throw error
         }
         let urlTask = session.makeUploadTask(with: request, fromFile: fileURL)
         urlTask.taskDescription = UploadTaskDescription.active(id: task.id)
@@ -240,6 +248,10 @@ public actor UploadManager {
                 restoredTaskIDs.insert(adoptedID)
                 continue
             }
+            guard !identifierCapacityExceeded else {
+                urlTask.cancel()
+                continue
+            }
             guard let request = urlTask.currentRequest ?? urlTask.originalRequest,
                 let url = request.url
             else {
@@ -294,7 +306,8 @@ public actor UploadManager {
 
             // Validation failure may have awaited task finalization. A
             // delegate completion can win that reentrancy window as well.
-            if retiredSystemIdentifiers.contains(systemIdentifier) {
+            if identifierCapacityExceeded || retiredSystemIdentifiers.contains(systemIdentifier) {
+                urlTask.cancel()
                 pendingStartIDs.remove(id)
                 continue
             }
@@ -461,6 +474,7 @@ public actor UploadManager {
 
         guard !Task.isCancelled else { throw .cancelled }
         guard !isShutdown else { throw .managerShutdown }
+        try checkIdentifierCapacity()
         guard await task.prepareForRetry() else {
             throw .invalidRequest("Only one retry can restart a failed upload")
         }
@@ -475,6 +489,11 @@ public actor UploadManager {
             // cross-actor retry transition changed it back to waiting.
             await terminateRetry(task, with: .managerShutdown)
             throw .managerShutdown
+        }
+        if identifierCapacityExceeded {
+            let error = capacityFailure
+            await terminateRetry(task, with: error)
+            throw error
         }
         let urlTask = session.makeUploadTask(with: request, fromFile: fileURL)
         urlTask.taskDescription = UploadTaskDescription.active(id: task.id)
@@ -594,6 +613,14 @@ public actor UploadManager {
             await invalidationBarrier.complete()
         case .backgroundEventsFinished:
             backgroundCompletionStore.markEventsFinished()?()
+        case .capacityExceeded(let limit):
+            identifierCapacityExceeded = true
+            delegateCapacityFailure = .delegateBufferExceeded(limit: limit)
+            pendingDelegateEvents.removeAll()
+            for task in Array(tasks.values) where !(await task.state.isTerminal) {
+                uploadTasks[task.id]?.cancel()
+                await fail(task, with: .delegateBufferExceeded(limit: limit))
+            }
         case .overflow(let identifier, let byteLimit):
             guard !retiredSystemIdentifiers.contains(identifier) else { return }
             guard let task = task(forSystemIdentifier: identifier) else {
@@ -643,6 +670,7 @@ public actor UploadManager {
         ):
             guard !retiredSystemIdentifiers.contains(identifier) else { return }
             if task(forSystemIdentifier: identifier) == nil {
+                guard !identifierCapacityExceeded else { return }
                 guard configuration.sessionMode == .background,
                     let request = currentRequest ?? originalRequest,
                     let url = request.url
@@ -772,7 +800,7 @@ public actor UploadManager {
     }
 
     private func bufferPending(_ event: UploadDelegateEvent, for identifier: Int) {
-        guard !pendingUnknownTaskCapacityExceeded else { return }
+        guard !identifierCapacityExceeded, !pendingUnknownTaskCapacityExceeded else { return }
         if pendingDelegateEvents[identifier] == nil,
             pendingDelegateEvents.count >= configuration.resourcePolicy.maximumPendingUnknownTasks
         {
@@ -847,7 +875,14 @@ public actor UploadManager {
             ?? logicalIDsBySystemIdentifier.first(where: { $0.value == logicalID })?.key
         guard let identifier else { return }
         logicalIDsBySystemIdentifier.removeValue(forKey: identifier)
-        retiredSystemIdentifiers.insert(identifier)
+        if !identifierCapacityExceeded, !retiredSystemIdentifiers.contains(identifier),
+            !retiredSystemIdentifiers.insert(
+                identifier, maximumRangeCount: configuration.resourcePolicy.maximumIdentifierRanges)
+        {
+            // Never evict tombstones and then adopt late callbacks as new work.
+            identifierCapacityExceeded = true
+            pendingDelegateEvents.removeAll()
+        }
         responseBodies.removeValue(forKey: identifier)
         forcedFailures.removeValue(forKey: identifier)
     }
@@ -871,6 +906,16 @@ public actor UploadManager {
 
     private var trackedResourceCount: Int {
         tasks.count + pendingStartIDs.count
+    }
+
+    private func checkIdentifierCapacity() throws(UploadError) {
+        if identifierCapacityExceeded {
+            throw capacityFailure
+        }
+    }
+
+    private var capacityFailure: UploadError {
+        delegateCapacityFailure ?? .resourceLimitExceeded(limit: configuration.resourcePolicy.maximumIdentifierRanges)
     }
 
     private func reserveTrackedSlot(for taskID: String) -> Bool {

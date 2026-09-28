@@ -7,8 +7,9 @@ work_dir="$(mktemp -d "${TMPDIR:-/tmp}/prepare-release-artifacts-test.XXXXXX")"
 trap 'rm -rf "$work_dir"' EXIT
 
 valid_root="$work_dir/valid"
-mkdir -p "$valid_root/benchmarks"
+mkdir -p "$valid_root/benchmarks/json"
 printf '{"benchmarks": []}\n' > "$valid_root/benchmarks/results.json"
+printf '{"codec": []}\n' > "$valid_root/benchmarks/json/results.json"
 printf '{"bomFormat": "CycloneDX"}\n' > "$valid_root/sbom.cdx.json"
 printf '{"bomFormat": "CycloneDX"}\n' > "$valid_root/sbom-core-only.cdx.json"
 
@@ -16,6 +17,19 @@ bash "$preparer" "$valid_root"
 cmp --silent \
   "$valid_root/benchmarks/results.json" \
   "$valid_root/benchmarks.json"
+cmp --silent "$valid_root/benchmarks/json/results.json" "$valid_root/benchmarks-json-codec.json"
+
+missing_json_root="$work_dir/missing-json-benchmark"
+mkdir -p "$missing_json_root/benchmarks"
+cp "$valid_root/benchmarks/results.json" "$missing_json_root/benchmarks/results.json"
+cp "$valid_root/sbom.cdx.json" "$missing_json_root/sbom.cdx.json"
+cp "$valid_root/sbom-core-only.cdx.json" "$missing_json_root/sbom-core-only.cdx.json"
+if bash "$preparer" "$missing_json_root" >"$work_dir/missing-json.stdout" 2>"$work_dir/missing-json.stderr"; then
+  echo "prepare-release-artifacts test: missing JSON codec benchmark unexpectedly passed" >&2
+  exit 1
+fi
+grep -Fq 'benchmarks/json/results.json' "$work_dir/missing-json.stderr"
+test ! -e "$missing_json_root/benchmarks.json"
 
 missing_root="$work_dir/missing-benchmark"
 mkdir -p "$missing_root/benchmarks"

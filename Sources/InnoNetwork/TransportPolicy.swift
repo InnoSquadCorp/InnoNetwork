@@ -109,10 +109,22 @@ public extension TransportPolicy where Output: Decodable {
         encoding: RequestEncodingPolicy,
         decode: @Sendable @escaping (Data, Response) throws -> Output
     ) -> Self {
-        Self(
+        let contextualDecode: @Sendable (Data, Response) throws -> Output = { data, response in
+            do {
+                return try decode(data, response)
+            } catch let error as NetworkError {
+                throw error
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                throw NetworkError.decoding(
+                    stage: .responseBody, underlying: SendableUnderlyingError(error), response: response)
+            }
+        }
+        return Self(
             requestEncoding: encoding,
-            responseDecoding: .custom(decode),
-            responseDecoder: AnyResponseDecoder(decode)
+            responseDecoding: .custom(contextualDecode),
+            responseDecoder: AnyResponseDecoder(contextualDecode)
         )
     }
 

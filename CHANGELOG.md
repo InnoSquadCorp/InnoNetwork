@@ -10,8 +10,81 @@ Versioning.
 All changes below form the unreleased `6.0.0` draft and have not been tagged.
 The previously planned 6.1 candidates are included in this 6.0 release scope.
 
+### Added — approved follow-up scope
+
+- A separate same-runner preserved-JSON benchmark lane guards parsing, mixed
+  Codable decode/encode, all-branch validation and budget exhaustion without
+  replacing the historical runtime baseline. JSON reports are retained as
+  separate PR/trend/release evidence.
+- Provisionally Stable origin-bound request credential providers: header API
+  keys, explicitly enabled query/cookie keys, opaque bearer, atomic AND and
+  explicit OR selection. Identity is frozen across retries; credentials are
+  acquired after admission and before signers. The path bypasses sharing,
+  cookie jars and automatic redirects, and rejects conflicting auth contracts.
+  VCR dynamically redacts declared credential slots and forwards request context.
+- Preview OpenAPI output connects API-key and multiple-auth requirements to
+  that provider contract, retaining root inheritance, overrides and anonymous
+  alternatives, including scoped OAuth bearer.
+- Provisionally Stable exact-byte preserved JSON, document-aware Codable and
+  bounded schema validation retain arbitrary numeric tokens and unknown fields.
+  Preview named local-reference `anyOf` models expose every matching branch and
+  throwing typed views, including nested models and authenticated request bodies.
+  Unsupported constraints and zero-progress recursive graphs fail before output is written.
+- Preserved JSON encoding now rejects aggregate retained buffers early, accounts
+  for overwritten/reused containers, and matches Foundation's absent superclass
+  null behavior for both keyed `superDecoder` overloads.
+- Provisionally Stable `JSONSchemaPlan` compiles exact enum/numeric/size
+  constraints for Preview preserved component models. JSON-compatible YAML
+  retains original number tokens; unsupported YAML constructs fail explicitly.
+- Compiled schema patterns use an explicit Unicode-mode ECMA-262 subset with
+  bounded non-backtracking execution. Unsupported regex syntax fails generation;
+  compiled `format` remains annotation-only.
+- Productive local recursive schemas compile to immutable identity graphs and
+  preserved wrappers; zero-progress cycles fail before generation. Validation
+  remains bounded and independent across concurrent callers.
+- Explicit 2020-12 / OpenAPI 3.1 subset admission adds boolean schemas, type/null,
+  reference siblings, root definitions, const and schema allOf/oneOf. Foreign
+  dialects, unsupported vocabularies and unsupported 3.1 operation roles fail.
+  The generator remains Preview; typed normalization now rejects excessive depth
+  before overflowing a worker stack. This is not complete OpenAPI 3.1 support.
+- `RequestEncodingPolicy.preservedJSON(limits:)` is an explicit 6.0 encoding
+  choice; exhaustive switches over the Stable enum must handle the added case.
+- Scoped OAuth validates exact grants and expiry, supports one identity-bound
+  renewal per logical request, and isolates bounded in-flight renewal by
+  configuration, scheme, scopes and principal. GET/HEAD may replay one explicit
+  invalid-token rejection; insufficient scopes never escalate automatically.
+- Opt-in `ResponseCachePolicy.requestFreshness(wrapping:)` applies request
+  `no-cache`, `max-age` and `min-fresh` across cache hits, cache-only requests,
+  background refresh and stale-error recovery.
+- The preview OpenAPI generator binds declared scalar path parameters, maps
+  explicit HTTP bearer security, flattens object `allOf`, generates named
+  discriminated `oneOf` models, and preserves required nullable keys. Unsupported
+  security/composition contracts fail generation.
+- `UploadResourcePolicy.maximumIdentifierRanges` bounds callback history while
+  refusing late task re-adoption. Resumable snapshots use cross-process leases
+  and reclaim only managed orphan files on the next invocation.
+- Sustained streaming/reconnect tests account for bounded span queues, dropped
+  spans, ordered backpressure and cancellation without retaining every payload.
+
 ### Fixed — release candidate review
 
+- URL admission avoids repeated scheme/delimiter sets and unnecessary path
+  decoding while preserving origin, Unicode whitespace and traversal checks.
+- The preview generator preserves security requirements in a bounded non-secret
+  IR and rejects distinct bearer alternatives on the legacy session path rather
+  than erasing the identity choice. Extended requirements now use the separate
+  provider path, including scoped OAuth and isolated renewal.
+- Custom response transports classify unexpected decoding errors with response
+  context while retaining explicit network errors and cancellation.
+- VCR recording, replay identity, and mismatch diagnostics remove URL
+  user-info and fragments. Legacy cassette URLs normalize in memory while
+  preserving sequential replay; fixture files require an explicit resave.
+- The RFC cache matrix now documents implemented Age synthesis, with a
+  documentation-contract guard against the obsolete unsupported claim.
+- Finished upload delegate channels release overflow-ID history. Long-run
+  tests cover contiguous/sparse IDs, late callback suppression, and shutdown.
+- A deterministic fresh-process fixture checks resumable recovery after lost
+  chunk and finalize acknowledgements; CI and local/release gates run it.
 - Pinning canonicalizes a trailing DNS root dot and rejects leading-dot host
   rules, preventing equivalent host spellings from bypassing configured pins.
 - Unsafe response invalidation occurs before local response handling, and GET

@@ -141,6 +141,7 @@ private struct ResidentMemorySnapshot: Sendable {
 
 private struct BenchmarkOptions: Sendable {
     let quick: Bool
+    let only: String?
     let jsonOutputPath: String?
     let baselinePath: String
     let enforceBaseline: Bool
@@ -157,6 +158,7 @@ private struct BenchmarkOptions: Sendable {
             .path
 
         var quick = false
+        var only: String?
         var jsonOutputPath: String?
         var baselinePath = defaultBaseline
         var enforceBaseline = false
@@ -186,6 +188,14 @@ private struct BenchmarkOptions: Sendable {
             switch argument {
             case "--quick":
                 quick = true
+            case "--only":
+                let scope = try requiredValue(code: 16, description: "Missing scope after --only.")
+                guard ["cache", "coalescing", "events", "json"].contains(scope) else {
+                    throw NSError(
+                        domain: "InnoNetworkBenchmarks", code: 16,
+                        userInfo: [NSLocalizedDescriptionKey: "Unknown benchmark scope: \(scope)"])
+                }
+                only = scope
             case "--json-path":
                 let path = try requiredValue(
                     code: 3,
@@ -262,6 +272,7 @@ private struct BenchmarkOptions: Sendable {
 
         return BenchmarkOptions(
             quick: quick,
+            only: only,
             jsonOutputPath: jsonOutputPath,
             baselinePath: baselinePath,
             enforceBaseline: enforceBaseline,
@@ -383,13 +394,35 @@ private enum InnoNetworkBenchmarks {
     }
 
     private static func runBenchmarks(options: BenchmarkOptions) async throws -> [BenchmarkResult] {
+        if let only = options.only {
+            switch only {
+            case "events":
+                return [
+                    try await benchmarkTaskEventHubDelivery(
+                        iterations: options.quick ? 300_000 : 1_000_000,
+                        name: "task-event-fanout-single")
+                ]
+            case "cache": return [try await benchmarkResponseCacheRevalidation(iterations: 50_000_000)]
+            case "coalescing": return [try await benchmarkRequestCoalescing(iterations: 100_000)]
+            #if INNO_BENCHMARK_PRESERVED_JSON
+            case "json": return try await benchmarkPreservedJSON(iterations: options.quick ? 20_000 : 100_000)
+            #endif
+            default:
+                throw NSError(
+                    domain: "InnoNetworkBenchmarks", code: 17,
+                    userInfo: [NSLocalizedDescriptionKey: "JSON benchmark support is not enabled in this build."])
+            }
+        }
         var results: [BenchmarkResult] = []
         let encoderIterations = options.quick ? 2_000 : 20_000
         let eventIterations = options.quick ? 10_000 : 20_000
         // The guarded single-listener path waits for each delivery, so it
         // measures the complete hub-to-handler hop without building a large
         // scheduler-sensitive backlog on hosted runners.
-        let guardedEventIterations = options.quick ? 50_000 : 100_000
+        // Keep the guarded sample multi-second even on faster local hosts.
+        // The same-runner script copies this harness to both implementations;
+        // this increases observation time without changing the 20% guard.
+        let guardedEventIterations = options.quick ? 300_000 : 1_000_000
         let persistenceIterations = options.quick ? 300 : 3_000
         let restoreIterations = options.quick ? 1_000 : 2_000
         let cacheIterations = options.quick ? 10_000_000 : 20_000_000
@@ -480,6 +513,69 @@ private enum InnoNetworkBenchmarks {
 
         return results
     }
+
+    // Opt-in at build time so the identical harness still builds against the
+    // historical runtime baseline, which predates preserved JSON entirely.
+    #if INNO_BENCHMARK_PRESERVED_JSON
+    private struct JSONEnvelope: Codable {
+        let id: Int
+        let label: String
+        let document: PreservedJSON
+    }
+
+    private static func benchmarkPreservedJSON(iterations: Int) async throws -> [BenchmarkResult] {
+        let row = #"{"integer":9007199254740993123456789,"exponent":1.2300e+99,"text":"한글\\value","unknown":true}"#
+        let bytes = Data(("[" + Array(repeating: row, count: 32).joined(separator: ",") + "]").utf8)
+        let document = try PreservedJSON(data: bytes)
+        let envelope = JSONEnvelope(id: 42, label: "mixed", document: document)
+        let encoded = try PreservedJSONCoding.encode(envelope)
+        let schema = JSONSchema.array(
+            items: .object(
+                properties: ["integer": .integer, "exponent": .number, "text": .string],
+                required: ["integer", "text"], allowsAdditionalProperties: true))
+        let alternatives = Array(repeating: schema, count: 8)
+        var results: [BenchmarkResult] = []
+        results.append(
+            try await measure(name: "parse-preserved", group: "json", iterations: iterations) { count in
+                for _ in 0..<count {
+                    let result = try PreservedJSON(data: bytes)
+                    precondition(result.data == bytes)
+                }
+            })
+        results.append(
+            try await measure(name: "decode-mixed", group: "json", iterations: iterations) { count in
+                for _ in 0..<count {
+                    let result = try PreservedJSONCoding.decode(JSONEnvelope.self, from: encoded)
+                    precondition(result.id == 42 && result.document.data == bytes)
+                }
+            })
+        results.append(
+            try await measure(name: "encode-mixed", group: "json", iterations: iterations) { count in
+                for _ in 0..<count {
+                    let result = try PreservedJSONCoding.encode(envelope)
+                    precondition(result == encoded)
+                }
+            })
+        results.append(
+            try await measure(name: "anyof-all-matches", group: "json", iterations: iterations) { count in
+                for _ in 0..<count {
+                    let matches = try JSONSchema.matchingAlternatives(alternatives, document: document)
+                    precondition(matches == Array(0..<8))
+                }
+            })
+        results.append(
+            try await measure(name: "reject-work-limit", group: "json", iterations: iterations) { count in
+                let limits = JSONProcessingLimits(maximumValidationWork: 16)
+                for _ in 0..<count {
+                    do {
+                        _ = try JSONSchema.matchingAlternatives(alternatives, document: document, limits: limits)
+                        preconditionFailure("Validation must not accept exhausted work budgets")
+                    } catch JSONProcessingError.resourceLimit {}
+                }
+            })
+        return results
+    }
+    #endif
 
     /// Runs `work` once with a small untimed warmup count before the timed
     /// full-count pass, so allocator, actor, and cache cold-start costs are

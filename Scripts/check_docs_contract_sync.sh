@@ -209,6 +209,7 @@ expected_provisionally=(
 '`WebSocketError.unsupportedProtocolFeature`'
 '`WebSocketProtocolFeature`'
 '`RequestSigner` and `RequestBody` late body-aware signing contract'
+'`RequestSecurityProviding`, `RequestCredentialProvider`, `RequestSecurity`'
 '`JWTBearerInterceptor` reference signer for request-minted JWT bearer tokens'
 '`InnoNetworkAuthAWS` companion product and `AWSSigV4Interceptor` reference signer for single-shot AWS SigV4 signing'
 '`StreamingBufferingPolicy`, `StreamingOutputSequence`, `TraceContextInterceptor`, `W3CTraceContext`, `CurlCommandOptions`, `IdempotencyKeyPolicy`, and `RequestPriority`'
@@ -1716,6 +1717,19 @@ for symbol in "${expected_provisionally[@]}"; do
         "$repo_root/Sources/InnoNetwork/Auth/JWTBearerInterceptor.swift"
       continue
       ;;
+    '`RequestSecurityProviding`, `RequestCredentialProvider`, `RequestSecurity`')
+      require_contains 'public protocol RequestSecurityProviding: Sendable' \
+        "$repo_root/Sources/InnoNetwork/Auth/RequestSecurity.swift"
+      require_contains 'public protocol RequestCredentialProvider: Sendable' \
+        "$repo_root/Sources/InnoNetwork/Auth/RequestSecurity.swift"
+      require_contains 'public protocol OAuthCredentialRefreshing: RequestCredentialProvider' \
+        "$repo_root/Sources/InnoNetwork/Auth/RequestSecurity.swift"
+      require_contains 'public struct RequestSecurity: Sendable' \
+        "$repo_root/Sources/InnoNetwork/Auth/RequestSecurity.swift"
+      require_contains 'public enum RequestSecurityFailure: Int, Error, Sendable' \
+        "$repo_root/Sources/InnoNetwork/Auth/RequestSecurity.swift"
+      continue
+      ;;
     '`InnoNetworkAuthAWS` companion product and `AWSSigV4Interceptor` reference signer for single-shot AWS SigV4 signing')
       require_contains 'name: "InnoNetworkAuthAWS"' "$repo_root/Package.swift"
       require_contains 'targets: ["InnoNetworkAuthAWS"]' "$repo_root/Package.swift"
@@ -1888,6 +1902,10 @@ require_contains '`Expires` fallback' "$readme"
 require_contains '`Last-Modified` heuristic freshness' "$readme"
 require_contains '`Expires` |' "$repo_root/docs/rfcs/RFC9111-Compliance.md"
 require_contains '`Last-Modified` |' "$repo_root/docs/rfcs/RFC9111-Compliance.md"
+require_contains '| `Age` | ✅ Emitted on reuse |' "$repo_root/docs/rfcs/RFC9111-Compliance.md"
+require_not_contains '❌ Not emitted' "$repo_root/docs/rfcs/RFC9111-Compliance.md"
+require_contains 'URL user-info and fragments are always removed' \
+  "$repo_root/Sources/InnoNetworkTestSupport/InnoNetworkTestSupport.docc/InnoNetworkTestSupport.md"
 require_contains 'Persistent cache disk keys now include the `Vary`' \
   "$repo_root/docs/releases/4.0.0.md"
 require_contains '.noStatusReceived:' \

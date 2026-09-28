@@ -57,6 +57,7 @@ fast_gates=(
 )
 
 full_only_gates=(
+  "streaming-resource-soak"
   "runtime-coverage"
   "macro-coverage"
   "guarded-benchmarks"
@@ -213,6 +214,7 @@ run_static_contracts() {
 run_documentation_smoke() {
   xcrun swift build --target InnoNetworkDocSmoke
   xcrun swift run InnoNetworkDocSmoke
+  bash Scripts/test_resumable_process_recovery.sh
 }
 
 run_consumer_examples() {
@@ -317,6 +319,10 @@ run_gate() {
     consumer-examples) run_consumer_examples ;;
     openapi-generator) run_openapi_generator ;;
     bounded-tests) run_bounded_tests ;;
+    streaming-resource-soak)
+      INNO_STREAM_SOAK_SECONDS=30 xcrun swift test --jobs 2 --no-parallel \
+        --filter StreamingResourceSoakTests
+      ;;
     runtime-coverage) run_runtime_coverage ;;
     macro-coverage) run_macro_coverage ;;
     guarded-benchmarks) run_guarded_benchmarks ;;

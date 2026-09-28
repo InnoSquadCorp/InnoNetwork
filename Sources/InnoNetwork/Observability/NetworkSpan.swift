@@ -90,6 +90,9 @@ public actor NetworkSpanObserver: NetworkEventObserving, TimestampedNetworkEvent
     private var buffer: [NetworkSpan] = []
     private var draining = false
     public private(set) var droppedSpanCount = 0
+    package var retainedRequestCount: Int { requests.count }
+    package var retainedAttemptCount: Int { requests.values.reduce(0) { $0 + $1.attempts.count } }
+    package var bufferedSpanCount: Int { buffer.count }
 
     public init(
         exporter: any NetworkSpanExporting,

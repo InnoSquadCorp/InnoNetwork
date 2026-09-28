@@ -39,6 +39,7 @@ class GuardedBenchmarkRunnerTests(unittest.TestCase):
             encoding="utf-8",
         )
         self.environment = os.environ.copy()
+        self.environment.pop("INNO_BENCHMARK_SCOPE", None)
         self.environment["INNO_GUARDED_BENCHMARK_CONTRACT_ROOT"] = str(
             self.fixture_root
         )
@@ -95,6 +96,28 @@ class GuardedBenchmarkRunnerTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 64)
         self.assertIn("usage:", result.stderr)
+
+    def test_json_scope_uses_only_its_own_guards(self) -> None:
+        (self.fixture_root / "Benchmarks/json-guarded-benchmarks.txt").write_text(
+            "json/parse-preserved\n", encoding="utf-8"
+        )
+        self.environment["INNO_BENCHMARK_SCOPE"] = "json"
+        result = self.run_runner("--", sys.executable, "-c", "import sys; print(sys.argv[1:])")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("json/parse-preserved", result.stdout)
+        self.assertNotIn("client/request-pipeline", result.stdout)
+
+    def test_json_scope_cannot_fall_back_to_runtime_guards(self) -> None:
+        self.environment["INNO_BENCHMARK_SCOPE"] = "json"
+        result = self.run_runner("--", sys.executable, "--version")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("guard set is missing", result.stderr)
+
+    def test_unknown_scope_fails_closed(self) -> None:
+        self.environment["INNO_BENCHMARK_SCOPE"] = "unknown"
+        result = self.run_runner("--", sys.executable, "--version")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("unknown benchmark scope", result.stderr)
 
     def test_rejects_duplicate_contract_entries_before_execution(self) -> None:
         self.write_contract([self.identifiers[0], self.identifiers[0]])

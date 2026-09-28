@@ -44,6 +44,10 @@ use `nil` or an empty observer collection instead of public no-op helper types.
 `NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:)`
 and own application reducer types in their feature or architecture layer.
 
+The 6.0 `RequestEncodingPolicy.preservedJSON(limits:)` case is an intentional
+Stable enum addition: exhaustive switches must handle it. The preserved model,
+codec and schema types remain Provisionally Stable.
+
 ## Stable
 
 - `APIDefinition`
@@ -167,8 +171,8 @@ acquiring a 6.x Stable compatibility promise.
 - `AnyEncodable`, `NetworkContext`, and `CorrelationIDInterceptor`
 - `RefreshTokenPolicy`, `RequestCoalescingPolicy`, retry, response cache, redirect, encoding utility, and circuit breaker policy surfaces
   This includes the 6.0
-  `ResponseCachePolicy.staleIfError(wrapping:)` and
-  `requestOnlyIfCached(wrapping:)` cases; both remain explicitly opt-in and
+  `ResponseCachePolicy.staleIfError(wrapping:)`, `requestFreshness(wrapping:)`, and
+  `requestOnlyIfCached(wrapping:)` cases; all remain explicitly opt-in and
   Provisionally Stable
 - `MultipartResponseDecoder` buffered multipart response parsing surface
 - `MultipartStreamingResponseDecoder` streaming multipart response parsing surface
@@ -187,6 +191,19 @@ acquiring a 6.x Stable compatibility promise.
 - `WebSocketError.unsupportedProtocolFeature`
 - `WebSocketProtocolFeature`
 - `RequestSigner` and `RequestBody` late body-aware signing contract
+- `RequestSecurityProviding`, `RequestCredentialProvider`, `RequestSecurity`
+  (including `Location`, `Scheme`, `Selection`, `Credential`), and
+  `RequestSecurityFailure` and `OAuthCredentialRefreshing` are opt-in 6.0
+  Provisionally Stable contracts.
+  Selection is frozen per logical request; credential acquisition occurs after
+  admission and before signing. HTTPS origin, identity and wire-slot conflicts
+  fail closed. Header API keys, explicit query/cookie keys, opaque bearer and
+  scoped OAuth bearer with one renewal per logical request, and atomic
+  AND/explicit OR are supported for buffered/multipart requests only. OAuth
+  requires attested granted scopes and expiry; insufficient permissions never
+  trigger automatic escalation. Reactive renewal/replay is GET/HEAD-only and
+  requires an unambiguous invalid_token challenge. Streaming and authenticated
+  response sharing remain unsupported. Existing session bearer behavior is unchanged.
 - `JWTBearerInterceptor` reference signer for request-minted JWT bearer tokens
 - `InnoNetworkAuthAWS` companion product and `AWSSigV4Interceptor` reference signer for single-shot AWS SigV4 signing
 - `StreamingBufferingPolicy`, `StreamingOutputSequence`, `TraceContextInterceptor`, `W3CTraceContext`, `CurlCommandOptions`, `IdempotencyKeyPolicy`, and `RequestPriority`
@@ -275,6 +292,10 @@ general handshake retry policy would retry an ordinary transport timeout.
 - `InnoNetworkTestSupport` — additional helpers may be added; existing
   symbols stay source-compatible within 6.x. VCR-style cassette helpers are
   intended for test targets and may gain new matching/redaction knobs.
+  In 6.0, VCR request identity always removes URL user-info and fragments.
+  Legacy cassette URLs normalize in memory; original files and response
+  bodies are not rewritten. Migration guidance covers resaving reviewed
+  fixtures and separating authentication scenarios.
 - `EndpointBuilder`, `AnyEncodable`, `NetworkContext`, `CorrelationIDInterceptor` —
   builder shape may grow new chainable methods.
 - `EndpointPathEncoding` — may add new helpers for placeholder encoding;
@@ -428,6 +449,11 @@ general handshake retry policy would retry an ordinary transport timeout.
 - `ResponseCachePolicy.requestOnlyIfCached(wrapping:)` — the request directive
   is consumed only under this wrapper. A miss or forced revalidation remains
   a local typed failure and never starts transport or background refresh.
+- `ResponseCachePolicy.requestFreshness(wrapping:)` — opt-in request `no-cache`,
+  `max-age` and `min-fresh`. Invalid/duplicate numeric directives and `max-age=0`
+  require successful foreground validation. Numeric constraints use corrected
+  response age and the smaller caller/origin freshness window. They cannot be
+  bypassed by stale recovery, asynchronous refresh or cache-only mode.
 - `NetworkErrorCode` — raw values use the
   `com.innosquad.innonetwork.NetworkError` domain exclusively; Foundation
   `URLError` codes are preserved only as underlying metadata.
@@ -557,8 +583,8 @@ below keeps the high-level compatibility classification readable. Historical
 5.x HLS sections document the migration source but are no longer included in
 the current machine-checked inventory.
 
-The machine-checked snapshot currently partitions all 1,614 declarations into
-306 Stable consumer declarations, 1,275 Provisionally Stable consumer
+The machine-checked snapshot currently partitions all 1,700 declarations into
+307 Stable consumer declarations, 1,360 Provisionally Stable consumer
 declarations, and 33 opt-in SPI declarations. The three sets are disjoint and
 exhaustive. `Scripts/symbols/stable-rules.tsv` maps the Stable ledger to symbol
 paths, while the compiler-authored SPI flag is snapshotted in
@@ -567,6 +593,16 @@ Stable.
 
 ### InnoNetwork
 
+- Preserved JSON declarations (Provisionally Stable): `PreservedJSON`,
+  `PreservedJSONCoding`, `JSONSchema`, `JSONSchemaPlan`, `JSONSchemaDialect`, `JSONProcessingLimits`, and `JSONProcessingError`.
+  See [the wire/validation contract](docs/PRESERVED_JSON.md); Foundation codecs
+  deliberately reject preserved values rather than round their numbers.
+  The byte limit also bounds the live encoding representation (not peak RSS);
+  both keyed superclass decoder overloads treat missing values as null.
+- Named credential declarations: `RequestSecurityProviding`,
+  `RequestCredentialProvider`, `RequestSecurity`, `RequestSecurity.Location`,
+  `RequestSecurity.Scheme`, `RequestSecurity.Selection`,
+  `RequestSecurity.Credential`, `RequestSecurityFailure`, and `OAuthCredentialRefreshing`.
 - `APIDefinition`, `AnyEncodable`, `AnyRequestExecutionPolicy`,
   `AnyResponseDecoder`, `AuthenticationRealm`,
   `CachedResponse`, `CacheRevalidationState`, `CancellationTag`,

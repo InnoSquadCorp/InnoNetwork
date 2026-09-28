@@ -72,19 +72,23 @@ package struct WebSocketHeartbeatCoordinator {
     let eventHub: TaskEventHub<WebSocketEvent>
     let clock: any InnoNetworkClock
     let beforeSendPingDispatch: (@Sendable () async -> Void)?
+    // Test instrumentation: observes both dispatched and suppressed decisions.
+    let afterSendPingDispatch: (@Sendable () -> Void)?
 
     package init(
         configuration: WebSocketConfiguration,
         runtimeRegistry: WebSocketRuntimeRegistry,
         eventHub: TaskEventHub<WebSocketEvent>,
         clock: any InnoNetworkClock = SystemClock(),
-        beforeSendPingDispatch: (@Sendable () async -> Void)? = nil
+        beforeSendPingDispatch: (@Sendable () async -> Void)? = nil,
+        afterSendPingDispatch: (@Sendable () -> Void)? = nil
     ) {
         self.configuration = configuration
         self.runtimeRegistry = runtimeRegistry
         self.eventHub = eventHub
         self.clock = clock
         self.beforeSendPingDispatch = beforeSendPingDispatch
+        self.afterSendPingDispatch = afterSendPingDispatch
     }
 
     package func startHeartbeat(
@@ -207,6 +211,7 @@ package struct WebSocketHeartbeatCoordinator {
                     if case .cancelledBeforeRegistration = action {
                         continuation.resume(throwing: CancellationError())
                     }
+                    afterSendPingDispatch?()
                 }
             }
             try Task.checkCancellation()

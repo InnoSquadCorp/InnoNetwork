@@ -291,3 +291,10 @@ interleaved and compared by median, so harness methodology and machine class do
 not masquerade as implementation regressions. The runtime benchmark disables
 default traits because macro compilation is measured by the separate repeated
 macro-build baseline rather than this runtime throughput gate.
+
+The same entry point then runs the five preserved-JSON codec guards against
+`Benchmarks/Baselines/json-source-revision.txt`, without resetting the earlier
+runtime baseline. The JSON lane uses the same paired-median 20% threshold and
+emits `json/results.json` under the output directory. Missing codec source or
+guard entries fail closed. Release preparation requires this second report as
+`benchmarks-json-codec.json`; PR comments and scheduled trends keep it separate.

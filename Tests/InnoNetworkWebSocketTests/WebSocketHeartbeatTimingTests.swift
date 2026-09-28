@@ -498,6 +498,9 @@ struct WebSocketHeartbeatTimingTests {
             maxMissedPongs: 1,
             beforeSendPingDispatch: {
                 await dispatchGate.arriveAndWait()
+            },
+            afterSendPingDispatch: {
+                dispatchGate.markDispatchDecisionCompleted()
             }
         )
 
@@ -518,20 +521,39 @@ struct WebSocketHeartbeatTimingTests {
         #expect(await harness.clock.waitForEnqueuedCount(atLeast: baseline + 1))
 
         harness.clock.advance(by: .seconds(1))
-        dispatchGate.release()
-
-        let stalePingSuppressed = await waitFor(timeout: 1.0) {
-            harness.stubTask.pingCount == 0 && !harness.stubTask.hasPendingPong
-        }
-        #expect(stalePingSuppressed)
-
+        // Advancing the clock makes the timer runnable; it does not mean the
+        // timeout/cancellation has already won the dispatch race. Observe the
+        // completed timeout before releasing the deliberately blocked sender.
         let timedOut = await waitFor(timeout: 1.0) {
             timeoutBox.withLock { $0 } != nil
         }
         #expect(timedOut)
         #expect(timeoutBox.withLock { $0 } == harness.stubTask.taskIdentifier)
 
+        dispatchGate.release()
+        let dispatchDecisionCompleted = await waitFor(timeout: 1.0) {
+            dispatchGate.hasCompletedDispatchDecision
+        }
+        #expect(dispatchDecisionCompleted)
+        // A zero count before the dispatch decision would be a vacuous pass.
+        #expect(harness.stubTask.pingCount == 0)
+        #expect(!harness.stubTask.hasPendingPong)
+
         await harness.stopHeartbeat()
+    }
+
+    @Test("Dispatch gate remembers a release that precedes continuation registration")
+    func dispatchGateReleaseBeforeArrival() async {
+        let gate = AsyncDispatchGate()
+        gate.release()
+        let completed = OSAllocatedUnfairLock(initialState: false)
+        let worker = Task {
+            await gate.arriveAndWait()
+            completed.withLock { $0 = true }
+        }
+        #expect(await waitFor(timeout: 1.0) { completed.withLock { $0 } })
+        gate.release()
+        await worker.value
     }
 }
 
@@ -556,27 +578,47 @@ private func waitFor(
 /// tests to cancel the enclosing task while the continuation is already
 /// registered but the socket has not yet seen the ping.
 final class AsyncDispatchGate: @unchecked Sendable {
-    private let arrivedLock = OSAllocatedUnfairLock<Bool>(initialState: false)
-    private let continuationLock = OSAllocatedUnfairLock<CheckedContinuation<Void, Never>?>(initialState: nil)
+    private struct State {
+        var arrived = false
+        var released = false
+        var dispatchDecisionCompleted = false
+        var continuation: CheckedContinuation<Void, Never>?
+    }
+
+    private let stateLock = OSAllocatedUnfairLock(initialState: State())
 
     func arriveAndWait() async {
-        arrivedLock.withLock { $0 = true }
         await withCheckedContinuation { continuation in
-            continuationLock.withLock { $0 = continuation }
+            let alreadyReleased = stateLock.withLock { state in
+                state.arrived = true
+                guard !state.released else { return true }
+                state.continuation = continuation
+                return false
+            }
+            if alreadyReleased { continuation.resume() }
         }
     }
 
     func release() {
-        let continuation = continuationLock.withLock { state -> CheckedContinuation<Void, Never>? in
-            let current = state
-            state = nil
+        let continuation = stateLock.withLock { state -> CheckedContinuation<Void, Never>? in
+            state.released = true
+            let current = state.continuation
+            state.continuation = nil
             return current
         }
         continuation?.resume()
     }
 
     var hasArrivedSync: Bool {
-        arrivedLock.withLock { $0 }
+        stateLock.withLock { $0.arrived }
+    }
+
+    func markDispatchDecisionCompleted() {
+        stateLock.withLock { $0.dispatchDecisionCompleted = true }
+    }
+
+    var hasCompletedDispatchDecision: Bool {
+        stateLock.withLock { $0.dispatchDecisionCompleted }
     }
 }
 
@@ -601,7 +643,8 @@ final class HeartbeatTestHarness: Sendable {
         heartbeatInterval: TimeInterval,
         pongTimeout: TimeInterval,
         maxMissedPongs: Int,
-        beforeSendPingDispatch: (@Sendable () async -> Void)? = nil
+        beforeSendPingDispatch: (@Sendable () async -> Void)? = nil,
+        afterSendPingDispatch: (@Sendable () -> Void)? = nil
     ) {
         let url = URL(string: "wss://stub.invalid/hb")!
         self.task = WebSocketTask(url: url)
@@ -626,7 +669,8 @@ final class HeartbeatTestHarness: Sendable {
             runtimeRegistry: runtimeRegistry,
             eventHub: eventHub,
             clock: clock,
-            beforeSendPingDispatch: beforeSendPingDispatch
+            beforeSendPingDispatch: beforeSendPingDispatch,
+            afterSendPingDispatch: afterSendPingDispatch
         )
     }
 

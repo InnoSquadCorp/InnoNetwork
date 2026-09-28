@@ -1,0 +1,24 @@
+{
+  "openapi": "3.0.3",
+  "components": {
+    "securitySchemes": {
+      "headerKey": { "type": "apiKey", "name": "X-Custom-Credential", "in": "header" },
+      "queryKey": { "type": "apiKey", "name": "customQuery", "in": "query" },
+      "cookieKey": { "type": "apiKey", "name": "customCookie", "in": "cookie" },
+      "session": { "type": "http", "scheme": "bearer" },
+      "oauth": { "type": "oauth2", "flows": { "authorizationCode": { "authorizationUrl": "https://id.example/auth", "tokenUrl": "https://id.example/token", "scopes": { "Read": "Read access" } } } }
+    }
+  },
+  "security": [{"headerKey": []}],
+  "paths": {
+    "/header": {"get": {"operationId": "headerCredential", "responses": {"204": {"description": "ok"}}}},
+    "/query": {"get": {"operationId": "queryCredential", "security": [{"queryKey": []}], "responses": {"204": {"description": "ok"}}}},
+    "/cookie": {"get": {"operationId": "cookieCredential", "security": [{"cookieKey": []}], "responses": {"204": {"description": "ok"}}}},
+    "/and": {"get": {"operationId": "combinedCredential", "security": [{"headerKey": [], "session": []}], "responses": {"204": {"description": "ok"}}}},
+    "/or": {"get": {"operationId": "alternativeCredential", "security": [{"headerKey": []}, {"queryKey": []}, {}], "responses": {"204": {"description": "ok"}}}},
+    "/public": {"get": {"operationId": "removedCredential", "security": [], "responses": {"204": {"description": "ok"}}}},
+    "/oauth": {"get": {"operationId": "scopedCredential", "security": [{"headerKey": [], "oauth": ["Read"]}], "responses": {"204": {"description": "ok"}}}},
+    "/oauth-or": {"get": {"operationId": "scopedAlternative", "security": [{"oauth": ["Read"]}, {}], "responses": {"204": {"description": "ok"}}}},
+    "/oauth-retry": {"get": {"operationId": "scopedRenewal", "security": [{"oauth": ["Read"]}], "responses": {"204": {"description": "ok"}}}}
+  }
+}
