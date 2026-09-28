@@ -5,9 +5,12 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 artifact_root="${1:-$repo_root/.build/release-artifacts}"
 benchmark_source="$artifact_root/benchmarks/results.json"
 benchmark_target="$artifact_root/benchmarks.json"
+json_benchmark_source="$artifact_root/benchmarks/json/results.json"
+json_benchmark_target="$artifact_root/benchmarks-json-codec.json"
 
 required_sources=(
   "$benchmark_source"
+  "$json_benchmark_source"
   "$artifact_root/sbom.cdx.json"
   "$artifact_root/sbom-core-only.cdx.json"
 )
@@ -29,5 +32,7 @@ done
 
 cp "$benchmark_source" "$benchmark_target"
 cmp --silent "$benchmark_source" "$benchmark_target"
+cp "$json_benchmark_source" "$json_benchmark_target"
+cmp --silent "$json_benchmark_source" "$json_benchmark_target"
 
 printf 'prepare-release-artifacts: OK (%s)\n' "$artifact_root"

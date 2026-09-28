@@ -16,9 +16,12 @@ _IDENTIFIER_PATTERN = re.compile(
 )
 
 
-def load_guarded_benchmarks(repo_root: pathlib.Path) -> List[str]:
-    contract_path = repo_root / "Benchmarks/guarded-benchmarks.txt"
-    baseline_path = repo_root / "Benchmarks/Baselines/default.json"
+def load_guarded_benchmarks(repo_root: pathlib.Path, scope: str = "runtime") -> List[str]:
+    if scope not in ("runtime", "json"):
+        raise GuardedBenchmarkContractError(f"unknown benchmark scope: {scope}")
+    prefix = "json-" if scope == "json" else ""
+    contract_path = repo_root / f"Benchmarks/{prefix}guarded-benchmarks.txt"
+    baseline_path = repo_root / f"Benchmarks/Baselines/{prefix}default.json"
 
     if not contract_path.is_file():
         raise GuardedBenchmarkContractError(
@@ -54,6 +57,13 @@ def load_guarded_benchmarks(repo_root: pathlib.Path) -> List[str]:
         raise GuardedBenchmarkContractError(
             "duplicate guard identifier(s): " + ", ".join(sorted(duplicates))
         )
+
+    # JSON is guarded against a reviewed source revision, remeasured on the
+    # same runner. Do not turn one developer machine's initial numbers into
+    # an absolute throughput baseline. The comparator requires every guard
+    # in all six measured reports and fails closed on missing entries.
+    if scope == "json":
+        return raw_lines
 
     if not baseline_path.is_file():
         raise GuardedBenchmarkContractError(

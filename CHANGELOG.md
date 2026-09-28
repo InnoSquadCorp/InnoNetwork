@@ -12,6 +12,10 @@ The previously planned 6.1 candidates are included in this 6.0 release scope.
 
 ### Added — approved follow-up scope
 
+- A separate same-runner preserved-JSON benchmark lane guards parsing, mixed
+  Codable decode/encode, all-branch validation and budget exhaustion without
+  replacing the historical runtime baseline. JSON reports are retained as
+  separate PR/trend/release evidence.
 - Provisionally Stable origin-bound request credential providers: header API
   keys, explicitly enabled query/cookie keys, opaque bearer, atomic AND and
   explicit OR selection. Identity is frozen across retries; credentials are
@@ -47,6 +51,8 @@ The previously planned 6.1 candidates are included in this 6.0 release scope.
 
 ### Fixed — release candidate review
 
+- URL admission avoids repeated scheme/delimiter sets and unnecessary path
+  decoding while preserving origin, Unicode whitespace and traversal checks.
 - The preview generator preserves security requirements in a bounded non-secret
   IR and rejects distinct bearer alternatives on the legacy session path rather
   than erasing the identity choice. Extended requirements now use the separate

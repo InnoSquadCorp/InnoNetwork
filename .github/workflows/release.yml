@@ -243,6 +243,7 @@ jobs:
           name: release-artifacts
           path: |
             .build/release-artifacts/benchmarks.json
+            .build/release-artifacts/benchmarks-json-codec.json
             .build/release-artifacts/sbom.cdx.json
             .build/release-artifacts/sbom-core-only.cdx.json
             .build/release-artifacts/coverage-core/
@@ -379,6 +380,7 @@ jobs:
           set -euo pipefail
           artifacts=(
             .release-artifacts/benchmarks.json
+            .release-artifacts/benchmarks-json-codec.json
             .release-artifacts/sbom.cdx.json
             .release-artifacts/sbom-core-only.cdx.json
           )
@@ -421,6 +423,9 @@ jobs:
             .release-artifacts/benchmarks.json
             .release-artifacts/benchmarks.json.sig
             .release-artifacts/benchmarks.json.crt
+            .release-artifacts/benchmarks-json-codec.json
+            .release-artifacts/benchmarks-json-codec.json.sig
+            .release-artifacts/benchmarks-json-codec.json.crt
             .release-artifacts/sbom.cdx.json
             .release-artifacts/sbom.cdx.json.sig
             .release-artifacts/sbom.cdx.json.crt

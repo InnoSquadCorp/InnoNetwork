@@ -106,6 +106,13 @@ jobs:
             else
               printf '## InnoNetwork benchmark summary\n\nBenchmark run did not produce results.json.\n'
             fi
+            if [ -f .build/benchmarks/json/results.json ]; then
+              printf '\n## Preserved JSON codec\n\n'
+              python3 Scripts/render_benchmark_comment.py \
+                .build/benchmarks/json/results.json /dev/stdout
+            else
+              printf '\nJSON codec lane did not produce results.json.\n'
+            fi
           } > .build/benchmarks/comment.md
 
       - name: Find existing benchmark comment
@@ -169,7 +176,10 @@ jobs:
           python3 Scripts/append_benchmark_trend.py \
             .build/benchmarks/results.json \
             "$trend_dir/trends/benchmark-results.jsonl"
-          git -C "$trend_dir" add trends/benchmark-results.jsonl
+          python3 Scripts/append_benchmark_trend.py \
+            .build/benchmarks/json/results.json \
+            "$trend_dir/trends/json-codec-results.jsonl"
+          git -C "$trend_dir" add trends/benchmark-results.jsonl trends/json-codec-results.jsonl
           if git -C "$trend_dir" diff --cached --quiet; then
             exit 0
           fi

@@ -2,6 +2,23 @@
 
 Record the reason every time `default.json` changes.
 
+## 6.0.0 candidate — dedicated preserved JSON source baseline
+
+- Date: 2026-09-28
+- Source revision: `b358692e1e583b5cef1c97bb65208729b313f574`
+- Workloads: preserved parsing, mixed Codable decode/encode, all-branch anyOf,
+  and validation-work exhaustion (five independent guards).
+- Reason: the runtime source baseline predates these APIs. Add an independent
+  source comparison instead of dropping missing baseline entries or resetting
+  the original runtime baseline. `default.json` and runtime source SHA are
+  unchanged; no local absolute ops/s values are promoted into the CI baseline.
+- Enforcement: the default same-runner entry point runs both lanes, with three
+  interleaved pairs and the existing 20% threshold. JSON results are retained in
+  PR comments, trend logs and a separate required signed release artifact.
+- Evidence/provenance: see `docs/PERFORMANCE_AND_EXTENSION_REVIEW_6_0.md`.
+  Local results do not stand in for hosted CI; the baseline SHA must remain
+  available in public history (or be explicitly re-approved after squash).
+
 ## Template
 
 - Date:

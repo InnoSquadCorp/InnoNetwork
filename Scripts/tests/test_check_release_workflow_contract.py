@@ -77,6 +77,26 @@ def main() -> None:
         + workflow[publish_start:].replace(publish_condition, "", 1)
     )
     expect_failure(validator, unsafe_publication, "publication must have")
+    expect_failure(
+        validator,
+        workflow.replace("            .build/release-artifacts/benchmarks-json-codec.json\n", "", 1),
+        "must upload the JSON codec",
+    )
+    expect_failure(
+        validator,
+        workflow.replace("            .release-artifacts/benchmarks-json-codec.json\n", "", 1),
+        "must sign the JSON codec",
+    )
+    expect_failure(
+        validator,
+        workflow.replace("            .release-artifacts/benchmarks-json-codec.json.sig\n", "", 1),
+        "must retain the JSON codec",
+    )
+    expect_failure(
+        validator,
+        "".join(workflow.rsplit("            .release-artifacts/benchmarks-json-codec.json\n", 1)),
+        "must retain the JSON codec",
+    )
 
     print("Release workflow contract fixture tests passed.")
 

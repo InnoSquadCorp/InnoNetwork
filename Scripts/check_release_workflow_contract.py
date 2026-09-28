@@ -59,6 +59,17 @@ def validate(path: Path = WORKFLOW) -> None:
     if needs_index == -1 or condition_index > needs_index:
         fail("publication tag-only condition must be declared at job level")
 
+    if ".build/release-artifacts/benchmarks-json-codec.json" not in validation:
+        fail("validation must upload the JSON codec benchmark artifact")
+    signing = publication.split("artifacts=(", maxsplit=1)[-1].split(")", maxsplit=1)[0]
+    if ".release-artifacts/benchmarks-json-codec.json" not in signing:
+        fail("publication must sign the JSON codec benchmark artifact")
+    assets = publication.split("          files: |", maxsplit=1)[-1]
+    asset_lines = {line.strip() for line in assets.splitlines()}
+    for suffix in ("", ".sig", ".crt"):
+        if f".release-artifacts/benchmarks-json-codec.json{suffix}" not in asset_lines:
+            fail("publication must retain the JSON codec benchmark and signatures")
+
     print("release-workflow-contract: OK (manual validation cannot publish)")
 
 

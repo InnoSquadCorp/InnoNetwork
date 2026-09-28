@@ -21,6 +21,48 @@
   isolate heap allocations. Baseline added so future regressions in the chain
   shape surface here before reaching production.
 - `cache/response-cache-*` — response cache lookup and conditional revalidation preparation.
+  `response-cache-revalidation`은 만료된 항목의 정책 판단과 Vary 검사이며,
+  실제 HTTP 304 왕복 시간은 측정하지 않습니다.
+- 별도 JSON lane: `json/parse-preserved`, `decode-mixed`, `encode-mixed`,
+  `anyof-all-matches`, `reject-work-limit`. 32개 객체의 거대 정수·지수 표기·
+  한글·escape·unknown field를 사용하며 원문 동일성, 8개 분기 전체 일치,
+  예산 초과 실패를 assertion으로 확인합니다.
+
+### Preserved JSON source baseline
+
+`run_same_runner_benchmarks.sh`는 기존 23개 측정/14개 guard를 실행한 다음
+JSON 5개 guard를 별도 프로세스와 별도 source baseline으로 측정합니다.
+기존 `source-revision.txt`와 절대 수치 `default.json`은 바꾸지 않습니다.
+JSON의 기준은 `Baselines/json-source-revision.txt`의 `b358692`이며,
+이는 JSON 코덱이 포함된 최적화 전 소스입니다. 로컬 최초 측정값을 CI의
+절대 수치 기준으로 승격하지 않습니다.
+
+두 lane 모두 같은 runner에서 동일한 후보 harness로 기준/후보를 세 번
+교차 측정하고 paired delta 중앙값, 20% threshold를 사용합니다.
+JSON guard 목록은 `json-guarded-benchmarks.txt`이며 모든 측정 결과에
+해당 항목이 없으면 실패합니다. JSON 변경이 없는 실행도 생략하지 않습니다.
+원격 CI에서의 최초 실행과 toolchain별 변동성은 별도 확인이 필요합니다.
+
+```bash
+bash Scripts/run_same_runner_benchmarks.sh --scope json --output-dir .build/benchmarks/json
+```
+
+기존 workflow/로컬 preflight/release 호출은 자동으로 두 lane을 실행하며
+JSON 결과는 기존 출력 디렉터리 아래 `json/`에 저장됩니다. Runtime 비교에
+PR base SHA를 지정해도 JSON source baseline은 자동으로 바뀌지 않습니다.
+전체 실행 중 어느 lane이든 실패하면 명령이 실패합니다.
+PR comment와 scheduled trend에도 두 lane을 따로 남깁니다. Release는
+`benchmarks-json-codec.json`을 별도 필수 artifact로 검증·서명·첨부하도록
+구성되어 있습니다. 이 구성 변경이 실제 원격 서명/배포 완료를 뜻하지는 않습니다.
+
+새 기준 SHA는 현재 로컬 이력에 있습니다. 공개 후에도 baseline이 clone에서
+해결되어야 하며, squash로 해당 이력을 버릴 경우 승인된 공개 기준 SHA를
+다시 지정하고 검증해야 합니다. 기준 소스가 없을 때 HEAD로 조용히 대체하지 않습니다.
+
+프로파일링 전용 `--only cache` / `--only coalescing`은 더 긴 표본을 사용합니다.
+`--only json`은 `-Xswiftc -DINNO_BENCHMARK_PRESERVED_JSON`으로 빌드한
+실행 파일에서만 사용할 수 있습니다. 이 조건부 컴파일은 JSON이 없던 과거
+runtime 기준 소스에도 동일 harness를 적용하기 위해 필요합니다.
 
 ## Memory Metrics
 
@@ -168,8 +210,9 @@ baseline 갱신은 사람이 명시적으로 수행하는 운영 작업입니다
   재기록하고, `Baselines/CHANGELOG.md`에 환경 변경을 명시합니다.
 
 일시적인 hosted-runner noise (단발 -8%) 는 갱신 사유가 아닙니다.
-`Benchmarks` workflow의 guarded run은 실패할 때 최대 3회 재시도해
-단발 noise를 흡수합니다. CI의 unguarded `benchmark-smoke`는 CLI와 JSON
+guarded run은 실패할 때 통과할 때까지 자동 재시도하지 않습니다.
+세 쌍의 사전 정의된 표본과 relative spread로 noise를 판단합니다.
+CI의 unguarded `benchmark-smoke`는 CLI와 JSON
 생성만 한 번 확인하며 기준선 측정으로 사용하지 않습니다.
 
 ## Initial Baseline (4.0.0)
@@ -195,12 +238,12 @@ function dispatch.
 - PR CI의 `Benchmark Smoke` job은 `--quick` benchmark를 실행해 CLI 빌드와 JSON
   summary 생성을 확인합니다.
 - PR benchmark workflow는 base와 head를 같은 runner에서 각각 세 번,
-  교차 순서의 non-quick profile로 측정하고 양쪽 중앙값을 비교한 뒤 guarded
+  교차 순서의 `--quick` profile로 측정하고 paired delta 중앙값을 비교한 뒤 guarded
   benchmark set을 `20%` threshold로 검사합니다.
   JSON summary에서 Markdown comment를 렌더링해 guarded benchmark delta,
   per-benchmark threshold, regression reason을 PR에 남깁니다.
-- `decoding-interceptor-chain-{1,3,8}` guard도 PR에서는 non-quick profile의
-  20,000회 sample을 사용해 짧은 microbenchmark가 scheduling noise에
+- `decoding-interceptor-chain-{1,3,8}` guard도 PR에서는 quick profile의
+  50,000회 sample을 사용해 짧은 microbenchmark가 scheduling noise에
   과민해지는 것을 막습니다.
 - scheduled/manual benchmark workflow는 같은 guard 항목을 `20%` threshold로 검사합니다.
 - scheduled/manual benchmark 결과는 `benchmark-trends` branch의

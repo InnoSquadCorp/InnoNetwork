@@ -10,6 +10,8 @@ fixture_files=(
   "Benchmarks/Baselines/default.json"
   "Benchmarks/Baselines/source-revision.txt"
   "Benchmarks/guarded-benchmarks.txt"
+  "Benchmarks/json-guarded-benchmarks.txt"
+  "Benchmarks/Baselines/json-source-revision.txt"
   "Scripts/guarded_benchmarks.py"
   "Scripts/run_same_runner_benchmarks.sh"
   ".github/workflows/benchmarks.yml"
@@ -39,6 +41,22 @@ run_checker() {
 success_root="$work_dir/success"
 make_fixture "$success_root"
 run_checker "$success_root" >/dev/null
+
+json_only_root="$work_dir/json-only"
+make_fixture "$json_only_root"
+python3 - "$json_only_root/.github/workflows/benchmarks.yml" <<'PY'
+import pathlib
+import sys
+path = pathlib.Path(sys.argv[1])
+source = path.read_text(encoding="utf-8")
+path.write_text(source.replace('bash Scripts/run_same_runner_benchmarks.sh',
+                               'bash Scripts/run_same_runner_benchmarks.sh --scope json', 1), encoding="utf-8")
+PY
+if run_checker "$json_only_root" > "$work_dir/json-only.stdout" 2> "$work_dir/json-only.stderr"; then
+  echo "Expected JSON-only automation to fail the runtime guard contract." >&2
+  exit 1
+fi
+grep -Fq 'must retain runtime guards' "$work_dir/json-only.stderr"
 
 missing_declaration_root="$work_dir/missing-declaration"
 make_fixture "$missing_declaration_root"

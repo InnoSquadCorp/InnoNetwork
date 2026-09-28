@@ -14,6 +14,19 @@ grep -Fq 'same-runner-benchmarks: OK' "$work_dir/validate.stdout"
 bash "$runner" --regression-reason 'expected movement' --validate-only \
   > "$work_dir/reason.stdout"
 grep -Fq 'same-runner-benchmarks: OK' "$work_dir/reason.stdout"
+bash "$runner" --scope json --validate-only > "$work_dir/json.stdout"
+grep -Fq 'scope json' "$work_dir/json.stdout"
+if bash "$runner" --scope invalid --validate-only > "$work_dir/bad-scope.stdout" 2>&1; then
+  echo "Expected an invalid scope to fail." >&2
+  exit 1
+fi
+runtime_base="$(<"$repo_root/Benchmarks/Baselines/source-revision.txt")"
+if bash "$runner" --scope json --base-revision "$runtime_base" --validate-only \
+  > "$work_dir/pre-json.stdout" 2>&1; then
+  echo "Expected the pre-JSON source baseline to fail for JSON." >&2
+  exit 1
+fi
+grep -Fq 'must contain the preserved JSON codec' "$work_dir/pre-json.stdout"
 
 set +e
 bash "$runner" --unknown \
