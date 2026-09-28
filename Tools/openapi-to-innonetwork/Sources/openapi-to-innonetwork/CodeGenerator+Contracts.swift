@@ -46,6 +46,8 @@ extension CodeGenerator {
                     parameter.style == nil || parameter.style == "simple",
                     parameter.explode != true, let schema = parameter.schema,
                     schema.ref == nil, schema.nullable != true,
+                    schema.typeAlternatives == nil, schema.booleanSchema == nil,
+                    schema.unsupportedValidationKeywords.isEmpty,
                     schema.allOf == nil, schema.oneOf == nil, schema.anyOf == nil,
                     ["string", "integer", "boolean"].contains(schema.type ?? ""),
                     schema.format == nil || ["int32", "int64", "uuid"].contains(schema.format!)
@@ -88,7 +90,12 @@ extension CodeGenerator {
         return name
     }
 
-    func normalizedSchema(_ schema: Schema, schemas: [String: Schema], expanding: Set<String>) throws -> Schema {
+    func normalizedSchema(_ schema: Schema, schemas: [String: Schema], expanding: Set<String>, depth: Int = 0) throws
+        -> Schema
+    {
+        guard depth < 16 else {
+            throw GenerationError.unsupportedSchema("Typed schema normalization exceeds 16 levels")
+        }
         if schema.anyOf != nil { try validateAnyOfShape(schema) }
         if let reference = schema.ref { _ = try referenceName(reference, schemas: schemas) }
         if schema.oneOf != nil {
@@ -114,7 +121,7 @@ extension CodeGenerator {
                     }
                     expanded = schemas[name]!
                 }
-                let normalized = try normalizedSchema(expanded, schemas: schemas, expanding: visited)
+                let normalized = try normalizedSchema(expanded, schemas: schemas, expanding: visited, depth: depth + 1)
                 guard normalized.ref == nil, normalized.oneOf == nil, normalized.anyOf == nil,
                     normalized.nullable != true,
                     normalized.type == "object" || (normalized.type == nil && normalized.properties != nil)
@@ -137,14 +144,14 @@ extension CodeGenerator {
                 throw GenerationError.unsupportedSchema(
                     "Inline compositions must be named components referenced with $ref")
             }
-            _ = try normalizedSchema(property, schemas: schemas, expanding: expanding)
+            _ = try normalizedSchema(property, schemas: schemas, expanding: expanding, depth: depth + 1)
         }
         if let item = result.items?.value {
             guard item.allOf == nil, item.oneOf == nil, item.anyOf == nil, item.nullable != true else {
                 throw GenerationError.unsupportedSchema(
                     "Array composition/nullable items require an application-owned model")
             }
-            _ = try normalizedSchema(item, schemas: schemas, expanding: expanding)
+            _ = try normalizedSchema(item, schemas: schemas, expanding: expanding, depth: depth + 1)
         }
         return result
     }

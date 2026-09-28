@@ -1,7 +1,8 @@
 # Preserved JSON and the 6.0 validation subset
 
-`PreservedJSON`, `PreservedJSONCoding`, `JSONSchema`, `JSONProcessingLimits`, and
-`JSONProcessingError` are Provisionally Stable, opt-in contracts. Existing JSON
+`PreservedJSON`, `PreservedJSONCoding`, `JSONSchema`, `JSONSchemaPlan`,
+`JSONSchemaDialect`, `JSONProcessingLimits`, and `JSONProcessingError` are
+Provisionally Stable, opt-in contracts. Existing JSON
 transports and the Stable `@APIDefinition` macro are unchanged by this foundation.
 Generator integration adds `RequestEncodingPolicy.preservedJSON(limits:)` for
 body-capable methods. Existing `.json` behavior is unchanged. The custom response
@@ -56,7 +57,8 @@ Encoding also admits the aggregate live intermediate representation against
 Replacing a keyed value releases its charge when its last container/encoder
 handle is released; reusing a nested container does not charge it twice.
 An oversized intermediate state fails even if a later overwrite could have made
-the final output smaller. Resource failure is sticky for that encoding call.
+the final output smaller. Retained-representation budget exhaustion is sticky
+for that encoding call, including when application code catches the error.
 This is not a peak-RSS contract: Foundation scalar temporaries, Swift container
 overhead, the final output copy and application allocations are not counted.
 
@@ -87,7 +89,7 @@ depends on the local core product (macros disabled) to avoid a second validator;
 this adds no dependency to the runtime library.
 
 JSON and JSON-compatible YAML retain numeric lexemes. YAML aliases, merge keys,
-custom scalar tags and non-JSON numbers (hexadecimal, infinity, NaN) are rejected.
+custom scalar/collection/key tags and non-JSON numbers (hexadecimal, infinity, NaN) are rejected.
 No silent conversion through binary floating point occurs.
 
 ### Bounded pattern subset
@@ -112,7 +114,7 @@ assert email/date/URI validity or transform the preserved wire value.
 
 Plans compile named local references to stable integer identities in an immutable
 graph. Property/item edges consume an instance child and may recurse. Reference/
-anyOf cycles that make no instance progress are rejected at compilation, even if
+applicator cycles that make no instance progress are rejected at compilation, even if
 another alternative could match. Validation tracks active schema/instance pairs
 and shares depth/work limits across all branches. Independent calls have no
 shared mutable evaluator state.
@@ -123,8 +125,9 @@ errors remain throwing, not force-try crashes. External/file references and
 unresolved or malformed local pointers are rejected without IO.
 
 The strict grammar follows [RFC 8259](https://www.rfc-editor.org/rfc/rfc8259).
-The generator subset uses the [OpenAPI 3.0 Schema Object](https://spec.openapis.org/oas/v3.0.3.html#schema-object),
-not the complete 3.1 dialect. Nullable-required and multiple-match semantics are
+The generator retains OpenAPI 3.0 behavior and adds an explicit bounded 3.1
+milestone described in the [support matrix](SCHEMA_SUPPORT_MATRIX.md), not the
+complete 3.1 dialect. Nullable-required and multiple-match semantics are
 tested separately from successful Codable decoding.
 
 2026-09-28 fresh evidence at `e53ec95`: 15 focused tests cover exact numeric/unknown-field

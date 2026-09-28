@@ -5,6 +5,14 @@ import Testing
 
 @Suite("Lossless compiled schema generation")
 struct CompiledSchemaTests {
+    @Test func customYAMLTagsAreRejectedInEveryRole() throws {
+        for input in ["!custom {minimum: 1}", "!custom [1, 2]", "!custom minimum: 1", "minimum: !custom 1"] {
+            #expect(throws: (any Error).self) { try losslessYAMLJSON(input) }
+        }
+        #expect(try losslessYAMLJSON("!!map {minimum: 1}") == Data(#"{"minimum":1}"#.utf8))
+        #expect(try losslessYAMLJSON("!!seq [1, 2]") == Data("[1,2]".utf8))
+    }
+
     @Test func exactConstantsAndYAML() throws {
         let yaml = """
             openapi: 3.0.3

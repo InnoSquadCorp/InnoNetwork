@@ -23,11 +23,11 @@ Stable compatibility promise.
 
 The 5.0.0 release baseline remains the compatibility reference for the
 currently tagged 5.x line; this table tracks the approved unified 6.0 scope
-with 1,697 public declarations in the root package.
+with 1,700 public declarations in the root package.
 
 | Product | Public declarations |
 |---|---:|
-| `InnoNetwork` (core) | 1131 |
+| `InnoNetwork` (core) | 1134 |
 | `InnoNetworkWebSocket` | 164 |
 | `InnoNetworkDownload` | 94 |
 | `InnoNetworkUpload` | 110 |
@@ -36,27 +36,29 @@ with 1,697 public declarations in the root package.
 | `InnoNetworkOpenAPI` | 36 |
 | `InnoNetworkTrust` | 17 |
 | `InnoNetworkAuthAWS` | 10 |
-| **Total** | **1,697** |
+| **Total** | **1,700** |
 
 | Compatibility tier | Public declarations |
 |---|---:|
 | Stable consumer API | 307 |
-| Provisionally Stable consumer API | 1,357 |
+| Provisionally Stable consumer API | 1,360 |
 | `@_spi(GeneratedClientSupport)` | 33 |
-| **Total** | **1,697** |
+| **Total** | **1,700** |
 
 ## Why this matters
 
 The sequential schema extension explicitly adds six Provisionally Stable
 declarations: a compiled plan, its initializer and two validation methods, plus
 two payload-free schema errors. No Stable declaration is promoted or replaced.
+The dialect milestone adds three more declarations (the explicit dialect enum
+and its two cases), bringing this expansion to nine Provisional declarations.
 
 Moving the four HLS modules to InnoStream and folding the temporary
 `InnoNetworkNext` module into the root product first reduced the historical
 3,254-declaration snapshot to an intermediate 1,407 declarations. The approved
 6.0 scope also includes deadlines, upload controls, cache controls, bounded
 streaming/cursors, admission, advanced quota, tracing, resumable uploads, and
-their contract fixes, bringing the release baseline to 1,697 declarations.
+their contract fixes, bringing the release baseline to 1,700 declarations.
 These advanced additions remain Provisionally Stable until real server and
 consumer evidence supports promotion. The intermediate count is historical,
 not a separate release or the 6.0 release gate.

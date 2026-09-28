@@ -138,6 +138,8 @@ JSONProcessingError.noMatchingSchema
 JSONProcessingError.unsupportedCoder
 JSONProcessingError.invalidSchema
 JSONProcessingError.unsupportedSchema
+JSONSchemaDialect.openAPI30
+JSONSchemaDialect.jsonSchema202012
 JSONSchema.object
 JSONSchema.array
 JSONSchema.string

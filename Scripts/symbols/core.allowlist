@@ -1100,7 +1100,10 @@ InnoNetwork	swift.enum.case	JSONProcessingError.unsupportedCoder
 InnoNetwork	swift.enum.case	JSONProcessingError.invalidSchema
 InnoNetwork	swift.enum.case	JSONProcessingError.unsupportedSchema
 InnoNetwork	swift.struct	JSONSchemaPlan
-InnoNetwork	swift.init	JSONSchemaPlan.init(schema:definitions:limits:)
+InnoNetwork	swift.init	JSONSchemaPlan.init(schema:definitions:dialect:limits:)
+InnoNetwork	swift.enum	JSONSchemaDialect
+InnoNetwork	swift.enum.case	JSONSchemaDialect.openAPI30
+InnoNetwork	swift.enum.case	JSONSchemaDialect.jsonSchema202012
 InnoNetwork	swift.method	JSONSchemaPlan.matches(_:limits:)
 InnoNetwork	swift.method	JSONSchemaPlan.matchingAlternatives(_:limits:)
 InnoNetwork	swift.enum.case	JSONSchema.anyOf(_:)

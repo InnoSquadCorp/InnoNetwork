@@ -67,11 +67,11 @@ assert_scope_change_rejected() {
 }
 
 assert_scope_change_rejected docs/releases/6.0.0.md \
-  's/1,697 declarations/1,407 declarations/g' 'the superseded 6.0 API count'
+  's/1,700 declarations/1,407 declarations/g' 'the superseded 6.0 API count'
 assert_scope_change_rejected Scripts/symbols/budgets.tsv \
-  's/1697/1407/g' 'an outdated API budget'
+  's/1700/1407/g' 'an outdated API budget'
 assert_scope_change_rejected Scripts/symbols/tier-budgets.tsv \
-  's/1357/1068/g' 'an outdated provisional tier budget'
+  's/1360/1068/g' 'an outdated provisional tier budget'
 assert_scope_change_rejected docs/ROADMAP.md \
   's/## 6.0.0 Included Capabilities/## 6.1.0 Candidate Scope/' 'a split roadmap'
 assert_scope_change_rejected docs/releases/6.1.0.md \

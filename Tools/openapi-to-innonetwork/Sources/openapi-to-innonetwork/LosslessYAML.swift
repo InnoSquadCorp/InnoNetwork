@@ -36,6 +36,7 @@ func losslessYAMLJSON(_ text: String) throws -> Data {
             default: throw GenerationError.parseFailure("Unsupported YAML scalar tag")
             }
         case .sequence(let sequence):
+            guard node.tag == Tag(.seq) else { throw GenerationError.parseFailure("Unsupported YAML sequence tag") }
             try append(Data("[".utf8))
             for (index, child) in sequence.enumerated() {
                 if index > 0 { try append(Data(",".utf8)) }
@@ -43,12 +44,16 @@ func losslessYAMLJSON(_ text: String) throws -> Data {
             }
             try append(Data("]".utf8))
         case .mapping(let mapping):
+            guard node.tag == Tag(.map) else { throw GenerationError.parseFailure("Unsupported YAML mapping tag") }
             try append(Data("{".utf8))
             var names: Set<String> = []
             for (index, pair) in mapping.enumerated() {
                 guard case .scalar(let key) = pair.key, key.string != "<<", names.insert(key.string).inserted else {
                     throw GenerationError.parseFailure("YAML keys must be unique scalars without merges")
                 }
+                guard
+                    [Tag(.str), Tag(.int), Tag(.float), Tag(.bool), Tag(.null), Tag(.timestamp)].contains(pair.key.tag)
+                else { throw GenerationError.parseFailure("Unsupported YAML key tag") }
                 if index > 0 { try append(Data(",".utf8)) }
                 try append(JSONEncoder().encode(key.string))
                 try append(Data(":".utf8))

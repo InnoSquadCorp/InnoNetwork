@@ -74,7 +74,7 @@ if xcrun swift run --package-path "$tool_dir" openapi-to-innonetwork \
   echo 'Generator silently discarded an anyOf constraint.' >&2
   exit 1
 fi
-if ! grep -Fq 'anyOf cannot validate keywords: uniqueItems' "$test_dir/unsupported.stderr"; then
+if ! grep -Fq 'Compiled schema validation failed: unsupportedSchema' "$test_dir/unsupported.stderr"; then
   cat "$test_dir/unsupported.stderr" >&2
   echo 'Unsupported-schema fixture failed for an unexpected reason.' >&2
   exit 1
@@ -91,6 +91,17 @@ xcrun swiftc -swift-version 6 -parse-as-library -I "$bin_path" -I "$bin_path/Mod
   "$compiled"/*.swift "$fixtures/schema-constraints-runtime.swift" "${core_objects[@]}" \
   -o "$test_dir/schema-constraints-runtime"
 "$test_dir/schema-constraints-runtime"
+
+modern="$test_dir/schema-31"
+for destination in "$modern" "$test_dir/schema-31-again"; do
+  xcrun swift run --package-path "$tool_dir" openapi-to-innonetwork \
+    --input "$fixtures/schema-31.json" --output "$destination" --module-name Modern
+done
+diff -ru "$modern" "$test_dir/schema-31-again"
+xcrun swiftc -swift-version 6 -parse-as-library -I "$bin_path" -I "$bin_path/Modules" \
+  "$modern"/*.swift "$fixtures/schema-31-runtime.swift" "${core_objects[@]}" \
+  -o "$test_dir/schema-31-runtime"
+"$test_dir/schema-31-runtime"
 
 if xcrun swift run --package-path "$tool_dir" openapi-to-innonetwork \
   --input "$fixtures/colliding-operation-names.json" \

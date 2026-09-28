@@ -29,7 +29,7 @@ The previously planned 6.1 candidates are included in this 6.0 release scope.
   bounded schema validation retain arbitrary numeric tokens and unknown fields.
   Preview named local-reference `anyOf` models expose every matching branch and
   throwing typed views, including nested models and authenticated request bodies.
-  Unsupported constraints and recursive graphs fail before output is written.
+  Unsupported constraints and zero-progress recursive graphs fail before output is written.
 - Preserved JSON encoding now rejects aggregate retained buffers early, accounts
   for overwritten/reused containers, and matches Foundation's absent superclass
   null behavior for both keyed `superDecoder` overloads.
@@ -42,6 +42,11 @@ The previously planned 6.1 candidates are included in this 6.0 release scope.
 - Productive local recursive schemas compile to immutable identity graphs and
   preserved wrappers; zero-progress cycles fail before generation. Validation
   remains bounded and independent across concurrent callers.
+- Explicit 2020-12 / OpenAPI 3.1 subset admission adds boolean schemas, type/null,
+  reference siblings, root definitions, const and schema allOf/oneOf. Foreign
+  dialects, unsupported vocabularies and unsupported 3.1 operation roles fail.
+  The generator remains Preview; typed normalization now rejects excessive depth
+  before overflowing a worker stack. This is not complete OpenAPI 3.1 support.
 - `RequestEncodingPolicy.preservedJSON(limits:)` is an explicit 6.0 encoding
   choice; exhaustive switches over the Stable enum must handle the added case.
 - Scoped OAuth validates exact grants and expiry, supports one identity-bound
