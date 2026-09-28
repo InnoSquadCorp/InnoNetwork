@@ -82,21 +82,50 @@ actor FlakyContextSession: URLSessionProtocol {
 
 actor NetworkEventStore {
     private var events: [NetworkEvent] = []
+    private let terminalSignal = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+    private let observationStarted = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
 
     func append(_ event: NetworkEvent) {
         events.append(event)
+        if event.isTerminalRequestOutcome {
+            terminalSignal.continuation.yield(())
+            terminalSignal.continuation.finish()
+        }
     }
 
     func snapshot() -> [NetworkEvent] {
         events
+    }
+
+    /// For one logical request and one waiter. Completion is recorded before
+    /// signaling; policy decisions cannot make an incomplete lifecycle ready.
+    /// AsyncStream also releases a cancelled waiter without a polling timeout.
+    func waitForTerminalEvent() async throws -> [NetworkEvent] {
+        var iterator = terminalSignal.stream.makeAsyncIterator()
+        observationStarted.continuation.yield(())
+        observationStarted.continuation.finish()
+        _ = await iterator.next()
+        try Task.checkCancellation()
+        return events
+    }
+
+    /// Signals entry into the observation boundary, not task creation.
+    func waitForTerminalObservationToStart() async throws {
+        var iterator = observationStarted.stream.makeAsyncIterator()
+        _ = await iterator.next()
+        try Task.checkCancellation()
     }
 }
 
 
 struct RecordingNetworkEventObserver: NetworkEventObserving {
     let store: NetworkEventStore
+    var beforeTerminal: (@Sendable () async -> Void)? = nil
 
     func handle(_ event: NetworkEvent) async {
+        if event.isTerminalRequestOutcome {
+            await beforeTerminal?()
+        }
         await store.append(event)
     }
 }
@@ -161,23 +190,6 @@ func makeTrustObservabilityChallenge(
         error: nil,
         sender: sender
     )
-}
-
-
-func waitForTrustObservabilityEvents(
-    store: NetworkEventStore,
-    minimumCount: Int,
-    timeout: TimeInterval = 1.0
-) async -> [NetworkEvent] {
-    let deadline = Date().addingTimeInterval(timeout)
-    while Date() < deadline {
-        let events = await store.snapshot()
-        if events.count >= minimumCount {
-            return events
-        }
-        try? await Task.sleep(nanoseconds: 10_000_000)
-    }
-    return await store.snapshot()
 }
 
 

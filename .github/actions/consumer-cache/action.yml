@@ -1,0 +1,22 @@
+name: Consumer SwiftPM cache
+description: Restore lane-isolated SwiftPM inputs without skipping validation
+inputs:
+  lane:
+    description: examples, macros, or openapi
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Fingerprint actual toolchain and dependency graphs
+      id: fingerprint
+      shell: bash
+      env:
+        CONSUMER_CACHE_LANE: ${{ inputs.lane }}
+      run: python3 Scripts/consumer_ci_cache.py "$CONSUMER_CACHE_LANE" --github-output
+
+    - name: Restore SwiftPM cache
+      uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      with:
+        path: ${{ steps.fingerprint.outputs.paths }}
+        key: ${{ steps.fingerprint.outputs.prefix }}${{ github.sha }}
+        restore-keys: ${{ steps.fingerprint.outputs.prefix }}

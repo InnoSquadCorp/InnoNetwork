@@ -6,6 +6,126 @@ approved request-freshness and generator extensions; see `REMAINING_WORK_6_0.md`
 for their ordered delivery. New runtime APIs remain Provisionally Stable.
 It is not a release-ready declaration and does not publish a tag.
 
+## Post-merge Release validation — 2026-09-28
+
+[Ready PR #126](https://github.com/InnoSquadCorp/InnoNetwork/pull/126) was
+protected-squash merged to `7918e11c13c0db25b76bdca8417afd840187498f`, with a tree
+identical to `9ef40c014619dbd076abdad2e119ab3d5da16151`. That candidate passed all
+15 required checks, full TSAN and runtime/JSON benchmark guards. No bypass or
+threshold change was used.
+
+The first [manual Release run](https://github.com/InnoSquadCorp/InnoNetwork/actions/runs/36401406352)
+on exact main `7918e11` passed all five platform builds and both benchmark lanes,
+and actually skipped Publish Release. It nevertheless **failed** serial coverage:
+`lifecycleEventsWithRetry` saw zero `requestFinished` events in its early snapshot.
+Downstream coverage reporting, sharded tests, DocC and SBOM/artifact preparation
+did not run; candidate passes do not close this final-main gate.
+
+The test waited for eight arbitrary events instead of the terminal callback.
+Policy decision events can satisfy that count while delivery of the terminal
+event is still pending; observer execution intentionally does not block request
+completion. Holding only that callback reproduced the same assertion failure
+locally; the ungated control passed. The relevant runtime and test files were
+unchanged by the Ready PR, so this is not a Ready metadata runtime regression.
+
+The corrective change is test-only: an actor-owned, buffered terminal signal
+replaces count-based polling, preserving the complete retry/correlation/outcome
+assertions. Gated and ungated variants cover delayed terminal delivery; separate
+checks cover already-recorded success/failure and cancellation of the waiter.
+No production behavior, performance baseline, workflow, or validation limit is
+changed. A new exact-head protected PR and final-main manual Release pass remain
+required. The initial failure log, deterministic reproducer patch, passing control
+and correction logs are retained in `.build/release-continuation/lifecycle-*`
+and `final-release-7918e11-failed.{log,json}`.
+
+Fresh local correction validation (Xcode 27.0 / Swift 6.4): all seven lifecycle
+tests passed after formatting and in 20 consecutive focused coverage runs.
+Full serial coverage passed all eight products: 1,923 registered tests,
+1,919 ordinary passes and four explicitly skipped opt-in live tests. Formatting
+over 517 Swift files and the docs/public API contracts also passed; the public
+surface remains 1,700 declarations (307 Stable / 1,360 Provisional / 33 SPI).
+These local results do not substitute for the corrective PR's remote checks.
+
+### Corrective PR bounded-shard follow-up
+
+The Xcode 26 bounded-shard job on `9bcefc3` subsequently failed the existing
+`concurrentRequiredSessionAuthenticationSingleFlightsRefresh` test: nine token
+reads and two refreshes rather than eight reads/one refresh. The modified
+observability tests passed. The auth test and production coordinator are
+identical between PR base `7918e11` and `9bcefc3`.
+
+A controlled final token read held until another request completed reproduced
+the same 9/2 failure on both revisions under local Xcode 27 / Swift 6.4. This
+does not claim a local Swift 6.2 run. The fake always returned nil, even after a
+successful refresh, and its eight-read barrier did not prove all eight callers
+had joined the in-flight refresh. The coordinator correctly re-reads when a
+provider call spans a completed refresh generation; the stateless fake then
+reported another missing token.
+
+The fixture now models caller-owned token storage and tests both normal overlap
+and a delayed stale read. Exactly one refresh and eight correctly authorized
+transports remain required; the delayed variant additionally requires a token
+re-read. It does not suppress a failed assertion or change auth runtime behavior.
+Its waiters are cancellation-aware. A separate review observation also led to
+awaiting explicit terminal-observer entry before cancelling its waiter, rather
+than racing task creation. This signal proves entry into the observation method,
+not an undocumented internal AsyncStream suspension point.
+
+The original hosted log, deterministic reproduction patch and base/head control
+logs remain under `.build/release-continuation/` with `shards-failed-9bcefc3` and
+`auth-delayed-*` names. New-head remote checks and final merged-main Release
+validation are still required; prior successful jobs are revision-specific.
+
+The final local correction passed 43 focused tests and 20 consecutive repeats.
+Removing only token persistence made the delayed-read variant fail with two
+refreshes, confirming that the one-refresh invariant is still enforced; restoring
+persistence passed again. Full serial coverage and all four bounded shards
+passed 1,923 registered tests (1,919 ordinary passes / four opt-in live skips).
+Formatting passed over 517 Swift files. No production source was modified.
+
+### Corrective PR cache performance follow-up
+
+The first [benchmark attempt on `322b84b`](https://github.com/InnoSquadCorp/InnoNetwork/actions/runs/36410949203/attempts/1)
+failed the unchanged 20% runtime guard: cache revalidation paired median
+-24.2435%, with pairs -24.2435/-28.8857/-11.5734% and 17.3123 percentage-point
+spread. The JSON lane did not execute. Full logs and artifact 10966195389 remain
+under `.build/release-continuation/benchmarks-322b84b-failed*`. One unchanged-
+condition rerun was requested, not an open-ended retry-until-green procedure.
+
+Runtime, harness, dependency and workflow sources were identical between
+`7918e11`, `9bcefc3` and `322b84b`, but the guard compares historical `a4aaaba`,
+so that identity alone does not rule out an older regression. Fresh local
+Xcode 27 / Swift 6.4 pairs passed all 14 runtime and five JSON guards, with
+cache median -12.4612% and 3.5527pp spread. This is not a reproduction under
+the hosted Xcode 26 / Swift 6.2 environment; hosted variability is still not
+attributed to a specific machine cause.
+
+Local Release profiles and disassembly isolated a genuine code-generation
+cost: inlining `prepareWithRFC9111` into the common preparation dispatch
+hoisted the adapter's payload-heavy stack temporaries into plain `cacheFirst`
+calls. Historical/current stack-probe self samples were 131/937 ms for the
+same 50-million-iteration diagnostic. Changing the ternary return to an `if`,
+or disabling inlining only on the recursive dispatch, did not remove the
+prologue and were reverted as negative controls.
+
+Keeping the RFC adapter as an out-of-line call removes those common-path
+temporaries without changing any directive, age, freshness or payload logic.
+Original/modified local cache pairs improved +11.5440/+11.3011/+13.9064%
+(median +11.5440%). The modified profile reduced stack-probe samples to
+142 ms; profiles are diagnostic evidence, not acceptance measurements.
+The raw traces, exported samples, assembly, negative-control patches and
+paired JSON results are retained as `cache-*` under the continuation directory.
+The complete dirty outlining candidate then passed all 14 runtime and five JSON
+paired guards at the unchanged 20% threshold. Cache revalidation median was
+-4.54% versus historical `a4aaaba`; results are retained in
+`benchmarks-cache-outlining/` and `cache-outlining-benchmarks.log`. These local
+Xcode 27 / Swift 6.4 results include the recorded four-line source patch, not the
+unmodified `322b84b` tree.
+Neither the benchmark harness nor a baseline, guard limit or public API was
+changed. New exact-head remote checks and final merged-main Release validation
+remain required; successful checks on the preceding test-only candidate do
+not validate this runtime optimization.
+
 ## Current readiness transition — 2026-09-28
 
 [PR #125](https://github.com/InnoSquadCorp/InnoNetwork/pull/125) was squash-merged

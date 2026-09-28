@@ -17,6 +17,10 @@ package extension ResponseCachePolicy {
     /// `Expires`, and `Last-Modified` heuristic overrides on top of the
     /// inner policy's decision rather than reimplementing freshness math, so
     /// wrapping inherits future changes to the inner policy automatically.
+    // Keep this adapter out of the common preparation dispatch. Inlining its
+    // payload-heavy branches hoists dynamic stack temporaries into every
+    // cacheFirst call, even when no RFC adapter is selected.
+    @inline(never)
     func prepareWithRFC9111(
         inner: ResponseCachePolicy,
         cached: CachedResponse?,

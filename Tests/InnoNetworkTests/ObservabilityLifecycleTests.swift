@@ -4,7 +4,7 @@ import Testing
 
 @testable import InnoNetwork
 
-@Suite("Observability Lifecycle Tests", .serialized)
+@Suite("Observability Lifecycle Tests", .serialized, .timeLimit(.minutes(1)))
 struct ObservabilityLifecycleTests {
 
     private struct SensitiveQueryRequest: APIDefinition {
@@ -40,7 +40,7 @@ struct ObservabilityLifecycleTests {
             SensitiveQueryRequest(parameters: .init(token: "secret", page: 2))
         )
 
-        let events = await waitForTrustObservabilityEvents(store: store, minimumCount: 4)
+        let events = try await store.waitForTerminalEvent()
         let requestURLs = events.compactMap { event -> String? in
             switch event {
             case .requestStart(_, _, let url, _), .requestAdapted(_, _, let url, _):
@@ -96,11 +96,25 @@ struct ObservabilityLifecycleTests {
         #expect(!configurationError.observabilityCategory.contains(secret))
     }
 
-    @Test("Network lifecycle events include retry chain with same correlation id")
-    func lifecycleEventsWithRetry() async throws {
+    @Test(
+        "Network lifecycle events include retry chain with same correlation id",
+        arguments: [false, true]
+    )
+    func lifecycleEventsWithRetry(pauseTerminal: Bool) async throws {
         let session = FlakyContextSession(failuresBeforeSuccess: 1)
         let store = NetworkEventStore()
-        let observer = RecordingNetworkEventObserver(store: store)
+        let terminalArrived = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        let terminalRelease = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        defer {
+            terminalArrived.continuation.finish()
+            terminalRelease.continuation.finish()
+        }
+        let observer = RecordingNetworkEventObserver(store: store) {
+            guard pauseTerminal else { return }
+            terminalArrived.continuation.yield(())
+            terminalArrived.continuation.finish()
+            for await _ in terminalRelease.stream {}
+        }
         let networkConfiguration = NetworkConfiguration(
             baseURL: URL(string: "https://api.example.com/v2")!,
             retryPolicy: TrustObservabilityRetryPolicy(),
@@ -118,7 +132,18 @@ struct ObservabilityLifecycleTests {
         let value = try await client.request(TrustObservabilityRequest())
         #expect(value == "ok")
 
-        let events = await waitForTrustObservabilityEvents(store: store, minimumCount: 8)
+        if pauseTerminal {
+            var arrival = terminalArrived.stream.makeAsyncIterator()
+            _ = await arrival.next()
+            try Task.checkCancellation()
+            let beforeTerminal = await store.snapshot()
+            // The old eight-event threshold was already satisfied here,
+            // even though the terminal callback was deliberately held back.
+            #expect(beforeTerminal.count >= 8)
+            #expect(!beforeTerminal.contains { $0.isTerminalRequestOutcome })
+            terminalRelease.continuation.finish()
+        }
+        let events = try await store.waitForTerminalEvent()
         #expect(events.count >= 8)
 
         let requestIDs = Set(events.map(trustObservabilityRequestID(of:)))
@@ -164,6 +189,43 @@ struct ObservabilityLifecycleTests {
             return false
         }.count
         #expect(finishedCount == 1)
+    }
+
+    @Test("Terminal observation retains an outcome recorded before waiting", arguments: [false, true])
+    func terminalObservationBeforeWaiting(failed: Bool) async throws {
+        let store = NetworkEventStore()
+        let requestID = UUID()
+        let terminal: NetworkEvent =
+            failed
+            ? .requestFailed(requestID: requestID, errorCode: 1, message: "test")
+            : .requestFinished(requestID: requestID, statusCode: 200, byteCount: 0)
+        await store.append(terminal)
+
+        let events = try await store.waitForTerminalEvent()
+        #expect(events.count == 1)
+        #expect(events.first?.isTerminalRequestOutcome == true)
+        #expect(events.map(trustObservabilityRequestID(of:)) == [requestID])
+    }
+
+    @Test("Cancelled terminal observation does not return an incomplete lifecycle")
+    func cancelledTerminalObservation() async throws {
+        let store = NetworkEventStore()
+        let waiter = Task { try await store.waitForTerminalEvent() }
+        try await withTaskCancellationHandler {
+            do {
+                try await store.waitForTerminalObservationToStart()
+            } catch {
+                waiter.cancel()
+                _ = await waiter.result
+                throw error
+            }
+            waiter.cancel()
+            await #expect(throws: CancellationError.self) {
+                try await waiter.value
+            }
+        } onCancel: {
+            waiter.cancel()
+        }
     }
 
     @Test("Network request context forwards trust policy and retry index")
