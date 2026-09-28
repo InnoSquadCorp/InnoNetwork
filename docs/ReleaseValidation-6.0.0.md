@@ -220,6 +220,53 @@ The performance and consumer evidence above remains bound to `b1dc8d1`; it is
 not relabelled as a new measurement after these CI follow-ups. The final PR SHA
 must receive new remote checks.
 
+### Swift 6.2 generator build follow-up — 2026-09-28
+
+Candidate `bbbe4af13718103feb8721569776e4a5586fb9d6` passed the
+[remote benchmark run](https://github.com/InnoSquadCorp/InnoNetwork/actions/runs/36384626112)
+and [full TSAN run](https://github.com/InnoSquadCorp/InnoNetwork/actions/runs/36384626070).
+The benchmark guard thresholds remain 20%; the event paired median was +21.13%
+with a 32.0 percentage-point pair spread. This is passing gate evidence, not
+proof that hosted variability has disappeared. Raw paired measurements and the
+initial failure remain preserved.
+
+However, its required
+[Consumer Smoke job](https://github.com/InnoSquadCorp/InnoNetwork/actions/runs/36384626077/job/108807397932)
+failed while building `openapi-to-innonetwork`, before its generator tests and
+generated-output validation could run. Xcode 26.0.1 (17A400), Apple Swift 6.2
+(`swiftlang-6.2.0.19.9`), rejected the five-way child-schema collection expression
+in `needsCompiledSchema` with a type-checking-time diagnostic. The compiler did
+not report a runtime test failure. This generator source was added in the PR;
+it is absent from the `7b525804` main baseline, so the failure must not be
+attributed to the event-delivery optimization or dismissed as a baseline flake.
+
+The follow-up splits the overloaded collection expression into separately typed
+appends, preserving properties/anyOf/allOf/oneOf/items traversal and the existing
+reference/depth checks. It does not raise compiler budgets, change a public API,
+broaden the supported schema subset, or weaken a validation gate. Three new
+parameterized tests cover 13 cases: nested constraint selection, fail-closed
+unsupported assertions, and ordinary typed-model controls. The constrained
+allOf/oneOf cases retain their existing explicit rejection by the schema compiler.
+
+The added characterization tests passed against the original source on local
+Swift 6.4 before the expression change. After the change, all 48 generator tests
+passed; all generated files from six integration fixtures were byte-identical
+to the original generator. Generated-output parse/typecheck and executable
+security/composition/anyOf/constraints/recursive/3.1-subset checks also passed,
+along with repository formatting and the unchanged 1,700-declaration API/docs
+contract. Local Swift 6.4 is not a reproduction or a pass of
+the Swift 6.2 compiler failure: that toolchain is not installed locally. The
+replacement PR head must pass Consumer Smoke and the other required checks,
+plus benchmarks and full TSAN, before protected merge. The old head's successes
+do not replace exact-head validation.
+
+Evidence copies are under `.build/release-continuation/`: the original
+`consumer-full-bbbe4af.log`, `benchmarks-remote-bbbe4af/` raw artifact, and
+`generator-control-bbbe4af.log`, `generator-fixed.log`, `generator-before/`,
+and `generator-after/` local controls. Reproduce the generator checks with
+`xcrun swift test --package-path Tools/openapi-to-innonetwork` and
+`bash Scripts/test_openapi_generated_output.sh`.
+
 ### Consumer snapshot results
 
 The 12 non-HLS app snapshots passed their full app builds: Appbyul, BlPia, Bora,

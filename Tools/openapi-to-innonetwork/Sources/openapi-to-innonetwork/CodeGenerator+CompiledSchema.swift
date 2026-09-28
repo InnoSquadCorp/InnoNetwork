@@ -18,9 +18,14 @@ extension CodeGenerator {
             }
             return true
         }
-        let children =
-            Array((schema.properties ?? [:]).values) + (schema.anyOf ?? []) + (schema.allOf ?? [])
-            + (schema.oneOf ?? []) + (schema.items.map { [$0.value] } ?? [])
+        // Keep each append separately typed for the supported Swift 6.2 compiler.
+        // A single chain of optional collections and overloaded + can exceed
+        // its expression type-checking budget.
+        var children: [Schema] = Array((schema.properties ?? [:]).values)
+        children.append(contentsOf: schema.anyOf ?? [])
+        children.append(contentsOf: schema.allOf ?? [])
+        children.append(contentsOf: schema.oneOf ?? [])
+        if let item = schema.items { children.append(item.value) }
         for child in children {
             if try needsCompiledSchema(child, schemas: schemas, visited: visited, depth: depth + 1) { return true }
         }
