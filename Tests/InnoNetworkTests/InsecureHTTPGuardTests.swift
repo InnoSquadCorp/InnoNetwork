@@ -122,6 +122,38 @@ struct InsecureHTTPGuardTests {
         }
     }
 
+    @Test("Dot-segment fast path retains structural decoding and safe controls")
+    func dotSegmentFastPathControls() {
+        let safe = ["", "/", "/users/1", "/한글/🚀", "/v1/file.json", "/.../x", "/%41/%FF", "/a\\b"]
+        let unsafe = [".", "..", "/./", "/..\\x", "/%2e/", "/%252e%252e/x", "/%FF/%2e%2e"]
+        for path in safe { #expect(!NetworkURLAdmission.containsDotSegment(path)) }
+        for path in unsafe { #expect(NetworkURLAdmission.containsDotSegment(path)) }
+    }
+
+    @Test("Host scan retains non-ASCII whitespace and encoded bracket rejection")
+    func hostScanControls() throws {
+        for host in [
+            "good%7Fevil.example", "good%C2%A0evil.example", "good%E3%80%80evil.example",
+            "good%5Bevil.example", "good%5Devil.example", "good%25evil.example",
+            "%5B%CC%81%3A%3A1%5D",
+        ] {
+            // Some Foundation versions reject these before constructing URL.
+            // A URL admitted by Foundation must still fail our boundary check.
+            if let url = URL(string: "https://\(host)/users") {
+                #expect(throws: NetworkError.self) {
+                    try NetworkURLAdmission.validate(url, policy: .http(allowsInsecure: false))
+                }
+            }
+        }
+        for address in ["https://example.com/users", "https://127.0.0.1/users", "wss://한글.example/users"] {
+            let url = try #require(URL(string: address))
+            let policy: NetworkURLAdmission.Policy =
+                address.hasPrefix("wss")
+                ? .webSocket(allowsInsecure: false) : .http(allowsInsecure: false)
+            #expect(try NetworkURLAdmission.validate(url, policy: policy) == url)
+        }
+    }
+
     @Test("NetworkConfiguration default allowsInsecureHTTP is false")
     func configDefaultsToSecure() {
         let config = NetworkConfiguration.safeDefaults(baseURL: URL(string: "https://api.example.com")!)
