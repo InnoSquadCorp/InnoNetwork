@@ -1,7 +1,8 @@
-# API Stability (6.0 Draft)
+# API Stability (6.x)
 
-This document defines the planned compatibility contract for InnoNetwork 6.
-`6.0.0` has not been tagged; `5.1.0` remains the latest stable public release.
+This document defines the approved compatibility contract for InnoNetwork 6.
+`6.0.0` is the approved compatibility baseline for this contract. Approval is
+not publication; confirm the matching tag and GitHub Release before adoption.
 The Stable ledger inherited from 5.x remains protected unless the 6.0
 migration guide explicitly removes or relocates a package boundary.
 
@@ -152,7 +153,7 @@ macro contract.
 
 ## Provisionally Stable
 
-Symbols in this section form the planned 6.0 public surface and may evolve in
+Symbols in this section form the approved 6.0 public surface and may evolve in
 6.x by gaining new cases, parameters, or shape, with each change shipping
 release notes and a migration path. Declarations inherited from the 5.x line
 retain their documented source-compatibility boundary unless the 6.0 migration
@@ -230,7 +231,7 @@ acquiring a 6.x Stable compatibility promise.
 
 ## 6.x Evolution Boundaries
 
-Per-symbol compatibility boundaries for the planned 6.x line follow.
+Per-symbol compatibility boundaries for the approved 6.x line follow.
 Stable entries describe commitments that stay source-compatible throughout
 6.x; Provisionally Stable entries describe their explicitly allowed evolution.
 
@@ -516,7 +517,7 @@ general handshake retry policy would retry an ordinary transport timeout.
   explicit nil limits remain the opt-out.
 - `NetworkConfiguration.init(...)` — the direct 32-parameter public
   construction surface was removed before the 4.0.0 baseline and is not part
-  of the planned 6.x Stable API. Use presets and the named configuration packs
+  of the 6.x Stable API. Use presets and the named configuration packs
   passed to `NetworkConfiguration.advanced(...)` instead.
 - Core, Download, and WebSocket configuration runtime fields are package-owned.
   Configuration values are immutable commands, not readable state mirrors;
@@ -552,27 +553,26 @@ general handshake retry policy would retry an ordinary transport timeout.
 
 ## Version Pinning Guidance
 
-Production applications should continue consuming the tagged 5.x line while
-6.0 remains a draft:
+After confirming that the `6.0.0` tag and GitHub Release are published,
+Stable-only applications can adopt the new major with:
 
 ```swift
-.package(url: "https://github.com/InnoSquadCorp/InnoNetwork", .upToNextMajor(from: "5.1.0"))
+.package(url: "https://github.com/InnoSquadCorp/InnoNetwork", .upToNextMajor(from: "6.0.0"))
 ```
 
-Applications using Provisionally Stable 5.x API should prefer a minor-bound
+Applications using Provisionally Stable 6.x API should prefer a minor-bound
 range:
 
 ```swift
-.package(url: "https://github.com/InnoSquadCorp/InnoNetwork", .upToNextMinor(from: "5.1.0"))
+.package(url: "https://github.com/InnoSquadCorp/InnoNetwork", .upToNextMinor(from: "6.0.0"))
 ```
 
-Pin the exact `5.1.0` version when a reproducible release build must not accept
+Pin the exact published version when a reproducible release build must not accept
 any dependency update.
 
-After `6.0.0` is published, Stable-only applications may adopt the new major
-with `.upToNextMajor(from: "6.0.0")`; Provisionally Stable adopters should use
-`.upToNextMinor(from: "6.0.0")`. Those declarations are intentionally not
-shown as the current install snippet before the tag exists.
+Until 6.0 is published, retain the existing tagged 5.x dependency. Neither a
+Ready marker nor a green candidate workflow makes an unpublished version
+resolvable from SwiftPM.
 
 ## Public Declaration Ledger
 
@@ -1101,7 +1101,7 @@ requires `@_spi` import.
 - package-scoped `APISingleRequestExecutable` and
   `MultipartSingleRequestExecutable` adapters used only by the built-in client
 - package-scoped `StateReducer` / `StateReduction` lifecycle vocabulary used
-  by shipping modules; it is not part of the planned consumer-facing 6.x API
+  by shipping modules; it is not part of the consumer-facing 6.x API
 - benchmark baseline contents and update cadence
 - lower-level execution hooks that are present in source but not part of the
   proposed 5.0 stable public contract
@@ -1109,7 +1109,7 @@ requires `@_spi` import.
 ## Notes
 
 - Stable items follow semantic versioning for the tagged 5.x line and the
-  planned 6.x line; the 6.0 migration guide records every major-only removal
+  approved 6.x line; the 6.0 migration guide records every major-only removal
   or relocation.
 - `default` aliases are convenience entry points and should be treated as `safeDefaults` aliases.
 - Configuration packs are public and supported; their operational tuning

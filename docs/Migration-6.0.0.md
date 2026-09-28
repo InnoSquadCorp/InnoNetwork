@@ -1,8 +1,8 @@
 # Migration Guide: 6.0.0
 
-This guide describes the unreleased InnoNetwork 6.0 draft. There is no
-`6.0.0` tag yet; keep production applications on `5.1.0` until the release
-notes are marked ready and the tag is published.
+This guide describes the approved InnoNetwork 6.0 compatibility reset.
+Readiness does not prove publication. Keep production applications on the
+tagged 5.x line until the `6.0.0` tag and GitHub Release are published.
 
 The previously planned 6.1 candidates are included in this 6.0 release scope.
 The unified baseline contains 1,700 public declarations. `@APIDefinition`

@@ -3,6 +3,10 @@
 Adopt the operation, failure, and configuration contracts promoted into the
 core module in InnoNetwork 6.
 
+The 6.0 release contents are approved, but readiness is not publication.
+Confirm the matching tag and GitHub Release before changing production
+dependencies; until then, retain the tagged 5.x line.
+
 ## Overview
 
 Import `InnoNetwork`, keep existing endpoint definitions, and wrap an existing

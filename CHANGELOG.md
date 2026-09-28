@@ -7,7 +7,10 @@ Versioning.
 
 ## [Unreleased]
 
-All changes below form the unreleased `6.0.0` draft and have not been tagged.
+## [6.0.0] - 2026-09-28
+
+Approved release contents; the date is intended until publication. Confirm the
+matching tag and GitHub Release separately before adopting this version.
 The previously planned 6.1 candidates are included in this 6.0 release scope.
 
 ### Added — approved follow-up scope

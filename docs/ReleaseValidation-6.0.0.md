@@ -6,6 +6,72 @@ approved request-freshness and generator extensions; see `REMAINING_WORK_6_0.md`
 for their ordered delivery. New runtime APIs remain Provisionally Stable.
 It is not a release-ready declaration and does not publish a tag.
 
+## Current readiness transition — 2026-09-28
+
+[PR #125](https://github.com/InnoSquadCorp/InnoNetwork/pull/125) was squash-merged
+through protection to `bcb97e1f9912a341a906482f4b51dee760cb836e`. Its single parent
+is `7b52580430881e7b222f589aee7a30e409ed17da`; the merged tree is identical to the
+validated candidate `21a3decb67554dcdc66ec00db54b38bb2192cb1e`. No administrator
+bypass or protection change was used. The JSON source-retention branch remains
+at its reviewed `b358692e1e583b5cef1c97bb65208729b313f574` revision.
+
+Fresh candidate evidence, not inferred from earlier local passes:
+
+- [Required CI](https://github.com/InnoSquadCorp/InnoNetwork/actions/runs/36388673299)
+  and [CodeQL](https://github.com/InnoSquadCorp/InnoNetwork/actions/runs/36388673335):
+  all 15 required statuses passed, including Xcode 26/27 and five Apple platforms.
+  Consumer Smoke now builds the generator under Swift 6.2, passes all 48 generator
+  tests, and executes the generated-output integration checks. This closes the
+  original type-inference failure; its initial failing log is still preserved.
+- [Full TSAN](https://github.com/InnoSquadCorp/InnoNetwork/actions/runs/36388673253):
+  all eight test products passed; 1,921 registered, 1,917 ordinary passes and
+  four opt-in live skips. No sanitizer suppression was introduced.
+- [Benchmarks](https://github.com/InnoSquadCorp/InnoNetwork/actions/runs/36388673237):
+  runtime and JSON guards passed with unchanged 20% thresholds. Event paired
+  median +19.87%, pair spread 79.1 percentage points; revalidation -6.00%,
+  coalescing +5.05%; JSON deltas -10.08% to +6.48%. The event variability remains
+  substantial, so this is gate acceptance, not a stable speedup guarantee.
+
+The subsequent Ready transition changes validation policy and coordinated
+documentation, including stale DocC symbol links, not runtime behavior or API
+declarations. Ready means the release contents are
+approved; it does not claim a tag, GitHub Release, or newly resolvable package.
+The intended release date must be reconfirmed before a separately authorized
+publication. Fresh CI for the Ready commit, its protected merge, and final manual
+Release validation on the exact resulting main SHA remain mandatory.
+
+Fresh local checks for the Ready metadata and validation policy passed:
+
+- Full root suite: 1,921 registered / 1,917 ordinary passes / four live skips.
+- Draft/Ready fixtures, historical committed-Draft validation despite a Ready
+  worktree, tag/candidate/artifact/preflight fixtures, and the manual-workflow
+  publication exclusion all passed. No validation threshold was weakened.
+- Public API remains exactly 1,700 declarations: 307 Stable, 1,360 Provisional,
+  33 SPI. Formatting passed over 517 Swift files.
+- DocSmoke executed; three extracted migration snippets and three Stable examples
+  compiled; all 11 independent consumer examples built; macro/OpenAPI adopter
+  executables passed. These do not replace the separately scoped app snapshots.
+- All nine public-product DocC archives passed. The first build exposed five stale
+  symbol links in resilience, upload and WebSocket documentation; their actual
+  declarations were checked and only the links were corrected. A repeat build
+  reports no warnings/errors from this repository's `Sources/` paths. Dependency
+  documentation warnings in the original full build are not represented as fixed.
+
+The full root/example suite ran before the final comment-only symbol-link repair;
+DocC, adopter execution, formatting and public API contracts were rerun afterward.
+Logs use the `ready-*` prefix in `.build/release-continuation/`, with the initial
+DocC warnings retained separately from `ready-docc-fixed.log`.
+
+Earlier app/companion snapshots remain bound to `b1dc8d1`, including Capto's
+Flow 5.1.1 / Router 5.2.1 graph. Their acceptance is not silently extended to
+latest companion majors or device/dedicated-service behavior. Those boundaries
+and the remaining clean published-tag checks are listed below.
+
+Local and remote logs are preserved in `.build/release-continuation/`, including
+`required-before-merge-21a3dec.json`, `consumer-full-21a3dec.log`,
+`tsan-remote-21a3dec.log`, and the raw `benchmarks-remote-21a3dec/` artifact.
+The detailed chronological records below retain their original revision scopes.
+
 ## Implemented checks
 
 | Area | Change and passing control |
