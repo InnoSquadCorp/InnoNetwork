@@ -83,6 +83,49 @@ persistence passed again. Full serial coverage and all four bounded shards
 passed 1,923 registered tests (1,919 ordinary passes / four opt-in live skips).
 Formatting passed over 517 Swift files. No production source was modified.
 
+### Corrective PR cache performance follow-up
+
+The first [benchmark attempt on `322b84b`](https://github.com/InnoSquadCorp/InnoNetwork/actions/runs/36410949203/attempts/1)
+failed the unchanged 20% runtime guard: cache revalidation paired median
+-24.2435%, with pairs -24.2435/-28.8857/-11.5734% and 17.3123 percentage-point
+spread. The JSON lane did not execute. Full logs and artifact 10966195389 remain
+under `.build/release-continuation/benchmarks-322b84b-failed*`. One unchanged-
+condition rerun was requested, not an open-ended retry-until-green procedure.
+
+Runtime, harness, dependency and workflow sources were identical between
+`7918e11`, `9bcefc3` and `322b84b`, but the guard compares historical `a4aaaba`,
+so that identity alone does not rule out an older regression. Fresh local
+Xcode 27 / Swift 6.4 pairs passed all 14 runtime and five JSON guards, with
+cache median -12.4612% and 3.5527pp spread. This is not a reproduction under
+the hosted Xcode 26 / Swift 6.2 environment; hosted variability is still not
+attributed to a specific machine cause.
+
+Local Release profiles and disassembly isolated a genuine code-generation
+cost: inlining `prepareWithRFC9111` into the common preparation dispatch
+hoisted the adapter's payload-heavy stack temporaries into plain `cacheFirst`
+calls. Historical/current stack-probe self samples were 131/937 ms for the
+same 50-million-iteration diagnostic. Changing the ternary return to an `if`,
+or disabling inlining only on the recursive dispatch, did not remove the
+prologue and were reverted as negative controls.
+
+Keeping the RFC adapter as an out-of-line call removes those common-path
+temporaries without changing any directive, age, freshness or payload logic.
+Original/modified local cache pairs improved +11.5440/+11.3011/+13.9064%
+(median +11.5440%). The modified profile reduced stack-probe samples to
+142 ms; profiles are diagnostic evidence, not acceptance measurements.
+The raw traces, exported samples, assembly, negative-control patches and
+paired JSON results are retained as `cache-*` under the continuation directory.
+The complete dirty outlining candidate then passed all 14 runtime and five JSON
+paired guards at the unchanged 20% threshold. Cache revalidation median was
+-4.54% versus historical `a4aaaba`; results are retained in
+`benchmarks-cache-outlining/` and `cache-outlining-benchmarks.log`. These local
+Xcode 27 / Swift 6.4 results include the recorded four-line source patch, not the
+unmodified `322b84b` tree.
+Neither the benchmark harness nor a baseline, guard limit or public API was
+changed. New exact-head remote checks and final merged-main Release validation
+remain required; successful checks on the preceding test-only candidate do
+not validate this runtime optimization.
+
 ## Current readiness transition — 2026-09-28
 
 [PR #125](https://github.com/InnoSquadCorp/InnoNetwork/pull/125) was squash-merged
