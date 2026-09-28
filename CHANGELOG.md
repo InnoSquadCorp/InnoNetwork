@@ -33,6 +33,9 @@ The previously planned 6.1 candidates are included in this 6.0 release scope.
 - Preserved JSON encoding now rejects aggregate retained buffers early, accounts
   for overwritten/reused containers, and matches Foundation's absent superclass
   null behavior for both keyed `superDecoder` overloads.
+- Provisionally Stable `JSONSchemaPlan` compiles exact enum/numeric/size
+  constraints for Preview preserved component models. JSON-compatible YAML
+  retains original number tokens; unsupported YAML constructs fail explicitly.
 - `RequestEncodingPolicy.preservedJSON(limits:)` is an explicit 6.0 encoding
   choice; exhaustive switches over the Stable enum must handle the added case.
 - Scoped OAuth validates exact grants and expiry, supports one identity-bound

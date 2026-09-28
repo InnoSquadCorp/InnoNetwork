@@ -23,13 +23,17 @@ let package = Package(
         .executable(name: "openapi-to-innonetwork", targets: ["openapi-to-innonetwork"])
     ],
     dependencies: [
-        .package(url: "https://github.com/jpsim/Yams.git", from: "5.0.6")
+        .package(url: "https://github.com/jpsim/Yams.git", from: "5.0.6"),
+        // The offline tool uses the same lossless parser and schema compiler as
+        // its generated consumers. No new dependency is added to the library.
+        .package(name: "InnoNetwork", path: "../..", traits: [])
     ],
     targets: [
         .executableTarget(
             name: "openapi-to-innonetwork",
             dependencies: [
-                .product(name: "Yams", package: "Yams")
+                .product(name: "Yams", package: "Yams"),
+                .product(name: "InnoNetwork", package: "InnoNetwork")
             ],
             path: "Sources/openapi-to-innonetwork"
         ),

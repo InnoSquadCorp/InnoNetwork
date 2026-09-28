@@ -74,8 +74,23 @@ if xcrun swift run --package-path "$tool_dir" openapi-to-innonetwork \
   echo 'Generator silently discarded an anyOf constraint.' >&2
   exit 1
 fi
-grep -Fq 'anyOf cannot validate keywords: minimum' "$test_dir/unsupported.stderr"
+if ! grep -Fq 'anyOf cannot validate keywords: uniqueItems' "$test_dir/unsupported.stderr"; then
+  cat "$test_dir/unsupported.stderr" >&2
+  echo 'Unsupported-schema fixture failed for an unexpected reason.' >&2
+  exit 1
+fi
 test ! -e "$test_dir/unsupported-anyof"
+
+compiled="$test_dir/schema-constraints"
+for destination in "$compiled" "$test_dir/schema-constraints-again"; do
+  xcrun swift run --package-path "$tool_dir" openapi-to-innonetwork \
+    --input "$fixtures/schema-constraints.json" --output "$destination" --module-name Compiled
+done
+diff -ru "$compiled" "$test_dir/schema-constraints-again"
+xcrun swiftc -swift-version 6 -parse-as-library -I "$bin_path" -I "$bin_path/Modules" \
+  "$compiled"/*.swift "$fixtures/schema-constraints-runtime.swift" "${core_objects[@]}" \
+  -o "$test_dir/schema-constraints-runtime"
+"$test_dir/schema-constraints-runtime"
 
 if xcrun swift run --package-path "$tool_dir" openapi-to-innonetwork \
   --input "$fixtures/colliding-operation-names.json" \

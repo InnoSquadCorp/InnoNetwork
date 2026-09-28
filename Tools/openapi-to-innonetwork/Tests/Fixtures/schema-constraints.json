@@ -1,0 +1,9 @@
+{
+  "openapi":"3.0.3",
+  "paths":{"/value":{"post":{"operationId":"sendConstrained","requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/ConstrainedChoice"}}}},"responses":{"200":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/ConstrainedChoice"}}}}}}}},
+  "components":{"schemas":{
+    "ConstrainedChoice":{"anyOf":[{"$ref":"#/components/schemas/BoundedValue"},{"$ref":"#/components/schemas/ExactValue"}]},
+    "BoundedValue":{"type":"object","required":["id","name"],"minProperties":2,"properties":{"id":{"type":"integer","minimum":9007199254740993},"name":{"type":"string","minLength":1,"maxLength":2}}},
+    "ExactValue":{"type":"object","required":["id"],"properties":{"id":{"enum":[9007199254740993.0]}}}
+  }}
+}

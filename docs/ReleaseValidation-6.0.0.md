@@ -123,7 +123,7 @@ extensions after the initial hardening report. They are now implemented in
 Request freshness is opt-in; generated authentication supports explicit HTTP
 bearer requirements and rejects unsupported security forms. Composition support
 is the documented serialization subset, not full JSON Schema validation.
-The candidate inventory is 1,691 declarations: 307 Stable, 1,351 Provisionally
+The candidate inventory is 1,697 declarations: 307 Stable, 1,357 Provisionally
 Stable and 33 SPI. Publication/device/service gates remain independent.
 
 ### Named-credential extension (2026-09-25)

@@ -1,5 +1,5 @@
 {"openapi":"3.0.3","paths":{},"components":{"schemas":{
-  "A":{"type":"integer","minimum":0},
+  "A":{"type":"array","items":{"type":"integer"},"uniqueItems":true},
   "B":{"type":"string"},
   "Choice":{"anyOf":[{"$ref":"#/components/schemas/A"},{"$ref":"#/components/schemas/B"}]}
 }}}

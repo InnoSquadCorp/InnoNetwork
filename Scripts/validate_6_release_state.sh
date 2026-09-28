@@ -141,17 +141,17 @@ require_line 'Status: Superseded by 6.0.0 scope (unreleased)' "$superseded_notes
 [[ "$(sed -n '1p' "$superseded_notes")" == '<!-- release-status: draft -->' ]] \
   || fail 'superseded 6.1 notes must remain unpublished'
 forbid_contains '<!-- release-status: ready -->' "$superseded_notes"
-require_contains '1,691 declarations: 307 Stable,' "$notes"
-require_contains '1,351 Provisionally Stable, and 33 SPI.' "$notes"
-require_line '| **Total** | **1,691** |' "$symbols"
+require_contains '1,697 declarations: 307 Stable,' "$notes"
+require_contains '1,357 Provisionally Stable, and 33 SPI.' "$notes"
+require_line '| **Total** | **1,697** |' "$symbols"
 require_line '| Stable consumer API | 307 |' "$symbols"
-require_line '| Provisionally Stable consumer API | 1,351 |' "$symbols"
+require_line '| Provisionally Stable consumer API | 1,357 |' "$symbols"
 require_line '| `@_spi(GeneratedClientSupport)` | 33 |' "$symbols"
-require_line $'TOTAL\t1691' "$budgets"
+require_line $'TOTAL\t1697' "$budgets"
 require_line $'STABLE_CONSUMER\t307' "$tier_budgets"
-require_line $'PROVISIONAL\t1351' "$tier_budgets"
+require_line $'PROVISIONAL\t1357' "$tier_budgets"
 require_line $'SPI\t33' "$tier_budgets"
-require_line $'TOTAL\t1691' "$tier_budgets"
+require_line $'TOTAL\t1697' "$tier_budgets"
 
 if [[ "$state" == "draft" ]]; then
   require_line "Status: Draft (unreleased)" "$notes"

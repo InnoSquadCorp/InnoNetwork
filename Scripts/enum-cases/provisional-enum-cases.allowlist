@@ -136,6 +136,8 @@ JSONProcessingError.duplicateKey
 JSONProcessingError.resourceLimit
 JSONProcessingError.noMatchingSchema
 JSONProcessingError.unsupportedCoder
+JSONProcessingError.invalidSchema
+JSONProcessingError.unsupportedSchema
 JSONSchema.object
 JSONSchema.array
 JSONSchema.string

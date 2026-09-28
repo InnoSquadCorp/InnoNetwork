@@ -29,7 +29,10 @@ keys preserve present-null versus missing on decode/encode.
 
 Named local-reference `anyOf` components preserve JSON with all matching branch
 indices and throwing typed views, not a first-success enum. Their bounded graph
-rejects unsupported constraints at generation time. Operations containing these
+rejects unsupported constraints at generation time. Exact enum, numeric bounds,
+multipleOf and size constraints use compiled preserved wrappers for the entire
+affected component graph. See [the runtime contract](PRESERVED_JSON.md).
+Operations containing these
 models opt into `PreservedJSONCoding`, including nested models and request bodies;
 ordinary Foundation codecs explicitly reject preserved values. See
 [the preservation and validation contract](PRESERVED_JSON.md).

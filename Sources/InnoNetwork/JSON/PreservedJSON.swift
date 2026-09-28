@@ -50,6 +50,10 @@ public enum JSONProcessingError: Error, Sendable, Equatable {
     case noMatchingSchema
     /// A Foundation or third-party codec cannot expose/preserve original JSON tokens.
     case unsupportedCoder
+    /// A schema has malformed keyword values or references.
+    case invalidSchema
+    /// A schema uses a dialect feature outside the documented validation subset.
+    case unsupportedSchema
 }
 
 /// An immutable, bounded JSON document retaining original bytes and number lexemes.

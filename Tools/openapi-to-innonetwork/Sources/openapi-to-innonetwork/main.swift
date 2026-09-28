@@ -1,4 +1,5 @@
 import Foundation
+import InnoNetwork
 import Yams
 
 // CLI: openapi-to-innonetwork --input <spec.{json,yaml,yml}> --output <dir>
@@ -224,6 +225,7 @@ struct MediaType: Decodable, Equatable {
 /// Composition and nullable contracts are validated before rendering.
 /// This serialization subset is not a general JSON Schema validator.
 struct Schema: Decodable, Equatable {
+    var preservedSchema: PreservedJSON?
     var ref: String?
     var type: String?
     var properties: [String: Schema]?
@@ -280,6 +282,7 @@ struct Schema: Decodable, Equatable {
     }
 
     init(from decoder: any Decoder) throws {
+        self.preservedSchema = try? PreservedJSON(from: decoder)
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.ref = try container.decodeIfPresent(String.self, forKey: .ref)
         self.type = try container.decodeIfPresent(String.self, forKey: .type)
@@ -376,7 +379,7 @@ struct CodeGenerator {
         "SessionAuthentication", "String", "URL", "EndpointPathEncoding", "EncodingError",
         "RequestSecurityProviding", "RequestSecurity", "RequestCredentialProvider",
         "PreservedJSON", "PreservedJSONCoding", "JSONSchema", "JSONProcessingLimits", "JSONProcessingError",
-        "TransportPolicy",
+        "TransportPolicy", "JSONSchemaPlan",
     ]
 
     func generate(from document: OpenAPIDocument) throws -> [GeneratedFile] {
@@ -386,10 +389,13 @@ struct CodeGenerator {
         if let schemas = document.components?.schemas {
             for (name, schema) in schemas.sorted(by: { $0.key < $1.key }) {
                 try validateAliasChain(name: name, schemas: schemas)
-                let schema = try normalizedSchema(schema, schemas: schemas, expanding: [name])
+                let preserved = try needsCompiledSchema(schema, schemas: schemas)
+                let schema = preserved ? schema : try normalizedSchema(schema, schemas: schemas, expanding: [name])
                 let typeName = sanitize(name)
                 try reserveGeneratedName(typeName, source: "schema '\(name)'", in: &generatedNames)
-                if schema.anyOf != nil {
+                if preserved {
+                    files.append(try renderCompiledSchema(name: typeName, schema: schema, schemas: schemas))
+                } else if schema.anyOf != nil {
                     if let version = document.openapi, !version.hasPrefix("3.0.") {
                         throw GenerationError.unsupportedSchema("anyOf currently supports the OpenAPI 3.0 dialect only")
                     }
@@ -412,7 +418,14 @@ struct CodeGenerator {
                     [op.requestBody?.content?["application/json"]?.schema]
                     + (op.responses ?? [:]).values.map { $0.content?["application/json"]?.schema }
                 for schema in operationSchemas.compactMap({ $0 }) {
-                    _ = try normalizedSchema(schema, schemas: document.components?.schemas ?? [:], expanding: [])
+                    if try needsCompiledSchema(schema, schemas: document.components?.schemas ?? [:]), schema.ref == nil
+                    {
+                        throw GenerationError.unsupportedSchema(
+                            "Constrained operation bodies require a named component reference")
+                    }
+                    if try !needsCompiledSchema(schema, schemas: document.components?.schemas ?? [:]) {
+                        _ = try normalizedSchema(schema, schemas: document.components?.schemas ?? [:], expanding: [])
+                    }
                     guard schema.nullable != true, swiftTypeName(for: schema, fallback: nil) != nil else {
                         throw GenerationError.unsupportedSchema(
                             "Operation bodies must use primitive/array types or a named component reference")
@@ -431,7 +444,11 @@ struct CodeGenerator {
                 let legacyAuthentication = try? security.legacySessionAuthentication()
                 var preservesJSON = false
                 for schema in operationSchemas.compactMap({ $0 }) {
-                    if try containsAnyOf(schema, schemas: document.components?.schemas ?? [:]) { preservesJSON = true }
+                    if try containsAnyOf(schema, schemas: document.components?.schemas ?? [:])
+                        || needsCompiledSchema(schema, schemas: document.components?.schemas ?? [:])
+                    {
+                        preservesJSON = true
+                    }
                 }
                 files.append(
                     try renderOperation(
@@ -950,13 +967,13 @@ func decodeOpenAPIDocument(from data: Data, sourceExtension: String) throws -> O
             throw GenerationError.parseFailure("YAML input is not valid UTF-8.")
         }
         do {
-            return try YAMLDecoder().decode(OpenAPIDocument.self, from: text)
+            return try PreservedJSONCoding.decode(OpenAPIDocument.self, from: losslessYAMLJSON(text))
         } catch {
             throw GenerationError.parseFailure("YAML decode failed: \(error)")
         }
     } else {
         do {
-            return try JSONDecoder().decode(OpenAPIDocument.self, from: data)
+            return try PreservedJSONCoding.decode(OpenAPIDocument.self, from: data)
         } catch {
             throw GenerationError.parseFailure("JSON decode failed: \(error)")
         }

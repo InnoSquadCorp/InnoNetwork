@@ -8,7 +8,7 @@ The operation-first contract moves into `InnoNetwork`, HLS moves to InnoStream,
 and recovery decisions gain explicit HTTP, authentication, and replay-safety
 context. Deadlines, bounded admission, advanced rate limiting, streaming
 controls, span export, cache controls, and resumable uploads are all part of
-6.0, with a baseline of 1,691 public declarations: 307 Stable, 1,351
+6.0, with a baseline of 1,697 public declarations: 307 Stable, 1,357
 Provisionally Stable, and 33 SPI. See `docs/releases/6.0.0.md` for the scope.
 
 The root `@APIDefinition(method:path:auth:)` macro, default-enabled `Macros`

@@ -67,6 +67,29 @@ errors are application-owned diagnostic surfaces.
 
 ## Specification and evidence
 
+### Compiled constraint plans
+
+`JSONSchemaPlan` adds exact semantic enum equality; numeric minimum/maximum,
+OpenAPI 3.0 exclusive boolean bounds, positive multipleOf; and min/max string,
+array and property counts. String lengths and equality use Unicode code points,
+not Swift graphemes or canonical equivalence. Numbers are decimal digit sequences
+with compressed signed exponents; work exhaustion throws without rounding.
+Enum equality ignores object order, whitespace and equivalent number spellings.
+Each immutable plan can be used concurrently with independent validation budgets.
+Compilation has a separate aggregate byte/work budget. Unreachable definitions
+count against input bytes; unsupported reachable keywords fail compilation.
+
+The generator uses these same plans for constrained component graphs. They are
+preserved wrappers with throwing initialization, rather than unchecked mutable
+Swift properties. Constrained operation bodies must reference named components.
+Typed views remain explicit, potentially lossy projections. The standalone tool
+depends on the local core product (macros disabled) to avoid a second validator;
+this adds no dependency to the runtime library.
+
+JSON and JSON-compatible YAML retain numeric lexemes. YAML aliases, merge keys,
+custom scalar tags and non-JSON numbers (hexadecimal, infinity, NaN) are rejected.
+No silent conversion through binary floating point occurs.
+
 The strict grammar follows [RFC 8259](https://www.rfc-editor.org/rfc/rfc8259).
 The generator subset uses the [OpenAPI 3.0 Schema Object](https://spec.openapis.org/oas/v3.0.3.html#schema-object),
 not the complete 3.1 dialect. Nullable-required and multiple-match semantics are
