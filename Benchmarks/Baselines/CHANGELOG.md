@@ -37,8 +37,14 @@ Record the reason every time `default.json` changes.
   interleaved pairs and the existing 20% threshold. JSON results are retained in
   PR comments, trend logs and a separate required signed release artifact.
 - Evidence/provenance: see `docs/PERFORMANCE_AND_EXTENSION_REVIEW_6_0.md`.
-  Local results do not stand in for hosted CI; the baseline SHA must remain
-  available in public history (or be explicitly re-approved after squash).
+  Local results do not stand in for hosted CI. The baseline SHA is preserved
+  unchanged on `refs/heads/benchmark-baselines/json-6.0` because this repository
+  only allows squash merges. After squash, the runner verifies that the named
+  origin ref still exactly matches `json-source-revision.txt`, fetching that
+  verified ref in a clean main-only clone when necessary. A missing, moved,
+  malformed or concurrently changed ref fails closed; no new baseline is
+  automatically selected. Keep this source archive even after deleting PR
+  branches. The runtime baseline still requires normal ancestor provenance.
 
 ## Template
 

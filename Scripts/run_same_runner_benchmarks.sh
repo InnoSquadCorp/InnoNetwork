@@ -6,6 +6,7 @@ cd "$repo_root"
 output_dir="$repo_root/.build/benchmarks"
 base_revision=""
 uses_reviewed_base_revision=0
+archived_source_ref=""
 max_regression_percent="20"
 regression_reason="${INNO_BENCHMARK_REGRESSION_REASON:-}"
 validate_only=0
@@ -97,6 +98,16 @@ if [[ -z "$base_revision" ]]; then
     exit 1
   fi
   base_revision="$(<"$source_revision_path")"
+  # A squash-only repository cannot retain an unreleased codec baseline as
+  # an ancestor of main. Preserve that exact source on a named origin ref;
+  # never silently rebaseline to the newly squashed implementation.
+  if [[ "$scope" == "json" && -f "$repo_root/Benchmarks/Baselines/json-source-ref.txt" ]]; then
+    archived_source_ref="$(<"$repo_root/Benchmarks/Baselines/json-source-ref.txt")"
+    if [[ ! "$archived_source_ref" =~ ^refs/heads/benchmark-baselines/[a-zA-Z0-9][a-zA-Z0-9._-]*$ ]]; then
+      echo "same-runner-benchmarks: invalid archived source ref" >&2
+      exit 1
+    fi
+  fi
 fi
 
 if [[ ! "$base_revision" =~ ^[0-9a-f]{40}$ ]]; then
@@ -109,25 +120,46 @@ if [[ ! "$max_regression_percent" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
   exit 64
 fi
 
+head_revision="$(git -C "$repo_root" rev-parse HEAD)"
+uses_verified_archive=0
+if ((uses_reviewed_base_revision == 1)) && [[ -n "$archived_source_ref" ]] \
+  && ! git -C "$repo_root" merge-base --is-ancestor "$base_revision" "$head_revision" 2>/dev/null; then
+  published_ref="$(git -C "$repo_root" ls-remote --exit-code origin "$archived_source_ref")" || {
+    echo "same-runner-benchmarks: archived source ref is unavailable on origin" >&2
+    exit 1
+  }
+  if [[ "$published_ref" != "$base_revision"$'\t'"$archived_source_ref" ]]; then
+    echo "same-runner-benchmarks: archived source ref does not match the reviewed SHA" >&2
+    exit 1
+  fi
+  if ! git -C "$repo_root" cat-file -e "${base_revision}^{commit}" 2>/dev/null; then
+    git -C "$repo_root" fetch --no-tags origin "$archived_source_ref"
+    if [[ "$(git -C "$repo_root" rev-parse FETCH_HEAD)" != "$base_revision" ]]; then
+      echo "same-runner-benchmarks: archived source ref changed during fetch" >&2
+      exit 1
+    fi
+  fi
+  uses_verified_archive=1
+fi
+
 if ! git -C "$repo_root" cat-file -e "${base_revision}^{commit}" 2>/dev/null; then
   echo "same-runner-benchmarks: base revision is unavailable: $base_revision" >&2
   exit 1
 fi
 
-head_revision="$(git -C "$repo_root" rev-parse HEAD)"
 if [[ "$scope" == "json" ]] && ! git -C "$repo_root" cat-file -e \
   "$base_revision:Sources/InnoNetwork/JSON/PreservedJSON.swift" 2>/dev/null; then
   echo "same-runner-benchmarks: JSON baseline must contain the preserved JSON codec" >&2
   exit 1
 fi
-if ((uses_reviewed_base_revision == 1)) \
+if ((uses_reviewed_base_revision == 1 && uses_verified_archive == 0)) \
   && ! git -C "$repo_root" merge-base --is-ancestor "$base_revision" "$head_revision"; then
   echo "same-runner-benchmarks: reviewed base revision is not an ancestor of HEAD" >&2
   exit 1
 fi
 
 if ((validate_only == 1)); then
-  echo "same-runner-benchmarks: OK (scope $scope, base $base_revision, head $head_revision)"
+  echo "same-runner-benchmarks: OK (scope $scope, base $base_revision, head $head_revision, archive $uses_verified_archive)"
   exit 0
 fi
 
