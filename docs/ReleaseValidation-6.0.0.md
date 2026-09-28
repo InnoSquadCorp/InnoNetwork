@@ -191,3 +191,13 @@ physical-device lifecycle/protected-storage acceptance was performed. Dedicated
 backend, IdP, quota and exporter environments remain unsupplied. These are
 feature-adoption boundaries, not newly diagnosed root-library defects or checks
 silently waived by the local passes above.
+
+### Remote compatibility follow-up
+
+The first candidate PR (`#125`, `c07e45d`) passed the Xcode 26 bounded test
+shards but failed the iOS package build: Xcode 26 treated the recovery fixture's
+`main.swift` as an implicit entry point in addition to its `@main` declaration.
+The fixture is renamed to `RecoverySmoke.swift`; no public-library source,
+dependency, recovery behavior or compiler safety flag changes. The original
+failure remains recorded, and final-SHA remote platform validation is required
+after this build-compatibility correction.

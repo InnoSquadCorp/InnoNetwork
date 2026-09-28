@@ -1,3 +1,4 @@
+// Avoid main.swift's implicit entry point when Xcode 26 builds this @main target.
 import Darwin
 import Foundation
 import InnoNetworkUpload
