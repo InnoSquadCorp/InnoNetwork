@@ -6,6 +6,46 @@ approved request-freshness and generator extensions; see `REMAINING_WORK_6_0.md`
 for their ordered delivery. New runtime APIs remain Provisionally Stable.
 It is not a release-ready declaration and does not publish a tag.
 
+## Post-merge Release validation — 2026-09-28
+
+[Ready PR #126](https://github.com/InnoSquadCorp/InnoNetwork/pull/126) was
+protected-squash merged to `7918e11c13c0db25b76bdca8417afd840187498f`, with a tree
+identical to `9ef40c014619dbd076abdad2e119ab3d5da16151`. That candidate passed all
+15 required checks, full TSAN and runtime/JSON benchmark guards. No bypass or
+threshold change was used.
+
+The first [manual Release run](https://github.com/InnoSquadCorp/InnoNetwork/actions/runs/36401406352)
+on exact main `7918e11` passed all five platform builds and both benchmark lanes,
+and actually skipped Publish Release. It nevertheless **failed** serial coverage:
+`lifecycleEventsWithRetry` saw zero `requestFinished` events in its early snapshot.
+Downstream coverage reporting, sharded tests, DocC and SBOM/artifact preparation
+did not run; candidate passes do not close this final-main gate.
+
+The test waited for eight arbitrary events instead of the terminal callback.
+Policy decision events can satisfy that count while delivery of the terminal
+event is still pending; observer execution intentionally does not block request
+completion. Holding only that callback reproduced the same assertion failure
+locally; the ungated control passed. The relevant runtime and test files were
+unchanged by the Ready PR, so this is not a Ready metadata runtime regression.
+
+The corrective change is test-only: an actor-owned, buffered terminal signal
+replaces count-based polling, preserving the complete retry/correlation/outcome
+assertions. Gated and ungated variants cover delayed terminal delivery; separate
+checks cover already-recorded success/failure and cancellation of the waiter.
+No production behavior, performance baseline, workflow, or validation limit is
+changed. A new exact-head protected PR and final-main manual Release pass remain
+required. The initial failure log, deterministic reproducer patch, passing control
+and correction logs are retained in `.build/release-continuation/lifecycle-*`
+and `final-release-7918e11-failed.{log,json}`.
+
+Fresh local correction validation (Xcode 27.0 / Swift 6.4): all seven lifecycle
+tests passed after formatting and in 20 consecutive focused coverage runs.
+Full serial coverage passed all eight products: 1,923 registered tests,
+1,919 ordinary passes and four explicitly skipped opt-in live tests. Formatting
+over 517 Swift files and the docs/public API contracts also passed; the public
+surface remains 1,700 declarations (307 Stable / 1,360 Provisional / 33 SPI).
+These local results do not substitute for the corrective PR's remote checks.
+
 ## Current readiness transition — 2026-09-28
 
 [PR #125](https://github.com/InnoSquadCorp/InnoNetwork/pull/125) was squash-merged
