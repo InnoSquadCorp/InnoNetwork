@@ -45,7 +45,7 @@ The event stream is registered before the system task resumes, preventing a
 fast response from racing ahead of observation. Response bodies are capped at
 1 MiB by default, and the receipt intentionally omits the original
 `URLRequest` so authorization headers are not retained.
-Use ``UploadConfiguration/advanced(allowsCellularAccess:maximumResponseBytes:acceptableStatusCodes:eventDeliveryPolicy:eventMetricsReporter:)``
+Use ``UploadConfiguration/advanced(allowsCellularAccess:maximumResponseBytes:acceptableStatusCodes:eventDeliveryPolicy:eventMetricsReporter:resourcePolicy:)``
 when a foreground endpoint needs a different response ceiling, accepted status
 set, cellular policy, or event-delivery policy.
 
