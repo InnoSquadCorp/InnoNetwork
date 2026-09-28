@@ -197,13 +197,14 @@ private struct JSONUnkeyedDecoder: UnkeyedDecodingContainer {
     var codingPath: [any CodingKey] { decoder.codingPath }
     var count: Int? { values.count }
     var isAtEnd: Bool { currentIndex == values.count }
-    mutating func next() throws -> JSONValueDecoder {
+    mutating func consume<T>(_ decode: (JSONValueDecoder) throws -> T) throws -> T {
         guard !isAtEnd else {
             throw DecodingError.valueNotFound(
                 PreservedJSON.self, .init(codingPath: codingPath, debugDescription: "End of JSON array"))
         }
-        defer { currentIndex += 1 }
-        return decoder.child(values[currentIndex], key: JSONIndexKey(currentIndex))
+        let value = try decode(decoder.child(values[currentIndex], key: JSONIndexKey(currentIndex)))
+        currentIndex += 1
+        return value
     }
     mutating func decodeNil() throws -> Bool {
         guard !isAtEnd else { throw JSONProcessingError.invalidJSON }
@@ -213,24 +214,26 @@ private struct JSONUnkeyedDecoder: UnkeyedDecodingContainer {
         }
         return false
     }
-    mutating func decode<T: Decodable>(_ type: T.Type) throws -> T { try next().decode(type) }
-    mutating func decode(_ type: Bool.Type) throws -> Bool { try next().scalar(type) }
-    mutating func decode(_ type: String.Type) throws -> String { try next().scalar(type) }
-    mutating func decode(_ type: Double.Type) throws -> Double { try next().scalar(type) }
-    mutating func decode(_ type: Float.Type) throws -> Float { try next().scalar(type) }
-    mutating func decode(_ type: Int.Type) throws -> Int { try next().scalar(type) }
-    mutating func decode(_ type: Int8.Type) throws -> Int8 { try next().scalar(type) }
-    mutating func decode(_ type: Int16.Type) throws -> Int16 { try next().scalar(type) }
-    mutating func decode(_ type: Int32.Type) throws -> Int32 { try next().scalar(type) }
-    mutating func decode(_ type: Int64.Type) throws -> Int64 { try next().scalar(type) }
-    mutating func decode(_ type: UInt.Type) throws -> UInt { try next().scalar(type) }
-    mutating func decode(_ type: UInt8.Type) throws -> UInt8 { try next().scalar(type) }
-    mutating func decode(_ type: UInt16.Type) throws -> UInt16 { try next().scalar(type) }
-    mutating func decode(_ type: UInt32.Type) throws -> UInt32 { try next().scalar(type) }
-    mutating func decode(_ type: UInt64.Type) throws -> UInt64 { try next().scalar(type) }
+    mutating func decode<T: Decodable>(_ type: T.Type) throws -> T { try consume { try $0.decode(type) } }
+    mutating func decode(_ type: Bool.Type) throws -> Bool { try consume { try $0.scalar(type) } }
+    mutating func decode(_ type: String.Type) throws -> String { try consume { try $0.scalar(type) } }
+    mutating func decode(_ type: Double.Type) throws -> Double { try consume { try $0.scalar(type) } }
+    mutating func decode(_ type: Float.Type) throws -> Float { try consume { try $0.scalar(type) } }
+    mutating func decode(_ type: Int.Type) throws -> Int { try consume { try $0.scalar(type) } }
+    mutating func decode(_ type: Int8.Type) throws -> Int8 { try consume { try $0.scalar(type) } }
+    mutating func decode(_ type: Int16.Type) throws -> Int16 { try consume { try $0.scalar(type) } }
+    mutating func decode(_ type: Int32.Type) throws -> Int32 { try consume { try $0.scalar(type) } }
+    mutating func decode(_ type: Int64.Type) throws -> Int64 { try consume { try $0.scalar(type) } }
+    mutating func decode(_ type: UInt.Type) throws -> UInt { try consume { try $0.scalar(type) } }
+    mutating func decode(_ type: UInt8.Type) throws -> UInt8 { try consume { try $0.scalar(type) } }
+    mutating func decode(_ type: UInt16.Type) throws -> UInt16 { try consume { try $0.scalar(type) } }
+    mutating func decode(_ type: UInt32.Type) throws -> UInt32 { try consume { try $0.scalar(type) } }
+    mutating func decode(_ type: UInt64.Type) throws -> UInt64 { try consume { try $0.scalar(type) } }
     mutating func nestedContainer<NestedKey: CodingKey>(
         keyedBy type: NestedKey.Type
-    ) throws -> KeyedDecodingContainer<NestedKey> { try next().container(keyedBy: type) }
-    mutating func nestedUnkeyedContainer() throws -> any UnkeyedDecodingContainer { try next().unkeyedContainer() }
-    mutating func superDecoder() throws -> any Decoder { try next() }
+    ) throws -> KeyedDecodingContainer<NestedKey> { try consume { try $0.container(keyedBy: type) } }
+    mutating func nestedUnkeyedContainer() throws -> any UnkeyedDecodingContainer {
+        try consume { try $0.unkeyedContainer() }
+    }
+    mutating func superDecoder() throws -> any Decoder { try consume { $0 } }
 }

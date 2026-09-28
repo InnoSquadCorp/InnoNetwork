@@ -161,4 +161,57 @@ struct PreservedJSONCodingTests {
             Issue.record("Explicit network error was accepted")
         } catch NetworkError.configuration {}
     }
+
+    @Test("Failed unkeyed decoding leaves the same element available for a typed fallback")
+    func unkeyedFallback() throws {
+        struct View: Decodable {
+            let text: String
+            let number: Int
+            enum Key: String, CodingKey { case value }
+            init(from decoder: any Decoder) throws {
+                var container = try decoder.unkeyedContainer()
+                #expect((try? container.decode(Int.self)) == nil)
+                #expect(container.currentIndex == 0)
+                text = try container.decode(String.self)
+                #expect((try? container.nestedUnkeyedContainer()) == nil)
+                #expect(container.currentIndex == 1)
+                number = try container.nestedContainer(keyedBy: Key.self).decode(Int.self, forKey: .value)
+                #expect(container.isAtEnd)
+            }
+        }
+        let data = Data(#"["hello",{"value":42}]"#.utf8)
+        let control = try JSONDecoder().decode(View.self, from: data)
+        let result = try PreservedJSONCoding.decode(View.self, from: data)
+        #expect(result.text == control.text && result.number == control.number)
+    }
+
+    @Test("Repeated keyed nested containers share accumulated fields and array elements")
+    func repeatedNestedContainers() throws {
+        struct View: Encodable {
+            enum Key: String, CodingKey { case object, array, first, second }
+            func encode(to encoder: any Encoder) throws {
+                var root = encoder.container(keyedBy: Key.self)
+                var first = root.nestedContainer(keyedBy: Key.self, forKey: .object)
+                try first.encode(1, forKey: .first)
+                var second = root.nestedContainer(keyedBy: Key.self, forKey: .object)
+                try second.encode(2, forKey: .second)
+                var array = root.nestedUnkeyedContainer(forKey: .array)
+                try array.encode("first")
+                var again = root.nestedUnkeyedContainer(forKey: .array)
+                #expect(again.count == 1)
+                try again.encode("second")
+            }
+        }
+        struct Result: Decodable, Equatable {
+            struct Members: Decodable, Equatable {
+                let first: Int
+                let second: Int
+            }
+            let object: Members
+            let array: [String]
+        }
+        let control = try JSONDecoder().decode(Result.self, from: JSONEncoder().encode(View()))
+        let result = try JSONDecoder().decode(Result.self, from: PreservedJSONCoding.encode(View()))
+        #expect(result == control)
+    }
 }

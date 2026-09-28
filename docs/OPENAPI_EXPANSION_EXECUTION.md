@@ -71,6 +71,14 @@ without switching existing JSON dates to Foundation reference-date numbers.
 The initial full-preflight run began before this follow-up; final evidence must
 identify the corrected revision rather than attributing that mixed run to one SHA.
 
+Codable boundary follow-up: two Foundation-controlled regressions reproduced
+failed unkeyed decodes advancing the cursor and repeated nested encoding containers
+discarding earlier content. Failed reads now retain their index; keyed nested
+containers reuse storage. Both reproducers fail before the fix and all 15 JSON
+tests pass after it. Logs: `/tmp/innonetwork6-json-container-before.log` and
+`/tmp/innonetwork6-json-container-after.log`. Final preflight is rerun after this
+change; intermediate run results are not final-revision evidence.
+
 ### Preserved JSON foundation, 2026-09-28
 
 Added the exact-byte document, document-aware Codable bridge, and bounded schema

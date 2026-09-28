@@ -49,10 +49,13 @@ struct JSONValueEncoder: Encoder {
         box.value = .raw(data)
     }
 
-    func child(_ key: any CodingKey, array: Bool = false) -> Self {
+    func child(_ key: any CodingKey, array: Bool = false, reusingContainer: Bool = false) -> Self {
         do { try context.spend(depth: codingPath.count + 1) } catch {
             context.failure = .resourceLimit
             return Self(context: context, codingPath: codingPath + [key])
+        }
+        if reusingContainer, case .object(let storage) = box.value, let existing = storage.members[key.stringValue] {
+            return Self(context: context, box: existing, codingPath: codingPath + [key])
         }
         let next = JSONEncodingBox()
         if array, case .array(let storage) = box.value {
@@ -167,9 +170,9 @@ private struct JSONKeyedEncoder<Key: CodingKey>: KeyedEncodingContainerProtocol 
     mutating func encode(_ value: UInt64, forKey key: Key) throws { try encoder.child(key).scalar(value) }
     mutating func nestedContainer<NestedKey: CodingKey>(
         keyedBy type: NestedKey.Type, forKey key: Key
-    ) -> KeyedEncodingContainer<NestedKey> { encoder.child(key).container(keyedBy: type) }
+    ) -> KeyedEncodingContainer<NestedKey> { encoder.child(key, reusingContainer: true).container(keyedBy: type) }
     mutating func nestedUnkeyedContainer(forKey key: Key) -> any UnkeyedEncodingContainer {
-        encoder.child(key).unkeyedContainer()
+        encoder.child(key, reusingContainer: true).unkeyedContainer()
     }
     mutating func superEncoder(forKey key: Key) -> any Encoder { encoder.child(key) }
     mutating func superEncoder() -> any Encoder { encoder.child(JSONIndexKey("super")) }
