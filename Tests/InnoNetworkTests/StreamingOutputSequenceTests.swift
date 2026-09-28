@@ -33,6 +33,38 @@ private actor StreamingBackpressureProbe {
 
 @Suite("StreamingOutputSequence backpressure")
 struct StreamingOutputSequenceTests {
+    @Test("Consumption and producer cancellation may release the same acknowledgement concurrently")
+    func consumptionRacesProducerCancellation() async throws {
+        for _ in 0..<100 {
+            let (sequence, sink) = StreamingOutputSequence<Int>.make(buffering: .backpressured)
+            let producer = Task { () -> NetworkError? in
+                do {
+                    try await sink.yield(1)
+                    sink.finish()
+                    return nil
+                } catch let error as NetworkError {
+                    sink.finish()
+                    return error
+                } catch {
+                    sink.finish()
+                    Issue.record("Expected NetworkError, got \(error)")
+                    return nil
+                }
+            }
+            let consumer = Task {
+                var iterator = sequence.makeAsyncIterator()
+                let first = try await iterator.next()
+                #expect(first == nil || first == 1)
+                #expect(try await iterator.next() == nil)
+            }
+            producer.cancel()
+            if let error = await producer.value {
+                #expect(NetworkError.isCancellation(error))
+            }
+            try await consumer.value
+        }
+    }
+
     @Test("Lossless delivery suspends the producer until each output is consumed")
     func losslessDeliverySuspendsProducer() async throws {
         let (sequence, sink) = StreamingOutputSequence<Int>.make(buffering: .backpressured)
