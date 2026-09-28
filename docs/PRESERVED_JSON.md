@@ -27,7 +27,7 @@ tokens to Decodable. There is no silent Double/Decimal fallback.
 `document.decode(View.self, using:)` is an explicitly lossy application-owned
 typed view. Foundation numeric ranges, rounding and coding strategies apply to
 that view only; its creation cannot mutate the preserved document or establish
-schema validity. The dedicated bridge supports default keys, deferred Date,
+schema validity. The dedicated bridge supports default keys, InnoNetwork formatted Date,
 base64 Data and Foundation URL/Decimal handling, not custom coding strategies.
 
 ## Bounded validation

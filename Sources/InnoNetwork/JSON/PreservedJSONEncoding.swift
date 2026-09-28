@@ -38,7 +38,8 @@ struct JSONValueEncoder: Encoder {
         if let data = value as? Data, data.count > context.limits.maximumBytes {
             throw JSONProcessingError.resourceLimit
         }
-        try raw(JSONEncoder().encode(value))
+        let encoder = value is Date ? defaultRequestEncoder : JSONEncoder()
+        try raw(encoder.encode(value))
     }
 
     func raw(_ data: Data) throws {

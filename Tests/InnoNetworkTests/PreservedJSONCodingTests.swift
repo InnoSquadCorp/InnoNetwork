@@ -57,8 +57,8 @@ struct PreservedJSONCodingTests {
             missing: nil, bytes: Data([0, 255]), date: Date(timeIntervalSinceReferenceDate: 42),
             url: URL(string: "https://example.com/path")!, decimal: Decimal(string: "123.456")!)
         let encoded = try PreservedJSONCoding.encode(model)
-        #expect(try JSONDecoder().decode(Model.self, from: encoded) == model)
-        #expect(try PreservedJSONCoding.decode(Model.self, from: JSONEncoder().encode(model)) == model)
+        #expect(try defaultResponseDecoder.decode(Model.self, from: encoded) == model)
+        #expect(try PreservedJSONCoding.decode(Model.self, from: defaultRequestEncoder.encode(model)) == model)
         #expect(try PreservedJSONCoding.decode(Int.self, from: Data("1.0".utf8)) == 1)
         #expect(throws: (any Error).self) { try PreservedJSONCoding.encode(Double.infinity) }
         #expect(throws: (any Error).self) { try PreservedJSONCoding.decode(Bool.self, from: Data("1".utf8)) }

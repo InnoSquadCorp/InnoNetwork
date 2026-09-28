@@ -32,7 +32,9 @@ private final class AnyOfURLProtocol: URLProtocol {
         switch request.url!.path {
         case "/choice": body = rawChoice
         case "/envelope":
-            body = Data("{\"value\":".utf8) + rawChoice + Data(",\"list\":[".utf8) + rawChoice + Data("]}".utf8)
+            body =
+                Data("{\"value\":".utf8) + rawChoice + Data(",\"list\":[".utf8) + rawChoice
+                + Data(#"],"createdAt":"2001-01-01T00:00:42.000Z"}"#.utf8)
         case "/accepted": body = Data()
         default: body = Data("{}".utf8)
         }
@@ -88,6 +90,7 @@ struct GeneratedAnyOfSmoke {
         precondition(returned.json.data == rawChoice && returned.matchingBranches == [0, 1])
         let envelope = try await client.request(ReadEnvelope())
         precondition(envelope.value == choice && envelope.list == [choice])
+        precondition(envelope.createdAt == Date(timeIntervalSinceReferenceDate: 42))
         let encodedEnvelope = try PreservedJSONCoding.encode(envelope)
         try require(try PreservedJSONCoding.decode(ChoiceEnvelope.self, from: encodedEnvelope) == envelope)
         _ = try await client.request(AcceptChoice(parameters: one))

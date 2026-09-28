@@ -6,8 +6,9 @@
       "IdentifierView": {"type": "object", "required": ["id"], "properties": {"id": {"type": "integer"}}},
       "LabelView": {"type": "object", "required": ["name"], "properties": {"name": {"type": "string"}}},
       "Choice": {"anyOf": [{"$ref": "#/components/schemas/IdentifierView"}, {"$ref": "#/components/schemas/LabelView"}]},
-      "ChoiceEnvelope": {"type": "object", "required": ["value", "list"], "properties": {
-        "value": {"$ref": "#/components/schemas/Choice"}, "list": {"type": "array", "items": {"$ref": "#/components/schemas/Choice"}}
+      "ChoiceEnvelope": {"type": "object", "required": ["value", "list", "createdAt"], "properties": {
+        "value": {"$ref": "#/components/schemas/Choice"}, "list": {"type": "array", "items": {"$ref": "#/components/schemas/Choice"}},
+        "createdAt": {"type": "string", "format": "date-time"}
       }},
       "WholeNumber": {"type": "integer"}, "RealNumber": {"type": "number"},
       "NumericChoice": {"anyOf": [{"$ref": "#/components/schemas/WholeNumber"}, {"$ref": "#/components/schemas/RealNumber"}]}

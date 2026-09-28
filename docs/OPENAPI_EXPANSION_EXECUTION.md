@@ -64,6 +64,13 @@ Provisional 1,351 / SPI 33; existing Stable declarations and macro are unchanged
 Logs: `/tmp/innonetwork6-anyof-output-final.log`,
 `/tmp/innonetwork6-anyof-core-final.log`. Full final-revision gates remain separate.
 
+A mixed-model follow-up aligns Date fields outside the anyOf validation subtree
+with InnoNetwork's existing canonical formatted dates. The wire fixture includes
+a `date-time` sibling to nested preserved values; it must decode and roundtrip
+without switching existing JSON dates to Foundation reference-date numbers.
+The initial full-preflight run began before this follow-up; final evidence must
+identify the corrected revision rather than attributing that mixed run to one SHA.
+
 ### Preserved JSON foundation, 2026-09-28
 
 Added the exact-byte document, document-aware Codable bridge, and bounded schema

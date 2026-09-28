@@ -2,7 +2,7 @@ import Foundation
 
 /// Lossless document-aware Codable entry points for generated JSON models.
 /// Unlike Foundation's codecs, these recognize nested `PreservedJSON` values.
-/// Uses default keys, deferred dates, base64 Data and Foundation URL/Decimal scalar
+/// Uses default keys, InnoNetwork formatted dates, base64 Data and Foundation URL/Decimal scalar
 /// behavior; configurable Foundation coding strategies are intentionally not exposed.
 public enum PreservedJSONCoding {
     /// Decodes a model while supplying original subdocument bytes to preserved values.
@@ -91,7 +91,10 @@ struct JSONValueDecoder: Decoder {
 
     func scalar<T: Decodable>(_ type: T.Type) throws -> T {
         try context.spend(depth: codingPath.count)
-        do { return try JSONDecoder().decode(type, from: data) } catch {
+        do {
+            let decoder = type == Date.self ? defaultResponseDecoder : JSONDecoder()
+            return try decoder.decode(type, from: data)
+        } catch {
             throw DecodingError.typeMismatch(
                 type, .init(codingPath: codingPath, debugDescription: "Invalid JSON scalar"))
         }
