@@ -83,6 +83,7 @@ actor FlakyContextSession: URLSessionProtocol {
 actor NetworkEventStore {
     private var events: [NetworkEvent] = []
     private let terminalSignal = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+    private let observationStarted = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
 
     func append(_ event: NetworkEvent) {
         events.append(event)
@@ -101,9 +102,18 @@ actor NetworkEventStore {
     /// AsyncStream also releases a cancelled waiter without a polling timeout.
     func waitForTerminalEvent() async throws -> [NetworkEvent] {
         var iterator = terminalSignal.stream.makeAsyncIterator()
+        observationStarted.continuation.yield(())
+        observationStarted.continuation.finish()
         _ = await iterator.next()
         try Task.checkCancellation()
         return events
+    }
+
+    /// Signals entry into the observation boundary, not task creation.
+    func waitForTerminalObservationToStart() async throws {
+        var iterator = observationStarted.stream.makeAsyncIterator()
+        _ = await iterator.next()
+        try Task.checkCancellation()
     }
 }
 

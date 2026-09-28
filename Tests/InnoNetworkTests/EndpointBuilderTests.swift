@@ -23,25 +23,19 @@ private struct EndpointHeaderInterceptor: RequestInterceptor {
 private actor EndpointSessionAuthenticationProbe {
     private var currentTokenCallCount = 0
     private var refreshTokenCallCount = 0
-    private var currentTokenCallWaiter:
-        (
-            minimum: Int,
-            continuation: CheckedContinuation<Void, Never>
-        )?
+    private var storedToken: String?
+    private let requestCompleted = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+    private let currentTokenCalls = AsyncStream<Int>.makeStream(bufferingPolicy: .bufferingNewest(1))
 
     func currentToken(_ token: String?) -> String? {
         currentTokenCallCount += 1
-        if let waiter = currentTokenCallWaiter,
-            currentTokenCallCount >= waiter.minimum
-        {
-            currentTokenCallWaiter = nil
-            waiter.continuation.resume()
-        }
+        currentTokenCalls.continuation.yield(currentTokenCallCount)
         return token
     }
 
-    func refreshedToken(_ token: String) -> String {
+    func refreshedToken(_ token: String, persist: Bool = false) -> String {
         refreshTokenCallCount += 1
+        if persist { storedToken = token }
         return token
     }
 
@@ -49,11 +43,33 @@ private actor EndpointSessionAuthenticationProbe {
         (currentTokenCallCount, refreshTokenCallCount)
     }
 
-    func waitForCurrentTokenCalls(_ minimum: Int) async {
-        guard currentTokenCallCount < minimum else { return }
-        await withCheckedContinuation { continuation in
-            currentTokenCallWaiter = (minimum, continuation)
+    func currentTokenAcrossCompletedRequest(
+        _ requestCount: Int,
+        delayLastRead: Bool
+    ) async throws -> String? {
+        let token = currentToken(storedToken)
+        if delayLastRead && currentTokenCallCount == requestCount {
+            // Return the captured nil only after another request completes.
+            // The coordinator must notice the advanced refresh generation and
+            // re-read the token persisted by the external refresh provider.
+            var iterator = requestCompleted.stream.makeAsyncIterator()
+            _ = await iterator.next()
+            try Task.checkCancellation()
         }
+        return token
+    }
+
+    func markRequestCompleted() {
+        requestCompleted.continuation.yield(())
+        requestCompleted.continuation.finish()
+    }
+
+    func waitForCurrentTokenCalls(_ minimum: Int) async throws {
+        guard currentTokenCallCount < minimum else { return }
+        for await count in currentTokenCalls.stream {
+            if count >= minimum { return }
+        }
+        try Task.checkCancellation()
     }
 }
 
@@ -311,8 +327,11 @@ struct EndpointBuilderTests {
         #expect(counts.refresh == 1)
     }
 
-    @Test("Concurrent required-auth requests single-flight a proactive refresh")
-    func concurrentRequiredSessionAuthenticationSingleFlightsRefresh() async throws {
+    @Test(
+        "Concurrent required-auth requests single-flight a proactive refresh",
+        .timeLimit(.minutes(1)), arguments: [false, true]
+    )
+    func concurrentRequiredSessionAuthenticationSingleFlightsRefresh(delayLastRead: Bool) async throws {
         let requestCount = 8
         let endpoint = EndpointBuilder<EmptyResponse>.get("/me")
             .authentication(.required)
@@ -321,10 +340,12 @@ struct EndpointBuilderTests {
         try mockSession.setMockJSON(EndpointAck(ok: true))
         let probe = EndpointSessionAuthenticationProbe()
         let policy = RefreshTokenPolicy(
-            currentToken: { await probe.currentToken(nil) },
+            currentToken: {
+                try await probe.currentTokenAcrossCompletedRequest(requestCount, delayLastRead: delayLastRead)
+            },
             refreshToken: {
-                await probe.waitForCurrentTokenCalls(requestCount)
-                return await probe.refreshedToken("single-flight")
+                try await probe.waitForCurrentTokenCalls(requestCount)
+                return await probe.refreshedToken("single-flight", persist: true)
             }
         )
         let client = DefaultNetworkClient(
@@ -341,7 +362,9 @@ struct EndpointBuilderTests {
         ) { group in
             for _ in 0..<requestCount {
                 group.addTask {
-                    try await client.request(endpoint)
+                    let response = try await client.request(endpoint)
+                    await probe.markRequestCompleted()
+                    return response
                 }
             }
 
@@ -361,7 +384,11 @@ struct EndpointBuilderTests {
             }
         )
         let counts = await probe.counts()
-        #expect(counts.current == requestCount)
+        // External async reads may span a completed refresh and be retried.
+        #expect(counts.current >= requestCount)
+        if delayLastRead {
+            #expect(counts.current > requestCount)
+        }
         #expect(counts.refresh == 1)
     }
 

@@ -208,10 +208,17 @@ struct ObservabilityLifecycleTests {
     }
 
     @Test("Cancelled terminal observation does not return an incomplete lifecycle")
-    func cancelledTerminalObservation() async {
+    func cancelledTerminalObservation() async throws {
         let store = NetworkEventStore()
         let waiter = Task { try await store.waitForTerminalEvent() }
-        await withTaskCancellationHandler {
+        try await withTaskCancellationHandler {
+            do {
+                try await store.waitForTerminalObservationToStart()
+            } catch {
+                waiter.cancel()
+                _ = await waiter.result
+                throw error
+            }
             waiter.cancel()
             await #expect(throws: CancellationError.self) {
                 try await waiter.value

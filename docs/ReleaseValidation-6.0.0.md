@@ -46,6 +46,43 @@ over 517 Swift files and the docs/public API contracts also passed; the public
 surface remains 1,700 declarations (307 Stable / 1,360 Provisional / 33 SPI).
 These local results do not substitute for the corrective PR's remote checks.
 
+### Corrective PR bounded-shard follow-up
+
+The Xcode 26 bounded-shard job on `9bcefc3` subsequently failed the existing
+`concurrentRequiredSessionAuthenticationSingleFlightsRefresh` test: nine token
+reads and two refreshes rather than eight reads/one refresh. The modified
+observability tests passed. The auth test and production coordinator are
+identical between PR base `7918e11` and `9bcefc3`.
+
+A controlled final token read held until another request completed reproduced
+the same 9/2 failure on both revisions under local Xcode 27 / Swift 6.4. This
+does not claim a local Swift 6.2 run. The fake always returned nil, even after a
+successful refresh, and its eight-read barrier did not prove all eight callers
+had joined the in-flight refresh. The coordinator correctly re-reads when a
+provider call spans a completed refresh generation; the stateless fake then
+reported another missing token.
+
+The fixture now models caller-owned token storage and tests both normal overlap
+and a delayed stale read. Exactly one refresh and eight correctly authorized
+transports remain required; the delayed variant additionally requires a token
+re-read. It does not suppress a failed assertion or change auth runtime behavior.
+Its waiters are cancellation-aware. A separate review observation also led to
+awaiting explicit terminal-observer entry before cancelling its waiter, rather
+than racing task creation. This signal proves entry into the observation method,
+not an undocumented internal AsyncStream suspension point.
+
+The original hosted log, deterministic reproduction patch and base/head control
+logs remain under `.build/release-continuation/` with `shards-failed-9bcefc3` and
+`auth-delayed-*` names. New-head remote checks and final merged-main Release
+validation are still required; prior successful jobs are revision-specific.
+
+The final local correction passed 43 focused tests and 20 consecutive repeats.
+Removing only token persistence made the delayed-read variant fail with two
+refreshes, confirming that the one-refresh invariant is still enforced; restoring
+persistence passed again. Full serial coverage and all four bounded shards
+passed 1,923 registered tests (1,919 ordinary passes / four opt-in live skips).
+Formatting passed over 517 Swift files. No production source was modified.
+
 ## Current readiness transition — 2026-09-28
 
 [PR #125](https://github.com/InnoSquadCorp/InnoNetwork/pull/125) was squash-merged
