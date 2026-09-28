@@ -257,6 +257,9 @@ Guarded benchmark set:
 - `events/task-event-fanout-single`: single-listener admission-to-handler
   delivery baseline. 각 이벤트의 delivery 완료를 기다려 burst backlog나
   hosted-runner scheduling phase를 회귀 신호로 오인하지 않습니다.
+  Quick 모드도 300,000회 완료를 관측하며, `--only events --quick`으로
+  같은 경로만 프로파일링할 수 있습니다. 표본 분산은 별도로 검토하며
+  큰 분산을 20% 회귀 한도 면제 사유로 사용하지 않습니다.
 - `persistence/download-persistence-restore`: background download resume/restore 경로 baseline.
 - `persistence/append-log-compaction`: append-log snapshot compaction 경로 baseline.
 - `websocket/websocket-close-disposition-classify`: close callback마다 실행되는 분류 hot path.

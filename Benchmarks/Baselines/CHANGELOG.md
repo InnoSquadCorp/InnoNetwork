@@ -2,6 +2,27 @@
 
 Record the reason every time `default.json` changes.
 
+## 6.0.0 candidate — longer single-listener observation
+
+- Date: 2026-09-28
+- PR: #125
+- Failure: hosted run `36379606666`, attempt 1, measured -20.97% for
+  `events/task-event-fanout-single`. Its three paired deltas were -20.97%,
+  -36.21%, and +3.60%; the event implementation was unchanged from PR base.
+- Diagnosis: local Time Profiler confirmed per-event task allocation and
+  executor scheduling in the one-listener path. Six same-binary controls had
+  10.4% relative spread at 50,000 deliveries versus 1.8% at 300,000 deliveries.
+  These controls demonstrate sample variability, not the exact cause of an
+  unprofiled hosted failure.
+- Change: quick samples now wait for 300,000 complete deliveries (full:
+  1,000,000). `--only events` supports focused profiling. Both revisions still
+  use the candidate harness, three interleaved pairs, and the unchanged 20%
+  guard. No baseline SHA, absolute floor, or guarded inventory was reset.
+- Runtime: avoid a task group for exactly one listener while retaining the
+  delivery-chain wait; multi-listener fan-out remains concurrent.
+- Validation: see `docs/EVENT_DELIVERY_PERFORMANCE_6_0.md`. Hosted final-SHA
+  validation remains required; rerun success alone is not a root-cause proof.
+
 ## 6.0.0 candidate — dedicated preserved JSON source baseline
 
 - Date: 2026-09-28

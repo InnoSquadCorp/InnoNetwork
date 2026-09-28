@@ -190,7 +190,7 @@ private struct BenchmarkOptions: Sendable {
                 quick = true
             case "--only":
                 let scope = try requiredValue(code: 16, description: "Missing scope after --only.")
-                guard ["cache", "coalescing", "json"].contains(scope) else {
+                guard ["cache", "coalescing", "events", "json"].contains(scope) else {
                     throw NSError(
                         domain: "InnoNetworkBenchmarks", code: 16,
                         userInfo: [NSLocalizedDescriptionKey: "Unknown benchmark scope: \(scope)"])
@@ -396,6 +396,12 @@ private enum InnoNetworkBenchmarks {
     private static func runBenchmarks(options: BenchmarkOptions) async throws -> [BenchmarkResult] {
         if let only = options.only {
             switch only {
+            case "events":
+                return [
+                    try await benchmarkTaskEventHubDelivery(
+                        iterations: options.quick ? 300_000 : 1_000_000,
+                        name: "task-event-fanout-single")
+                ]
             case "cache": return [try await benchmarkResponseCacheRevalidation(iterations: 50_000_000)]
             case "coalescing": return [try await benchmarkRequestCoalescing(iterations: 100_000)]
             #if INNO_BENCHMARK_PRESERVED_JSON
@@ -413,7 +419,10 @@ private enum InnoNetworkBenchmarks {
         // The guarded single-listener path waits for each delivery, so it
         // measures the complete hub-to-handler hop without building a large
         // scheduler-sensitive backlog on hosted runners.
-        let guardedEventIterations = options.quick ? 50_000 : 100_000
+        // Keep the guarded sample multi-second even on faster local hosts.
+        // The same-runner script copies this harness to both implementations;
+        // this increases observation time without changing the 20% guard.
+        let guardedEventIterations = options.quick ? 300_000 : 1_000_000
         let persistenceIterations = options.quick ? 300 : 3_000
         let restoreIterations = options.quick ? 1_000 : 2_000
         let cacheIterations = options.quick ? 10_000_000 : 20_000_000

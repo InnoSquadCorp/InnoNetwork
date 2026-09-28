@@ -5,6 +5,75 @@ import Testing
 @testable import InnoNetwork
 
 extension EventHubTests {
+    @Test("Delivery waits preserve order with zero, one, or multiple listeners", arguments: [0, 1, 3])
+    func taskEventHubDeliveryWaitPreservesOrder(listenerCount: Int) async {
+        let hub = TaskEventHub<Int>()
+        let stores = (0..<listenerCount).map { _ in EventHubIntEventStore() }
+        for store in stores {
+            _ = await hub.addListener(taskID: "ordered-wait") { value in await store.append(value) }
+        }
+        for value in 0..<100 {
+            await hub.publishAndWaitForDelivery(value, for: "ordered-wait")
+        }
+        for store in stores {
+            #expect(await store.snapshot() == Array(0..<100))
+        }
+        await hub.finishAndWaitForClosure(taskID: "ordered-wait")
+    }
+
+    @Test("Multiple delivery waiters start concurrently and wait for every listener")
+    func taskEventHubDeliveryWaitRetainsConcurrentFanout() async {
+        let hub = TaskEventHub<Int>()
+        let first = EventHubDeliveryGate()
+        let second = EventHubDeliveryGate()
+        let completion = EventHubDeliveryGate()
+        for gate in [first, second] {
+            _ = await hub.addListener(taskID: "fanout-wait") { _ in
+                await gate.markReturned()
+                await gate.waitForRelease()
+            }
+        }
+        let publish = Task {
+            await hub.publishAndWaitForDelivery(1, for: "fanout-wait")
+            await completion.markReturned()
+        }
+        let bothStarted = await eventHubWaitForCondition(timeout: 2) {
+            let firstStarted = await first.hasReturned()
+            let secondStarted = await second.hasReturned()
+            return firstStarted && secondStarted
+        }
+        #expect(bothStarted)
+        #expect(await completion.hasReturned() == false)
+        await first.release()
+        #expect(await completion.hasReturned() == false)
+        await second.release()
+        await publish.value
+        #expect(await completion.hasReturned())
+        await hub.finishAndWaitForClosure(taskID: "fanout-wait")
+    }
+
+    @Test("Cancelling a publisher does not cancel its already admitted single-listener delivery")
+    func taskEventHubSingleDeliverySurvivesPublisherCancellation() async {
+        let hub = TaskEventHub<Int>()
+        let gate = EventHubDeliveryGate()
+        _ = await hub.addListener(taskID: "cancel-wait") { _ in
+            await gate.markStarted()
+            await gate.waitForRelease()
+            #expect(!Task.isCancelled)
+        }
+        let publish = Task {
+            await hub.publishAndWaitForDelivery(1, for: "cancel-wait")
+            await gate.markReturned()
+        }
+        await gate.waitUntilStarted()
+        publish.cancel()
+        #expect(await gate.hasReturned() == false)
+        await gate.release()
+        await publish.value
+        #expect(await gate.hasReturned())
+        await hub.finishAndWaitForClosure(taskID: "cancel-wait")
+    }
+
     @Test("TaskEventHub preserves per-task order")
     func taskEventHubPreservesPerTaskOrder() async throws {
         let hub = TaskEventHub<Int>()
