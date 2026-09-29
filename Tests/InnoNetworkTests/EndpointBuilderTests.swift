@@ -818,6 +818,8 @@ struct EndpointBuilderTests {
             ("/files/raw space", "https://api.example.com/api/v1/files/raw%20space"),
             ("/files/caf\u{00E9}", "https://api.example.com/api/v1/files/caf%C3%A9"),
             ("/files/%E2%9C%93", "https://api.example.com/api/v1/files/%E2%9C%93"),
+            ("/files/%41\u{0301}", "https://api.example.com/api/v1/files/%41%CC%81"),
+            ("/files/%41\u{FE0F}\u{20E3}", "https://api.example.com/api/v1/files/%41%EF%B8%8F%E2%83%A3"),
         ])
     func endpointPathEncodingIsCrashSafe(path: String, expectedURL: String) async throws {
         let mockSession = MockURLSession()
@@ -831,6 +833,16 @@ struct EndpointBuilderTests {
             EndpointBuilder<EmptyResponse>.get(path).decoding(EndpointAck.self))
 
         #expect(mockSession.capturedRequest?.url?.absoluteString == expectedURL)
+    }
+
+    @Test("Literal percent escapes are scanned as scalars, not graphemes")
+    func literalEscapesPreserveCombiningScalars() throws {
+        // Check before URLComponents' trapping setter, including on the old implementation.
+        #expect(try EndpointPathEncoding.percentEncodedPathLiteral("/items/%41\u{0301}") == "/items/%41%CC%81")
+        #expect(try EndpointPathEncoding.percentEncodedPathLiteral("/items/A\u{0301}") == "/items/A%CC%81")
+        for path in ["/items/%\u{0301}41", "/items/%4\u{0301}1"] {
+            #expect(throws: NetworkError.self) { try EndpointPathEncoding.percentEncodedPathLiteral(path) }
+        }
     }
 
     @Test("Dynamic path segments encode slashes and percent signs")
@@ -880,6 +892,7 @@ struct EndpointBuilderTests {
         arguments: [
             "/files/%", "/files/%2", "/files/%ZZ", "/files/%ＦＦ", "/users?name=kim",
             "/users#section",
+            "/files/%\u{0301}41", "/files/%4\u{0301}1",
         ])
     func malformedEndpointPathThrows(path: String) async {
         let mockSession = MockURLSession()

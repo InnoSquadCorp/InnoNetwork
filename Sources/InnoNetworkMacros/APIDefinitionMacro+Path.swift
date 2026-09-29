@@ -13,24 +13,25 @@ extension APIDefinitionMacro {
             ).error(at: anchor)
         }
 
-        var index = path.startIndex
-        while index < path.endIndex {
-            guard path[index] == "%" else {
-                index = path.index(after: index)
+        let scalars = path.unicodeScalars
+        var index = scalars.startIndex
+        while index < scalars.endIndex {
+            guard scalars[index] == "%" else {
+                index = scalars.index(after: index)
                 continue
             }
-            let first = path.index(after: index)
-            guard first < path.endIndex else {
+            let first = scalars.index(after: index)
+            guard first < scalars.endIndex else {
                 throw invalidPercentEscape(at: anchor)
             }
-            let second = path.index(after: first)
-            guard second < path.endIndex,
-                isASCIIHexDigit(path[first]),
-                isASCIIHexDigit(path[second])
+            let second = scalars.index(after: first)
+            guard second < scalars.endIndex,
+                isASCIIHexDigit(scalars[first]),
+                isASCIIHexDigit(scalars[second])
             else {
                 throw invalidPercentEscape(at: anchor)
             }
-            index = path.index(after: second)
+            index = scalars.index(after: second)
         }
 
         guard !containsDotSegment(path) else {
@@ -87,13 +88,8 @@ extension APIDefinitionMacro {
         }
     }
 
-    static func isASCIIHexDigit(_ character: Character) -> Bool {
-        guard character.unicodeScalars.count == 1,
-            let value = character.unicodeScalars.first?.value
-        else {
-            return false
-        }
-        switch value {
+    static func isASCIIHexDigit(_ scalar: Unicode.Scalar) -> Bool {
+        switch scalar.value {
         case 48...57, 65...70, 97...102:
             return true
         default:

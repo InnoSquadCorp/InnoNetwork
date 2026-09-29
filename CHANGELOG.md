@@ -15,6 +15,9 @@ The previously planned 6.1 candidates are included in this 6.0 release scope.
 
 ### Fixed — final hardening
 
+- Endpoint literal percent escapes are validated as ASCII scalars. Combining
+  marks after valid escapes are encoded safely; malformed escapes fail before
+  transport instead of reaching Foundation's trapping path setter.
 - Resumable uploads reject overlapping same-ID calls without overwriting or
   removing the active checkpoint. Engine copies share ownership; the file store
   also coordinates separate engines/processes and recovers after process exit.
