@@ -6,6 +6,44 @@ approved request-freshness and generator extensions; see `REMAINING_WORK_6_0.md`
 for their ordered delivery. New runtime APIs remain Provisionally Stable.
 It is not a release-ready declaration and does not publish a tag.
 
+## Final hardening candidate — 2026-09-29
+
+The final local corrections are based on main
+`0e22c24169fa99f63bc94fdbe756ec538ea64d6a`. They normalize pinning host aliases
+and fail closed for invalid configuration, unify multipart framing and bounded
+incremental scans, add awaited multipart backpressure, resolve local schema
+references exactly, and reject overlapping resumable-upload IDs before any
+checkpoint mutation. The built-in file store additionally owns a process lease;
+custom stores must share one engine family or coordinate independent owners.
+Cancellation tests observe handler installation rather than scheduler yields.
+Release validation retains raw benchmark artifacts on failure and success.
+
+Local Xcode 27 / Swift 6.4 verification of the combined source passed serial
+coverage and all four bounded shards: 1,940 registered tests, 1,936 ordinary
+passes and four opt-in live skips. The 89 focused tests, 20 cancellation/ownership
+repetitions, separate-process recovery/ownership fixtures, 524-file formatting,
+external API typecheck and docs/API contracts passed. The public ledger is
+exactly 1,702 declarations: 307 Stable, 1,362 Provisional and 33 SPI. The only
+additions are the Provisional awaited multipart overload and same-ID upload
+error. No Stable API, dependency, performance baseline or 20% limit changed.
+
+The multipart correction preserves body/error behavior in 15,000 differential
+cases and exact 1 MiB acceptance / 1 MiB + 1 rejection controls. Three optimized
+same-input 64 KiB byte-chunk header pairs changed from 5.87/5.77/5.83 seconds to
+0.0149/0.0143/0.0140 seconds. This focused reproducer is not whole-library
+performance evidence. Original failures, controls, raw measurements and full
+logs remain in `.build/code-improvements-postfix-20260929/` and the preceding
+review directories. Generator tests and generated integration fixtures from
+the earlier unchanged generator correction are reused explicitly.
+
+This record is local evidence, not a transfer of the prior main's green CI.
+The final PR must pass its 15 protected checks, actual full TSAN and runtime/JSON
+benchmarks; its fresh merged main then requires CI and manual Release validation
+with all five platforms successful and Publish Release actually skipped.
+Those remote gates remain pending when this candidate is committed. No tag,
+publication, consumer migration or scheduled automation is authorized here.
+Existing device/service, custom-store and consumer-adoption boundaries remain.
+
 ## Post-CI-split cancellation follow-up — 2026-09-29
 
 [PR #127](https://github.com/InnoSquadCorp/InnoNetwork/pull/127) passed its exact

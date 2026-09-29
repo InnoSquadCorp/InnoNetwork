@@ -177,6 +177,15 @@ jobs:
             --output-dir .build/release-artifacts/benchmarks \
             --max-regression-percent 20
 
+      - name: Retain raw benchmark diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-benchmark-diagnostics-${{ github.sha }}-${{ github.run_attempt }}
+          path: .build/release-artifacts/benchmarks/
+          include-hidden-files: true
+          if-no-files-found: warn
+
       - name: Run serial tests with coverage
         run: xcrun swift test --no-parallel --enable-code-coverage
 
