@@ -6,6 +6,43 @@ approved request-freshness and generator extensions; see `REMAINING_WORK_6_0.md`
 for their ordered delivery. New runtime APIs remain Provisionally Stable.
 It is not a release-ready declaration and does not publish a tag.
 
+## Post-CI-split cancellation follow-up — 2026-09-29
+
+[PR #127](https://github.com/InnoSquadCorp/InnoNetwork/pull/127) passed its exact
+candidate's 15 required checks, full TSAN and runtime/JSON benchmarks, then
+protected-squash merged to `9a67373f02446ca88fa9c0c13d17221167945660` with an
+identical tree. Its [main CI](https://github.com/InnoSquadCorp/InnoNetwork/actions/runs/36430176295)
+failed only `valueAwaiterCancellationPropagates` in the Xcode 26 bounded core
+shard. All other executed jobs, including the three consumer lanes and their
+required aggregate, succeeded; CodeQL also succeeded. This is not a green
+final-main or final Release result.
+
+The test cancelled its value-awaiting task, yielded once, and advanced the
+virtual deadline. Request entry and deadline registration do not prove that
+the separate value task installed its cancellation handler. A controlled late
+entry reproduced `.timeout` / `.requestPreparation` instead of `.cancelled` /
+nil; awaiting actual cancellation completion before advancing passed. The test
+and relevant production files were unchanged from `7918e11`. Local evidence
+uses Xcode 27 / Swift 6.4, not the unavailable hosted Xcode 26 / Swift 6.2.
+
+The correction waits for the terminal cancellation result before advancing
+time. Both ordinary and deliberately delayed value entry retain the cancelled
+kind, nil deadline stage, and zero clock waiters; reading the result again after
+deadline advancement must return the same failure. A one-minute test limit
+forwards cancellation to owned tasks, and the fake's start observation is
+cancellation-aware. Runtime semantics, API, CI workflow and performance limits
+are unchanged. The original remote failure and deterministic failing/control
+logs are preserved in `.build/ci-optimization-remote/cancellation-*` and
+`main-bounded-failed.log`.
+
+All 19 operation tests and 20 consecutive repeats passed locally. Full serial
+coverage and four bounded shards passed 1,923 registered tests (1,919 ordinary
+passes and four opt-in live skips). Formatting over 517 Swift files, the unchanged
+1,700-declaration docs/API contract and the documentation consumer build passed.
+The new exact candidate's remote gates and fresh merged-main manual Release
+validation remain required. Existing consumer snapshots and real-device/
+dedicated-service exclusions below still apply.
+
 ## Post-merge Release validation — 2026-09-28
 
 [Ready PR #126](https://github.com/InnoSquadCorp/InnoNetwork/pull/126) was

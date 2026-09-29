@@ -362,26 +362,50 @@ struct OperationNetworkClientTests {
         await base.release()
     }
 
-    @Test("Cancelling a value awaiter cancels its operation before the deadline")
-    func valueAwaiterCancellationPropagates() async throws {
+    @Test(
+        "Cancelling a value awaiter cancels its operation before the deadline",
+        .timeLimit(.minutes(1)),
+        arguments: [false, true]
+    )
+    func valueAwaiterCancellationPropagates(delayValueEntry: Bool) async throws {
         let base = CancellationHeldNetworkClient()
         let clock = TestClock()
         let operation = OperationNetworkClient(client: base, deadlineClock: clock).start(
             PreviewEndpoint(),
             deadline: NetworkOperationDeadline(after: .seconds(60))
         )
-        let valueTask = Task { await failure(from: operation) }
+        let valueEntry = AsyncStream<Void>.makeStream()
+        let valueTask = Task {
+            if delayValueEntry {
+                // Model an awaiter that reaches value() only after being cancelled.
+                var iterator = valueEntry.stream.makeAsyncIterator()
+                _ = await iterator.next()
+            }
+            return await failure(from: operation)
+        }
 
-        await base.waitUntilStarted()
-        #expect(await clock.waitForWaiters(count: 1))
-        valueTask.cancel()
-        await Task.yield()
-        clock.advance(by: .seconds(60))
-        let result = await valueTask.value
+        await withTaskCancellationHandler {
+            await base.waitUntilStarted()
+            #expect(await clock.waitForWaiters(count: 1))
+            valueTask.cancel()
+            valueEntry.continuation.finish()
+            // A yield does not prove value() installed its cancellation handler.
+            // Observe cancellation completion before making the deadline eligible.
+            let result = await valueTask.value
 
-        #expect(result.kind == .cancelled)
-        #expect(result.deadlineStage == nil)
+            #expect(result.kind == .cancelled)
+            #expect(result.deadlineStage == nil)
+            #expect(clock.waiterCount == 0)
+            clock.advance(by: .seconds(60))
+            let afterDeadline = await failure(from: operation)
+            #expect(afterDeadline == result)
+        } onCancel: {
+            valueEntry.continuation.finish()
+            valueTask.cancel()
+            operation.cancel()
+        }
         await base.release()
+        _ = await valueTask.value
         #expect(clock.waiterCount == 0)
     }
 
@@ -560,7 +584,7 @@ private actor DeadlineHeldNetworkClient: NetworkClient {
 
 private actor CancellationHeldNetworkClient: NetworkClient {
     private var continuation: CheckedContinuation<Void, Never>?
-    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+    private let started = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
     let cancellation = AsyncStream<Void>.makeStream()
     private var requestStarted = false
 
@@ -569,9 +593,7 @@ private actor CancellationHeldNetworkClient: NetworkClient {
         tag _: CancellationTag?
     ) async throws(NetworkError) -> Request.APIResponse {
         requestStarted = true
-        let pendingStarts = startWaiters
-        startWaiters.removeAll(keepingCapacity: false)
-        for waiter in pendingStarts { waiter.resume() }
+        started.continuation.yield()
         await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
                 self.continuation = continuation
@@ -592,9 +614,8 @@ private actor CancellationHeldNetworkClient: NetworkClient {
 
     func waitUntilStarted() async {
         guard !requestStarted else { return }
-        await withCheckedContinuation { continuation in
-            startWaiters.append(continuation)
-        }
+        var iterator = started.stream.makeAsyncIterator()
+        _ = await iterator.next()
     }
 
     func waitUntilCancelled() async {
