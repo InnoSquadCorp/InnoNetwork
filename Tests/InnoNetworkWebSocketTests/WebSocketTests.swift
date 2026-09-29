@@ -1188,6 +1188,8 @@ private func waitForExplicitRetryReplacement(
 
 @Suite("WebSocket Listener Lifecycle Tests")
 struct WebSocketListenerLifecycleTests {
+    // These tests drive delegate callbacks themselves. Use stub transports so
+    // real DNS/connect failures cannot race the scripted lifecycle events.
     @Test("Reconnect runtime chain reaches max reconnect attempts")
     func reconnectRuntimeChainReachesMaxAttempts() async throws {
         let firstURLTask = StubWebSocketURLTask(taskIdentifier: 9_001)
@@ -1256,16 +1258,11 @@ struct WebSocketListenerLifecycleTests {
 
     @Test("Max reconnect attempts zero fails immediately")
     func maxReconnectAttemptsZeroFailsImmediately() async throws {
-        let manager = WebSocketManager(
-            configuration: WebSocketConfiguration(
-                heartbeatInterval: 0,
-                reconnectDelay: 0,
-                maxReconnectAttempts: 0,
-            )
-        )
+        let harness = StubMessagingHarness()
+        let manager = harness.manager
         let recorder = WebSocketEventRecorder()
 
-        let task = await manager.connect(url: URL(string: "wss://192.0.2.1/socket")!)
+        let task = await manager.connect(url: URL(string: "wss://stub.invalid/socket")!)
         _ = await manager.addEventListener(for: task) { event in
             recorder.record(event)
         }
@@ -1285,14 +1282,13 @@ struct WebSocketListenerLifecycleTests {
 
     @Test("Listener persists across auto reconnect and is cleaned on disconnect")
     func listenerPersistsAcrossReconnect() async throws {
-        let config = WebSocketConfiguration(
-            heartbeatInterval: 0,
-            reconnectDelay: 0,
-            maxReconnectAttempts: 3,
-        )
-        let manager = WebSocketManager(configuration: config)
+        let firstURLTask = StubWebSocketURLTask(taskIdentifier: 9_101)
+        let secondURLTask = StubWebSocketURLTask(taskIdentifier: 9_102)
+        let harness = StubMessagingHarness(maxReconnectAttempts: 3, stubTask: firstURLTask)
+        harness.stubSession.enqueue(secondURLTask)
+        let manager = harness.manager
 
-        let task = await manager.connect(url: URL(string: "wss://example.invalid/socket")!)
+        let task = await manager.connect(url: URL(string: "wss://stub.invalid/socket")!)
         let _ = await manager.addEventListener(for: task) { event in
             _ = event
         }
@@ -1304,24 +1300,24 @@ struct WebSocketListenerLifecycleTests {
             reason: "transient network error"
         )
 
-        #expect(await waitForListenerCount(manager: manager, task: task, expected: 1))
+        let secondTaskIdentifier = try #require(
+            await waitForRuntimeTaskIdentifier(manager: manager, task: task, excluding: [firstTaskIdentifier])
+        )
+        #expect(secondTaskIdentifier == secondURLTask.taskIdentifier)
+        #expect(await manager.listenerCount(for: task) == 1)
 
         await manager.disconnect(task)
+        manager.handleDisconnected(taskIdentifier: secondTaskIdentifier, closeCode: .normalClosure, reason: nil)
         #expect(await waitForListenerCleanup(manager: manager, task: task))
     }
 
     @Test("Disconnect reason is propagated to disconnected event")
     func disconnectReasonPropagation() async throws {
-        let manager = WebSocketManager(
-            configuration: WebSocketConfiguration(
-                heartbeatInterval: 0,
-                reconnectDelay: 0,
-                maxReconnectAttempts: 0,
-            )
-        )
+        let harness = StubMessagingHarness()
+        let manager = harness.manager
         let recorder = WebSocketEventRecorder()
 
-        let task = await manager.connect(url: URL(string: "wss://example.invalid/socket")!)
+        let task = await manager.connect(url: URL(string: "wss://stub.invalid/socket")!)
         _ = await manager.addEventListener(for: task) { event in
             recorder.record(event)
         }
@@ -1342,20 +1338,16 @@ struct WebSocketListenerLifecycleTests {
             return false
         }
         #expect(reasonDelivered)
+        #expect(await waitForListenerCleanup(manager: manager, task: task))
     }
 
     @Test("Manual disconnect emits contextual disconnected reason")
     func manualDisconnectReasonPropagation() async throws {
-        let manager = WebSocketManager(
-            configuration: WebSocketConfiguration(
-                heartbeatInterval: 0,
-                reconnectDelay: 0,
-                maxReconnectAttempts: 0,
-            )
-        )
+        let harness = StubMessagingHarness()
+        let manager = harness.manager
         let recorder = WebSocketEventRecorder()
 
-        let task = await manager.connect(url: URL(string: "wss://example.invalid/socket")!)
+        let task = await manager.connect(url: URL(string: "wss://stub.invalid/socket")!)
         _ = await manager.addEventListener(for: task) { event in
             recorder.record(event)
         }
@@ -1387,19 +1379,15 @@ struct WebSocketListenerLifecycleTests {
             return false
         }
         #expect(reasonDelivered)
+        #expect(await waitForListenerCleanup(manager: manager, task: task))
     }
 
     @Test("Manual disconnect remains disconnecting until close ack arrives")
     func manualDisconnectWaitsForCloseAck() async throws {
-        let manager = WebSocketManager(
-            configuration: WebSocketConfiguration(
-                heartbeatInterval: 0,
-                reconnectDelay: 0,
-                maxReconnectAttempts: 0,
-            )
-        )
+        let harness = StubMessagingHarness()
+        let manager = harness.manager
 
-        let task = await manager.connect(url: URL(string: "wss://192.0.2.1/socket")!)
+        let task = await manager.connect(url: URL(string: "wss://stub.invalid/socket")!)
         let taskIdentifier = try #require(await waitForRuntimeTaskIdentifier(manager: manager, task: task))
 
         await task.setAutoReconnectEnabled(false)
@@ -1427,16 +1415,11 @@ struct WebSocketListenerLifecycleTests {
 
     @Test("Cancelled transport during manual close is not emitted as error")
     func cancelledTransportDuringManualCloseIsIgnored() async throws {
-        let manager = WebSocketManager(
-            configuration: WebSocketConfiguration(
-                heartbeatInterval: 0,
-                reconnectDelay: 0,
-                maxReconnectAttempts: 0,
-            )
-        )
+        let harness = StubMessagingHarness()
+        let manager = harness.manager
         let recorder = WebSocketEventRecorder()
 
-        let task = await manager.connect(url: URL(string: "wss://192.0.2.1/socket")!)
+        let task = await manager.connect(url: URL(string: "wss://stub.invalid/socket")!)
         _ = await manager.addEventListener(for: task) { event in
             recorder.record(event)
         }
@@ -1480,16 +1463,11 @@ struct WebSocketListenerLifecycleTests {
 
     @Test("Disconnecting callback does not emit duplicate disconnected reason")
     func disconnectingCallbackSkipsDuplicateEmission() async throws {
-        let manager = WebSocketManager(
-            configuration: WebSocketConfiguration(
-                heartbeatInterval: 0,
-                reconnectDelay: 0,
-                maxReconnectAttempts: 0,
-            )
-        )
+        let harness = StubMessagingHarness()
+        let manager = harness.manager
         let recorder = WebSocketEventRecorder()
 
-        let task = await manager.connect(url: URL(string: "wss://192.0.2.1/socket")!)
+        let task = await manager.connect(url: URL(string: "wss://stub.invalid/socket")!)
         _ = await manager.addEventListener(for: task) { event in
             recorder.record(event)
         }
@@ -1778,45 +1756,59 @@ struct WebSocketListenerLifecycleTests {
         }
     }
 
-    @Test("Final reconnect failure removes listeners and task runtime")
-    func terminalFailureRemovesListeners() async throws {
-        let config = WebSocketConfiguration(
-            heartbeatInterval: 0,
-            reconnectDelay: 0,
-            maxReconnectAttempts: 1,
-        )
-        let manager = WebSocketManager(configuration: config)
+    @Test("Final reconnect failure removes listeners and task runtime", arguments: [false, true])
+    func terminalFailureRemovesListeners(secondFailsOnResume: Bool) async throws {
+        let firstURLTask = StubWebSocketURLTask(taskIdentifier: 9_201)
+        let secondURLTask = StubWebSocketURLTask(taskIdentifier: 9_202)
+        let harness = StubMessagingHarness(maxReconnectAttempts: 1, stubTask: firstURLTask)
+        harness.stubSession.enqueue(secondURLTask)
+        let manager = harness.manager
+        let recorder = WebSocketEventRecorder()
 
-        let task = await manager.connect(url: URL(string: "wss://192.0.2.1/socket")!)
-        let _ = await manager.addEventListener(for: task) { _ in }
+        if secondFailsOnResume {
+            secondURLTask.setResumeHook { [weak manager, taskIdentifier = secondURLTask.taskIdentifier] in
+                manager?.handleError(taskIdentifier: taskIdentifier, error: URLError(.cannotConnectToHost))
+            }
+        }
+
+        let task = await manager.connect(url: URL(string: "wss://stub.invalid/socket")!)
+        _ = await manager.addEventListener(for: task) { recorder.record($0) }
 
         let firstTaskIdentifier = try #require(await waitForRuntimeTaskIdentifier(manager: manager, task: task))
+        #expect(firstTaskIdentifier == firstURLTask.taskIdentifier)
         manager.handleError(taskIdentifier: firstTaskIdentifier, error: URLError(.cannotConnectToHost))
 
-        let secondTaskIdentifier = try #require(
-            await waitForRuntimeTaskIdentifier(
-                manager: manager,
-                task: task,
-                excluding: [firstTaskIdentifier]
+        if !secondFailsOnResume {
+            let secondTaskIdentifier = try #require(
+                await waitForRuntimeTaskIdentifier(manager: manager, task: task, excluding: [firstTaskIdentifier])
             )
-        )
-        manager.handleError(taskIdentifier: secondTaskIdentifier, error: URLError(.cannotConnectToHost))
+            #expect(secondTaskIdentifier == secondURLTask.taskIdentifier)
+            manager.handleError(taskIdentifier: secondTaskIdentifier, error: URLError(.cannotConnectToHost))
+        }
 
+        // An immediately failing retry can disappear before the next poll.
+        // Observe terminal cleanup, not the lifetime of that intermediate ID.
         #expect(await waitForListenerCleanup(manager: manager, task: task))
         #expect(await manager.task(withId: task.id) == nil)
+        #expect(await task.state == .failed)
+        #expect(await task.error == .maxReconnectAttemptsExceeded)
+        #expect(await task.attemptedReconnectCount == 2)
+        #expect(harness.stubSession.createdTasks.map(\.taskIdentifier) == [9_201, 9_202])
+        #expect(firstURLTask.didCancelUnconditionally)
+        #expect(secondURLTask.didCancelUnconditionally)
+        let terminalErrors = recorder.snapshot().filter { event in
+            if case .error(.maxReconnectAttemptsExceeded) = event { return true }
+            return false
+        }
+        #expect(terminalErrors.count == 1)
     }
 
     @Test("Server normal close does not trigger reconnect")
     func serverNormalCloseDoesNotReconnect() async throws {
-        let manager = WebSocketManager(
-            configuration: WebSocketConfiguration(
-                heartbeatInterval: 0,
-                reconnectDelay: 0,
-                maxReconnectAttempts: 3,
-            )
-        )
+        let harness = StubMessagingHarness(maxReconnectAttempts: 3)
+        let manager = harness.manager
 
-        let task = await manager.connect(url: URL(string: "wss://192.0.2.1/socket")!)
+        let task = await manager.connect(url: URL(string: "wss://stub.invalid/socket")!)
         let firstTaskIdentifier = try #require(await waitForRuntimeTaskIdentifier(manager: manager, task: task))
 
         manager.handleDisconnected(
@@ -1826,19 +1818,19 @@ struct WebSocketListenerLifecycleTests {
         )
 
         #expect(await waitForTaskRemoval(manager: manager, task: task))
+        #expect(harness.stubSession.createdTasks.count == 1)
+        #expect(await task.attemptedReconnectCount == 0)
     }
 
     @Test("Retryable server close triggers reconnect")
     func retryableServerCloseReconnects() async throws {
-        let manager = WebSocketManager(
-            configuration: WebSocketConfiguration(
-                heartbeatInterval: 0,
-                reconnectDelay: 0,
-                maxReconnectAttempts: 2,
-            )
-        )
+        let firstURLTask = StubWebSocketURLTask(taskIdentifier: 9_301)
+        let secondURLTask = StubWebSocketURLTask(taskIdentifier: 9_302)
+        let harness = StubMessagingHarness(maxReconnectAttempts: 2, stubTask: firstURLTask)
+        harness.stubSession.enqueue(secondURLTask)
+        let manager = harness.manager
 
-        let task = await manager.connect(url: URL(string: "wss://192.0.2.1/socket")!)
+        let task = await manager.connect(url: URL(string: "wss://stub.invalid/socket")!)
         let firstTaskIdentifier = try #require(await waitForRuntimeTaskIdentifier(manager: manager, task: task))
 
         manager.handleDisconnected(
@@ -1854,7 +1846,11 @@ struct WebSocketListenerLifecycleTests {
                 excluding: [firstTaskIdentifier]
             )
         )
-        #expect(secondTaskIdentifier != firstTaskIdentifier)
+        #expect(secondTaskIdentifier == secondURLTask.taskIdentifier)
+        #expect(await task.attemptedReconnectCount == 1)
+        #expect(harness.stubSession.createdTasks.count == 2)
+        manager.handleDisconnected(taskIdentifier: secondTaskIdentifier, closeCode: .normalClosure, reason: nil)
+        #expect(await waitForListenerCleanup(manager: manager, task: task))
     }
 
     private func waitForRuntimeTaskIdentifier(
@@ -1889,22 +1885,6 @@ struct WebSocketListenerLifecycleTests {
         return false
     }
 
-    private func waitForListenerCount(
-        manager: WebSocketManager,
-        task: WebSocketTask,
-        expected: Int,
-        timeout: TimeInterval = 2.0
-    ) async -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            if await manager.listenerCount(for: task) == expected {
-                return true
-            }
-            try? await Task.sleep(nanoseconds: 10_000_000)
-        }
-        return false
-    }
-
     private func waitForTaskError(
         task: WebSocketTask,
         timeout: TimeInterval = 2.0,
@@ -1929,7 +1909,8 @@ struct WebSocketListenerLifecycleTests {
         while Date() < deadline {
             let listenerCount = await manager.listenerCount(for: task)
             let runtimeIdentifier = await manager.runtimeTaskIdentifier(for: task)
-            if listenerCount == 0 && runtimeIdentifier == nil {
+            let registeredTask = await manager.task(withId: task.id)
+            if listenerCount == 0 && runtimeIdentifier == nil && registeredTask == nil {
                 return true
             }
             try? await Task.sleep(nanoseconds: 10_000_000)
