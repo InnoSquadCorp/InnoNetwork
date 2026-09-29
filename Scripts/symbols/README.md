@@ -22,28 +22,33 @@ Stable compatibility promise.
 ## Current sizes (InnoNetwork 6.0.0 release baseline)
 
 This table is the approved unified 6.0 compatibility baseline with
-1,700 public declarations in the root package. Readiness does not prove publication;
+1,702 public declarations in the root package. Readiness does not prove publication;
 the 5.0.0 baseline remains the compatibility reference for the 5.x line.
 
 | Product | Public declarations |
 |---|---:|
-| `InnoNetwork` (core) | 1134 |
+| `InnoNetwork` (core) | 1135 |
 | `InnoNetworkWebSocket` | 164 |
 | `InnoNetworkDownload` | 94 |
-| `InnoNetworkUpload` | 110 |
+| `InnoNetworkUpload` | 111 |
 | `InnoNetworkTestSupport` | 84 |
 | `InnoNetworkPersistentCache` | 51 |
 | `InnoNetworkOpenAPI` | 36 |
 | `InnoNetworkTrust` | 17 |
 | `InnoNetworkAuthAWS` | 10 |
-| **Total** | **1,700** |
+| **Total** | **1,702** |
 
 | Compatibility tier | Public declarations |
 |---|---:|
 | Stable consumer API | 307 |
-| Provisionally Stable consumer API | 1,360 |
+| Provisionally Stable consumer API | 1,362 |
 | `@_spi(GeneratedClientSupport)` | 33 |
-| **Total** | **1,700** |
+| **Total** | **1,702** |
+
+The awaited multipart delivery overload adds one Provisionally Stable declaration;
+its budget increase does not promote the unbounded stream or change Stable APIs.
+The resumable-upload ownership error adds one further Provisional enum case;
+it rejects overlapping calls without changing the checkpoint serialization.
 
 ## Why this matters
 
@@ -58,7 +63,7 @@ Moving the four HLS modules to InnoStream and folding the temporary
 3,254-declaration snapshot to an intermediate 1,407 declarations. The approved
 6.0 scope also includes deadlines, upload controls, cache controls, bounded
 streaming/cursors, admission, advanced quota, tracing, resumable uploads, and
-their contract fixes, bringing the release baseline to 1,700 declarations.
+their contract fixes, bringing the release baseline to 1,702 declarations.
 These advanced additions remain Provisionally Stable until real server and
 consumer evidence supports promotion. The intermediate count is historical,
 not a separate release or the 6.0 release gate.

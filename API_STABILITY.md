@@ -274,6 +274,15 @@ Their supporting public values are `AdvancedRateLimitAlgorithm`,
 `FileResumableUploadCheckpointStore`, `ResumableUploadError`,
 `ResumableUploadResult`, and `UploadResourcePolicy`.
 
+`ResumableUploadError.uploadAlreadyInProgress` is a Provisionally Stable,
+payload-free rejection. One engine and its copies admit one invocation per ID;
+the built-in file checkpoint store extends this lease across engines and
+processes sharing its directory. Distinct IDs remain independent. Custom stores
+must use one shared engine family or externally coordinate multiple engines and
+processes. Direct checkpoint mutations must not overlap an engine-owned ID.
+Ownership spans snapshot creation through finalization and checkpoint cleanup;
+failure/cancellation releases ownership without deleting the confirmed offset.
+
 For the provisional streaming contract, an invalid cursor is a fail-closed
 attempt state: it suppresses both cursor-bearing and cursorless reconnects
 after a transport failure or clean EOF. A cursor that has not yet been
@@ -409,7 +418,10 @@ general handshake retry policy would retry an ordinary transport timeout.
 - `MultipartResponseDecoder` and `MultipartStreamingResponseDecoder` — the
   buffered API remains source-compatible; the streaming event vocabulary may
   gain additive diagnostic events as more long-lived multipart deployments are
-  exercised.
+  exercised. The additive `decode(_:contentType:receive:)` overload awaits every
+  consumer callback without an event queue; the original stream overload remains
+  unbounded. Both parsers accept empty headers and SP/HTAB boundary padding, cap
+  headers/padding at 1 MiB each and require boundaries of at most 70 UTF-8 bytes.
 - `InnoNetworkOpenAPI` — adapter protocols may add optional requirements with
   default implementations to track Swift OpenAPI Generator and HTTPTypes
   conventions without exposing HTTPTypes through the core public
@@ -583,8 +595,8 @@ below keeps the high-level compatibility classification readable. Historical
 5.x HLS sections document the migration source but are no longer included in
 the current machine-checked inventory.
 
-The machine-checked snapshot currently partitions all 1,700 declarations into
-307 Stable consumer declarations, 1,360 Provisionally Stable consumer
+The machine-checked snapshot currently partitions all 1,702 declarations into
+307 Stable consumer declarations, 1,362 Provisionally Stable consumer
 declarations, and 33 opt-in SPI declarations. The three sets are disjoint and
 exhaustive. `Scripts/symbols/stable-rules.tsv` maps the Stable ledger to symbol
 paths, while the compiler-authored SPI flag is snapshotted in
@@ -1123,7 +1135,11 @@ requires `@_spi` import.
 - `PublicKeyPinningPolicy.HostMatchingStrategy.unionAllMatches` preserves the
   existing host pin lookup behavior. `mostSpecificHost` is stable as an
   opt-in stricter matching mode for operators who separate parent and
-  subdomain pins.
+  subdomain pins. DNS pin selection normalizes Foundation Unicode/IDNA aliases
+  and a single root dot; IPv6 brackets are ignored and valid zone IDs retain
+  exact-IP matching. Invalid host configuration cancels the entire policy with
+  a payload-free custom trust failure, never the unpinned-host fallback. This
+  normalization does not replace the challenge's system TLS/hostname check.
 - `WebSocketCloseDisposition` is **Stable**; the observation property is
   SemVer-protected. Additional enum cases may be added in minor releases
   as new close-code classifications are formalised, but existing cases

@@ -7,6 +7,8 @@ public enum ResumableUploadError: Error, Sendable, Equatable {
     case invalidChunkSize
     case invalidServerOffset(Int64)
     case fileChanged
+    /// Another invocation owns this upload ID. Retry only after it has finished.
+    case uploadAlreadyInProgress
 }
 
 /// Durable, credential-free state for a server-negotiated resumable upload.
@@ -70,6 +72,12 @@ public actor FileResumableUploadCheckpointStore: ResumableUploadCheckpointStorin
         let digest = SHA256.hash(data: Data(uploadID.utf8)).map { String(format: "%02x", $0) }.joined()
         return directory.appendingPathComponent(digest).appendingPathExtension("json")
     }
+
+    func acquireUploadLease(uploadID: String) throws -> ResumableUploadFileLease {
+        try ResumableUploadFileLease(
+            directory: directory,
+            name: fileURL(uploadID: uploadID).deletingPathExtension().lastPathComponent + ".upload-lock")
+    }
 }
 
 /// Server-specific protocol adapter. Each method must authenticate independently;
@@ -112,11 +120,15 @@ public struct ResumableUploadResult: Sendable, Equatable {
 }
 
 /// Chunk engine that advances only from offsets explicitly confirmed by the server.
+/// Copies share upload-ID ownership and reject overlapping calls. The file store
+/// also enforces ownership across engines/processes using the same directory.
+/// For custom stores, share one engine (or its copies), or coordinate externally.
 public struct ResumableUploadEngine: Sendable {
     public let chunkSize: Int
     private let adapter: any ResumableUploadAdapting
     private let checkpointStore: any ResumableUploadCheckpointStoring
     private let snapshotDirectory: URL
+    private let ownership = ResumableUploadOwnership()
 
     public init(
         chunkSize: Int = 5 * 1024 * 1024,
@@ -149,6 +161,27 @@ public struct ResumableUploadEngine: Sendable {
         request: URLRequest,
         progress: (@Sendable (_ confirmedBytes: Int64, _ totalBytes: Int64) async -> Void)? = nil
     ) async throws -> ResumableUploadResult {
+        try Task.checkCancellation()
+        try await ownership.acquire(uploadID)
+        do {
+            let result = try await uploadOwned(id: uploadID, fileURL: fileURL, request: request, progress: progress)
+            await ownership.release(uploadID)
+            return result
+        } catch {
+            await ownership.release(uploadID)
+            throw error
+        }
+    }
+
+    private func uploadOwned(
+        id uploadID: String,
+        fileURL: URL,
+        request: URLRequest,
+        progress: (@Sendable (_ confirmedBytes: Int64, _ totalBytes: Int64) async -> Void)?
+    ) async throws -> ResumableUploadResult {
+        let lease = try await (checkpointStore as? FileResumableUploadCheckpointStore)?.acquireUploadLease(
+            uploadID: uploadID)
+        defer { lease?.release() }
         try Task.checkCancellation()
         let snapshot = try await makeFileSnapshot(at: fileURL)
         defer { withExtendedLifetime(snapshot.lease) {} }
@@ -278,4 +311,17 @@ public struct ResumableUploadEngine: Sendable {
             throw ResumableUploadError.unreadableFile
         }
     }
+}
+
+/// One reference per engine family, so copying a Sendable engine does not copy
+/// the in-flight set. No completed-ID tombstones or unbounded waiter queue.
+private actor ResumableUploadOwnership {
+    private var active: Set<String> = []
+
+    func acquire(_ id: String) throws {
+        try Task.checkCancellation()
+        guard active.insert(id).inserted else { throw ResumableUploadError.uploadAlreadyInProgress }
+    }
+
+    func release(_ id: String) { active.remove(id) }
 }

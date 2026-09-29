@@ -98,6 +98,10 @@ private enum RecoverySmoke {
         guard CommandLine.arguments.count == 3 else { throw FixtureError.invalidArguments }
         let phase = CommandLine.arguments[1]
         let directory = URL(fileURLWithPath: CommandLine.arguments[2], isDirectory: true)
+        if phase == "ownership" || phase == "hold-owner" {
+            try await ResumableOwnershipSmoke.run(phase: phase, directory: directory)
+            return
+        }
         let payload = directory.appendingPathComponent("payload.bin")
         let serverURL = directory.appendingPathComponent("server.json")
         if phase == "prepare" {
@@ -121,8 +125,12 @@ private enum RecoverySmoke {
             let files = try FileManager.default.contentsOfDirectory(
                 at: checkpointDirectory, includingPropertiesForKeys: nil
             )
-            try require(files.count == 1, "one durable checkpoint")
-            let persisted = try String(contentsOf: files[0], encoding: .utf8)
+            let checkpoints = files.filter { $0.pathExtension == "json" }
+            let locks = files.filter { $0.pathExtension == "upload-lock" }
+            try require(
+                checkpoints.count == 1 && locks.count == 1 && files.count == 2, "checkpoint and crashed-owner lock")
+            try require(try Data(contentsOf: locks[0]).isEmpty, "lock contains no payload or credentials")
+            let persisted = try String(contentsOf: checkpoints[0], encoding: .utf8)
             try require(
                 !persisted.contains("Bearer") && !persisted.contains("Authorization"), "credential-free checkpoint")
         }
@@ -147,6 +155,9 @@ private enum RecoverySmoke {
         try require(result.bytesConfirmed == 10, "completed byte count")
         let checkpoint = try await store.load(uploadID: "fixture-job")
         try require(checkpoint == nil, "successful recovery removes checkpoint")
+        try require(
+            try FileManager.default.contentsOfDirectory(atPath: checkpointDirectory.path).isEmpty,
+            "successful recovery removes its stale ownership lock")
         let snapshotDirectory = directory.appendingPathComponent("snapshots/innonetwork-resumable-v1")
         try require(
             try FileManager.default.contentsOfDirectory(atPath: snapshotDirectory.path).isEmpty,

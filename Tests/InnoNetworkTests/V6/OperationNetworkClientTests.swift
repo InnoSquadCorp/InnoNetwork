@@ -375,20 +375,27 @@ struct OperationNetworkClientTests {
             deadline: NetworkOperationDeadline(after: .seconds(60))
         )
         let valueEntry = AsyncStream<Void>.makeStream()
+        let handlerEntry = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
         let valueTask = Task {
+            defer { handlerEntry.continuation.finish() }
             if delayValueEntry {
                 // Model an awaiter that reaches value() only after being cancelled.
                 var iterator = valueEntry.stream.makeAsyncIterator()
                 _ = await iterator.next()
             }
-            return await failure(from: operation)
+            return await failure(from: operation) { handlerEntry.continuation.yield(()) }
         }
 
         await withTaskCancellationHandler {
             await base.waitUntilStarted()
             #expect(await clock.waitForWaiters(count: 1))
+            if !delayValueEntry {
+                var installed = handlerEntry.stream.makeAsyncIterator()
+                #expect(await installed.next() != nil)
+            }
             valueTask.cancel()
             valueEntry.continuation.finish()
+            handlerEntry.continuation.finish()
             // A yield does not prove value() installed its cancellation handler.
             // Observe cancellation completion before making the deadline eligible.
             let result = await valueTask.value
@@ -451,10 +458,11 @@ struct OperationNetworkClientTests {
 }
 
 private func failure<Value: Sendable>(
-    from operation: NetworkOperation<Value>
+    from operation: NetworkOperation<Value>,
+    onWait: @Sendable () -> Void = {}
 ) async -> NetworkFailure {
     do {
-        _ = try await operation.value()
+        _ = try await operation.value(onWait: onWait)
         Issue.record("Expected the operation to fail")
         return NetworkFailure(
             kind: .configuration,

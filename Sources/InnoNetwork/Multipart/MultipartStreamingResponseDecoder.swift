@@ -10,277 +10,75 @@ public enum MultipartStreamingEvent: Sendable, Equatable {
     case partEnded
 }
 
-
 /// Streaming decoder for `multipart/*` response bodies.
 ///
-/// The decoder recognizes boundary delimiters only when they appear as
-/// delimiter lines (`--boundary` or `--boundary--`) at the start of the body
-/// or after a line break. Boundary-like bytes inside part payloads are emitted
-/// as body chunks.
+/// Delimiters are recognized only at line starts. Optional SP/HTAB transport
+/// padding, empty header blocks and LF-only peers are supported. Headers and
+/// delimiter padding are each limited to 1 MiB; boundaries to 70 UTF-8 bytes.
 public struct MultipartStreamingResponseDecoder: Sendable {
     private let boundaryOverride: String?
 
-    /// Creates a streaming multipart decoder.
-    ///
-    /// - Parameter boundary: Optional boundary override. When `nil`, the decoder
-    ///   reads the boundary from the `Content-Type` passed to ``decode(_:contentType:)``.
-    public init(boundary: String? = nil) {
-        self.boundaryOverride = boundary
-    }
+    /// Creates a decoder, optionally overriding the Content-Type boundary.
+    public init(boundary: String? = nil) { self.boundaryOverride = boundary }
 
-    /// Decode a multipart response from chunked body data.
+    /// Decodes chunked data into an unbounded event stream for compatibility.
+    /// For large responses or slow consumers, use the awaited `receive`
+    /// overload instead: this stream does not backpressure its producer.
     public func decode<Chunks: AsyncSequence>(
-        _ chunks: Chunks,
-        contentType: String
+        _ chunks: Chunks, contentType: String
     ) -> AsyncThrowingStream<MultipartStreamingEvent, Error> where Chunks: Sendable, Chunks.Element == Data {
         AsyncThrowingStream { continuation in
-            let boundaryOverride = boundaryOverride
             let task = Task {
                 do {
-                    guard let boundary = boundaryOverride ?? Self.boundary(from: contentType), !boundary.isEmpty else {
-                        throw NetworkError.configuration(reason: .invalidRequest("Missing multipart boundary."))
-                    }
-
-                    var parser = MultipartStreamingParser(boundary: boundary)
-                    for try await chunk in chunks {
-                        try parser.feed(chunk) { event in
-                            continuation.yield(event)
-                        }
-                    }
-                    try parser.finish { event in
-                        continuation.yield(event)
+                    try await decode(chunks, contentType: contentType) { event in
+                        if case .terminated = continuation.yield(event) { throw CancellationError() }
                     }
                     continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
+                } catch { continuation.finish(throwing: error) }
+            }
+            continuation.onTermination = { @Sendable _ in task.cancel() }
+        }
+    }
+
+    /// Decodes with lossless backpressure: each callback completes before the
+    /// next event is parsed or another upstream chunk is requested.
+    ///
+    /// No producer task or event queue is created. The parser processes input
+    /// in 16 KiB slices and retains at most its 1 MiB header/padding limit plus
+    /// one slice and boundary lookahead. The current upstream Data and memory
+    /// retained by the caller or callback are outside this bound. Cancellation,
+    /// upstream errors and callback errors propagate to the caller. Callbacks
+    /// and upstream iterators must cooperate with cancellation.
+    /// - Parameters:
+    ///   - chunks: Ordered response body bytes.
+    ///   - contentType: Content-Type containing the boundary, unless overridden.
+    ///   - receive: Awaited consumer for every ordered event; no events are dropped.
+    public func decode<Chunks: AsyncSequence>(
+        _ chunks: Chunks, contentType: String,
+        receive: @Sendable (MultipartStreamingEvent) async throws -> Void
+    ) async throws where Chunks: Sendable, Chunks.Element == Data {
+        try Task.checkCancellation()
+        var parser = try MultipartResponseParser(
+            boundary: boundaryOverride ?? MultipartResponseParser.boundary(from: contentType))
+        for try await chunk in chunks {
+            try Task.checkCancellation()
+            var offset = chunk.startIndex
+            while offset < chunk.endIndex {
+                try Task.checkCancellation()
+                let end = min(chunk.endIndex, offset + MultipartResponseParser.sliceBytes)
+                parser.append(Data(chunk[offset..<end]))
+                while let event = try parser.next() {
+                    try Task.checkCancellation()
+                    try await receive(event)
                 }
-            }
-            continuation.onTermination = { @Sendable _ in
-                task.cancel()
-            }
-        }
-    }
-
-    private static func boundary(from contentType: String) -> String? {
-        contentType
-            .split(separator: ";")
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .first { $0.lowercased().hasPrefix("boundary=") }
-            .map { String($0.dropFirst("boundary=".count)).trimmingCharacters(in: CharacterSet(charactersIn: "\"")) }
-    }
-}
-
-
-private extension Data {
-    var headerSeparatorRange: Range<Data.Index>? {
-        range(of: Data("\r\n\r\n".utf8)) ?? range(of: Data("\n\n".utf8))
-    }
-
-    func hasPrefix(_ prefix: Data, at index: Data.Index) -> Bool {
-        guard index <= endIndex, distance(from: index, to: endIndex) >= prefix.count else {
-            return false
-        }
-        return self[index..<self.index(index, offsetBy: prefix.count)] == prefix
-    }
-}
-
-
-private func trimTrailingLineBreak(in data: Data, end: inout Data.Index) {
-    guard end > data.startIndex else { return }
-    let previous = data.index(before: end)
-    if data[previous] == UInt8(ascii: "\n") {
-        end = previous
-        if end > data.startIndex {
-            let carriageReturn = data.index(before: end)
-            if data[carriageReturn] == UInt8(ascii: "\r") {
-                end = carriageReturn
+                offset = end
             }
         }
-    }
-}
-
-
-private struct MultipartStreamingParser {
-    private enum State {
-        case seekingFirstBoundary
-        case readingHeaders
-        case readingBody
-        case finished
-    }
-
-    /// Hard upper bound on per-part header bytes the decoder will buffer
-    /// before the closing `\r\n\r\n` delimiter. Real-world multipart parts
-    /// have headers measured in hundreds of bytes; 1 MiB is a generous
-    /// safety net against malformed or hostile peers that never close the
-    /// header block, which would otherwise grow `buffer` without bound.
-    static let maxPartHeaderBytes = 1 * 1024 * 1024
-
-    private let delimiter: Data
-    private var buffer = Data()
-    private var state: State = .seekingFirstBoundary
-
-    init(boundary: String) {
-        self.delimiter = Data("--\(boundary)".utf8)
-    }
-
-    mutating func feed(
-        _ chunk: Data,
-        emit: (MultipartStreamingEvent) -> Void
-    ) throws {
-        buffer.append(chunk)
-        try process(emit: emit)
-    }
-
-    mutating func finish(
-        emit: (MultipartStreamingEvent) -> Void
-    ) throws {
-        try process(emit: emit, isFinal: true)
-        switch state {
-        case .finished:
-            return
-        case .seekingFirstBoundary:
-            throw NetworkError.configuration(
-                reason: .invalidRequest(
-                    "Multipart response body did not contain the boundary delimiter."
-                ))
-        case .readingHeaders, .readingBody:
-            throw NetworkError.configuration(reason: .invalidRequest("Missing multipart closing boundary."))
+        try Task.checkCancellation()
+        while let event = try parser.next(isFinal: true) {
+            try Task.checkCancellation()
+            try await receive(event)
         }
-    }
-
-    private mutating func process(
-        emit: (MultipartStreamingEvent) -> Void,
-        isFinal: Bool = false
-    ) throws {
-        while true {
-            switch state {
-            case .seekingFirstBoundary:
-                guard let boundary = nextBoundary(isFinal: isFinal) else {
-                    discardPreambleTailIfNeeded(isFinal: isFinal)
-                    return
-                }
-                buffer.removeSubrange(buffer.startIndex..<boundary.contentStart)
-                state = boundary.isClosing ? .finished : .readingHeaders
-                if boundary.isClosing { return }
-
-            case .readingHeaders:
-                if buffer.count > Self.maxPartHeaderBytes {
-                    throw NetworkError.configuration(
-                        reason: .invalidRequest(
-                            "Multipart part headers exceed \(Self.maxPartHeaderBytes) bytes without a closing delimiter."
-                        )
-                    )
-                }
-                guard let separator = buffer.headerSeparatorRange else { return }
-                let headerData = buffer[..<separator.lowerBound]
-                let headers = try parseHeaders(headerData)
-                buffer.removeSubrange(buffer.startIndex..<separator.upperBound)
-                emit(.partStarted(headers: headers))
-                state = .readingBody
-
-            case .readingBody:
-                guard let boundary = nextBoundary(isFinal: isFinal) else {
-                    emitSafeBodyPrefix(emit: emit, isFinal: isFinal)
-                    return
-                }
-                var bodyEnd = boundary.delimiterStart
-                trimTrailingLineBreak(in: buffer, end: &bodyEnd)
-                if buffer.startIndex < bodyEnd {
-                    emit(.bodyChunk(Data(buffer[buffer.startIndex..<bodyEnd])))
-                }
-                emit(.partEnded)
-                buffer.removeSubrange(buffer.startIndex..<boundary.contentStart)
-                state = boundary.isClosing ? .finished : .readingHeaders
-                if boundary.isClosing { return }
-
-            case .finished:
-                return
-            }
-        }
-    }
-
-    private mutating func discardPreambleTailIfNeeded(isFinal: Bool) {
-        guard !isFinal else { return }
-        let keep = delimiter.count + 4
-        if buffer.count > keep {
-            buffer.removeSubrange(buffer.startIndex..<buffer.index(buffer.endIndex, offsetBy: -keep))
-        }
-    }
-
-    private mutating func emitSafeBodyPrefix(
-        emit: (MultipartStreamingEvent) -> Void,
-        isFinal: Bool
-    ) {
-        guard !isFinal else { return }
-        let keep = delimiter.count + 4
-        guard buffer.count > keep else { return }
-        let emitEnd = buffer.index(buffer.endIndex, offsetBy: -keep)
-        emit(.bodyChunk(Data(buffer[buffer.startIndex..<emitEnd])))
-        buffer.removeSubrange(buffer.startIndex..<emitEnd)
-    }
-
-    private struct Boundary {
-        let delimiterStart: Data.Index
-        let contentStart: Data.Index
-        let isClosing: Bool
-    }
-
-    private func nextBoundary(isFinal: Bool) -> Boundary? {
-        var searchStart = buffer.startIndex
-        while let range = buffer.range(of: delimiter, options: [], in: searchStart..<buffer.endIndex) {
-            defer { searchStart = range.upperBound }
-            guard isDelimiterLineStart(at: range.lowerBound),
-                let boundary = boundary(delimiterRange: range, isFinal: isFinal)
-            else {
-                continue
-            }
-            return boundary
-        }
-        return nil
-    }
-
-    private func isDelimiterLineStart(at index: Data.Index) -> Bool {
-        guard index != buffer.startIndex else { return true }
-        return buffer[buffer.index(before: index)] == UInt8(ascii: "\n")
-    }
-
-    private func boundary(delimiterRange: Range<Data.Index>, isFinal: Bool) -> Boundary? {
-        var cursor = delimiterRange.upperBound
-        guard cursor != buffer.endIndex || isFinal else { return nil }
-        let isClosing = buffer.hasPrefix(Data("--".utf8), at: cursor)
-        if isClosing {
-            cursor = buffer.index(cursor, offsetBy: 2)
-        }
-
-        if buffer.hasPrefix(Data("\r\n".utf8), at: cursor) {
-            cursor = buffer.index(cursor, offsetBy: 2)
-        } else if buffer.hasPrefix(Data("\n".utf8), at: cursor) {
-            cursor = buffer.index(after: cursor)
-        } else if cursor != buffer.endIndex {
-            return nil
-        }
-
-        return Boundary(
-            delimiterStart: delimiterRange.lowerBound,
-            contentStart: cursor,
-            isClosing: isClosing
-        )
-    }
-
-    private func parseHeaders(_ data: Data.SubSequence) throws -> [String: String] {
-        guard let headerBlock = String(data: data, encoding: .utf8) else {
-            throw NetworkError.configuration(reason: .invalidRequest("Multipart headers are not UTF-8 decodable."))
-        }
-
-        var headers: [String: String] = [:]
-        for line in headerBlock.replacingOccurrences(of: "\r\n", with: "\n")
-            .split(separator: "\n", omittingEmptySubsequences: true)
-        {
-            let pair = line.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
-            guard pair.count == 2 else { continue }
-            headers[String(pair[0]).trimmingCharacters(in: .whitespaces)] =
-                String(pair[1]).trimmingCharacters(in: .whitespaces)
-        }
-        return headers
+        try Task.checkCancellation()
     }
 }

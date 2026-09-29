@@ -2,6 +2,35 @@
 
 Keep response decoder state isolated and make replay an explicit server contract.
 
+## Consume multipart with backpressure
+
+Use `MultipartStreamingResponseDecoder.decode(_:contentType:receive:)` for large
+multipart responses or slow consumers. It awaits each callback before parsing
+another event or requesting the next input chunk; callback errors and cancellation
+propagate. The upstream sequence and callback must cooperate with cancellation.
+The original `decode(_:contentType:)` stream remains unbounded for compatibility.
+
+```swift
+import Foundation
+import InnoNetwork
+
+func consumeMultipart<Chunks: AsyncSequence & Sendable>(
+    _ chunks: Chunks,
+    receive: @Sendable (MultipartStreamingEvent) async throws -> Void
+) async throws where Chunks.Element == Data {
+    try await MultipartStreamingResponseDecoder().decode(
+        chunks, contentType: "multipart/mixed; boundary=example", receive: receive
+    )
+}
+```
+
+The shared buffered/streaming parser preserves payload bytes across chunk splits,
+accepts empty part headers and SP/HTAB delimiter padding, and discards epilogues.
+Headers and delimiter padding are capped separately at 1 MiB; boundaries are
+limited to 70 UTF-8 bytes. Incremental parsing uses 16 KiB slices plus bounded
+lookahead. Caller-owned input chunks, retained events and buffered decode results
+are outside the parser memory bound.
+
 ## Decode SSE per response
 
 For stateful decoding, implement ``StreamingAPIDefinition/makeDecoder()``.

@@ -31,8 +31,15 @@ public struct NetworkOperation<Value: Sendable>: Sendable {
     }
 
     public func value() async throws(NetworkFailure) -> Value {
+        try await value(onWait: {})
+    }
+
+    /// Internal observation seam: invoked only after cancellation forwarding
+    /// has been installed. Tests can distinguish pre-entry and active waits.
+    package func value(onWait: @Sendable () -> Void) async throws(NetworkFailure) -> Value {
         let result = await withTaskCancellationHandler {
-            await task.value
+            onWait()
+            return await task.value
         } onCancel: {
             task.cancel()
         }
