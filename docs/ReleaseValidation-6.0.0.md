@@ -6,6 +6,81 @@ approved request-freshness and generator extensions; see `REMAINING_WORK_6_0.md`
 for their ordered delivery. New runtime APIs remain Provisionally Stable.
 It is not a release-ready declaration and does not publish a tag.
 
+## Final-main Release follow-up — WebSocket fixture isolation
+
+[PR #129](https://github.com/InnoSquadCorp/InnoNetwork/pull/129) passed its
+candidate-bound protected checks, full TSAN and benchmarks, then squash-merged
+to `8e9e9b374b22f68cba267cd5ed2ea867b9b6d3ee` with the same tree. Its
+[main CI](https://github.com/InnoSquadCorp/InnoNetwork/actions/runs/36530826514)
+passed, but the first [manual Release](https://github.com/InnoSquadCorp/InnoNetwork/actions/runs/36530891204)
+failed `terminalFailureRemovesListeners` in the bounded WebSocket shard: the
+test did not observe a second runtime identifier within its two-second bound.
+Serial coverage, all five platform builds and runtime/JSON performance guards
+passed; Publish Release was actually skipped. Later source macro coverage,
+DocC and SBOM steps were not reached. That failed run remains a failure.
+
+The test mixed a real `URLSession` connection with synthetic delegate errors.
+A retry can independently fail and be fully retired before the next runtime-ID
+poll. An existing stub transport that fails on retry resume reproduced the nil
+identifier on both this main and parent `0e22c24`, while the otherwise identical
+held-failure control passed. Both still reached the expected terminal error,
+two transports and complete runtime/listener/task cleanup. Their WebSocket
+source and tests are identical. The precise hosted callback ordering was not
+traced; the evidence establishes an unsafe fixture assumption, not a new
+production reconnect leak or proof of the hosted network's particular error.
+
+The correction uses existing stub transports for the ten manually driven
+listener lifecycle tests that previously opened real connections. Final failure
+now covers controlled and immediate retry failure, observes stable terminal
+cleanup and checks exactly one terminal error, the exact attempt/transport
+counts, and transport cancellation. Listener persistence first proves that a
+replacement was installed; retryable-close tests explicitly retire that retry.
+The cleanup helper now waits for registry removal as well as listener/runtime
+removal. Runtime/API behavior, timeouts, workflows, dependencies, benchmark
+baselines and the 20% limit are unchanged.
+
+Raising only the test fixture's retry budget from one to two is a negative
+control: both variants fail the cleanup, terminal-error and extra-transport
+assertions (12 issues). This diagnostic was reverted; it is not a weakened
+production limit. Initial remote logs, raw benchmark artifact `11017213267`,
+the red reproducer patch and base/head/control logs are preserved under
+`.build/release-failure-20260929/`.
+
+Local Xcode 27 / Swift 6.4 validation passed: the 20 lifecycle tests, 20 complete
+repetitions, focused lifecycle TSAN, full serial coverage and all four bounded
+shards. Each full run registered 1,941 tests: 1,937 ordinary passes and four
+opt-in live skips. Formatting over 524 files, the unchanged 1,702-declaration
+public contract and release-state checks passed. Earlier main CI consumer
+results apply to the identical production source; consumers were not rebuilt
+locally for this test-only correction. Exact-new-SHA protected CI, full TSAN and
+benchmarks, followed by merged-main Release validation, remain pending. No
+earlier SHA success substitutes for those gates. No tag, publication, consumer
+migration or automation restart.
+
+### Listener-delivery review follow-up
+
+Candidate `75ad04f` passed all 15 required checks, full TSAN and historical
+runtime/JSON benchmarks. Before merging, review identified another observation
+assumption in the new terminal-event count: partition/task retirement does not
+wait for asynchronous user listener completion. Holding only that listener
+reproduced a zero-event snapshot in both retry-failure variants while all
+resource cleanup checks passed; releasing it delivered the expected event.
+The failure log and reproducer patch are retained as `terminal-listener-red.log`
+and `terminal-listener-reproducer.patch` in the same evidence directory.
+
+The test now explicitly awaits the terminal error before taking its snapshot.
+Both retry variants run with ordinary and deliberately delayed listeners
+(four combinations). The delayed cases prove cleanup completes while delivery
+is held, then release and wait for the event; the exactly-once assertion stays.
+The gate is released on every exit. This is test-only: the asynchronous delivery
+contract, production code, API, workflows and thresholds are unchanged.
+The 20-test lifecycle suite and 20 repeats pass with all four combinations.
+Full serial coverage and four bounded shards pass 1,941 registered tests
+(1,937 ordinary tests and four opt-in live skips); focused lifecycle TSAN,
+524-file formatting and the 1,702-declaration docs/API contracts also pass.
+Exact-new-SHA remote validation is required before protected merge; the
+successful `75ad04f` runs are preserved, not reused for the amended test.
+
 ## Final hardening candidate — 2026-09-29
 
 The final local corrections are based on main
