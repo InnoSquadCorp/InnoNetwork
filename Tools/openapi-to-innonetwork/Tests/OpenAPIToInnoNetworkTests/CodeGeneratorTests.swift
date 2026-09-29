@@ -5,6 +5,39 @@ import Testing
 
 @Suite
 struct CodeGeneratorTests {
+    @Test func referenceFragmentsAndTypeNamesAgree() throws {
+        let generator = CodeGenerator(moduleName: "API")
+        let schemas = [
+            "a.b": Schema(type: "string"), "a%2Eb": Schema(type: "integer"),
+            "a/b": Schema(type: "string"), "é": Schema(type: "string"),
+        ]
+        for (token, expected) in [("a%2Eb", "a.b"), ("a%252Eb", "a%2Eb"), ("a~1b", "a/b"), ("%C3%A9", "é")] {
+            let reference = "#/components/schemas/" + token
+            #expect(try generator.referenceName(reference, schemas: schemas).utf8.elementsEqual(expected.utf8))
+            #expect(generator.swiftTypeName(for: Schema(ref: reference), fallback: nil) == generator.sanitize(expected))
+        }
+        for token in ["a%", "%FF", "a~2b", "a%2Fb", "e%CC%81"] {
+            #expect(throws: GenerationError.self) {
+                try generator.referenceName("#/components/schemas/" + token, schemas: schemas)
+            }
+        }
+        let document = OpenAPIDocument(
+            paths: [
+                "/value": PathItem(
+                    get: Operation(
+                        operationId: "value",
+                        responses: [
+                            "200": ResponseObject(content: [
+                                "application/json": MediaType(schema: Schema(ref: "#/components/schemas/a%2Eb"))
+                            ])
+                        ]))
+            ], components: Components(schemas: ["a.b": Schema(type: "object")])
+        )
+        let files = try generator.generate(from: document)
+        let operation = try #require(files.first { $0.filename == "Value.swift" })
+        #expect(operation.contents.contains("public typealias APIResponse = " + generator.sanitize("a.b")))
+    }
+
     @Test
     func generatesOneFilePerOperation() throws {
         let document = OpenAPIDocument(paths: [

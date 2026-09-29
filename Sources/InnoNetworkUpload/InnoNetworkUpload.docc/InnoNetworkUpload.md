@@ -137,6 +137,21 @@ Use ``ResumableUploadEngine`` when the server exposes create, probe, chunk,
 and finalize operations. Implement ``ResumableUploadAdapting`` for that exact
 protocol and provide a ``ResumableUploadCheckpointStoring`` store.
 
+One engine and its copies reject an overlapping call with the same `uploadID`
+using ``ResumableUploadError/uploadAlreadyInProgress``; different IDs can run
+concurrently. With ``FileResumableUploadCheckpointStore``, the ownership lease
+also covers separate engines, store instances and processes using the same
+directory (including directory aliases). The lease starts before snapshot or
+checkpoint work and ends only after success/failure/cancellation cleanup.
+The OS releases it on process exit; the next owner can reclaim an inert lock
+file. Normal completion removes the empty lock file, not just its descriptor.
+
+For a custom checkpoint store, share one engine or its copies. Independent
+engines/processes using that custom store need application-owned coordination;
+the store's per-method serialization alone is not an upload transaction. Do not
+mutate an engine-owned checkpoint directly. A rejected duplicate does not
+cancel, probe, finalize or delete the original upload's checkpoint.
+
 The engine first copies and hashes the source into a private immutable snapshot,
 then reads every chunk from that same snapshot. Replacing the caller's source
 path after session creation cannot make the advertised identity differ from the

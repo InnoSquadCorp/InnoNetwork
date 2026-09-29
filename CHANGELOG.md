@@ -13,6 +13,31 @@ Approved release contents; the date is intended until publication. Confirm the
 matching tag and GitHub Release separately before adopting this version.
 The previously planned 6.1 candidates are included in this 6.0 release scope.
 
+### Fixed — final hardening
+
+- Resumable uploads reject overlapping same-ID calls without overwriting or
+  removing the active checkpoint. Engine copies share ownership; the file store
+  also coordinates separate engines/processes and recovers after process exit.
+- Multipart header and boundary-padding searches retain incremental progress,
+  avoiding quadratic rescans for tiny chunks while preserving framing and caps.
+- Cancellation tests observe installed handlers and close callback-entry waits
+  even when decoding fails before delivering an event.
+- Public-key pinning canonicalizes Unicode/IDNA DNS and equivalent IPv6 aliases,
+  and rejects invalid
+  host configuration instead of silently using the unpinned-host fallback.
+- Multipart response parsers share framing across buffered and streaming paths:
+  arbitrary chunk splits preserve bytes, body bytes do not count toward the
+  header cap, and empty headers plus SP/HTAB delimiter padding are supported.
+- Local schema references percent-decode URI fragments exactly once before
+  JSON Pointer unescaping and match definition names by exact code points.
+
+### Added — final hardening
+
+- Awaited multipart event delivery provides lossless backpressure without a
+  producer task or event queue. The existing unbounded stream stays compatible.
+- Release validation retains raw runtime/JSON benchmark samples on failure as
+  well as success, indexed by SHA and run attempt; regression limits are unchanged.
+
 ### Added — approved follow-up scope
 
 - A separate same-runner preserved-JSON benchmark lane guards parsing, mixed

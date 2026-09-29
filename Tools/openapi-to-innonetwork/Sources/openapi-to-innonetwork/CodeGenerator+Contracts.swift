@@ -80,14 +80,25 @@ extension CodeGenerator {
     }
 
     func referenceName(_ reference: String, schemas: [String: Schema]) throws -> String {
+        let name = try referenceToken(reference)
+        guard let entry = schemas.index(forKey: name), schemas[entry].key.utf8.elementsEqual(name.utf8) else {
+            throw GenerationError.unsupportedSchema("Missing schema \(name)")
+        }
+        return name
+    }
+
+    func referenceToken(_ reference: String) throws -> String {
         let prefix = "#/components/schemas/"
-        guard reference.hasPrefix(prefix) else {
+        guard reference.hasPrefix("#"), let decoded = reference.removingPercentEncoding, decoded.hasPrefix(prefix)
+        else {
             throw GenerationError.unsupportedSchema("Only local schema references are supported: \(reference)")
         }
-        let name = String(reference.dropFirst(prefix.count)).replacingOccurrences(of: "~1", with: "/")
+        let token = String(decoded.dropFirst(prefix.count))
+        guard !token.contains("/"),
+            !token.replacingOccurrences(of: "~0", with: "").replacingOccurrences(of: "~1", with: "").contains("~")
+        else { throw GenerationError.unsupportedSchema("Malformed local schema pointer") }
+        return token.replacingOccurrences(of: "~1", with: "/")
             .replacingOccurrences(of: "~0", with: "~")
-        guard schemas[name] != nil else { throw GenerationError.unsupportedSchema("Missing schema \(name)") }
-        return name
     }
 
     func normalizedSchema(_ schema: Schema, schemas: [String: Schema], expanding: Set<String>, depth: Int = 0) throws

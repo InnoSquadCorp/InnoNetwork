@@ -26,4 +26,7 @@ for scenario in chunk finalize; do
   fi
   "$bin_dir/InnoNetworkResumableRecoverySmoke" "resume-$scenario" "$scenario_dir"
 done
+ownership_dir="$fixture_dir/ownership"
+mkdir -p "$ownership_dir"
+"$bin_dir/InnoNetworkResumableRecoverySmoke" ownership "$ownership_dir"
 echo "resumable-process-recovery: PASS (two fresh-process recoveries; no live backend)"

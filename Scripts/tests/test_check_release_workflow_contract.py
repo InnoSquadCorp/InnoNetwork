@@ -45,6 +45,13 @@ def main() -> None:
     validator.validate()
     workflow = WORKFLOW.read_text(encoding="utf-8")
 
+    expect_failure(validator, workflow.replace("        if: always()\n", "        if: success()\n", 1),
+                   "must survive benchmark failures")
+    expect_failure(validator, workflow.replace("path: .build/release-artifacts/benchmarks/\n", "path: results.json\n", 1),
+                   "must retain both lanes")
+    expect_failure(validator, workflow.replace("${{ github.sha }}-${{ github.run_attempt }}", "latest", 1),
+                   "must retain both lanes")
+
     expect_failure(
         validator,
         workflow.replace("  workflow_dispatch:\n", "", 1),

@@ -858,8 +858,7 @@ struct CodeGenerator {
 
     func swiftTypeName(for schema: Schema, fallback: String?) -> String? {
         if let ref = schema.ref {
-            let name = String(ref.dropFirst("#/components/schemas/".count))
-                .replacingOccurrences(of: "~1", with: "/").replacingOccurrences(of: "~0", with: "~")
+            guard let name = try? referenceToken(ref) else { return nil }
             return sanitize(name)
         }
         switch schema.type {

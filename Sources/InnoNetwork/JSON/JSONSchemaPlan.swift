@@ -111,7 +111,9 @@ struct JSONSchemaCompiler {
     var localDefinitions: [String: PreservedJSON] = [:]
     var budget: JSONSchemaBudget
     var rules: [JSONSchemaRule] = []
-    var named: [String: Int] = [:]
+    // Swift String equality folds canonically equivalent Unicode. Reference
+    // names are JSON Pointer tokens and must retain exact code points.
+    var named: [Data: Int] = [:]
 
     mutating func compile(_ document: PreservedJSON, node: JSONNode, depth: Int, reserved: Int? = nil) throws -> Int {
         try budget.charge(depth: depth)
@@ -156,7 +158,12 @@ struct JSONSchemaCompiler {
         // from Foundation decoders or silently reinterpret a regex dialect.
         if let format = members["format"] { _ = try scalar(String.self, document, format) }
         if let reference = members["$ref"] {
-            let name = try scalar(String.self, document, reference)
+            let rawName = try scalar(String.self, document, reference)
+            // URI-fragment decoding precedes JSON Pointer's ~1/~0 unescaping.
+            // Decode exactly once: %2520 names a literal "%20", not a space.
+            guard rawName.hasPrefix("#"), let name = rawName.removingPercentEncoding else {
+                throw JSONProcessingError.unsupportedSchema
+            }
             guard
                 dialect == .jsonSchema202012
                     || members.keys.allSatisfy({ ["$ref", "title", "description"].contains($0) })
@@ -172,16 +179,22 @@ struct JSONSchemaCompiler {
             let token = String(name.dropFirst(prefix.count))
             guard
                 !token.replacingOccurrences(of: "~0", with: "").replacingOccurrences(of: "~1", with: "").contains("~"),
-                !token.contains("/"), let definition = (prefix == "#/$defs/" ? localDefinitions[key] : definitions[key])
+                !token.contains("/")
             else {
                 throw JSONProcessingError.unsupportedSchema
             }
-            if let existing = named[name] {
+            let available = prefix == "#/$defs/" ? localDefinitions : definitions
+            guard let entry = available.index(forKey: key), available[entry].key.utf8.elementsEqual(key.utf8) else {
+                throw JSONProcessingError.unsupportedSchema
+            }
+            let definition = available[entry].value
+            let identity = Data((prefix + key).utf8)
+            if let existing = named[identity] {
                 rule.reference = existing
             } else {
                 let value = rules.count
                 rules.append(JSONSchemaRule())
-                named[name] = value
+                named[identity] = value
                 let checked = try PreservedJSON(data: definition.data, limits: budget.limits)
                 _ = try compile(checked, node: checked.root, depth: depth + 1, reserved: value)
                 rule.reference = value

@@ -69,6 +69,7 @@ InnoNetworkUpload	swift.enum.case	ResumableUploadError.fileChanged
 InnoNetworkUpload	swift.enum.case	ResumableUploadError.invalidChunkSize
 InnoNetworkUpload	swift.enum.case	ResumableUploadError.invalidServerOffset(_:)
 InnoNetworkUpload	swift.enum.case	ResumableUploadError.unreadableFile
+InnoNetworkUpload	swift.enum.case	ResumableUploadError.uploadAlreadyInProgress
 InnoNetworkUpload	swift.enum.case	UploadError.delegateBufferExceeded(limit:)
 InnoNetworkUpload	swift.enum.case	UploadError.resourceLimitExceeded(limit:)
 InnoNetworkUpload	swift.init	FileResumableUploadCheckpointStore.init(directory:fileManager:)

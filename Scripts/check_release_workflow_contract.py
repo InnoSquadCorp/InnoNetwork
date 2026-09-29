@@ -61,6 +61,23 @@ def validate(path: Path = WORKFLOW) -> None:
 
     if ".build/release-artifacts/benchmarks-json-codec.json" not in validation:
         fail("validation must upload the JSON codec benchmark artifact")
+    diagnostics = re.search(
+        r"(?ms)^      - name: Retain raw benchmark diagnostics\n(?P<body>.*?)(?=^      - name:|\Z)",
+        validation,
+    )
+    if diagnostics is None:
+        fail("validation must retain raw benchmark diagnostics")
+    body = diagnostics.group("body")
+    if "        if: always()\n" not in body:
+        fail("raw benchmark diagnostics must survive benchmark failures")
+    for required in (
+        "uses: actions/upload-artifact@",
+        "path: .build/release-artifacts/benchmarks/\n",
+        "include-hidden-files: true\n",
+        "release-benchmark-diagnostics-${{ github.sha }}-${{ github.run_attempt }}",
+    ):
+        if required not in body:
+            fail("raw benchmark diagnostics must retain both lanes and attempt identity")
     signing = publication.split("artifacts=(", maxsplit=1)[-1].split(")", maxsplit=1)[0]
     if ".release-artifacts/benchmarks-json-codec.json" not in signing:
         fail("publication must sign the JSON codec benchmark artifact")

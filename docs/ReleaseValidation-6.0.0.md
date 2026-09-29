@@ -6,6 +6,75 @@ approved request-freshness and generator extensions; see `REMAINING_WORK_6_0.md`
 for their ordered delivery. New runtime APIs remain Provisionally Stable.
 It is not a release-ready declaration and does not publish a tag.
 
+## Final hardening candidate — 2026-09-29
+
+The final local corrections are based on main
+`0e22c24169fa99f63bc94fdbe756ec538ea64d6a`. They normalize pinning host aliases
+and fail closed for invalid configuration, unify multipart framing and bounded
+incremental scans, add awaited multipart backpressure, resolve local schema
+references exactly, and reject overlapping resumable-upload IDs before any
+checkpoint mutation. The built-in file store additionally owns a process lease;
+custom stores must share one engine family or coordinate independent owners.
+Cancellation tests observe handler installation rather than scheduler yields.
+Release validation retains raw benchmark artifacts on failure and success.
+
+Local Xcode 27 / Swift 6.4 verification of the combined source passed serial
+coverage and all four bounded shards: 1,940 registered tests, 1,936 ordinary
+passes and four opt-in live skips. The 89 focused tests, 20 cancellation/ownership
+repetitions, separate-process recovery/ownership fixtures, 524-file formatting,
+external API typecheck and docs/API contracts passed. The public ledger is
+exactly 1,702 declarations: 307 Stable, 1,362 Provisional and 33 SPI. The only
+additions are the Provisional awaited multipart overload and same-ID upload
+error. No Stable API, dependency, performance baseline or 20% limit changed.
+
+The multipart correction preserves body/error behavior in 15,000 differential
+cases and exact 1 MiB acceptance / 1 MiB + 1 rejection controls. Three optimized
+same-input 64 KiB byte-chunk header pairs changed from 5.87/5.77/5.83 seconds to
+0.0149/0.0143/0.0140 seconds. This focused reproducer is not whole-library
+performance evidence. Original failures, controls, raw measurements and full
+logs remain in `.build/code-improvements-postfix-20260929/` and the preceding
+review directories. Generator tests and generated integration fixtures from
+the earlier unchanged generator correction are reused explicitly.
+
+This record is local evidence, not a transfer of the prior main's green CI.
+The final PR must pass its 15 protected checks, actual full TSAN and runtime/JSON
+benchmarks; its fresh merged main then requires CI and manual Release validation
+with all five platforms successful and Publish Release actually skipped.
+Those remote gates remain pending when this candidate is committed. No tag,
+publication, consumer migration or scheduled automation is authorized here.
+Existing device/service, custom-store and consumer-adoption boundaries remain.
+
+### PR review follow-up: IPv6 identity and multipart EOF
+
+The first PR candidate `5775fb7` passed all seven local fast-preflight gates,
+including 11 independent examples and fresh generator/output integration checks.
+Review then identified an IPv6 identity gap: compressed/expanded spellings of
+the same address could select different pin sets. Eleven lookup assertions and
+three incorrect-pin checks failed on that candidate while same-spelling and
+system-trust controls passed. The latter used an isolated IPv6 SAN certificate,
+a fixed verification date and no keychain installation or network access.
+
+The follow-up formats a successfully parsed IPv6 address with `inet_ntop` before
+pin selection. Zones remain separate, IPv4-mapped IPv6 is not collapsed into
+IPv4, and normal TLS hostname validation is preserved. Correct/wrong pins,
+compressed/expanded/bracketed/scoped/mapped spellings and unrelated-address
+controls are covered. No public declaration or performance limit was added.
+
+A separate suggestion to return immediately after a multipart closing delimiter
+was not adopted: MIME completion does not prove successful transport EOF.
+The documented upstream-error contract must retain failures after the closing
+delimiter; both overloads now test that case. Epilogue bytes remain discarded
+without retaining a growing buffer, and unbounded sources need cancellation or
+an upstream deadline. No multipart runtime behavior changed in this follow-up.
+
+Focused checks passed 21 tests. The corrected source passed full serial coverage
+and all four bounded shards: 1,941 registered, 1,937 ordinary passes and four
+opt-in live skips. Public counts remain 1,702; no API addition followed the review.
+Initial failures and controls remain in `.build/final-publication-20260929/`.
+The superseded candidate's four remote workflows were cancelled, not passed.
+Its replacement requires its own protected checks, full TSAN and benchmarks,
+followed by fresh-main manual Release validation; no old-SHA pass is substituted.
+
 ## Post-CI-split cancellation follow-up — 2026-09-29
 
 [PR #127](https://github.com/InnoSquadCorp/InnoNetwork/pull/127) passed its exact
