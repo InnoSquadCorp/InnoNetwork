@@ -21,7 +21,7 @@ struct URLAdmissionComplexityTests {
         }
     }
 
-    @Test("Structural decoder agrees with a byte-delimited fixed-point oracle")
+    @Test("Traversal decoder agrees with a byte-delimited fixed-point oracle")
     func differentialStructuralAdmission() {
         let fragments = [
             "/", "\\", ".", "..", "%", "2", "5", "E", "C", "%25", "%2e", "%2F", "%5c", "%FF", "%41", "%32", "a", "é",
@@ -66,11 +66,7 @@ struct URLAdmissionComplexityTests {
                     let high = hex(bytes[index + 1]), let low = hex(bytes[index + 2])
                 {
                     let decoded = high * 16 + low
-                    if [37, 46, 47, 92].contains(decoded) {
-                        output.append(decoded)
-                    } else {
-                        output.append(contentsOf: bytes[index...index + 2])
-                    }
+                    output.append(decoded)
                     index += 3
                 } else {
                     output.append(bytes[index])

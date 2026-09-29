@@ -22,8 +22,8 @@ The previously planned 6.1 candidates are included in this 6.0 release scope.
   both decoders. Duplicate boundaries and malformed parameter syntax fail
   closed; explicit boundary overrides retain their existing behavior.
 - Recursive URL traversal admission reduces nested escapes in linear work,
-  without accepting hidden dot segments or changing the runtime structural
-  decoding policy. Macro checks also avoid repeated whole-path scans and reject
+  without rewriting admitted request URLs. Escaped hex digits cannot hide a
+  recursively encoded dot segment. Macro checks avoid repeated scans and reject
   backslash traversal and malformed-prefix bypasses consistently.
 - Endpoint literal percent escapes are validated as ASCII scalars. Combining
   marks after valid escapes are encoded safely; malformed escapes fail before

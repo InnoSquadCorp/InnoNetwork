@@ -19,7 +19,9 @@ The local fixes use scalar-aware escaping in runtime and macro validation,
 suffix-stack traversal scanning, a quote/pair-aware parameter parser, and exact
 stored-key comparison matching JSONSchemaPlan. No public declarations,
 dependencies, workflow gates, benchmark baselines or 20% limits change. The
-macro retains its conservative full-byte decoding and additionally rejects
+runtime and macro both reduce full byte escapes without rewriting request URLs:
+escaped hex digits such as `%25%32%45` cannot hide a recursively encoded dot.
+The macro additionally rejects
 backslash traversal and malformed decoded prefixes hiding later traversal.
 Both scanners now recognize ASCII separators even beside combining scalars.
 The linked policy interaction guide also distinguishes per-caller retries,

@@ -89,10 +89,11 @@ package enum NetworkURLAdmission {
         return DotSegmentScan(path).containsDotSegment
     }
 
-    /// A suffix stack reduces every structural escape, including escapes formed
+    /// A suffix stack reduces every byte escape, including escapes formed
     /// by earlier reductions. Each input byte is pushed once and every reduction
     /// removes two bytes: O(n) work/storage regardless of percent nesting depth.
-    /// Keep this structural-only policy separate from full URL percent decoding.
+    /// Scan decoded bytes without rebuilding a Unicode string: unrelated invalid
+    /// UTF-8 cannot hide a later dot segment. This never rewrites the request URL.
     struct DotSegmentScan {
         private(set) var containsDotSegment = false
         #if DEBUG
@@ -113,7 +114,6 @@ package enum NetworkURLAdmission {
                         let low = NetworkURLAdmission.hexValue(output[start + 2])
                     else { break }
                     let decoded = (high << 4) | low
-                    guard decoded == 0x25 || decoded == 0x2E || decoded == 0x2F || decoded == 0x5C else { break }
                     output.removeLast(3)
                     output.append(decoded)
                 }

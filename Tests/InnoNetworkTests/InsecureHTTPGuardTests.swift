@@ -111,6 +111,9 @@ struct InsecureHTTPGuardTests {
             "/v1/%FF/%2E%2E/admin",
             "/v1/%5C..%5Cadmin",
             "/v1/%252525252525252e%252525252525252E/admin",
+            "/v1/%25%32%45%25%32%45/admin",
+            "/v1/%25%32%46..%25%35%43admin",
+            "/v1/%FF/%25%32%45%25%32%45/admin",
         ]
         for path in paths {
             #expect(throws: NetworkError.self) {
@@ -128,6 +131,16 @@ struct InsecureHTTPGuardTests {
         let unsafe = [".", "..", "/./", "/..\\x", "/%2e/", "/%252e%252e/x", "/%FF/%2e%2e"]
         for path in safe { #expect(!NetworkURLAdmission.containsDotSegment(path)) }
         for path in unsafe { #expect(NetworkURLAdmission.containsDotSegment(path)) }
+    }
+
+    @Test("Recursive admission preserves admitted URL bytes")
+    func recursiveHexDigitControls() throws {
+        for path in ["/v1/%25%34%31/file", "/v1/%25%32%45file", "/v1/%FF/file"] {
+            let url = try #require(URL(string: "https://example.com" + path))
+            #expect(
+                try NetworkURLAdmission.validate(url, policy: .http(allowsInsecure: false)).absoluteString
+                    == url.absoluteString)
+        }
     }
 
     @Test("Host scan retains non-ASCII whitespace and encoded bracket rejection")

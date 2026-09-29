@@ -43,9 +43,9 @@ extension APIDefinitionMacro {
     }
 
     static func containsDotSegment(_ path: String) -> Bool {
-        // Unlike the runtime structural-only gate, the macro historically
-        // decodes all byte escapes. Retain that conservative compile-time check,
-        // using a reducing suffix stack rather than one full scan per layer.
+        // Match runtime's byte-delimited fixed point, including escapes whose
+        // hex digits are themselves encoded. Each reduction removes two bytes,
+        // rather than performing one whole-path scan per nesting layer.
         var output: [UInt8] = []
         output.reserveCapacity(path.utf8.count)
         for byte in path.utf8 {
