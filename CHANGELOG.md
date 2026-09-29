@@ -15,6 +15,9 @@ The previously planned 6.1 candidates are included in this 6.0 release scope.
 
 ### Fixed — final hardening
 
+- Lightweight JSON schemas compare required and declared property names by
+  exact Unicode code points, matching the compiled validator instead of Swift's
+  canonical-equivalence dictionary matching.
 - Multipart Content-Type parsing honors quoted strings and quoted pairs in
   both decoders. Duplicate boundaries and malformed parameter syntax fail
   closed; explicit boundary overrides retain their existing behavior.
