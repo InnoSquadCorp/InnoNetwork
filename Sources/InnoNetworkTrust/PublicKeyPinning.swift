@@ -1,4 +1,5 @@
 import Crypto
+import Darwin
 import Foundation
 import InnoNetwork
 import Security
@@ -57,6 +58,11 @@ public struct PublicKeyPinningPolicy: Sendable {
         case leafOnly
     }
 
+    /// DNS names are compared in Foundation's ASCII IDNA form. Equivalent
+    /// Unicode, Punycode and root-dot spellings select the same pins. IP
+    /// literals match exactly, ignoring IPv6 brackets, never by subdomain.
+    /// Invalid host keys reject evaluation of the entire policy; they cannot
+    /// silently become unpinned hosts. Supply host names, not URLs or escapes.
     public let pinsByHost: [String: Set<String>]
     public let includesSubdomains: Bool
     public let allowDefaultEvaluationForUnpinnedHosts: Bool
@@ -147,12 +153,45 @@ public struct PublicKeyPinningPolicy: Sendable {
         return matches
     }
 
-    /// A root dot changes spelling, not the name covered by a pin. Keep
-    /// literal IP addresses exact (never suffix-matched) and leave the
-    /// original challenge host untouched for system TLS validation.
+    fileprivate var hasValidHosts: Bool {
+        pinsByHost.keys.allSatisfy { Self.canonicalPinHost($0) != nil }
+    }
+
+    /// Use the same IDNA mapping as Foundation URL loading, without accepting
+    /// URL syntax or percent escapes as host names. TLS still evaluates the
+    /// original challenge and its existing SSL hostname policy.
     fileprivate static func canonicalPinHost(_ host: String) -> String? {
-        guard !host.isEmpty else { return nil }
-        let withoutRootDot = host.hasSuffix(".") ? String(host.dropLast()) : host
+        guard !host.isEmpty,
+            !host.unicodeScalars.contains(where: {
+                CharacterSet.whitespacesAndNewlines.contains($0) || CharacterSet.controlCharacters.contains($0)
+                    || "/@?#\\".unicodeScalars.contains($0)
+            })
+        else { return nil }
+        if host.contains(":") {
+            let literal = host.hasPrefix("[") && host.hasSuffix("]") ? String(host.dropFirst().dropLast()) : host
+            // Foundation exposes scoped IPv6 hosts as fe80::1%en0, not URI
+            // percent escapes. Preserve that existing exact-IP contract.
+            let pieces = literal.split(separator: "%", omittingEmptySubsequences: false)
+            guard pieces.count <= 2 else { return nil }
+            if pieces.count == 2 {
+                let zone = pieces[1]
+                guard !zone.isEmpty,
+                    zone.utf8.allSatisfy({
+                        (65...90).contains($0) || (97...122).contains($0) || (48...57).contains($0)
+                            || [45, 46, 95, 126].contains($0)
+                    })
+                else { return nil }
+            }
+            var address = in6_addr()
+            guard String(pieces[0]).withCString({ inet_pton(AF_INET6, $0, &address) }) == 1 else { return nil }
+            return literal.lowercased()
+        }
+        guard !host.contains("%"), !host.contains("["), !host.contains("]"),
+            let ascii = URL(string: "https://" + host)?.host,
+            ascii.unicodeScalars.allSatisfy({ $0.isASCII })
+        else { return nil }
+        // IDNA also maps Unicode dot variants; remove the root dot afterwards.
+        let withoutRootDot = ascii.hasSuffix(".") ? String(ascii.dropLast()) : ascii
         guard !withoutRootDot.isEmpty,
             !withoutRootDot.hasPrefix("."),
             !withoutRootDot.hasSuffix("."),
@@ -196,6 +235,10 @@ public struct PublicKeyPinningEvaluator: TrustEvaluating {
 
         guard let serverTrust = challenge.protectionSpace.serverTrust else {
             return .cancel(.missingServerTrust)
+        }
+
+        guard policy.hasValidHosts else {
+            return .cancel(.custom("Invalid public-key pinning host configuration."))
         }
 
         let host = challenge.protectionSpace.host.lowercased()

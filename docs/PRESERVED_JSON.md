@@ -124,6 +124,13 @@ Swift value types. A static `Result` caches each immutable plan; initialization
 errors remain throwing, not force-try crashes. External/file references and
 unresolved or malformed local pointers are rejected without IO.
 
+Named local references decode URI percent escapes exactly once, then JSON Pointer
+`~1`/`~0` escapes. Thus `a%20b` selects the definition `a b`, while `a%2520b`
+selects `a%20b`. Definition names match exact Unicode code points, not Swift's
+canonical-equivalence String comparison. Invalid UTF-8, percent/pointer escapes
+and unresolved names fail compilation. This does not add arbitrary JSON Pointer
+locations, remote retrieval or new schema dialect support.
+
 The strict grammar follows [RFC 8259](https://www.rfc-editor.org/rfc/rfc8259).
 The generator retains OpenAPI 3.0 behavior and adds an explicit bounded 3.1
 milestone described in the [support matrix](SCHEMA_SUPPORT_MATRIX.md), not the

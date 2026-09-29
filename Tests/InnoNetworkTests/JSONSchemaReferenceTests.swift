@@ -7,6 +7,51 @@ import Testing
 struct JSONSchemaReferenceTests {
     func json(_ string: String) throws -> PreservedJSON { try PreservedJSON(data: Data(string.utf8)) }
 
+    @Test func fragmentDecodingPrecedesPointerDecoding() throws {
+        for prefix in ["#/$defs/", "#/components/schemas/"] {
+            for (token, acceptsString) in [
+                ("a%20b", true), ("a%2520b", false), ("a~1b", true), ("a%7E1b", true),
+                ("a~0b", true), ("a%2Bb", true),
+            ] {
+                let definitions = [
+                    "a b": try json(#"{"type":"string"}"#), "a%20b": try json(#"{"type":"integer"}"#),
+                    "a/b": try json(#"{"type":"string"}"#), "a~b": try json(#"{"type":"string"}"#),
+                    "a+b": try json(#"{"type":"string"}"#),
+                ]
+                let definitionBytes = Dictionary(
+                    uniqueKeysWithValues: definitions.map { ($0.key, String(decoding: $0.value.data, as: UTF8.self)) })
+                // Use JSONSerialization only to quote keys; schema bytes retain their meaning.
+                let defs = try JSONSerialization.data(
+                    withJSONObject: definitionBytes.mapValues { try JSONSerialization.jsonObject(with: Data($0.utf8)) })
+                let ref = String(decoding: try JSONEncoder().encode(prefix + token), as: UTF8.self)
+                let schema = try json("{\"$ref\":\(ref),\"$defs\":\(String(decoding: defs, as: UTF8.self))}")
+                let plan = try JSONSchemaPlan(schema: schema, definitions: definitions, dialect: .jsonSchema202012)
+                #expect(try plan.matches(json(#""ok""#)) == acceptsString)
+                #expect(try plan.matches(json("1")) != acceptsString)
+            }
+        }
+    }
+
+    @Test func referenceNamesUseExactCodePoints() throws {
+        let definition = try json(#"{"type":"string"}"#)
+        let decomposed = "e\u{0301}"
+        for (name, token) in [("é", "%C3%A9"), (decomposed, "e%CC%81")] {
+            let schema = try PreservedJSON(data: JSONEncoder().encode(["$ref": "#/components/schemas/" + token]))
+            let plan = try JSONSchemaPlan(schema: schema, definitions: [name: definition])
+            #expect(try plan.matches(json(#""ok""#)))
+            let other = name.utf8.elementsEqual("é".utf8) ? decomposed : "é"
+            #expect(throws: JSONProcessingError.unsupportedSchema) {
+                try JSONSchemaPlan(schema: schema, definitions: [other: definition])
+            }
+        }
+        for token in ["bad%", "bad%2", "%FF", "%C0%AF", "a%2Fb", "a~2b"] {
+            let schema = try PreservedJSON(data: JSONEncoder().encode(["$ref": "#/components/schemas/" + token]))
+            #expect(throws: JSONProcessingError.unsupportedSchema) {
+                try JSONSchemaPlan(schema: schema, definitions: [token: definition, "a/b": definition])
+            }
+        }
+    }
+
     @Test func selfAndMutualRecursion() throws {
         let a = try json(
             ##"{"type":"object","properties":{"next":{"$ref":"#/components/schemas/B"},"value":{"type":"integer"}},"required":["value"]}"##
