@@ -1756,14 +1756,16 @@ struct WebSocketListenerLifecycleTests {
         }
     }
 
-    @Test("Final reconnect failure removes listeners and task runtime", arguments: [false, true])
-    func terminalFailureRemovesListeners(secondFailsOnResume: Bool) async throws {
+    @Test("Final reconnect failure removes listeners and task runtime", arguments: [false, true], [false, true])
+    func terminalFailureRemovesListeners(secondFailsOnResume: Bool, delayTerminalListener: Bool) async throws {
         let firstURLTask = StubWebSocketURLTask(taskIdentifier: 9_201)
         let secondURLTask = StubWebSocketURLTask(taskIdentifier: 9_202)
         let harness = StubMessagingHarness(maxReconnectAttempts: 1, stubTask: firstURLTask)
         harness.stubSession.enqueue(secondURLTask)
         let manager = harness.manager
         let recorder = WebSocketEventRecorder()
+        let terminalGate = AsyncDispatchGate()
+        defer { terminalGate.release() }
 
         if secondFailsOnResume {
             secondURLTask.setResumeHook { [weak manager, taskIdentifier = secondURLTask.taskIdentifier] in
@@ -1772,7 +1774,12 @@ struct WebSocketListenerLifecycleTests {
         }
 
         let task = await manager.connect(url: URL(string: "wss://stub.invalid/socket")!)
-        _ = await manager.addEventListener(for: task) { recorder.record($0) }
+        _ = await manager.addEventListener(for: task) { event in
+            if delayTerminalListener, case .error(.maxReconnectAttemptsExceeded) = event {
+                await terminalGate.arriveAndWait()
+            }
+            recorder.record(event)
+        }
 
         let firstTaskIdentifier = try #require(await waitForRuntimeTaskIdentifier(manager: manager, task: task))
         #expect(firstTaskIdentifier == firstURLTask.taskIdentifier)
@@ -1796,6 +1803,21 @@ struct WebSocketListenerLifecycleTests {
         #expect(harness.stubSession.createdTasks.map(\.taskIdentifier) == [9_201, 9_202])
         #expect(firstURLTask.didCancelUnconditionally)
         #expect(secondURLTask.didCancelUnconditionally)
+        if delayTerminalListener {
+            #expect(await waitForCondition(timeout: 1.0) { terminalGate.hasArrivedSync })
+            #expect(
+                !recorder.snapshot().contains { event in
+                    if case .error(.maxReconnectAttemptsExceeded) = event { return true }
+                    return false
+                })
+        }
+        terminalGate.release()
+        // Partition retirement does not await user listener completion.
+        #expect(
+            await waitForEvent(recorder: recorder, timeout: 1.0) { event in
+                if case .error(.maxReconnectAttemptsExceeded) = event { return true }
+                return false
+            })
         let terminalErrors = recorder.snapshot().filter { event in
             if case .error(.maxReconnectAttemptsExceeded) = event { return true }
             return false
