@@ -53,34 +53,34 @@ public enum EndpointPathEncoding {
 
     private static func percentEncodePathLiteral(_ value: String) throws -> String {
         var result = ""
-        var index = value.startIndex
-        while index < value.endIndex {
-            guard let scalar = value[index].unicodeScalars.first else {
-                throw invalidPercentEscape(in: value)
-            }
+        // Percent escapes are three ASCII scalars, not three grapheme clusters.
+        // A following combining mark must be encoded separately before assigning
+        // URLComponents.percentEncodedPath, whose setter traps on invalid input.
+        let scalars = value.unicodeScalars
+        var index = scalars.startIndex
+        while index < scalars.endIndex {
+            let scalar = scalars[index]
             if scalar.value == Self.percent {
-                let first = value.index(after: index)
-                guard first < value.endIndex else {
+                let first = scalars.index(after: index)
+                guard first < scalars.endIndex else {
                     throw invalidPercentEscape(in: value)
                 }
-                let second = value.index(after: first)
-                guard second < value.endIndex,
-                    let firstScalar = value[first].unicodeScalars.first,
-                    let secondScalar = value[second].unicodeScalars.first,
-                    isHexDigit(firstScalar),
-                    isHexDigit(secondScalar)
+                let second = scalars.index(after: first)
+                guard second < scalars.endIndex,
+                    isHexDigit(scalars[first]),
+                    isHexDigit(scalars[second])
                 else {
                     throw invalidPercentEscape(in: value)
                 }
                 result.append("%")
-                result.append(value[first])
-                result.append(value[second])
-                index = value.index(after: second)
+                result.unicodeScalars.append(scalars[first])
+                result.unicodeScalars.append(scalars[second])
+                index = scalars.index(after: second)
                 continue
             }
 
-            result.append(percentEncode(String(value[index]), preservingPercentEscapes: true, allowsSlash: true))
-            index = value.index(after: index)
+            result.append(percentEncode(String(scalar), preservingPercentEscapes: true, allowsSlash: true))
+            index = scalars.index(after: index)
         }
         return result
     }

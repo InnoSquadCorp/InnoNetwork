@@ -5,6 +5,7 @@ import Foundation
 /// unsupported keywords must be rejected before constructing this value.
 public indirect enum JSONSchema: Sendable {
     /// A JSON object, with required names independent of nullable property values.
+    /// Property names match exact Unicode code points, not canonical equivalence.
     case object(properties: [String: JSONSchema], required: Set<String>, allowsAdditionalProperties: Bool)
     /// An array whose every item must match the item schema.
     case array(items: JSONSchema)
@@ -94,12 +95,17 @@ private struct JSONSchemaValidator {
         case (.object(let properties, let required, let additional), .object(let members)):
             for name in required.sorted() {
                 try charge(depth: depth)
-                if members[name] == nil { return false }
+                // Swift Dictionary lookup is canonically equivalent. JSON names
+                // instead use exact code points, as in JSONSchemaPlan.
+                guard let index = members.index(forKey: name), members.keys[index].utf8.elementsEqual(name.utf8) else {
+                    return false
+                }
             }
             for name in members.keys.sorted() {
                 guard let value = members[name] else { throw JSONProcessingError.invalidJSON }
                 try charge(depth: depth)
-                if let child = properties[name] {
+                if let index = properties.index(forKey: name), properties.keys[index].utf8.elementsEqual(name.utf8) {
+                    let child = properties.values[index]
                     if try !matches(child, node: value, depth: depth + 1) { return false }
                 } else if !additional {
                     return false

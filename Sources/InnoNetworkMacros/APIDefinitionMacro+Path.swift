@@ -13,24 +13,25 @@ extension APIDefinitionMacro {
             ).error(at: anchor)
         }
 
-        var index = path.startIndex
-        while index < path.endIndex {
-            guard path[index] == "%" else {
-                index = path.index(after: index)
+        let scalars = path.unicodeScalars
+        var index = scalars.startIndex
+        while index < scalars.endIndex {
+            guard scalars[index] == "%" else {
+                index = scalars.index(after: index)
                 continue
             }
-            let first = path.index(after: index)
-            guard first < path.endIndex else {
+            let first = scalars.index(after: index)
+            guard first < scalars.endIndex else {
                 throw invalidPercentEscape(at: anchor)
             }
-            let second = path.index(after: first)
-            guard second < path.endIndex,
-                isASCIIHexDigit(path[first]),
-                isASCIIHexDigit(path[second])
+            let second = scalars.index(after: first)
+            guard second < scalars.endIndex,
+                isASCIIHexDigit(scalars[first]),
+                isASCIIHexDigit(scalars[second])
             else {
                 throw invalidPercentEscape(at: anchor)
             }
-            index = path.index(after: second)
+            index = scalars.index(after: second)
         }
 
         guard !containsDotSegment(path) else {
@@ -42,40 +43,26 @@ extension APIDefinitionMacro {
     }
 
     static func containsDotSegment(_ path: String) -> Bool {
-        var candidate = path
-        for _ in 0...path.utf8.count {
-            if candidate.split(separator: "/", omittingEmptySubsequences: false).contains(where: {
-                $0 == "." || $0 == ".."
-            }) {
-                return true
-            }
-            guard let decoded = decodePercentEscapes(candidate), decoded != candidate else { break }
-            candidate = decoded
-        }
-        return false
-    }
-
-    static func decodePercentEscapes(_ value: String) -> String? {
-        let input = Array(value.utf8)
+        // Match runtime's byte-delimited fixed point, including escapes whose
+        // hex digits are themselves encoded. Each reduction removes two bytes,
+        // rather than performing one whole-path scan per nesting layer.
         var output: [UInt8] = []
-        output.reserveCapacity(input.count)
-        var index = 0
-        while index < input.count {
-            guard input[index] == 0x25 else {
-                output.append(input[index])
-                index += 1
-                continue
+        output.reserveCapacity(path.utf8.count)
+        for byte in path.utf8 {
+            output.append(byte)
+            while output.count >= 3 {
+                let start = output.count - 3
+                guard output[start] == 0x25,
+                    let high = hexValue(output[start + 1]),
+                    let low = hexValue(output[start + 2])
+                else { break }
+                output.removeLast(3)
+                output.append((high << 4) | low)
             }
-            guard index + 2 < input.count,
-                let high = hexValue(input[index + 1]),
-                let low = hexValue(input[index + 2])
-            else {
-                return nil
-            }
-            output.append((high << 4) | low)
-            index += 3
         }
-        return String(decoding: output, as: UTF8.self)
+        return output.split(whereSeparator: { $0 == 0x2F || $0 == 0x5C }).contains {
+            ($0.count == 1 || $0.count == 2) && $0.allSatisfy { $0 == 0x2E }
+        }
     }
 
     static func hexValue(_ byte: UInt8) -> UInt8? {
@@ -87,13 +74,8 @@ extension APIDefinitionMacro {
         }
     }
 
-    static func isASCIIHexDigit(_ character: Character) -> Bool {
-        guard character.unicodeScalars.count == 1,
-            let value = character.unicodeScalars.first?.value
-        else {
-            return false
-        }
-        switch value {
+    static func isASCIIHexDigit(_ scalar: Unicode.Scalar) -> Bool {
+        switch scalar.value {
         case 48...57, 65...70, 97...102:
             return true
         default:

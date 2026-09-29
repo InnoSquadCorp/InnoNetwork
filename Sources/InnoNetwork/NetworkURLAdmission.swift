@@ -86,50 +86,62 @@ package enum NetworkURLAdmission {
         // A dot segment needs either a literal dot or a percent escape.
         // Ordinary paths need no replacement strings or percent-decoding buffer.
         guard path.utf8.contains(0x2E) || path.utf8.contains(0x25) else { return false }
-        var candidate = path
-        // Decode only structural ASCII escapes. Unlike Foundation's full
-        // percent decoder, an unrelated non-UTF-8 byte cannot make this check
-        // give up before it reaches a later encoded dot segment.
-        while true {
-            let pathLike = candidate.replacingOccurrences(of: "\\", with: "/")
-            if pathLike.split(separator: "/", omittingEmptySubsequences: false).contains(where: {
-                $0 == "." || $0 == ".."
-            }) {
-                return true
-            }
-            let decoded = decodingStructuralPercentEscapes(candidate)
-            guard decoded != candidate else {
-                break
-            }
-            candidate = decoded
-        }
-        return false
+        return DotSegmentScan(path).containsDotSegment
     }
 
-    private static func decodingStructuralPercentEscapes(_ value: String) -> String {
-        let input = Array(value.utf8)
-        var output: [UInt8] = []
-        output.reserveCapacity(input.count)
-        var index = 0
-        while index < input.count {
-            guard input[index] == 0x25, index + 2 < input.count,
-                let high = hexValue(input[index + 1]),
-                let low = hexValue(input[index + 2])
-            else {
-                output.append(input[index])
-                index += 1
-                continue
+    /// A suffix stack reduces every byte escape, including escapes formed
+    /// by earlier reductions. Each input byte is pushed once and every reduction
+    /// removes two bytes: O(n) work/storage regardless of percent nesting depth.
+    /// Scan decoded bytes without rebuilding a Unicode string: unrelated invalid
+    /// UTF-8 cannot hide a later dot segment. This never rewrites the request URL.
+    struct DotSegmentScan {
+        private(set) var containsDotSegment = false
+        #if DEBUG
+        private(set) var scannedByteCount = 0
+        #endif
+
+        init(_ path: String) {
+            var output: [UInt8] = []
+            output.reserveCapacity(path.utf8.count)
+            for byte in path.utf8 {
+                recordScanWork(1)
+                output.append(byte)
+                while output.count >= 3 {
+                    recordScanWork(3)
+                    let start = output.count - 3
+                    guard output[start] == 0x25,
+                        let high = NetworkURLAdmission.hexValue(output[start + 1]),
+                        let low = NetworkURLAdmission.hexValue(output[start + 2])
+                    else { break }
+                    let decoded = (high << 4) | low
+                    output.removeLast(3)
+                    output.append(decoded)
+                }
             }
-            let decoded = (high << 4) | low
-            guard decoded == 0x25 || decoded == 0x2E || decoded == 0x2F || decoded == 0x5C else {
-                output.append(contentsOf: input[index...(index + 2)])
-                index += 3
-                continue
+            // Once isolated, a dot segment survives every later reduction:
+            // its literal dots and separators cannot be consumed by an escape.
+            var dots = 0
+            for byte in output {
+                recordScanWork(1)
+                if byte == 0x2F || byte == 0x5C {
+                    if dots == 1 || dots == 2 {
+                        containsDotSegment = true
+                        return
+                    }
+                    dots = 0
+                } else {
+                    dots = byte == 0x2E ? min(dots + 1, 3) : 3
+                }
             }
-            output.append(decoded)
-            index += 3
+            containsDotSegment = dots == 1 || dots == 2
         }
-        return String(decoding: output, as: UTF8.self)
+
+        @inline(__always)
+        private mutating func recordScanWork(_ count: Int) {
+            #if DEBUG
+            scannedByteCount += count
+            #endif
+        }
     }
 
     /// `URLComponents` decodes percent escapes in `host`, including escapes

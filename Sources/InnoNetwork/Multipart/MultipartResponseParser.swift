@@ -39,10 +39,8 @@ struct MultipartResponseParser {
     }
 
     static func boundary(from contentType: String) -> String? {
-        contentType.split(separator: ";")
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .first { $0.lowercased().hasPrefix("boundary=") }
-            .map { String($0.dropFirst("boundary=".count)).trimmingCharacters(in: CharacterSet(charactersIn: "\"")) }
+        var parameters = MultipartBoundaryParameter(contentType)
+        return parameters.parse()
     }
 
     mutating func append(_ bytes: Data) {

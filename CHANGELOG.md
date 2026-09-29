@@ -15,6 +15,19 @@ The previously planned 6.1 candidates are included in this 6.0 release scope.
 
 ### Fixed — final hardening
 
+- Lightweight JSON schemas compare required and declared property names by
+  exact Unicode code points, matching the compiled validator instead of Swift's
+  canonical-equivalence dictionary matching.
+- Multipart Content-Type parsing honors quoted strings and quoted pairs in
+  both decoders. Duplicate boundaries and malformed parameter syntax fail
+  closed; explicit boundary overrides retain their existing behavior.
+- Recursive URL traversal admission reduces nested escapes in linear work,
+  without rewriting admitted request URLs. Escaped hex digits cannot hide a
+  recursively encoded dot segment. Macro checks avoid repeated scans and reject
+  backslash traversal and malformed-prefix bypasses consistently.
+- Endpoint literal percent escapes are validated as ASCII scalars. Combining
+  marks after valid escapes are encoded safely; malformed escapes fail before
+  transport instead of reaching Foundation's trapping path setter.
 - Resumable uploads reject overlapping same-ID calls without overwriting or
   removing the active checkpoint. Engine copies share ownership; the file store
   also coordinates separate engines/processes and recovers after process exit.
