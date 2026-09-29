@@ -6,6 +6,33 @@ approved request-freshness and generator extensions; see `REMAINING_WORK_6_0.md`
 for their ordered delivery. New runtime APIs remain Provisionally Stable.
 It is not a release-ready declaration and does not publish a tag.
 
+## Local boundary follow-up — 2026-09-29
+
+Starting from main `994a06a0cfe09339c466a4fb76ccc450dfba21d6`, a subsequent
+adversarial review identified four independent issues not covered by the green
+main release run: grapheme-based percent escaping could trap Foundation,
+recursive URL admission rescanned nested escapes quadratically, multipart
+parameters split inside quoted strings, and lightweight schema property lookup
+used Swift canonical equivalence instead of exact JSON string identity.
+
+The local fixes use scalar-aware escaping in runtime and macro validation,
+suffix-stack traversal scanning, a quote/pair-aware parameter parser, and exact
+stored-key comparison matching JSONSchemaPlan. No public declarations,
+dependencies, workflow gates, benchmark baselines or 20% limits change. The
+macro retains its conservative full-byte decoding and additionally rejects
+backslash traversal and malformed decoded prefixes hiding later traversal.
+Both scanners now recognize ASCII separators even beside combining scalars.
+The linked policy interaction guide also distinguishes per-caller retries,
+physical coalescing, foreground/background revalidation and credential paths.
+
+Red tests and passing controls are retained locally under
+`.build/final-hardening-20260929/`, alongside the original immutable review
+reproducers in `.build/final-review-994a06a/`. Consolidated local validation and
+post-fix review are in progress. No push, PR, remote CI, tag, publication,
+consumer migration or automation restart is authorized in this follow-up.
+The earlier main CI/Release and same-tree TSAN successes remain baseline
+evidence only, not approval of these new local commits.
+
 ## Final-main Release follow-up — WebSocket fixture isolation
 
 [PR #129](https://github.com/InnoSquadCorp/InnoNetwork/pull/129) passed its
