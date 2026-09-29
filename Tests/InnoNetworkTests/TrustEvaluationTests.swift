@@ -14,6 +14,62 @@ private let internationalTrustFixtureDER =
 @Suite("Trust Evaluation Tests")
 struct TrustEvaluationTests {
 
+    @Test func ipv6ChallengeEnforcesPinsAcrossEquivalentSpellings() throws {
+        // Synthetic isolated IP SAN anchor; never installed in the keychain.
+        let fixture =
+            "MIIDUzCCAjugAwIBAgIUEyoc9oCkHeXcREq6tRwEmWqEqG0wDQYJKoZIhvcNAQELBQAwFzEVMBMGA1UEAwwMSVB2Ni1maXh0dXJlMB4XDTI2MDkyOTA0MzEwMVoXDTI2MTAwMTA0MzEwMVowFzEVMBMGA1UEAwwMSVB2Ni1maXh0dXJlMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAn1UPkwDnOVl6wro5Mbjsk5AIYYKsdvNhHRrYyhSUHQt/BAnE4/ogdaG/04tPH8jx5e7mNMknHEFaBOev5voX490/KMP5MGrFBgA1dMAuUXqrzIo9zt9ZQkCA7eeWCRNNgWhqXdXuLyMvmzoMb2bneA0M0yz1BplrFzSsWgPkiXZNj1cQcFrvn+L68LoD3AsLFfaRMWZOvB3xCY5phKVkbRhjtGdNMI39S+uJCOT3MZhXz2XMP5laIjc13WCOhYDRlh89ume21rMRp/n+QKgV24DTFRkI1F1dIVodMcgWNzvWDjJg9Gkqz/AU2WqbZrj7bgP0bRlqDdPd5di9bp1FcwIDAQABo4GWMIGTMB0GA1UdDgQWBBTAXRcPsA4eYfRv/oTtpDa0xtXbbDAfBgNVHSMEGDAWgBTAXRcPsA4eYfRv/oTtpDa0xtXbbDAbBgNVHREEFDAShxAAAAAAAAAAAAAAAAAAAAABMA8GA1UdEwEB/wQFMAMBAf8wDgYDVR0PAQH/BAQDAgKkMBMGA1UdJQQMMAoGCCsGAQUFBwMBMA0GCSqGSIb3DQEBCwUAA4IBAQBjmLq/bkdNWl5Dg94yqN7Wdrg55auEjsn0P6PyfeT4cGpgYpZ3ufbA2qXkdDobOlbEVVgWlm7gl17zYEilnsRXubpdWQiFQjmYkYTiaeFPmFcdREBvAkVVdlRUMtDef1t094XtAiocwaUibC8B5okHAOvdriVZh1P7aP7srMBcG5K6Ut9ZKwlTcD2NkzgDRIYKkDAhdKTYhfZu/XOMkPeBtcmNAmp8e/wS50EKWT0zJOkiCORZ5ILceFBw1uYr5HzTbh0aWg9YlQfUWF0DODcqm2tNd+AV1d8/PhfTn0PzCmUI5HXkMmw3LYv/5NhM/KkBK3YmiRQHhbxsuV+ifoJM"
+        let data = try #require(Data(base64Encoded: fixture))
+        let certificate = try #require(SecCertificateCreateWithData(nil, data as CFData))
+        let key = try #require(SecCertificateCopyKey(certificate))
+        let bytes = try #require(SecKeyCopyExternalRepresentation(key, nil) as Data?)
+        let correct = "sha256/" + Data(SHA256.hash(data: bytes)).base64EncodedString()
+        let hosts = ["::1", "0:0:0:0:0:0:0:1"]
+        for host in hosts {
+            var trust: SecTrust?
+            #expect(
+                SecTrustCreateWithCertificates(certificate, SecPolicyCreateSSL(true, host as CFString), &trust)
+                    == errSecSuccess)
+            let serverTrust = try #require(trust)
+            #expect(SecTrustSetAnchorCertificates(serverTrust, [certificate] as CFArray) == errSecSuccess)
+            #expect(SecTrustSetAnchorCertificatesOnly(serverTrust, true) == errSecSuccess)
+            #expect(SecTrustSetNetworkFetchAllowed(serverTrust, false) == errSecSuccess)
+            let date = try #require(ISO8601DateFormatter().date(from: "2026-09-30T00:00:00Z"))
+            #expect(SecTrustSetVerifyDate(serverTrust, date as CFDate) == errSecSuccess)
+            #expect(SecTrustEvaluateWithError(serverTrust, nil))
+            let challenge = URLAuthenticationChallenge(
+                protectionSpace: PinningFixtureProtectionSpace(host: host, trust: serverTrust), proposedCredential: nil,
+                previousFailureCount: 0, failureResponse: nil, error: nil, sender: PinningFixtureChallengeSender()
+            )
+            for configured in hosts + ["[::1]"] {
+                let wrongPolicy = PublicKeyPinningPolicy(pinsByHost: [configured: ["wrong"]])
+                guard
+                    case .cancel(.pinMismatch) = PublicKeyPinningEvaluator(policy: wrongPolicy).evaluate(
+                        challenge: challenge)
+                else {
+                    Issue.record("Equivalent IPv6 address must not fall through to default handling")
+                    continue
+                }
+                let correctPolicy = PublicKeyPinningPolicy(pinsByHost: [configured: [correct]])
+                guard
+                    case .useCredential = PublicKeyPinningEvaluator(policy: correctPolicy).evaluate(
+                        challenge: challenge)
+                else {
+                    Issue.record("Correct pin on a trusted IPv6 alias must pass")
+                    continue
+                }
+            }
+            #expect(SecTrustSetPolicies(serverTrust, SecPolicyCreateSSL(true, "::2" as CFString)) == errSecSuccess)
+            let policy = PublicKeyPinningPolicy(pinsByHost: [host: [correct]])
+            guard
+                case .cancel(.systemTrustEvaluationFailed) = PublicKeyPinningEvaluator(policy: policy).evaluate(
+                    challenge: challenge)
+            else {
+                Issue.record("IPv6 normalization must not bypass SSL hostname validation")
+                continue
+            }
+        }
+    }
+
     @Test(arguments: [
         "bücher.example", "bu\u{0308}cher.example", "BÜCHER.EXAMPLE.",
         "bücher。example。", "bücher．example", "bücher｡example", "xn--bcher-kva.example",
@@ -48,13 +104,27 @@ struct TrustEvaluationTests {
         #expect(literals.pins(forHost: "::1") == ["v6"])
         #expect(literals.pins(forHost: "[::1]") == ["v6"])
         #expect(literals.pins(forHost: "child.127.0.0.1") == nil)
+        for strategy in [PublicKeyPinningPolicy.HostMatchingStrategy.unionAllMatches, .mostSpecificHost] {
+            let equivalent = PublicKeyPinningPolicy(
+                pinsByHost: ["::1": ["short"], "[0:0:0:0:0:0:0:1]": ["long"]],
+                hostMatchingStrategy: strategy
+            )
+            for spelling in ["::1", "[::1]", "0:0:0:0:0:0:0:1", "0000:0:0:0:0:0:0:0001"] {
+                #expect(equivalent.pins(forHost: spelling) == ["short", "long"])
+            }
+            #expect(equivalent.pins(forHost: "::2") == nil)
+        }
         for zone in ["en0", "1"] {
             let host = "fe80::1%" + zone
             let scoped = PublicKeyPinningPolicy(pinsByHost: [host: ["scoped"]])
             #expect(scoped.pins(forHost: host) == ["scoped"])
             #expect(scoped.pins(forHost: "[" + host + "]") == ["scoped"])
+            #expect(scoped.pins(forHost: "FE80:0:0:0:0:0:0:1%" + zone) == ["scoped"])
             #expect(scoped.pins(forHost: "fe80::1%en1") == nil)
         }
+        let mapped = PublicKeyPinningPolicy(pinsByHost: ["::ffff:192.0.2.1": ["mapped"]])
+        #expect(mapped.pins(forHost: "0:0:0:0:0:ffff:c000:201") == ["mapped"])
+        #expect(mapped.pins(forHost: "192.0.2.1") == nil)
     }
 
     @Test func internationalChallengeEnforcesPinsAndSystemTrust() throws {

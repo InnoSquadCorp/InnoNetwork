@@ -49,6 +49,9 @@ public struct MultipartStreamingResponseDecoder: Sendable {
     /// retained by the caller or callback are outside this bound. Cancellation,
     /// upstream errors and callback errors propagate to the caller. Callbacks
     /// and upstream iterators must cooperate with cancellation.
+    /// A closing MIME delimiter ends part delivery, not transport validation:
+    /// epilogue bytes are discarded while input is drained to EOF. Late upstream
+    /// errors still propagate; apply a transport deadline to unbounded inputs.
     /// - Parameters:
     ///   - chunks: Ordered response body bytes.
     ///   - contentType: Content-Type containing the boundary, unless overridden.

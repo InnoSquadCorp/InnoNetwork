@@ -59,8 +59,8 @@ public struct PublicKeyPinningPolicy: Sendable {
     }
 
     /// DNS names are compared in Foundation's ASCII IDNA form. Equivalent
-    /// Unicode, Punycode and root-dot spellings select the same pins. IP
-    /// literals match exactly, ignoring IPv6 brackets, never by subdomain.
+    /// Unicode, Punycode and root-dot spellings select the same pins. IPv6
+    /// spellings match by address and zone, ignoring brackets, never by subdomain.
     /// Invalid host keys reject evaluation of the entire policy; they cannot
     /// silently become unpinned hosts. Supply host names, not URLs or escapes.
     public let pinsByHost: [String: Set<String>]
@@ -184,7 +184,12 @@ public struct PublicKeyPinningPolicy: Sendable {
             }
             var address = in6_addr()
             guard String(pieces[0]).withCString({ inet_pton(AF_INET6, $0, &address) }) == 1 else { return nil }
-            return literal.lowercased()
+            var buffer = [CChar](repeating: 0, count: Int(INET6_ADDRSTRLEN))
+            guard inet_ntop(AF_INET6, &address, &buffer, socklen_t(buffer.count)) != nil else { return nil }
+            let canonical = String(decoding: buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)
+            // Do not merge distinct zones or an IPv4-mapped IPv6 address with
+            // an IPv4 literal. Only equivalent IPv6 spellings share pin sets.
+            return pieces.count == 2 ? canonical + "%" + pieces[1].lowercased() : canonical
         }
         guard !host.contains("%"), !host.contains("["), !host.contains("]"),
             let ascii = URL(string: "https://" + host)?.host,

@@ -1136,8 +1136,10 @@ requires `@_spi` import.
   existing host pin lookup behavior. `mostSpecificHost` is stable as an
   opt-in stricter matching mode for operators who separate parent and
   subdomain pins. DNS pin selection normalizes Foundation Unicode/IDNA aliases
-  and a single root dot; IPv6 brackets are ignored and valid zone IDs retain
-  exact-IP matching. Invalid host configuration cancels the entire policy with
+  and a single root dot; equivalent IPv6 spellings share pins by parsed address,
+  ignoring brackets while retaining distinct zone IDs and never suffix matching.
+  IPv4-mapped IPv6 is not merged with an IPv4 literal.
+  Invalid host configuration cancels the entire policy with
   a payload-free custom trust failure, never the unpinned-host fallback. This
   normalization does not replace the challenge's system TLS/hostname check.
 - `WebSocketCloseDisposition` is **Stable**; the observation property is

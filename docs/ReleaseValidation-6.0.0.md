@@ -44,6 +44,37 @@ Those remote gates remain pending when this candidate is committed. No tag,
 publication, consumer migration or scheduled automation is authorized here.
 Existing device/service, custom-store and consumer-adoption boundaries remain.
 
+### PR review follow-up: IPv6 identity and multipart EOF
+
+The first PR candidate `5775fb7` passed all seven local fast-preflight gates,
+including 11 independent examples and fresh generator/output integration checks.
+Review then identified an IPv6 identity gap: compressed/expanded spellings of
+the same address could select different pin sets. Eleven lookup assertions and
+three incorrect-pin checks failed on that candidate while same-spelling and
+system-trust controls passed. The latter used an isolated IPv6 SAN certificate,
+a fixed verification date and no keychain installation or network access.
+
+The follow-up formats a successfully parsed IPv6 address with `inet_ntop` before
+pin selection. Zones remain separate, IPv4-mapped IPv6 is not collapsed into
+IPv4, and normal TLS hostname validation is preserved. Correct/wrong pins,
+compressed/expanded/bracketed/scoped/mapped spellings and unrelated-address
+controls are covered. No public declaration or performance limit was added.
+
+A separate suggestion to return immediately after a multipart closing delimiter
+was not adopted: MIME completion does not prove successful transport EOF.
+The documented upstream-error contract must retain failures after the closing
+delimiter; both overloads now test that case. Epilogue bytes remain discarded
+without retaining a growing buffer, and unbounded sources need cancellation or
+an upstream deadline. No multipart runtime behavior changed in this follow-up.
+
+Focused checks passed 21 tests. The corrected source passed full serial coverage
+and all four bounded shards: 1,941 registered, 1,937 ordinary passes and four
+opt-in live skips. Public counts remain 1,702; no API addition followed the review.
+Initial failures and controls remain in `.build/final-publication-20260929/`.
+The superseded candidate's four remote workflows were cancelled, not passed.
+Its replacement requires its own protected checks, full TSAN and benchmarks,
+followed by fresh-main manual Release validation; no old-SHA pass is substituted.
+
 ## Post-CI-split cancellation follow-up — 2026-09-29
 
 [PR #127](https://github.com/InnoSquadCorp/InnoNetwork/pull/127) passed its exact

@@ -22,7 +22,8 @@ The previously planned 6.1 candidates are included in this 6.0 release scope.
   avoiding quadratic rescans for tiny chunks while preserving framing and caps.
 - Cancellation tests observe installed handlers and close callback-entry waits
   even when decoding fails before delivering an event.
-- Public-key pinning canonicalizes Unicode/IDNA DNS aliases and rejects invalid
+- Public-key pinning canonicalizes Unicode/IDNA DNS and equivalent IPv6 aliases,
+  and rejects invalid
   host configuration instead of silently using the unpinned-host fallback.
 - Multipart response parsers share framing across buffered and streaming paths:
   arbitrary chunk splits preserve bytes, body bytes do not count toward the

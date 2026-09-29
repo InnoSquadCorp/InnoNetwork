@@ -73,11 +73,22 @@ struct MultipartBackpressureTests {
     }
 
     @Test func upstreamFailurePropagates() async {
-        let cursor = Cursor(chunks: [Data("--b\r\n\r\nbody".utf8)], failAtEnd: true)
-        await #expect(throws: Failure.upstream) {
-            try await MultipartStreamingResponseDecoder().decode(
-                Input(cursor: cursor), contentType: "multipart/mixed; boundary=b"
-            ) { _ in }
+        // A MIME closing delimiter is not proof of successful HTTP/transport EOF.
+        // Premature return would hide errors while reading the epilogue.
+        for suffix in ["", "\r\n--b--\r\n"] {
+            let bytes = Data(("--b\r\n\r\nbody" + suffix).utf8)
+            let cursor = Cursor(chunks: [bytes], failAtEnd: true)
+            await #expect(throws: Failure.upstream) {
+                try await MultipartStreamingResponseDecoder().decode(
+                    Input(cursor: cursor), contentType: "multipart/mixed; boundary=b"
+                ) { _ in }
+            }
+            await #expect(throws: Failure.upstream) {
+                let input = Input(cursor: Cursor(chunks: [bytes], failAtEnd: true))
+                for try await _ in MultipartStreamingResponseDecoder().decode(
+                    input, contentType: "multipart/mixed; boundary=b"
+                ) {}
+            }
         }
     }
 
