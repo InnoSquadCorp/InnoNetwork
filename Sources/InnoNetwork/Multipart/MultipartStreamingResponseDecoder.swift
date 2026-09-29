@@ -15,6 +15,8 @@ public enum MultipartStreamingEvent: Sendable, Equatable {
 /// Delimiters are recognized only at line starts. Optional SP/HTAB transport
 /// padding, empty header blocks and LF-only peers are supported. Headers and
 /// delimiter padding are each limited to 1 MiB; boundaries to 70 UTF-8 bytes.
+/// Content-Type parameters honor quoted strings and quoted pairs; malformed
+/// syntax and duplicate boundary parameters fail before event delivery.
 public struct MultipartStreamingResponseDecoder: Sendable {
     private let boundaryOverride: String?
 

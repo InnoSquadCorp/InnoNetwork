@@ -24,6 +24,8 @@ public struct MultipartPart: Sendable, Equatable {
 /// The decoder reads an explicit boundary override first. If no override is
 /// supplied, it extracts the `boundary` parameter from the response
 /// `Content-Type` passed to ``decode(_:contentType:)``.
+/// Quoted parameters and quoted-pair escapes are supported. Malformed
+/// parameter syntax and duplicate boundary parameters are rejected.
 public struct MultipartResponseDecoder: Sendable {
     private let boundaryOverride: String?
 
