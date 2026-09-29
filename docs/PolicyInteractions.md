@@ -59,7 +59,7 @@ sequenceDiagram
 
 | Scenario | 6.0 behavior |
 | --- | --- |
-| Circuit open | Request fails before transport and is considered by the retry policy like any other `NetworkError`. |
+| Circuit open | If the transport stack is reached, the request fails before sending and is considered by the retry policy like any other `NetworkError`; an eligible cache hit can return earlier. |
 | 401 with refresh policy | The current token is applied after request interceptors, before cache lookup; at most one refresh replay per executor attempt uses the fully adapted request with the new token. An outer retry creates a new executor attempt. |
 | `RefreshTokenPolicy.appliesTo` returns false | No token is attached and 401 does not trigger refresh replay. |
 | Duplicate request coalescing | Coalescing wraps raw transport attempts; auth-refresh replay and outer retry remain outside the shared result. |

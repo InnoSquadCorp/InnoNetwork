@@ -29,10 +29,48 @@ physical coalescing, foreground/background revalidation and credential paths.
 
 Red tests and passing controls are retained locally under
 `.build/final-hardening-20260929/`, alongside the original immutable review
-reproducers in `.build/final-review-994a06a/`. Consolidated local validation and
-post-fix review are in progress. No push, PR, remote CI, tag, publication,
-consumer migration or automation restart is authorized in this follow-up.
-The earlier main CI/Release and same-tree TSAN successes remain baseline
+reproducers in `.build/final-review-994a06a/`. The final source/test candidate is
+`ad4ded2308f9dff04d443cc2ad34ed33787dd7eb`; the subsequent evidence commit changes
+documentation only. Local Xcode 27 / Swift 6.4 validation passed:
+
+- Full serial coverage and four bounded shards each covered the same inventory:
+  1,954 registered tests, 1,950 ordinary passes and four opt-in live skips.
+- The source-built macro suite passed 56 tests. All 11 independent consumer
+  example packages built, both adopter executables ran, and 49 generator tests
+  plus generated parse/typecheck/runtime fixtures passed. Five negative macro
+  compile fixtures passed before the final admission-only follow-up; the final
+  macro suite and external macro consumer separately cover that follow-up.
+- Focused TSAN passed 118 tests without a race report. Public-client probes
+  rejected hidden traversal before transport and preserved safe encoded paths;
+  a real external `@APIDefinition` consumer compiled and ran. This is not a new
+  whole-suite TSAN run.
+- Formatting passed over 529 files. Documentation/API checks retained all 1,702
+  declarations: 307 Stable, 1,362 Provisionally Stable and 33 SPI.
+- All 14 runtime and five JSON performance guards passed, using three same-runner
+  pairs per lane and the unchanged 20% limit, without a failed comparison or
+  retry. Cache revalidation was -2.92% and JSON all-match validation -7.19%.
+  These compare against historical baselines, not the pre-fix source alone;
+  they do not attribute those differences specifically to this patch.
+- Linear scan work stayed within the deterministic bound through 32,768 nesting
+  layers. An additional 100,000 seeded fixed-point differential cases and 2,524
+  multipart quoting/duplicate/length controls passed.
+
+The post-fix inventory/risk matrix is closed using fresh changed-path and
+integration evidence, with unchanged-module baseline audits explicitly reused.
+No additional unresolved confirmed code defect remains within that review
+scope; this is not a zero-defect guarantee or a new release-ready declaration.
+All 16 original Derived/project hashes and the original checkout were preserved.
+Raw logs, controls, matrix and performance samples remain in the evidence folder.
+Parameter grammar and JSON identity were checked against
+[RFC 9110 section 5.6.6](https://www.rfc-editor.org/rfc/rfc9110.html#section-5.6.6)
+and [JSON Schema string equality](https://json-schema.org/draft/2020-12/json-schema-core#section-4.2.2).
+
+No push, PR, remote CI, tag, publication, consumer migration or automation
+restart was performed. Exact-new-SHA remote CI, five-platform builds and full
+TSAN were not rerun. Real devices, dedicated services and published-tag consumer
+adoption remain outside this local verification. Historical hosted performance
+variance is still not precisely attributed; a local pass does not erase earlier
+failed runs. Earlier main CI/Release and same-tree TSAN successes remain baseline
 evidence only, not approval of these new local commits.
 
 ## Final-main Release follow-up — WebSocket fixture isolation
