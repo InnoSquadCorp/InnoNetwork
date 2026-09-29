@@ -15,6 +15,10 @@ The previously planned 6.1 candidates are included in this 6.0 release scope.
 
 ### Fixed — final hardening
 
+- Recursive URL traversal admission reduces nested escapes in linear work,
+  without accepting hidden dot segments or changing the runtime structural
+  decoding policy. Macro checks also avoid repeated whole-path scans and reject
+  backslash traversal and malformed-prefix bypasses consistently.
 - Endpoint literal percent escapes are validated as ASCII scalars. Combining
   marks after valid escapes are encoded safely; malformed escapes fail before
   transport instead of reaching Foundation's trapping path setter.

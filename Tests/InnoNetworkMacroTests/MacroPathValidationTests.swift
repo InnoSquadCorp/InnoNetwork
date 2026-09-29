@@ -6,6 +6,16 @@ import Testing
 
 @Suite("Macro path admission")
 struct MacroPathValidationTests {
+    @Test func nestedPathAdmission() throws {
+        let nested = "%" + String(repeating: "25", count: 32768)
+        for path in ["/" + nested + "2E", "/" + nested + "5C..", "/%25%32%45", "/%FF/%2e", "/\\..\\admin"] {
+            #expect(APIDefinitionMacro.containsDotSegment(path))
+        }
+        for path in ["/" + nested + "41", "/" + nested + "2Efile", "/100%25", "/a%2Fb", "/é/file.json"] {
+            #expect(!APIDefinitionMacro.containsDotSegment(path))
+        }
+    }
+
     @Test func scalarPercentEscapes() throws {
         let anchor = StringLiteralExprSyntax(content: "path")
         for path in ["/items/%41", "/items/A\u{0301}", "/items/%41\u{0301}"] {
