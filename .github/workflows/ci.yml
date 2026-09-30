@@ -680,7 +680,9 @@ jobs:
         run: bash Scripts/check_migration_examples.sh
 
       - name: Verify CHANGELOG Unreleased section
-        run: bash Scripts/check_changelog_sync.sh
+        run: |
+          ruby Scripts/tests/test_check_changelog_sync.rb
+          bash Scripts/check_changelog_sync.sh
 
       - name: Verify provisionally stable enum case ledger
         run: bash Scripts/check_provisional_enum_cases.sh
