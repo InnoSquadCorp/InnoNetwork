@@ -1,6 +1,13 @@
 # Changelog
 
-## Unreleased — encoded request contract
+All notable changes to this project will be documented in this file.
+
+The format is based on Keep a Changelog and the project follows Semantic
+Versioning.
+
+## [Unreleased]
+
+### Added — encoded request candidate (not published)
 
 - Add the Stable buffered `EncodedRequest` / `EncodedRequestClient` boundary
   for custom codecs without GeneratedClientSupport SPI or Codable requirements.
@@ -14,12 +21,21 @@
 - Export compiler-host-only `InnoNetworkMacroSupport` with a separate, minor-bound
   twelve-declaration inventory and unchanged SwiftSyntax 603.0.x dependency.
 
-All notable changes to this project will be documented in this file.
+### Fixed
 
-The format is based on Keep a Changelog and the project follows Semantic
-Versioning.
+- Reject member-level conditional endpoint declarations rather than silently
+  dropping payload or policy; place `#if` around the complete endpoint instead.
+- Preserve escaped Swift identifiers and qualify generated path property access.
+- Partition request coalescing by effective response collection limit.
+- Preserve trailing and encoded slash boundaries in non-S3 AWS canonical paths.
+- Reject negative or overflowing persistent-cache costs before any accounting,
+  and rebuild admitted costs from body size and headers.
+- Recover invalid download sequence numbers through valid-prefix quarantine;
+  checkpoint and rebase an exhausted sequence range before further writes.
+- Synchronize the invalid-payload error example and enum compatibility ledger.
 
-## [Unreleased]
+See [encoded-request migration notes](docs/Migration-EncodedRequests.md) for
+the unpublished candidate's source-compatibility changes.
 
 - Response interceptors receive the response's signed/refreshed request envelope
   instead of the pre-attempt envelope; synthetic responses without provenance
