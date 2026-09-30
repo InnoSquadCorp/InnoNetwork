@@ -3,7 +3,9 @@
 ## Scope and preserved contracts
 
 This change starts from `main` at `9d8053d5f921ebf5c38cc2f816efe90c7db4a450`.
-It changes automation only. Swift tools 6.2, all five Apple deployment floors,
+The initial change is automation-only; the later user-requested [dependency PR
+integration](DependencyIntegration-2026-09-30.md) also updates Swift Crypto and
+GitHub Actions pins. Swift tools 6.2, all five Apple deployment floors,
 runtime/public API, default macro trait, dependency ranges, coverage behavior,
 and the same-runner 20% performance ceiling remain unchanged.
 
