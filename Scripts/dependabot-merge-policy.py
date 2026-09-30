@@ -701,6 +701,12 @@ def targets(api, event_name, event):
         if path == CI_PATH and live.get("event") != "pull_request":
             return [], None
         require(live.get("event") in {"pull_request", "pull_request_review", "pull_request_review_comment"}, "wrong notification event")
+        head_repository = live.get("head_repository") or {}
+        require(type(head_repository.get("id")) is int and type(live["repository"].get("id")) is int,
+                "missing notification repository identity")
+        # Fork runs may omit pull_requests and cannot target same-repository bot PRs.
+        if head_repository["id"] != live["repository"]["id"]:
+            return [], None
         numbers = [p["number"] for p in live.get("pull_requests", [])]
         require(len(numbers) == 1, "missing/ambiguous notification PR")
         return numbers, alert if path == CI_PATH else None

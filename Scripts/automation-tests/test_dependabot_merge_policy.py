@@ -341,6 +341,47 @@ class DependabotPolicyTests(unittest.TestCase):
         self.api.run['path'] = '.github/workflows/release.yml'
         with self.assertRaises(p.Rejected): p.targets(self.api, 'workflow_run', dict(workflow_run=dict(id=RUN)))
 
+    def test_fork_notifications_without_pr_numbers_are_ignored(self):
+        for path, event in [(p.CI_PATH, 'pull_request'),
+                            (p.NOTICE_PATH, 'pull_request_review'),
+                            (p.NOTICE_PATH, 'pull_request_review_comment')]:
+            api = Transcript()
+            api.run.update(path=path, event=event, pull_requests=[],
+                           head_repository=dict(id=101, full_name='contributor/InnoNetwork'))
+            with self.subTest(path=path, event=event):
+                self.assertEqual(p.targets(api, 'workflow_run', dict(workflow_run=dict(id=RUN))), ([], None))
+                self.assertFalse(api.mutations)
+
+    def test_same_repository_notification_still_requires_one_pr(self):
+        for numbers in [[], [dict(number=NUMBER), dict(number=NUMBER + 1)]]:
+            self.api.run['pull_requests'] = numbers
+            with self.subTest(numbers=numbers), self.assertRaises(p.Rejected):
+                p.targets(self.api, 'workflow_run', dict(workflow_run=dict(id=RUN)))
+        self.assertFalse(self.api.mutations)
+
+    def test_notification_without_repository_identity_is_rejected(self):
+        for key in ['head_repository', 'repository']:
+            for identity in [None, {}, dict(full_name=p.REPOSITORY),
+                             dict(id='100', full_name=p.REPOSITORY), dict(id=True, full_name=p.REPOSITORY)]:
+                if key == 'repository' and identity in [None, {}]:
+                    continue  # The existing origin guard requires the source full_name.
+                api = Transcript()
+                api.run[key] = identity
+                with self.subTest(key=key, identity=identity), self.assertRaises(p.Rejected):
+                    p.targets(api, 'workflow_run', dict(workflow_run=dict(id=RUN)))
+                self.assertFalse(api.mutations)
+
+    def test_foreign_notification_keeps_workflow_origin_checks(self):
+        for change in [lambda a: a.run.update(path='.github/workflows/release.yml'),
+                       lambda a: a.run.update(repository=dict(id=101, full_name='contributor/InnoNetwork')),
+                       lambda a: a.run.update(path=p.NOTICE_PATH, event='push')]:
+            api = Transcript()
+            api.run.update(head_repository=dict(id=101, full_name='contributor/InnoNetwork'), pull_requests=[])
+            change(api)
+            with self.subTest(change=change), self.assertRaises(p.Rejected):
+                p.targets(api, 'workflow_run', dict(workflow_run=dict(id=RUN)))
+            self.assertFalse(api.mutations)
+
     def test_scheduled_reconciliation_discovers_and_revokes_retargeted_bot(self):
         self.api.pr['base']['ref'] = 'develop'
         self.api.pr['auto_merge'] = {'enabled_by': {'login': 'github-actions[bot]'}}
