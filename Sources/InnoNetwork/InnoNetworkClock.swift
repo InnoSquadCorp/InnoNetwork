@@ -36,7 +36,11 @@ package struct SystemClock: InnoNetworkClock {
     package init() {}
 
     package func sleep(for duration: Duration) async throws {
-        try await Task.sleep(for: duration)
+        if duration <= SchedulingTime.maximumSleepSlice {
+            try await Task.sleep(for: max(.zero, duration))
+        } else {
+            try await SchedulingTime.sleep(for: duration, clock: ContinuousClock())
+        }
     }
 
     package func now() -> Date {
