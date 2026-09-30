@@ -57,8 +57,7 @@ fi
 
 # Extract leading back-ticked identifiers from `- ` bullets.
 CANDIDATES="$(printf '%s\n' "${UNRELEASED}" \
-    | grep -Eo '^- `[A-Z][A-Za-z0-9_]+`' \
-    | sed -E 's/^- `([A-Z][A-Za-z0-9_]+)`/\1/' \
+    | awk 'match($0, /^- `[A-Z][A-Za-z0-9_]+`/) { print substr($0, 4, RLENGTH - 4) }' \
     | sort -u)"
 
 if [[ -z "${CANDIDATES}" ]]; then
