@@ -45,7 +45,7 @@ struct MacroExpansionTests {
                         func _innoNetworkRequirePathValue<Value>(_ value: Value?) -> Value {
                             fatalError()
                         }
-                        return "/users/\\(InnoNetwork.EndpointPathEncoding.percentEncodedSegment(_innoNetworkRequirePathValue(id)))"
+                        return "/users/\\(InnoNetwork.EndpointPathEncoding.percentEncodedSegment(_innoNetworkRequirePathValue(self.id)))"
                     }
                 }
                 """,
@@ -86,7 +86,7 @@ struct MacroExpansionTests {
                         func _innoNetworkRequirePathValue<Value>(_ value: Value?) -> Value {
                             fatalError()
                         }
-                        return "/users/\\(InnoNetwork.EndpointPathEncoding.percentEncodedSegment(_innoNetworkRequirePathValue(id)))/avatar"
+                        return "/users/\\(InnoNetwork.EndpointPathEncoding.percentEncodedSegment(_innoNetworkRequirePathValue(self.id)))/avatar"
                     }
                 }
                 """,
@@ -127,7 +127,7 @@ struct MacroExpansionTests {
                         func _innoNetworkRequirePathValue<Value>(_ value: Value?) -> Value {
                             fatalError()
                         }
-                        return "/users/\\(InnoNetwork.EndpointPathEncoding.percentEncodedSegment(_innoNetworkRequirePathValue(id)))"
+                        return "/users/\\(InnoNetwork.EndpointPathEncoding.percentEncodedSegment(_innoNetworkRequirePathValue(self.id)))"
                     }
                 }
                 """,

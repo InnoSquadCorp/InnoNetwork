@@ -161,7 +161,7 @@ extension EndpointDefinitionExpansion {
                 }
                 usedProperties.insert(name)
                 result +=
-                    "\\(InnoNetwork.EndpointPathEncoding.percentEncodedSegment(_innoNetworkRequirePathValue(\(name))))"
+                    "\\(InnoNetwork.EndpointPathEncoding.percentEncodedSegment(_innoNetworkRequirePathValue(self.\(property.sourceName))))"
                 index = path.index(after: close)
             } else if character == "}" {
                 throw InnoNetworkMacroDiagnostic(

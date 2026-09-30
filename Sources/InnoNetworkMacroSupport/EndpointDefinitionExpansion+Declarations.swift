@@ -13,6 +13,7 @@ extension EndpointDefinitionExpansion {
     }
 
     struct StoredProperty {
+        let sourceName: String
         let isOptional: Bool
         let typeKind: TypeKind
         let type: TypeSyntax?
@@ -125,11 +126,12 @@ extension EndpointDefinitionExpansion {
             guard let variable = member.decl.as(VariableDeclSyntax.self) else { continue }
             for binding in variable.bindings {
                 guard isEligibleStoredInstanceProperty(variable: variable, binding: binding),
-                    let identifier = binding.pattern.as(IdentifierPatternSyntax.self)?.identifier.text,
-                    !consumed.contains(identifier)
+                    let token = binding.pattern.as(IdentifierPatternSyntax.self)?.identifier,
+                    !consumed.contains(semanticName(token))
                 else {
                     continue
                 }
+                let identifier = semanticName(token)
                 throw InnoNetworkMacroDiagnostic(
                     "@APIDefinition stored property '\(identifier)' is not used by the route or inferred payload. In simple mode place GET/HEAD values in 'query' and POST/PUT/PATCH/DELETE values in 'body'; for every other method declare a complete Parameter + parameters fallback.",
                     id: "api-definition-unused-stored-property"
@@ -147,12 +149,13 @@ extension EndpointDefinitionExpansion {
             guard let variable = member.decl.as(VariableDeclSyntax.self) else { continue }
             for binding in variable.bindings {
                 guard isEligibleStoredInstanceProperty(variable: variable, binding: binding),
-                    let identifier = binding.pattern.as(IdentifierPatternSyntax.self)?.identifier.text
+                    let identifier = binding.pattern.as(IdentifierPatternSyntax.self)?.identifier
                 else {
                     continue
                 }
                 let type = binding.typeAnnotation?.type
-                properties[identifier] = StoredProperty(
+                properties[semanticName(identifier)] = StoredProperty(
+                    sourceName: identifier.text,
                     isOptional: isOptionalType(type),
                     typeKind: classifyType(type, genericParameters: genericParameters),
                     type: type
@@ -168,7 +171,7 @@ extension EndpointDefinitionExpansion {
     ) -> TypeAliasDeclSyntax? {
         declaration.memberBlock.members.lazy.compactMap { member in
             member.decl.as(TypeAliasDeclSyntax.self)
-        }.first { $0.name.text == name }
+        }.first { semanticName($0.name) == name }
     }
 
     static func declaresTypeAlias(
@@ -204,12 +207,20 @@ extension EndpointDefinitionExpansion {
         for member in declaration.memberBlock.members {
             guard let variable = member.decl.as(VariableDeclSyntax.self) else { continue }
             for binding in variable.bindings {
-                if binding.pattern.as(IdentifierPatternSyntax.self)?.identifier.text == name {
+                if let token = binding.pattern.as(IdentifierPatternSyntax.self)?.identifier,
+                    semanticName(token) == name
+                {
                     return (variable, binding)
                 }
             }
         }
         return nil
+    }
+
+    static func semanticName(_ token: TokenSyntax) -> String {
+        let spelling = token.text
+        guard spelling.hasPrefix("`"), spelling.hasSuffix("`"), spelling.count >= 2 else { return spelling }
+        return String(spelling.dropFirst().dropLast())
     }
 
     static func isEligibleStoredInstanceProperty(
