@@ -23,6 +23,13 @@ Everything else—including Download, Upload, WebSocket,
 persistent cache, OpenAPI, AWS signing, pinning, and test support—is an
 optional product selected only when that capability is required.
 
+> **Current publication:** [6.0.0 is published](https://github.com/InnoSquadCorp/InnoNetwork/releases/tag/6.0.0).
+> The 6.1 candidate on this branch is Draft and unpublished. Production adoption
+> should resolve the published tag, not this moving candidate branch.
+
+The following block is the historical 6.0 Ready-state snapshot retained by its
+validation contract; its pre-publication advice no longer applies to published 6.0.0.
+
 > **Release readiness:** `6.0.0` is approved for release; readiness is not publication.
 > Confirm the matching tag and GitHub Release before adopting the version below.
 > Until then, retain the tagged 5.x dependency; do not use moving `main` in
