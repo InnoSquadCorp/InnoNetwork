@@ -32,7 +32,11 @@ part of this authorization.
    server cooldown survives dispatch rechecks, and ordinary deadline/queue/rate
    controls pass. The initial new test had a catch-type compile error; its log
    is retained separately from the successful corrected fixture.
-4. WebSocket/monitor/restored download paths: pending.
+4. WebSocket/monitor/restored download paths: passed 86 test functions (55
+   socket, 3 core monitor/defaults, 28 download). Large heartbeat/pong/reconnect
+   and restored deadlines remain pending across slices and drain on cancellation.
+   Non-finite restored deadlines use observable existing terminal-failure cleanup;
+   destination files are not deleted and no persistence schema changes were made.
 5. Retry jitter/delay arithmetic: pending.
 6. Circuit backoff arithmetic: pending.
 7. Macro helper coverage and unused binding: pending.
