@@ -705,8 +705,9 @@ def targets(api, event_name, event):
         require(len(numbers) == 1, "missing/ambiguous notification PR")
         return numbers, alert if path == CI_PATH else None
     require(event_name in {"schedule", "workflow_dispatch", "push"}, "unsupported coordinator event")
-    # Include retargeted PRs so an old bot approval can be revoked even when
-    # a non-main pull_request_target notification cannot enter this main workflow.
+    # Include retargeted PRs so missed/delayed lifecycle notifications can be
+    # repaired by trusted-main reconciliation. pull_request_target itself runs
+    # in the default-branch context; do not assume a retarget suppresses it.
     return [p["number"] for p in api.pages(route("pulls?state=open"))
             if p.get("base", {}).get("ref") == "main" or bot(p)], None
 
