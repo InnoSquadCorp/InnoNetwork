@@ -1,12 +1,6 @@
 name: CodeQL
 
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
   schedule:
     # Weekly scan on Mondays at 06:00 UTC (~15:00 KST). Catches new
     # query versions that ship between PRs without forcing a per-PR
