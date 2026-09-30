@@ -90,7 +90,7 @@ public actor PersistentResponseCache: ResponseCache {
         let requiresRevalidation: Bool
         let varyHeaders: [String: String?]?
         let bodyFileName: String
-        let byteCost: Int
+        var byteCost: Int
         var lastAccessedAt: Date
     }
 
@@ -259,7 +259,7 @@ public actor PersistentResponseCache: ResponseCache {
         )
         self.index = budgetResult.index
         self.entryIDsByDiskKey = Self.makeEntryIDsByDiskKey(from: budgetResult.index)
-        self.runningTotalBytes = Self.totalBytes(in: budgetResult.index)
+        self.runningTotalBytes = try Self.totalBytes(in: budgetResult.index)
         var telemetry = loadResult.telemetryEvents
         telemetry.append(contentsOf: policyScrubResult.telemetryEvents)
         telemetry.append(contentsOf: budgetResult.telemetryEvents)
