@@ -680,10 +680,34 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
             fsync: fsync
         )
 
-        let events = transform(&diskState)
+        let originalState = diskState
+        // Transforms number their batch relative to zero; assign durable
+        // sequence numbers only after checking capacity for the whole batch.
+        diskState.nextSequence = 0
+        var events = transform(&diskState)
+        diskState.nextSequence = originalState.nextSequence
         guard !events.isEmpty else {
             state = diskState
             return
+        }
+
+        let advancement = diskState.nextSequence.addingReportingOverflow(Int64(events.count))
+        if advancement.overflow {
+            // A valid last sequence can exhaust the range on the next write.
+            // Durably checkpoint the OLD state before resetting its log; a
+            // failure at either step leaves an authoritative recoverable copy.
+            try Self.writeCheckpoint(
+                records: originalState.records, urlToID: originalState.urlToID,
+                directoryDescriptor: directoryDescriptor, operations: fileOperations,
+                fsyncPolicy: .always, fsync: fsync)
+            try Self.resetLog(directoryDescriptor: directoryDescriptor, operations: fileOperations)
+            diskState.nextSequence = 0
+            diskState.logEventCount = 0
+            diskState.logSize = 0
+            diskState.tombstoneCount -= originalState.tombstoneCount
+        }
+        for index in events.indices {
+            events[index].sequence = diskState.nextSequence + Int64(index)
         }
 
         try Self.append(
