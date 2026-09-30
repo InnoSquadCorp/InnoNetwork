@@ -190,7 +190,7 @@ private struct BenchmarkOptions: Sendable {
                 quick = true
             case "--only":
                 let scope = try requiredValue(code: 16, description: "Missing scope after --only.")
-                guard ["cache", "coalescing", "events", "json"].contains(scope) else {
+                guard ["cache", "coalescing", "events", "json", "websocket-lifecycle"].contains(scope) else {
                     throw NSError(
                         domain: "InnoNetworkBenchmarks", code: 16,
                         userInfo: [NSLocalizedDescriptionKey: "Unknown benchmark scope: \(scope)"])
@@ -404,6 +404,12 @@ private enum InnoNetworkBenchmarks {
                 ]
             case "cache": return [try await benchmarkResponseCacheRevalidation(iterations: 50_000_000)]
             case "coalescing": return [try await benchmarkRequestCoalescing(iterations: 100_000)]
+            case "websocket-lifecycle":
+                // Diagnostic subset only; the full guard and iteration count are unchanged.
+                return [
+                    try await benchmarkWebSocketLifecycleTransitionTable(
+                        iterations: options.quick ? 20_000_000 : 40_000_000)
+                ]
             #if INNO_BENCHMARK_PRESERVED_JSON
             case "json": return try await benchmarkPreservedJSON(iterations: options.quick ? 20_000 : 100_000)
             #endif

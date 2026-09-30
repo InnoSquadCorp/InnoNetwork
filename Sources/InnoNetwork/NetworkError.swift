@@ -141,6 +141,8 @@ public enum DecodingStage: Sendable, Equatable {
 /// `NetworkError.invalidRequestConfiguration` cases are not available in
 /// the 4.0.0 surface.
 public enum NetworkConfigurationFailureReason: Sendable, Equatable {
+    /// A binary request codec or its transmission budget rejected local input.
+    case invalidPayload(EncodedPayloadFailure)
     /// The base URL the request would resolve against is malformed or
     /// missing a scheme.
     case invalidBaseURL(String)
@@ -237,6 +239,9 @@ extension NetworkError: LocalizedError {
         switch self {
         case .configuration(let reason):
             switch reason {
+            case .invalidPayload(let failure):
+                return localizedFormat(
+                    "NetworkError.invalidRequestConfiguration", "Encoded payload failure: \(failure.rawValue)")
             case .invalidBaseURL(let s):
                 return localizedFormat("NetworkError.invalidBaseURL", s)
             case .invalidRequest(let s):
@@ -410,6 +415,7 @@ extension NetworkError: CustomNSError {
         case .configuration(let reason):
             switch reason {
             case .invalidBaseURL: return NetworkErrorCode.configurationInvalidBaseURL.rawValue
+            case .invalidPayload: return NetworkErrorCode.configurationInvalidPayload.rawValue
             case .invalidRequest: return NetworkErrorCode.configurationInvalidRequest.rawValue
             case .offline: return NetworkErrorCode.configurationOffline.rawValue
             }

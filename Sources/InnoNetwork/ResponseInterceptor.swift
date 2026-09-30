@@ -45,7 +45,9 @@ public protocol ResponseInterceptor: Sendable {
     ///   - urlResponse: The response produced by the previous stage in
     ///     the chain (the raw transport response for the first
     ///     interceptor).
-    ///   - request: The fully adapted request that produced
+    ///   - request: The response's request envelope after signing/refresh, subject
+    ///     to credential redaction. If a cache or custom policy supplies no request
+    ///     provenance, this is the current invocation's prepared request. It produced
     ///     `urlResponse`. Useful for context-sensitive decisions
     ///     (correlating headers, recording per-endpoint metrics) without
     ///     having to thread state through the call site.

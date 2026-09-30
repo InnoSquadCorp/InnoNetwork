@@ -69,9 +69,15 @@ assert_scope_change_rejected() {
 assert_scope_change_rejected docs/releases/6.0.0.md \
   's/1,702 declarations/1,407 declarations/g' 'the superseded 6.0 API count'
 assert_scope_change_rejected Scripts/symbols/budgets.tsv \
-  's/1702/1407/g' 'an outdated API budget'
+  's/1702/1407/g;s/1764/1407/g' 'an outdated API budget'
 assert_scope_change_rejected Scripts/symbols/tier-budgets.tsv \
-  's/1362/1068/g' 'an outdated provisional tier budget'
+  's/1362/1068/g;s/1364/1068/g' 'an outdated provisional tier budget'
+if grep -Fq 'encoded-request-candidate: 6.1.0' "$repo_root/API_STABILITY.md"; then
+  assert_scope_change_rejected API_STABILITY.md \
+    '/encoded-request-candidate: 6.1.0/d' 'an implicit new-version inventory'
+  assert_scope_change_rejected API_STABILITY.md \
+    '/These additions are unpublished; they do not alter 6.0.0./d' 'a candidate without its unpublished boundary'
+fi
 assert_scope_change_rejected docs/ROADMAP.md \
   's/## 6.0.0 Included Capabilities/## 6.1.0 Candidate Scope/' 'a split roadmap'
 assert_scope_change_rejected docs/releases/6.1.0.md \

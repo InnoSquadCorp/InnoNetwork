@@ -198,7 +198,7 @@ jobs:
             runtime_source_roots+=("$source_root")
           done < <(
             find Sources -mindepth 1 -maxdepth 1 -type d \
-              ! -name InnoNetworkMacros -print | sort
+              ! -name InnoNetworkMacros ! -name InnoNetworkMacroSupport -print | sort
           )
 
           bash Scripts/generate_coverage_report.sh \
@@ -221,7 +221,7 @@ jobs:
           bash Scripts/generate_coverage_report.sh \
             .build \
             .build/release-artifacts/coverage-macros \
-            Sources/InnoNetworkMacros
+            Sources/InnoNetworkMacros Sources/InnoNetworkMacroSupport
 
       - name: Build DocC archives
         run: |

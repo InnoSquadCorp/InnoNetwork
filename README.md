@@ -877,18 +877,26 @@ The package intentionally targets current Apple platform releases. That lets the
 
 ## Protocol Buffers
 
-Protocol Buffers support moved to the separate `InnoNetworkProtobuf` package. Consumers that need protobuf request and response modeling must add `InnoNetworkProtobuf` alongside `InnoNetwork` in the same package manifest.
+Protocol Buffers support lives in the separate `InnoNetwork-Protobuf` package
+(Swift module `InnoNetworkProtobuf`). Its redesigned 6.0 development line uses
+the public `EncodedRequest` contract planned for InnoNetwork 6.1, without SPI.
+Its default declaration is `@ProtobufAPIDefinition`: generated-message body/query
+inputs feed the same client and operation pipeline through `EncodedAPIDefinition`.
+Manual factories remain available with both `Macros` traits disabled. Core's
+JSON `@APIDefinition` remains unchanged; the shared `InnoNetworkMacroSupport`
+product is compiler-host-only, not an app runtime dependency.
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", branch: "main"),
-    .package(url: "https://github.com/InnoSquadCorp/InnoNetworkProtobuf.git", branch: "main")
+    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", from: "6.1.0"),
+    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork-Protobuf.git", from: "6.0.0")
 ]
 ```
 
-`InnoNetworkProtobuf` is being prepared for its first tagged release; until
-then, follow its `main` branch. This pair is a preview configuration, not a
-tagged production dependency.
+This is the intended post-publication pair, not an assertion that either new
+tag exists. Use the adapter's explicit local-core override for coordinated
+development until both releases are published. Existing adapter 3.x belongs
+with its documented 3.x core; do not combine it with core 6.x.
 
 ## Configuration
 

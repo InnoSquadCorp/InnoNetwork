@@ -1,6 +1,6 @@
 import SwiftSyntax
 
-extension APIDefinitionMacro {
+extension EndpointDefinitionExpansion {
     struct StoredProperty {
         let isOptional: Bool
         let typeKind: TypeKind

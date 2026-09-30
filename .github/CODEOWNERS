@@ -22,6 +22,7 @@ Sources/InnoNetwork/Auth/**             @ethan-is
 API_STABILITY.md                        @ethan-is
 Sources/InnoNetwork/APIDefinition+Macro.swift @ethan-is
 Sources/InnoNetworkMacros/**            @ethan-is
+Sources/InnoNetworkMacroSupport/**      @ethan-is
 Scripts/symbols/**                      @ethan-is
 
 # CI / supply-chain — keep release tooling under maintainer review.

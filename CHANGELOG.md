@@ -1,11 +1,29 @@
 # Changelog
 
+## Unreleased — encoded request contract
+
+- Add the Stable buffered `EncodedRequest` / `EncodedRequestClient` boundary
+  for custom codecs without GeneratedClientSupport SPI or Codable requirements.
+- Share operation deadlines/cancellation with binary-only clients, memoize body
+  bytes per invocation, and tighten response budgets before collection.
+- Add payload-free `EncodedPayloadFailure` and configuration reason `invalidPayload`;
+  exhaustive switches over configuration reasons must handle the new case.
+- Separate explicit HTTP no-content decoding from empty codec messages.
+- Add named `EncodedAPIDefinition` endpoints and query appending for macro-first
+  companions; JSON clients and macros keep their existing contracts.
+- Export compiler-host-only `InnoNetworkMacroSupport` with a separate, minor-bound
+  twelve-declaration inventory and unchanged SwiftSyntax 603.0.x dependency.
+
 All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog and the project follows Semantic
 Versioning.
 
 ## [Unreleased]
+
+- Response interceptors receive the response's signed/refreshed request envelope
+  instead of the pre-attempt envelope; synthetic responses without provenance
+  continue using the prepared request. Credential redaction remains in force.
 
 ## [6.0.0] - 2026-09-28
 

@@ -1,7 +1,7 @@
 import SwiftDiagnostics
 import SwiftSyntax
 
-extension APIDefinitionMacro {
+extension EndpointDefinitionExpansion {
     static func validatePathLiteral(
         _ path: String,
         anchor: some SyntaxProtocol
