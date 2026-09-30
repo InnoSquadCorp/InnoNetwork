@@ -127,7 +127,7 @@ let package = Package(
         // broad cryptographic policy ownership.
         .package(
             url: "https://github.com/apple/swift-crypto",
-            .upToNextMajor(from: "4.0.0")
+            .upToNextMajor(from: "5.0.0")
         ),
     ],
     targets: [
