@@ -75,7 +75,7 @@ package actor RequestAdmissionCoordinator {
     private struct Waiter {
         let id: UUID
         let scope: String
-        let deadline: Duration?
+        let deadline: TimingBudget?
         let continuation: CheckedContinuation<Void, Error>
         let timeoutTask: Task<Void, Never>?
     }
@@ -110,7 +110,9 @@ package actor RequestAdmissionCoordinator {
         let id = UUID()
         let maximumQueueWait = policy.maximumQueueWait
         let timeoutClock = clock
-        let deadline = maximumQueueWait.map { timeoutClock.monotonicNow() + $0 }
+        let deadline = maximumQueueWait.map {
+            TimingBudget(duration: $0, startedAt: timeoutClock.monotonicNow())
+        }
         var acquired = false
         do {
             try await withTaskCancellationHandler(
@@ -125,11 +127,7 @@ package actor RequestAdmissionCoordinator {
                         if let deadline {
                             timeoutTask = Task { [weak self] in
                                 do {
-                                    let remaining = max(
-                                        .zero,
-                                        deadline - timeoutClock.monotonicNow()
-                                    )
-                                    try await timeoutClock.sleep(for: remaining)
+                                    try await deadline.sleep(using: timeoutClock)
                                 } catch {
                                     return
                                 }
@@ -219,7 +217,7 @@ package actor RequestAdmissionCoordinator {
                 waiter.continuation.resume(throwing: CancellationError())
                 continue
             }
-            if let deadline = waiter.deadline, clock.monotonicNow() >= deadline {
+            if let deadline = waiter.deadline, deadline.isExpired(at: clock.monotonicNow()) {
                 waiter.continuation.resume(
                     throwing: RequestAdmissionFailure.queueWaitExpired
                 )
