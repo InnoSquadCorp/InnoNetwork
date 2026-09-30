@@ -106,10 +106,31 @@ def workflow_boundaries(root):
         require('secrets: inherit' not in workflow and 'persist-credentials: true' not in workflow, path + ': credential inheritance forbidden')
 
 
+def action_pins(root):
+    # Do not freeze particular action versions: future majors remain eligible.
+    # Require one immutable version per action repository across every workflow
+    # and local composite, including newly added candidate/publisher jobs.
+    pins = {}
+    files = [path for suffix in ('yml', 'yaml')
+             for path in list((root / '.github/workflows').glob('*.' + suffix)) +
+             list((root / '.github/actions').rglob('action.' + suffix))]
+    for path in files:
+        text = path.read_text()
+        require(not re.search(r'^\s*allow-unsafe-pr-checkout:', text, re.M), 'unsafe privileged checkout opt-in forbidden')
+        for source in re.findall(r'^\s*(?:-\s+)?uses:\s*(\S+)', text, re.M):
+            if source.startswith('./'):
+                continue
+            match = re.fullmatch(r'([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)(?:/[A-Za-z0-9_./-]+)?@([0-9a-f]{40})', source)
+            require(match is not None, 'external action must use an immutable SHA: ' + source)
+            pins.setdefault(match[1], set()).add(match[2])
+    require(all(len(values) == 1 for values in pins.values()), 'action version drift across workflow/composite copies')
+
+
 def validate(root):
     dependabot(root)
     coherence(root)
     workflow_boundaries(root)
+    action_pins(root)
 
 
 if __name__ == '__main__':
