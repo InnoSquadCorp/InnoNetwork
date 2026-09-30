@@ -125,10 +125,11 @@ package struct WebSocketHeartbeatCoordinator {
                 var missedPongs = 0
                 while !Task.isCancelled {
                     do {
-                        try await clock.sleep(for: .seconds(configuration.heartbeatInterval))
+                        try await clock.sleep(forSeconds: configuration.heartbeatInterval)
                     } catch is CancellationError {
                         break
                     } catch {
+                        await eventHub.publish(.error(.connectionFailed(SendableUnderlyingError(error))), for: task.id)
                         break
                     }
 
@@ -226,6 +227,7 @@ package struct WebSocketHeartbeatCoordinator {
         _ urlTask: any WebSocketURLTask,
         timeout: TimeInterval
     ) async throws {
+        guard timeout.isFinite else { throw SchedulingTimeFailure.nonFiniteInterval }
         guard timeout > 0 else {
             try await sendPing(urlTask)
             return
@@ -236,7 +238,7 @@ package struct WebSocketHeartbeatCoordinator {
                 try await self.sendPing(urlTask)
             }
             group.addTask { [clock] in
-                try await clock.sleep(for: .seconds(timeout))
+                try await clock.sleep(forSeconds: timeout)
                 throw WebSocketInternalError.pingTimeout
             }
             _ = try await group.next()

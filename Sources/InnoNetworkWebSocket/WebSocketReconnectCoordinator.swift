@@ -116,10 +116,9 @@ package struct WebSocketReconnectCoordinator {
                 let reconnectCount = await task.attemptedReconnectCount
                 await task.beginReconnectWindowIfNeeded(now: dateProvider())
                 let remaining = await remainingReconnectDuration(task: task)
-                let delay = min(reconnectDelay(forAttempt: reconnectCount), remaining ?? .infinity)
-
                 do {
-                    try await clock.sleep(for: .seconds(delay))
+                    let delay = min(try reconnectDelay(forAttempt: reconnectCount), remaining ?? .infinity)
+                    try await clock.sleep(forSeconds: delay)
                 } catch is CancellationError {
                     return
                 } catch {
@@ -178,19 +177,28 @@ package struct WebSocketReconnectCoordinator {
         return max(0, configuration.reconnectMaxTotalDuration - dateProvider().timeIntervalSince(started))
     }
 
-    private func reconnectDelay(forAttempt reconnectCount: Int) -> TimeInterval {
+    private func reconnectDelay(forAttempt reconnectCount: Int) throws -> TimeInterval {
+        guard configuration.reconnectDelay.isFinite,
+            configuration.maxReconnectDelay.isFinite,
+            configuration.reconnectMaxTotalDuration.isFinite
+        else { throw SchedulingTimeFailure.nonFiniteInterval }
         // `pow(2, -1)` would shrink the base delay below the configured
         // floor when `reconnectCount == 0`. Clamp the exponent so the very
         // first reconnect always uses the configured `reconnectDelay` as the
         // floor (count=1 → 2^0 = 1×, matching exponential expectations).
         let safeCount = max(1, reconnectCount)
-        let baseDelay = configuration.reconnectDelay * pow(2, Double(safeCount - 1))
+        let baseDelay =
+            configuration.reconnectDelay == 0
+            ? 0
+            : min(
+                Double.greatestFiniteMagnitude,
+                configuration.reconnectDelay * pow(2, Double(safeCount - 1)))
 
         guard configuration.maxReconnectDelay > 0 else {
             let jitter = abs(baseDelay * configuration.reconnectJitterRatio)
             let lowerBound = -jitter
             let upperBound = jitter
-            return max(0.0, baseDelay + sample(lowerBound...upperBound))
+            return min(Double.greatestFiniteMagnitude, max(0.0, baseDelay + sample(lowerBound...upperBound)))
         }
 
         let cappedBase = min(baseDelay, configuration.maxReconnectDelay)
@@ -206,6 +214,12 @@ package struct WebSocketReconnectCoordinator {
     /// which traps inside the standard library's `Range`/`ClosedRange`
     /// initializer.
     private func sample(_ range: ClosedRange<Double>) -> Double {
+        if !(range.upperBound - range.lowerBound).isFinite {
+            // A finite symmetric interval can still have an infinite width.
+            // Only this extreme case uses a normalized random interval.
+            let magnitude = max(abs(range.lowerBound), abs(range.upperBound))
+            return randomOffset(-1...1) * magnitude
+        }
         if range.lowerBound <= range.upperBound {
             return randomOffset(range)
         }
