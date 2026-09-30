@@ -1,0 +1,1065 @@
+{
+  "source": "Expected Network workflow inventory generated from authored CI and release-validation YAML. Not a hosted CI success claim.",
+  "jobs": {
+    "CI Plan": [
+      {
+        "name": "Verify actual post-merge main origin",
+        "conclusion": "skipped"
+      },
+      {
+        "name": "Plan exact changed paths",
+        "conclusion": "success"
+      },
+      {
+        "name": "Preserve change selection evidence",
+        "conclusion": "success"
+      }
+    ],
+    "CI and public operations policy": [
+      {
+        "name": "Checkout",
+        "conclusion": "success"
+      },
+      {
+        "name": "Verify CI selection and public operations",
+        "conclusion": "success"
+      }
+    ],
+    "Dependency Review": [
+      {
+        "name": "Checkout trusted dependency verifier",
+        "conclusion": "success"
+      },
+      {
+        "name": "Verify immutable dependency transition",
+        "conclusion": "success"
+      },
+      {
+        "name": "Wait for complete dependency snapshots",
+        "conclusion": "success"
+      },
+      {
+        "name": "Review dependency changes",
+        "conclusion": "success"
+      }
+    ],
+    "Lint (swift-format)": [
+      {
+        "name": "Checkout",
+        "conclusion": "success"
+      },
+      {
+        "name": "Select Xcode",
+        "conclusion": "success"
+      },
+      {
+        "name": "Show swift-format version",
+        "conclusion": "success"
+      },
+      {
+        "name": "Run swift-format lint",
+        "conclusion": "success"
+      }
+    ],
+    "Lint (Periphery)": [
+      {
+        "name": "Checkout",
+        "conclusion": "success"
+      },
+      {
+        "name": "Select Xcode",
+        "conclusion": "success"
+      },
+      {
+        "name": "Install Periphery 3.8.0",
+        "conclusion": "success"
+      },
+      {
+        "name": "Resolve dependencies",
+        "conclusion": "success"
+      },
+      {
+        "name": "Run Periphery scan",
+        "conclusion": "success"
+      }
+    ],
+    "Build and Test (SwiftPM) \u2014 Xcode 26.0.1": [
+      {
+        "name": "Checkout",
+        "conclusion": "success"
+      },
+      {
+        "name": "Select Xcode",
+        "conclusion": "success"
+      },
+      {
+        "name": "Cache SwiftPM artifacts",
+        "conclusion": "success"
+      },
+      {
+        "name": "Show Xcode and Swift versions",
+        "conclusion": "success"
+      },
+      {
+        "name": "Check Swift tools compatibility",
+        "conclusion": "success"
+      },
+      {
+        "name": "Resolve dependencies",
+        "conclusion": "success"
+      },
+      {
+        "name": "Verify resolved dependency lock",
+        "conclusion": "success"
+      },
+      {
+        "name": "Verify resolved dependency snapshot",
+        "conclusion": "success"
+      },
+      {
+        "name": "Build (Swift 6 language mode)",
+        "conclusion": "success"
+      },
+      {
+        "name": "Test (with code coverage)",
+        "conclusion": "success"
+      },
+      {
+        "name": "Generate runtime coverage report",
+        "conclusion": "success"
+      },
+      {
+        "name": "Upload coverage artifact",
+        "conclusion": "success"
+      },
+      {
+        "name": "Enforce @unchecked Sendable policy",
+        "conclusion": "success"
+      },
+      {
+        "name": "Enforce SharedCoders immutability",
+        "conclusion": "success"
+      },
+      {
+        "name": "Enforce no force unwrap in production sources",
+        "conclusion": "success"
+      },
+      {
+        "name": "Enforce no print() in production sources",
+        "conclusion": "success"
+      }
+    ],
+    "Build and Test (SwiftPM) \u2014 Xcode 27.0": [
+      {
+        "name": "Checkout",
+        "conclusion": "success"
+      },
+      {
+        "name": "Select Xcode",
+        "conclusion": "success"
+      },
+      {
+        "name": "Cache SwiftPM artifacts",
+        "conclusion": "success"
+      },
+      {
+        "name": "Show Xcode and Swift versions",
+        "conclusion": "success"
+      },
+      {
+        "name": "Check Swift tools compatibility",
+        "conclusion": "success"
+      },
+      {
+        "name": "Resolve dependencies",
+        "conclusion": "success"
+      },
+      {
+        "name": "Verify resolved dependency lock",
+        "conclusion": "success"
+      },
+      {
+        "name": "Verify resolved dependency snapshot",
+        "conclusion": "success"
+      },
+      {
+        "name": "Build (Swift 6 language mode)",
+        "conclusion": "success"
+      },
+      {
+        "name": "Test (with code coverage)",
+        "conclusion": "success"
+      },
+      {
+        "name": "Generate runtime coverage report",
+        "conclusion": "success"
+      },
+      {
+        "name": "Upload coverage artifact",
+        "conclusion": "success"
+      },
+      {
+        "name": "Enforce @unchecked Sendable policy",
+        "conclusion": "success"
+      },
+      {
+        "name": "Enforce SharedCoders immutability",
+        "conclusion": "success"
+      },
+      {
+        "name": "Enforce no force unwrap in production sources",
+        "conclusion": "success"
+      },
+      {
+        "name": "Enforce no print() in production sources",
+        "conclusion": "success"
+      }
+    ],
+    "Upload Core Coverage": [
+      {
+        "name": "Checkout",
+        "conclusion": "success"
+      },
+      {
+        "name": "Download canonical coverage artifact",
+        "conclusion": "success"
+      },
+      {
+        "name": "Install Codecov CLI v11.3.1",
+        "conclusion": "success"
+      },
+      {
+        "name": "Report artifact-only Codecov fallback",
+        "conclusion": "skipped"
+      },
+      {
+        "name": "Upload coverage to Codecov",
+        "conclusion": "success"
+      }
+    ],
+    "Test (Bounded Target Shards) \u2014 Xcode 26.0.1": [
+      {
+        "name": "Checkout",
+        "conclusion": "success"
+      },
+      {
+        "name": "Select Xcode",
+        "conclusion": "success"
+      },
+      {
+        "name": "Cache SwiftPM artifacts",
+        "conclusion": "success"
+      },
+      {
+        "name": "Show Xcode and Swift versions",
+        "conclusion": "success"
+      },
+      {
+        "name": "Resolve dependencies",
+        "conclusion": "success"
+      },
+      {
+        "name": "Run bounded target-sharded tests",
+        "conclusion": "success"
+      }
+    ],
+    "Docs / Contract Sync": [
+      {
+        "name": "Checkout",
+        "conclusion": "success"
+      },
+      {
+        "name": "Select Xcode",
+        "conclusion": "success"
+      },
+      {
+        "name": "Show Xcode and Swift versions",
+        "conclusion": "success"
+      },
+      {
+        "name": "Resolve dependencies",
+        "conclusion": "success"
+      },
+      {
+        "name": "Test docs-contract assertion helpers",
+        "conclusion": "success"
+      },
+      {
+        "name": "Verify docs and stability contract",
+        "conclusion": "success"
+      },
+      {
+        "name": "Verify guarded benchmark contract",
+        "conclusion": "success"
+      },
+      {
+        "name": "Verify repeated macro build baselines",
+        "conclusion": "success"
+      },
+      {
+        "name": "Verify public API tier fixtures",
+        "conclusion": "success"
+      },
+      {
+        "name": "Verify dependency snapshot conversion",
+        "conclusion": "success"
+      },
+      {
+        "name": "Verify local release preflight contract",
+        "conclusion": "success"
+      },
+      {
+        "name": "Verify release workflow contract",
+        "conclusion": "success"
+      },
+      {
+        "name": "Verify DocC archive contract",
+        "conclusion": "success"
+      },
+      {
+        "name": "Verify stable examples contract",
+        "conclusion": "success"
+      },
+      {
+        "name": "Verify example deployment floors",
+        "conclusion": "success"
+      },
+      {
+        "name": "Verify migration guide code blocks compile",
+        "conclusion": "success"
+      },
+      {
+        "name": "Verify CHANGELOG Unreleased section",
+        "conclusion": "success"
+      },
+      {
+        "name": "Verify provisionally stable enum case ledger",
+        "conclusion": "success"
+      },
+      {
+        "name": "Build documentation smoke target",
+        "conclusion": "success"
+      },
+      {
+        "name": "Run documentation smoke target",
+        "conclusion": "success"
+      },
+      {
+        "name": "Verify resumable upload recovery across process exit",
+        "conclusion": "success"
+      }
+    ],
+    "Apple Platform Build Smoke (platform=macOS, macOS, macosx, xcodebuild)": [
+      {
+        "name": "Checkout",
+        "conclusion": "success"
+      },
+      {
+        "name": "Select Xcode",
+        "conclusion": "success"
+      },
+      {
+        "name": "Show Xcode and Swift versions",
+        "conclusion": "success"
+      },
+      {
+        "name": "Resolve dependencies",
+        "conclusion": "success"
+      },
+      {
+        "name": "Build package for macOS",
+        "conclusion": "success"
+      }
+    ],
+    "Apple Platform Build Smoke (generic/platform=iOS Simulator, iOS, iphonesimulator, xcodebuild)": [
+      {
+        "name": "Checkout",
+        "conclusion": "success"
+      },
+      {
+        "name": "Select Xcode",
+        "conclusion": "success"
+      },
+      {
+        "name": "Show Xcode and Swift versions",
+        "conclusion": "success"
+      },
+      {
+        "name": "Resolve dependencies",
+        "conclusion": "success"
+      },
+      {
+        "name": "Build package for iOS",
+        "conclusion": "success"
+      }
+    ],
+    "Apple Platform Build Smoke (arm64-apple-tvos16.0, tvOS, appletvos, swiftpm-cross)": [
+      {
+        "name": "Checkout",
+        "conclusion": "success"
+      },
+      {
+        "name": "Select Xcode",
+        "conclusion": "success"
+      },
+      {
+        "name": "Show Xcode and Swift versions",
+        "conclusion": "success"
+      },
+      {
+        "name": "Resolve dependencies",
+        "conclusion": "success"
+      },
+      {
+        "name": "Build package for tvOS",
+        "conclusion": "success"
+      }
+    ],
+    "Apple Platform Build Smoke (arm64_32-apple-watchos9.0, watchOS, watchos, swiftpm-cross)": [
+      {
+        "name": "Checkout",
+        "conclusion": "success"
+      },
+      {
+        "name": "Select Xcode",
+        "conclusion": "success"
+      },
+      {
+        "name": "Show Xcode and Swift versions",
+        "conclusion": "success"
+      },
+      {
+        "name": "Resolve dependencies",
+        "conclusion": "success"
+      },
+      {
+        "name": "Build package for watchOS",
+        "conclusion": "success"
+      }
+    ],
+    "Apple Platform Build Smoke (arm64-apple-xros1.0, visionOS, xros, swiftpm-cross)": [
+      {
+        "name": "Checkout",
+        "conclusion": "success"
+      },
+      {
+        "name": "Select Xcode",
+        "conclusion": "success"
+      },
+      {
+        "name": "Show Xcode and Swift versions",
+        "conclusion": "success"
+      },
+      {
+        "name": "Resolve dependencies",
+        "conclusion": "success"
+      },
+      {
+        "name": "Build package for visionOS",
+        "conclusion": "success"
+      }
+    ],
+    "Consumer Smoke": [
+      {
+        "name": "Checkout",
+        "conclusion": "success"
+      },
+      {
+        "name": "Require all consumer lanes to succeed",
+        "conclusion": "success"
+      }
+    ],
+    "Consumer Examples": [
+      {
+        "name": "Checkout",
+        "conclusion": "success"
+      },
+      {
+        "name": "Select Xcode",
+        "conclusion": "success"
+      },
+      {
+        "name": "Show Xcode and Swift versions",
+        "conclusion": "success"
+      },
+      {
+        "name": "Restore isolated consumer build caches",
+        "conclusion": "success"
+      },
+      {
+        "name": "Verify macro trait manifest and default graph",
+        "conclusion": "success"
+      },
+      {
+        "name": "Build root core without default traits",
+        "conclusion": "success"
+      },
+      {
+        "name": "Build all independent consumer examples",
+        "conclusion": "success"
+      },
+      {
+        "name": "Run macro adopter smoke",
+        "conclusion": "success"
+      },
+      {
+        "name": "Run OpenAPI adopter smoke",
+        "conclusion": "success"
+      }
+    ],
+    "Consumer Macros": [
+      {
+        "name": "Checkout",
+        "conclusion": "success"
+      },
+      {
+        "name": "Select Xcode",
+        "conclusion": "success"
+      },
+      {
+        "name": "Restore isolated consumer build caches",
+        "conclusion": "success"
+      },
+      {
+        "name": "Test macros from source (with code coverage)",
+        "conclusion": "success"
+      },
+      {
+        "name": "Verify macro compile-failure diagnostics",
+        "conclusion": "success"
+      },
+      {
+        "name": "Generate macro coverage report",
+        "conclusion": "success"
+      },
+      {
+        "name": "Upload macro coverage artifact",
+        "conclusion": "success"
+      }
+    ],
+    "Consumer OpenAPI": [
+      {
+        "name": "Checkout",
+        "conclusion": "success"
+      },
+      {
+        "name": "Select Xcode",
+        "conclusion": "success"
+      },
+      {
+        "name": "Restore isolated consumer build caches",
+        "conclusion": "success"
+      },
+      {
+        "name": "Build openapi-to-innonetwork CLI",
+        "conclusion": "success"
+      },
+      {
+        "name": "Test openapi-to-innonetwork CLI",
+        "conclusion": "success"
+      },
+      {
+        "name": "Typecheck generated OpenAPI output",
+        "conclusion": "success"
+      }
+    ],
+    "Upload Macro Coverage": [
+      {
+        "name": "Checkout",
+        "conclusion": "success"
+      },
+      {
+        "name": "Download macro coverage artifact",
+        "conclusion": "success"
+      },
+      {
+        "name": "Install Codecov CLI v11.3.1",
+        "conclusion": "success"
+      },
+      {
+        "name": "Report artifact-only Codecov fallback",
+        "conclusion": "skipped"
+      },
+      {
+        "name": "Upload macro coverage to Codecov",
+        "conclusion": "success"
+      }
+    ],
+    "Benchmark Smoke": [
+      {
+        "name": "Checkout",
+        "conclusion": "success"
+      },
+      {
+        "name": "Select Xcode",
+        "conclusion": "success"
+      },
+      {
+        "name": "Show Xcode and Swift versions",
+        "conclusion": "success"
+      },
+      {
+        "name": "Resolve dependencies",
+        "conclusion": "success"
+      },
+      {
+        "name": "Run benchmark smoke",
+        "conclusion": "success"
+      },
+      {
+        "name": "Upload benchmark smoke artifact",
+        "conclusion": "success"
+      }
+    ],
+    "CodeQL / Swift (swift)": [
+      {
+        "name": "Checkout",
+        "conclusion": "success"
+      },
+      {
+        "name": "Select Xcode",
+        "conclusion": "success"
+      },
+      {
+        "name": "Initialize CodeQL",
+        "conclusion": "success"
+      },
+      {
+        "name": "Build",
+        "conclusion": "success"
+      },
+      {
+        "name": "Perform CodeQL Analysis",
+        "conclusion": "success"
+      }
+    ],
+    "Tests under ThreadSanitizer": [
+      {
+        "name": "Checkout",
+        "conclusion": "success"
+      },
+      {
+        "name": "Select Xcode",
+        "conclusion": "success"
+      },
+      {
+        "name": "Show Xcode and Swift versions",
+        "conclusion": "success"
+      },
+      {
+        "name": "Resolve dependencies",
+        "conclusion": "success"
+      },
+      {
+        "name": "Run tests under ThreadSanitizer",
+        "conclusion": "success"
+      }
+    ],
+    "Run Benchmarks": [
+      {
+        "name": "Checkout",
+        "conclusion": "success"
+      },
+      {
+        "name": "Select Xcode",
+        "conclusion": "success"
+      },
+      {
+        "name": "Cache SwiftPM artifacts",
+        "conclusion": "success"
+      },
+      {
+        "name": "Show Xcode and Swift versions",
+        "conclusion": "success"
+      },
+      {
+        "name": "Test benchmark report tooling",
+        "conclusion": "success"
+      },
+      {
+        "name": "Verify guarded benchmark contract",
+        "conclusion": "success"
+      },
+      {
+        "name": "Compare same-runner benchmark medians",
+        "conclusion": "success"
+      },
+      {
+        "name": "Upload benchmark artifact",
+        "conclusion": "success"
+      }
+    ],
+    "Build DocC Site": [
+      {
+        "name": "Checkout",
+        "conclusion": "success"
+      },
+      {
+        "name": "Select Xcode",
+        "conclusion": "success"
+      },
+      {
+        "name": "Show Xcode and Swift versions",
+        "conclusion": "success"
+      },
+      {
+        "name": "Verify DocC archive contract fixtures",
+        "conclusion": "success"
+      },
+      {
+        "name": "Build DocC archives",
+        "conclusion": "success"
+      },
+      {
+        "name": "Verify public DocC archives",
+        "conclusion": "success"
+      },
+      {
+        "name": "Transform DocC archives for static hosting",
+        "conclusion": "success"
+      },
+      {
+        "name": "Validate DocC site files",
+        "conclusion": "success"
+      },
+      {
+        "name": "Upload Documentation Artifact",
+        "conclusion": "success"
+      }
+    ],
+    "Release Candidate / Validate Release": [
+      {
+        "name": "Checkout",
+        "conclusion": "success"
+      },
+      {
+        "name": "Test release artifact scripts",
+        "conclusion": "success"
+      },
+      {
+        "name": "Validate immutable CI candidate",
+        "conclusion": "success"
+      },
+      {
+        "name": "Select Xcode",
+        "conclusion": "success"
+      },
+      {
+        "name": "Cache SwiftPM artifacts",
+        "conclusion": "success"
+      },
+      {
+        "name": "Show Xcode and Swift versions",
+        "conclusion": "success"
+      },
+      {
+        "name": "Resolve dependencies",
+        "conclusion": "success"
+      },
+      {
+        "name": "Verify resolved dependency lock",
+        "conclusion": "success"
+      },
+      {
+        "name": "Verify macro trait manifest and default graph",
+        "conclusion": "success"
+      },
+      {
+        "name": "Build root core without default traits",
+        "conclusion": "success"
+      },
+      {
+        "name": "Verify docs and stability contract",
+        "conclusion": "success"
+      },
+      {
+        "name": "Verify guarded benchmark contract",
+        "conclusion": "success"
+      },
+      {
+        "name": "Verify repeated macro build baselines",
+        "conclusion": "success"
+      },
+      {
+        "name": "Verify stable examples contract",
+        "conclusion": "success"
+      },
+      {
+        "name": "Verify example deployment floors",
+        "conclusion": "success"
+      },
+      {
+        "name": "Verify migration guide code blocks compile",
+        "conclusion": "success"
+      },
+      {
+        "name": "Verify CHANGELOG Unreleased section",
+        "conclusion": "success"
+      },
+      {
+        "name": "Verify provisionally stable enum case ledger",
+        "conclusion": "success"
+      },
+      {
+        "name": "Verify macro compile-failure diagnostics",
+        "conclusion": "success"
+      },
+      {
+        "name": "Enforce @unchecked Sendable policy",
+        "conclusion": "success"
+      },
+      {
+        "name": "Enforce SharedCoders immutability",
+        "conclusion": "success"
+      },
+      {
+        "name": "Enforce no force unwrap in production sources",
+        "conclusion": "success"
+      },
+      {
+        "name": "Enforce no print() in production sources",
+        "conclusion": "success"
+      },
+      {
+        "name": "Build and run documentation smoke target",
+        "conclusion": "success"
+      },
+      {
+        "name": "Build all independent consumer examples",
+        "conclusion": "success"
+      },
+      {
+        "name": "Verify resumable upload recovery across process exit",
+        "conclusion": "success"
+      },
+      {
+        "name": "Run macro adopter smoke",
+        "conclusion": "success"
+      },
+      {
+        "name": "Run OpenAPI adopter smoke",
+        "conclusion": "success"
+      },
+      {
+        "name": "Build openapi-to-innonetwork CLI",
+        "conclusion": "success"
+      },
+      {
+        "name": "Test openapi-to-innonetwork CLI",
+        "conclusion": "success"
+      },
+      {
+        "name": "Typecheck generated OpenAPI output",
+        "conclusion": "success"
+      },
+      {
+        "name": "Run quick benchmarks",
+        "conclusion": "success"
+      },
+      {
+        "name": "Retain raw benchmark diagnostics",
+        "conclusion": "success"
+      },
+      {
+        "name": "Run serial tests with coverage",
+        "conclusion": "success"
+      },
+      {
+        "name": "Generate runtime coverage report",
+        "conclusion": "success"
+      },
+      {
+        "name": "Run bounded target-sharded tests",
+        "conclusion": "success"
+      },
+      {
+        "name": "Run macro tests from source with coverage",
+        "conclusion": "success"
+      },
+      {
+        "name": "Generate macro coverage report",
+        "conclusion": "success"
+      },
+      {
+        "name": "Build DocC archives",
+        "conclusion": "success"
+      },
+      {
+        "name": "Verify public DocC archives",
+        "conclusion": "success"
+      },
+      {
+        "name": "Generate SBOMs (CycloneDX 1.5)",
+        "conclusion": "success"
+      },
+      {
+        "name": "Prepare release artifact manifest",
+        "conclusion": "success"
+      },
+      {
+        "name": "Upload release artifacts",
+        "conclusion": "success"
+      }
+    ],
+    "Release Candidate / Validate macOS Build": [
+      {
+        "name": "Checkout",
+        "conclusion": "success"
+      },
+      {
+        "name": "Select Xcode",
+        "conclusion": "success"
+      },
+      {
+        "name": "Cache SwiftPM artifacts",
+        "conclusion": "success"
+      },
+      {
+        "name": "Show Xcode and Swift versions",
+        "conclusion": "success"
+      },
+      {
+        "name": "Resolve dependencies",
+        "conclusion": "success"
+      },
+      {
+        "name": "Require SDK",
+        "conclusion": "success"
+      },
+      {
+        "name": "Build package for macOS",
+        "conclusion": "success"
+      }
+    ],
+    "Release Candidate / Validate iOS Build": [
+      {
+        "name": "Checkout",
+        "conclusion": "success"
+      },
+      {
+        "name": "Select Xcode",
+        "conclusion": "success"
+      },
+      {
+        "name": "Cache SwiftPM artifacts",
+        "conclusion": "success"
+      },
+      {
+        "name": "Show Xcode and Swift versions",
+        "conclusion": "success"
+      },
+      {
+        "name": "Resolve dependencies",
+        "conclusion": "success"
+      },
+      {
+        "name": "Require SDK",
+        "conclusion": "success"
+      },
+      {
+        "name": "Build package for iOS",
+        "conclusion": "success"
+      }
+    ],
+    "Release Candidate / Validate tvOS Build": [
+      {
+        "name": "Checkout",
+        "conclusion": "success"
+      },
+      {
+        "name": "Select Xcode",
+        "conclusion": "success"
+      },
+      {
+        "name": "Cache SwiftPM artifacts",
+        "conclusion": "success"
+      },
+      {
+        "name": "Show Xcode and Swift versions",
+        "conclusion": "success"
+      },
+      {
+        "name": "Resolve dependencies",
+        "conclusion": "success"
+      },
+      {
+        "name": "Require SDK",
+        "conclusion": "success"
+      },
+      {
+        "name": "Build package for tvOS",
+        "conclusion": "success"
+      }
+    ],
+    "Release Candidate / Validate watchOS Build": [
+      {
+        "name": "Checkout",
+        "conclusion": "success"
+      },
+      {
+        "name": "Select Xcode",
+        "conclusion": "success"
+      },
+      {
+        "name": "Cache SwiftPM artifacts",
+        "conclusion": "success"
+      },
+      {
+        "name": "Show Xcode and Swift versions",
+        "conclusion": "success"
+      },
+      {
+        "name": "Resolve dependencies",
+        "conclusion": "success"
+      },
+      {
+        "name": "Require SDK",
+        "conclusion": "success"
+      },
+      {
+        "name": "Build package for watchOS",
+        "conclusion": "success"
+      }
+    ],
+    "Release Candidate / Validate visionOS Build": [
+      {
+        "name": "Checkout",
+        "conclusion": "success"
+      },
+      {
+        "name": "Select Xcode",
+        "conclusion": "success"
+      },
+      {
+        "name": "Cache SwiftPM artifacts",
+        "conclusion": "success"
+      },
+      {
+        "name": "Show Xcode and Swift versions",
+        "conclusion": "success"
+      },
+      {
+        "name": "Resolve dependencies",
+        "conclusion": "success"
+      },
+      {
+        "name": "Require SDK",
+        "conclusion": "success"
+      },
+      {
+        "name": "Build package for visionOS",
+        "conclusion": "success"
+      }
+    ],
+    "CI Required": [
+      {
+        "name": "Checkout",
+        "conclusion": "success"
+      },
+      {
+        "name": "Require every planned CI result",
+        "conclusion": "success"
+      }
+    ]
+  }
+}
