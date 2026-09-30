@@ -23,7 +23,10 @@ part of this authorization.
 
 1. Integration: focused tests passed (86 runtime + 4 macro test functions;
    parameterized cases are reported separately by Swift Testing).
-2. Bounded scheduling primitives: pending.
+2. Bounded scheduling primitives: passed 11 test functions, including extreme
+   finite Double/Duration, relative-boundary and cancellation controls. Actual
+   ContinuousClock and SuspendingClock 24h slices cancel without fatal timer
+   conversion; the 24h value is a slice, not a total wait cap.
 3. Core deadline/queue/rate paths: pending.
 4. WebSocket/monitor/restored download paths: pending.
 5. Retry jitter/delay arithmetic: pending.
