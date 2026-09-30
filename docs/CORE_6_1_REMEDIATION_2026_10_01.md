@@ -66,7 +66,16 @@ part of this authorization.
    failure handling, and ten publication-doc fixtures include LC_ALL=C Unicode.
    Fixture realpath/locale assumptions and a legacy date/text contract mismatch
    were corrected without weakening the Ready validator; failed logs remain.
-9. Final frozen-source integration gates: pending.
+9. Final frozen-source integration gates: in progress. The first run at
+   `bbb53f0` stalled in the existing companion retry-executor test because the
+   seconds helper unnecessarily required elapsed wall time for ordinary waits.
+   Its bounded-shard logs and sampled stack were preserved; only the owned
+   stalled test process was stopped, not another build or a cleanup target.
+   A bounded one-shot reproducer failed before the correction and passed after
+   restoring the planned short-delay fast path. All 186 related test functions
+   passed; long-delay slice/cancellation controls still pass. The corrected
+   source will be refrozen before the final full run. No benchmark ran in the
+   incomplete first preflight.
 10. Exact candidate evidence and remaining acceptance boundaries: pending.
 
 Raw diagnostics and new execution logs are retained locally. Final counts,

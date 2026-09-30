@@ -7,6 +7,29 @@ import os
 
 @Suite("Retry delay arithmetic", .timeLimit(.minutes(1)))
 struct RetryTimingArithmeticTests {
+    @Test func shortCallerControlledSleepDoesNotRequireWallClockAdvance() async throws {
+        let sleeps = OSAllocatedUnfairLock(initialState: [Duration]())
+        let executor = NetworkRetryExecutor(
+            sleep: { duration in
+                try Task.checkCancellation()
+                let count = sleeps.withLock { values in
+                    values.append(duration)
+                    return values.count
+                }
+                // Bound the pre-fix reproducer instead of hanging the suite.
+                if count > 1 { throw RepeatedShortSleep() }
+            }, now: { Date(timeIntervalSince1970: 0) })
+        let request = URLRequest(url: URL(string: "https://example.test/closure-clock")!)
+        let result: Int = try await executor.execute(
+            retryPolicy: ExponentialBackoffRetryPolicy(maxRetries: 1, retryDelay: 1, jitterRatio: 0),
+            networkMonitor: nil, request: request,
+            operation: { index, _ in
+                if index == 0 { throw URLError(.timedOut) }
+                return 42
+            })
+        #expect(result == 42)
+        #expect(sleeps.withLock { $0 } == [.seconds(1)])
+    }
     @Test func hugeFiniteJitterDoesNotCreateInfiniteRandomRange() {
         let policy = ExponentialBackoffRetryPolicy(retryDelay: 30, jitterRatio: 1e308)
         for sample in [-1.0, -0.001, 0, 0.001, 1] {
@@ -120,6 +143,8 @@ struct RetryTimingArithmeticTests {
         }
     }
 }
+
+private struct RepeatedShortSleep: Error {}
 
 private struct InvalidComputedDelayPolicy: RetryPolicy {
     let delay: Double
