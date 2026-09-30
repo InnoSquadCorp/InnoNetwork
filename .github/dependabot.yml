@@ -1,19 +1,71 @@
-version: 2
-updates:
-  - package-ecosystem: "swift"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "09:00"
-      timezone: "Asia/Seoul"
-    open-pull-requests-limit: 5
-
-  - package-ecosystem: "github-actions"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "09:00"
-      timezone: "Asia/Seoul"
-    open-pull-requests-limit: 5
+{
+  "version": 2,
+  "updates": [
+    {
+      "package-ecosystem": "github-actions",
+      "directory": "/",
+      "schedule": {
+        "interval": "weekly",
+        "day": "monday",
+        "time": "09:00",
+        "timezone": "Asia/Seoul"
+      },
+      "open-pull-requests-limit": 5,
+      "groups": {
+        "actions-minor-patch": {
+          "patterns": [
+            "*"
+          ],
+          "update-types": [
+            "minor",
+            "patch"
+          ]
+        }
+      },
+      "commit-message": {
+        "prefix": "chore(ci)"
+      },
+      "labels": [
+        "dependencies",
+        "github-actions",
+        "release-validation"
+      ]
+    },
+    {
+      "package-ecosystem": "swift",
+      "directories": [
+        "/",
+        "/Tools/openapi-to-innonetwork"
+      ],
+      "schedule": {
+        "interval": "weekly",
+        "day": "monday",
+        "time": "09:30",
+        "timezone": "Asia/Seoul"
+      },
+      "open-pull-requests-limit": 3,
+      "groups": {
+        "swift-minor-patch": {
+          "patterns": [
+            "*"
+          ],
+          "exclude-patterns": [
+            "github.com/swiftlang/swift-syntax"
+          ],
+          "update-types": [
+            "minor",
+            "patch"
+          ]
+        }
+      },
+      "commit-message": {
+        "prefix": "chore(deps)"
+      },
+      "labels": [
+        "dependencies",
+        "swift",
+        "release-validation"
+      ]
+    }
+  ]
+}
