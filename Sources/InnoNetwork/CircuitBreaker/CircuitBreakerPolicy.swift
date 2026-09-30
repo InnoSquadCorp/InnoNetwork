@@ -187,7 +187,7 @@ package actor CircuitBreakerRegistry {
             // earlier than `openedAt` — both indicate the open window has
             // outlived its monotone deadline.
             let elapsed = now.timeIntervalSince(openedAt)
-            if elapsed < 0 || elapsed >= resetAfter.timeInterval || now >= until {
+            if elapsed < 0 || elapsed >= resetAfter / .seconds(1) || now >= until {
                 let probe = CircuitBreakerProbe(key: key, id: UUID())
                 states[key] = Entry(
                     mode: .halfOpen(probeID: probe.id, successCount: 0, resetAfter: resetAfter),
@@ -202,7 +202,7 @@ package actor CircuitBreakerRegistry {
         case .halfOpen(let probeID, let successCount, let resetAfter):
             guard probeID == nil else {
                 throw NetworkError.underlying(
-                    SendableUnderlyingError(CircuitBreakerOpenError(host: key, retryAfter: resetAfter.timeInterval)),
+                    SendableUnderlyingError(CircuitBreakerOpenError(host: key, retryAfter: resetAfter / .seconds(1))),
                     nil
                 )
             }
@@ -293,7 +293,7 @@ package actor CircuitBreakerRegistry {
                 states[key] = Entry(
                     mode: .open(
                         openedAt: now,
-                        until: now.addingTimeInterval(policy.resetAfter.timeInterval),
+                        until: now.addingTimeInterval(policy.resetAfter / .seconds(1)),
                         resetAfter: policy.resetAfter
                     ),
                     lastAccessAt: now
@@ -311,12 +311,11 @@ package actor CircuitBreakerRegistry {
         case .halfOpen(let probeID, let successCount, let resetAfter):
             guard probe?.key == key, probe?.id == probeID else { return }
             if isFailure {
-                let doubled = min(resetAfter.timeInterval * 2, policy.maxResetAfter.timeInterval)
-                let next = Duration.milliseconds(Int64((doubled * 1000).rounded()))
+                let next = Self.cappedBackoff(resetAfter: resetAfter, maximum: policy.maxResetAfter)
                 states[key] = Entry(
                     mode: .open(
                         openedAt: now,
-                        until: now.addingTimeInterval(next.timeInterval),
+                        until: now.addingTimeInterval(next / .seconds(1)),
                         resetAfter: next
                     ),
                     lastAccessAt: now
@@ -343,6 +342,13 @@ package actor CircuitBreakerRegistry {
                 }
             }
         }
+    }
+
+    /// Compare against the cap before addition; do not round-trip a Duration
+    /// through floating-point milliseconds or an Int64 conversion.
+    package static func cappedBackoff(resetAfter: Duration, maximum: Duration) -> Duration {
+        let current = min(resetAfter, maximum)
+        return current >= maximum - current ? maximum : current + current
     }
 
     private func garbageCollect(now: Date) {
