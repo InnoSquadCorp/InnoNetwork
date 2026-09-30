@@ -52,6 +52,7 @@ extension EndpointDefinitionExpansion {
         guard let structure = declaration.as(StructDeclSyntax.self) else {
             throw fail("can only be attached to a struct.", at: declaration)
         }
+        try validateUnconditionalMembers(in: structure)
         guard declaresTypeAlias(named: "APIResponse", in: structure) else {
             throw fail("requires an explicit typealias APIResponse.", at: structure.name)
         }

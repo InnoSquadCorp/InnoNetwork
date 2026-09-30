@@ -20,6 +20,7 @@ public enum EndpointDefinitionExpansion {
                 id: "api-definition-non-struct"
             ).error(at: declaration)
         }
+        try validateUnconditionalMembers(in: structDeclaration)
         if let conformance = directAPIDefinitionConformance(in: structDeclaration) {
             throw InnoNetworkMacroDiagnostic(
                 "@APIDefinition adds APIDefinition conformance; remove the explicit conformance from the struct declaration.",
