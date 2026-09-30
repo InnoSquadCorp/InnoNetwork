@@ -112,7 +112,8 @@ extension RequestExecutor {
                     request: identityRequest,
                     policy: configuration.requestCoalescingPolicy,
                     refreshLane: refreshLane,
-                    cacheMutationGeneration: cacheMutationToken?.generation
+                    cacheMutationGeneration: cacheMutationToken?.generation,
+                    maximumResponseBytes: configuration.responseBodyBufferingPolicy.maxBytes
                 ) {
                     // A follower waits for an already-running physical request
                     // only within the same mutation generation.

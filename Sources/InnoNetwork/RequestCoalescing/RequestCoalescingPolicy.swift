@@ -70,12 +70,16 @@ package struct RequestDedupKey: Hashable, Sendable {
     /// A successful unsafe response advances this target's cache generation.
     /// Later GETs must not join a physical GET from the old generation.
     let cacheMutationGeneration: UUID?
+    /// Collection failures are shared too. Callers with different effective
+    /// limits must not inherit the leader's buffering policy.
+    let maximumResponseBytes: Int64?
 
     init?(
         request: URLRequest,
         policy: RequestCoalescingPolicy,
         refreshLane: UUID? = nil,
-        cacheMutationGeneration: UUID? = nil
+        cacheMutationGeneration: UUID? = nil,
+        maximumResponseBytes: Int64? = nil
     ) {
         guard policy.isEnabled else { return nil }
         let method = request.httpMethod ?? HTTPMethod.get.rawValue
@@ -94,6 +98,7 @@ package struct RequestDedupKey: Hashable, Sendable {
         self.body = request.httpBody
         self.refreshLane = refreshLane
         self.cacheMutationGeneration = cacheMutationGeneration
+        self.maximumResponseBytes = maximumResponseBytes
     }
 }
 
