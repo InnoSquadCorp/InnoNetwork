@@ -133,6 +133,25 @@ annotate "$current_repo" "5.0.0"
 expect_success "annotated stable SemVer at exact main HEAD with ready notes" \
     run_validator "$current_repo" "5.0.0"
 
+new_repo "6.1.0"
+mkdir -p "$current_repo/docs/releases/archive"
+printf '<!-- release-status: draft -->\n# Historical superseded roadmap\n' \
+    > "$current_repo/docs/releases/archive/6.1.0-superseded-roadmap.md"
+git -C "$current_repo" add docs/releases/archive
+git -C "$current_repo" commit -q -m "preserve unpublished roadmap"
+annotate "$current_repo" "6.1.0"
+expect_success "6.1 canonical Ready notes coexist with the archived Draft roadmap" \
+    run_validator "$current_repo" "6.1.0"
+
+new_repo "6.1.0" 1 draft
+printf '<!-- release-status: ready -->\n# Stale candidate filename\n' \
+    > "$current_repo/docs/releases/6.1.0-encoded-request-candidate.md"
+git -C "$current_repo" add docs/releases/6.1.0-encoded-request-candidate.md
+git -C "$current_repo" commit -q -m "ready noncanonical notes cannot approve release"
+annotate "$current_repo" "6.1.0"
+expect_failure "6.1 Draft canonical notes are not overridden by another Ready file" \
+    "is marked 'draft'" run_validator "$current_repo" "6.1.0"
+
 new_repo "5.0.0"
 printf '\n`4.0.0` is the latest tagged stable release.\n' >> "$current_repo/README.md"
 git -C "$current_repo" add README.md

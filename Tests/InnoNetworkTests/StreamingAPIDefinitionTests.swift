@@ -619,6 +619,38 @@ private func streamingEventName(_ event: NetworkEvent) -> String {
 
 @Suite("Streaming API Definition Tests")
 struct StreamingAPIDefinitionTests {
+    @Test("Frame decoder cancellation does not become decoding failure or reconnect", arguments: [0, 1, 2])
+    func streamFrameCancellation(representation: Int) async throws {
+        struct Definition: StreamingAPIDefinition {
+            typealias Output = String
+            let failure: any Error
+            var method: HTTPMethod { .get }
+            var path: String { "/cancelled-frame" }
+            var sessionAuthentication: SessionAuthentication { .anonymous }
+            var resumePolicy: StreamingResumePolicy { .lastEventID(maxAttempts: 2, retryDelay: 0) }
+            func decode(line: String) throws -> String? { throw failure }
+        }
+        let failures: [any Error] = [CancellationError(), URLError(.cancelled), NetworkError.cancelled]
+        let definition = Definition(failure: failures[representation])
+        let baseURL = uniqueStreamingBaseURL()
+        let streamURL = baseURL.appendingPathComponent(definition.path)
+        SequencedStreamingURLProtocol.enqueue(
+            url: streamURL,
+            steps: [.success(statusCode: 200, data: Data("frame\n".utf8))])
+        let client = DefaultNetworkClient(
+            configuration: NetworkConfiguration(baseURL: baseURL), session: makeSequencedStreamingURLSession())
+        do {
+            for try await _ in client.stream(definition) { Issue.record("Unexpected frame") }
+            Issue.record("Expected cancellation")
+        } catch {
+            guard case .cancelled = error else {
+                Issue.record("Cancellation changed to \(error)")
+                return
+            }
+        }
+        #expect(SequencedStreamingURLProtocol.capturedRequests(for: streamURL).count == 1)
+    }
+
 
     @Test("stream() throws when the URL session does not implement bytes()")
     func streamUnsupportedTransportThrows() async throws {

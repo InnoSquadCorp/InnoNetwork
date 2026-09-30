@@ -53,17 +53,23 @@ codec and schema types remain Provisionally Stable.
 
 ### Next minor: buffered custom codecs
 
-Endpoint macros reject member-level `#if` declarations rather than silently
-omitting payloads or policies. Put conditional compilation around the complete
-endpoint declaration, or use the manual endpoint contract. This admission rule
-is shared by JSON and encoded companion macros, including inactive branches.
+The Stable JSON macro preserves 6.0 conditional helpers and explicit policy
+witnesses. Conditional payload declarations are not inferred: they now produce
+a warning without changing the generated unconditional payload contract. Put
+`#if` around the complete endpoint or provide an unconditional `Parameter` +
+`parameters` pair when the payload varies by build. New encoded companion
+macros reject member-level `#if`, including inactive branches, because their
+generated factories must not silently omit payloads or copied policies.
 
 <!-- encoded-request-candidate: 6.1.0 -->
 
 `EncodedRequest`, `EncodedRequestBody`, `EncodedRequestOptions` and
 `EncodedRequestClient` form the new supported binary adapter boundary.
 `EncodedCodecMeasurement` supplies payload-free opt-in timing; `EncodedPayloadFailure`
-supplies stable numeric codec reasons. No user callback executes under the payload lock.
+supplies stable numeric codec reasons. Codec observation callbacks execute outside
+the payload lock. The synchronous user encoder executes inside the invocation's
+private lock to memoize its result exactly once; keep it nonblocking. This is
+not a promise of reentrant encoding or forced cancellation of synchronous work.
 `AnyResponseDecoder.noContent(statusCodes:)` separates HTTP no-content from an
 empty codec message. These additions are unpublished; they do not alter 6.0.0.
 Body bytes are prepared once per invocation and reused on retry/refresh. Per-request

@@ -806,6 +806,8 @@ package struct StreamingExecutor: Sendable {
             let decoded: StreamingDecodedFrame<T.Output>
             do {
                 decoded = try decode(line)
+            } catch  where NetworkError.isCancellation(error) {
+                throw NetworkError.cancelled
             } catch {
                 throw NetworkError.decoding(
                     stage: .streamFrame,

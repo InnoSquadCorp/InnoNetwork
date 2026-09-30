@@ -64,11 +64,8 @@ public extension EncodedRequestOptions {
             copy.queryItems += try encoder.encode(query)
             guard !Task.isCancelled else { throw NetworkError.cancelled }
             return copy
-        } catch is CancellationError {
+        } catch  where NetworkError.isCancellation(error) {
             throw .cancelled
-        } catch let error as NetworkError {
-            if case .cancelled = error { throw .cancelled }
-            throw .configuration(reason: .invalidPayload(.encoding))
         } catch {
             throw .configuration(reason: .invalidPayload(.encoding))
         }

@@ -7,6 +7,53 @@ import os
 
 @Suite("Stable encoded requests")
 struct EncodedRequestTests {
+    @Test("Response codec cancellation is not decoding failure or a retryable transport error")
+    func responseCodecCancellation() async throws {
+        let errors: [any Error] = [CancellationError(), URLError(.cancelled), NetworkError.cancelled]
+        for error in errors {
+            let session = MockURLSession()
+            session.setMockResponse(statusCode: 200, data: Data([42]))
+            let client = DefaultNetworkClient(
+                configuration: .advanced(
+                    baseURL: URL(string: "https://example.com")!,
+                    resilience: .init(retry: ExponentialBackoffRetryPolicy(maxRetries: 1, retryDelay: 0))),
+                session: session)
+            let value = EncodedRequest<Data>(
+                method: .get, path: "/binary", auth: .anonymous,
+                responseDecoder: .init { _, _ in throw error })
+            do {
+                _ = try await client.request(value)
+                Issue.record("Expected cancellation")
+            } catch {
+                guard case .cancelled = error else {
+                    Issue.record("Cancellation changed to \(error)")
+                    continue
+                }
+            }
+            #expect(session.capturedRequestsInOrder.count == 1)
+        }
+    }
+
+    @Test("Codec cancellation keeps the typed cancellation contract before transport")
+    func codecCancellation() async throws {
+        let errors: [any Error] = [CancellationError(), URLError(.cancelled), NetworkError.cancelled]
+        for error in errors {
+            let session = MockURLSession()
+            let client = DefaultNetworkClient(
+                configuration: .safeDefaults(baseURL: URL(string: "https://example.com")!), session: session)
+            let value = request(body: .init(contentType: "application/octet-stream") { throw error })
+            do {
+                _ = try await client.request(value)
+                Issue.record("Expected cancellation")
+            } catch {
+                guard case .cancelled = error else {
+                    Issue.record("Cancellation changed to \(error)")
+                    continue
+                }
+            }
+            #expect(session.capturedRequestsInOrder.isEmpty)
+        }
+    }
     @Test func forcedRepreparationDoesNotReencodeFailure() throws {
         let count = OSAllocatedUnfairLock(initialState: 0)
         let executable = EncodedRequestExecutable(
