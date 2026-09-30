@@ -12,6 +12,15 @@ import OSLog
 /// The cache enforces a synchronous LRU bound on every write so the disk
 /// footprint stays within the configured byte and entry budgets.
 ///
+/// ## Directory ownership
+///
+/// Use one active owner per directory. Share this actor among clients in a
+/// process; use distinct subdirectories for independent processes/extensions.
+/// There is no interprocess lock or index coordination. Before reopening a
+/// directory, finish all operations and stop using the old owner. Concurrent
+/// owners can overwrite indexes or scrub each other's staged bodies and are
+/// unsupported, including when using an App Group container.
+///
 /// ## Reentrancy invariant
 ///
 /// The actor intentionally performs body-file I/O outside actor isolation.
@@ -122,7 +131,7 @@ public actor PersistentResponseCache: ResponseCache {
     private var index: Index
     private var entryIDsByDiskKey: [DiskKey: Set<String>] = [:]
     private var runningTotalBytes: Int
-    private var telemetryEvents: [PersistentResponseCacheTelemetryEvent]
+    private var telemetryEvents: PersistentCacheTelemetryBuffer
     /// Cumulative cache hits since this actor was constructed.
     /// Saturates at `Int.max` rather than overflowing.
     private var hitCount: Int = 0
@@ -266,7 +275,7 @@ public actor PersistentResponseCache: ResponseCache {
         if scrubbedBodies > 0 {
             telemetry.append(.scrubbedEntries(reason: .unreferencedBody, count: scrubbedBodies, byteCount: 0))
         }
-        self.telemetryEvents = telemetry
+        self.telemetryEvents = PersistentCacheTelemetryBuffer(telemetry)
         // Seed the eviction counter from any scrubs the open-time pipeline
         // already performed so `statistics().evictionCount` reflects the
         // entire actor lifetime rather than only post-init activity.
@@ -590,16 +599,18 @@ public actor PersistentResponseCache: ResponseCache {
         )
     }
 
-    /// Returns accumulated operational events without clearing them.
+    /// Returns totals since the last drain (or initialization), aggregated by
+    /// reason in first-observed reason order. At most one event per reason is
+    /// retained (currently five), even if callers never drain. Counts and bytes
+    /// saturate at `Int.max`; this is not a chronological event log.
     public func telemetrySnapshot() -> [PersistentResponseCacheTelemetryEvent] {
-        telemetryEvents
+        telemetryEvents.events
     }
 
-    /// Returns accumulated operational events and clears the in-memory buffer.
+    /// Returns the same aggregated totals as ``telemetrySnapshot()`` and starts
+    /// a new aggregation epoch. Lifetime statistics are not reset.
     public func drainTelemetryEvents() -> [PersistentResponseCacheTelemetryEvent] {
-        let events = telemetryEvents
-        telemetryEvents.removeAll(keepingCapacity: true)
-        return events
+        telemetryEvents.drain()
     }
 
     private func shouldStore(key: DiskKey, responseHeaders: [String: String]) -> Bool {

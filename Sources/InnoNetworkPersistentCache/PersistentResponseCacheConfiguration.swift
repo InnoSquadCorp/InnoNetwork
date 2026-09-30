@@ -79,6 +79,9 @@ public struct PersistentResponseCacheConfiguration: Sendable, Equatable {
     /// excluded from backup, but the supplied root is not because it may also
     /// contain app-owned files. Unrelated files inside the directory are never
     /// deleted.
+    /// Only one owner may actively use this directory. The cache does not
+    /// coordinate independent instances or processes; use separate directories
+    /// for app extensions and share one actor among in-process clients.
     public let directoryURL: URL
     /// Total byte budget across all body files. Eviction fires synchronously
     /// when this is exceeded.
@@ -137,6 +140,8 @@ public struct PersistentResponseCacheConfiguration: Sendable, Equatable {
     }
 
     /// Standard subdirectory for storing persistent cache files in an App Group container.
+    /// This locates storage only; it does not provide concurrent multi-process
+    /// access. Append an owner-specific subdirectory for each process/extension.
     ///
     /// App Group containers are only available on Apple platforms (Darwin).
     /// Calling this on other platforms throws
