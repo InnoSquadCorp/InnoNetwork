@@ -30,9 +30,10 @@ class ConsumerCIContractTest < Minitest::Test
   def test_lanes_cannot_skip_or_ignore_failure
     ConsumerCIContract::LANES.each do |id|
       %w[if continue-on-error needs].each do |key|
+        old = @workflow['jobs'][id][key]
         @workflow['jobs'][id][key] = true
         assert_raises(ArgumentError) { validate }
-        @workflow['jobs'][id].delete(key)
+        old.nil? ? @workflow['jobs'][id].delete(key) : @workflow['jobs'][id][key] = old
       end
     end
   end
