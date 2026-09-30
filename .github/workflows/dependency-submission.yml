@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  workflow_run:
+    workflows: [CI]
+    types: [requested, in_progress]
 
 concurrency:
   # Every main SHA is a valid future PR base and therefore needs its own snapshot.
@@ -16,17 +19,33 @@ permissions:
 jobs:
   submit:
     name: Submit Swift Dependencies
-    if: github.ref == 'refs/heads/main'
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name != 'workflow_run' ||
+       (github.event.workflow_run.event == 'workflow_dispatch' &&
+        github.event.workflow_run.head_branch == 'main' &&
+        startsWith(github.event.workflow_run.display_title, 'CI / Dependabot merge #')))
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: write
+      actions: read
+      pull-requests: read
 
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          ref: ${{ github.workflow_sha }}
           persist-credentials: false
+
+      - name: Verify actual current-main recovery origin
+        if: github.event_name == 'workflow_run'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python3 -B Scripts/verify-recovery-run.py
 
       - name: Verify dependency snapshot fixtures
         run: bash Scripts/tests/test_generate_dependency_snapshot.sh
