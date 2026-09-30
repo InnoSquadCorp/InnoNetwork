@@ -107,6 +107,15 @@ package extension InnoNetworkClock {
     }
 
     func sleep(forSeconds seconds: TimeInterval) async throws {
-        try await TimingBudget(seconds: seconds, startedAt: monotonicNow()).sleep(using: self)
+        guard seconds.isFinite else { throw SchedulingTimeFailure.nonFiniteInterval }
+        // Preserve one-shot behavior for ordinary waits, including the public
+        // caller-controlled sleep closure that need not advance wall-clock now.
+        if seconds <= SchedulingTime.maximumSleepSeconds {
+            try Task.checkCancellation()
+            try await sleep(for: .seconds(max(0, seconds)))
+            try Task.checkCancellation()
+        } else {
+            try await TimingBudget(seconds: seconds, startedAt: monotonicNow()).sleep(using: self)
+        }
     }
 }
