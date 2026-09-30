@@ -50,10 +50,13 @@ required_paths=(
   docs/Migration-6.0.0.md
   docs/ROADMAP.md
   docs/releases/6.0.0.md
-  docs/releases/6.1.0.md
   docs/site/index.html
 )
 
+# New candidates use the canonical version path. Only the archived, superseded
+# roadmap is part of the historical 6.0 scope contract. Immutable old refs still
+# carry that roadmap at its original path and must remain verifiable.
+superseded_notes_path="docs/releases/archive/6.1.0-superseded-roadmap.md"
 validation_root="$repo_root"
 temporary_root=""
 cleanup() {
@@ -66,6 +69,10 @@ trap cleanup EXIT
 if [[ -n "$git_ref" ]]; then
   resolved_ref="$(git -C "$repo_root" rev-parse --verify "${git_ref}^{commit}" 2>/dev/null || true)"
   [[ -n "$resolved_ref" ]] || fail "ref '$git_ref' does not resolve to a commit"
+  if ! git -C "$repo_root" cat-file -e "${resolved_ref}:${superseded_notes_path}" 2>/dev/null; then
+    superseded_notes_path="docs/releases/6.1.0.md"
+  fi
+  required_paths+=("$superseded_notes_path")
   temporary_root="$(mktemp -d "${TMPDIR:-/tmp}/innonetwork-6-release-state.XXXXXX")"
   validation_root="$temporary_root"
   for path in "${required_paths[@]}"; do
@@ -75,6 +82,10 @@ if [[ -n "$git_ref" ]]; then
     git -C "$repo_root" cat-file blob "${resolved_ref}:${path}" > "$validation_root/$path"
   done
 else
+  if [[ ! -f "$validation_root/$superseded_notes_path" ]]; then
+    superseded_notes_path="docs/releases/6.1.0.md"
+  fi
+  required_paths+=("$superseded_notes_path")
   for path in "${required_paths[@]}"; do
     [[ -f "$validation_root/$path" ]] || fail "missing $path"
   done
@@ -91,7 +102,7 @@ docc_migration="$validation_root/Sources/InnoNetwork/InnoNetwork.docc/MigrationT
 migration="$validation_root/docs/Migration-6.0.0.md"
 notes="$validation_root/docs/releases/6.0.0.md"
 roadmap="$validation_root/docs/ROADMAP.md"
-superseded_notes="$validation_root/docs/releases/6.1.0.md"
+superseded_notes="$validation_root/$superseded_notes_path"
 site="$validation_root/docs/site/index.html"
 
 require_line() {

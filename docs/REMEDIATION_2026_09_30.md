@@ -47,10 +47,13 @@ Adapter regression commits are `6919cdc` (conditional declarations and controls)
 and `cee712d` (escaped identifiers, options and helper collision). No separate
 protobuf transport/retry engine was introduced.
 
-The F1 fix intentionally narrows accepted syntax: `#if` inside an endpoint's
-direct member list is diagnosed. It does not implement arbitrary conditional
-macro inference. Put `#if` around complete declarations or use the manual
-endpoint contract. See [migration notes](Migration-EncodedRequests.md).
+The original F1 fix narrowed accepted syntax by rejecting `#if` inside an
+endpoint's direct member list. The subsequent 6.1 compatibility correction
+supersedes that choice for the already-Stable JSON macro: preserve 6.0 generated
+semantics and warn on conditional payloads. New encoded companions retain strict
+rejection. Neither path implements arbitrary conditional macro inference. See
+[migration notes](Migration-EncodedRequests.md) and the compatibility follow-up
+in [the hardening record](PRE_RELEASE_HARDENING_2026_09_30.md).
 
 F5 was checked against the official botocore implementation, specifically
 [`SigV4Auth._normalize_url_path`](https://github.com/boto/botocore/blob/21f2f87daead94d25b0cf562422e752e9c2accc2/botocore/auth.py)

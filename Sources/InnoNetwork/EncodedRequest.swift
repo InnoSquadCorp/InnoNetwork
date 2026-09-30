@@ -217,7 +217,7 @@ struct EncodedRequestExecutable<Output: Sendable>: SingleRequestExecutable, Enco
                 do {
                     data = try body.encode()
                     byteCount = data.count
-                } catch is CancellationError {
+                } catch  where NetworkError.isCancellation(error) {
                     throw NetworkError.cancelled
                 } catch let failure as EncodedPayloadFailure {
                     throw NetworkError.configuration(reason: .invalidPayload(failure))
@@ -242,7 +242,8 @@ struct EncodedRequestExecutable<Output: Sendable>: SingleRequestExecutable, Enco
                     duration: started.duration(to: .now), succeeded: succeeded)
             )
         }
-        // User callbacks run outside the memoization lock, including on failure.
+        // Observation callbacks run outside the memoization lock, including on
+        // failure. The synchronous encoder above runs inside it to encode once.
         if let measurement { base.options.codecObserver?(measurement) }
         return .data(try result.get())
     }
@@ -261,7 +262,7 @@ struct EncodedRequestExecutable<Output: Sendable>: SingleRequestExecutable, Enco
             try Task.checkCancellation()
             succeeded = true
             return result
-        } catch is CancellationError {
+        } catch  where NetworkError.isCancellation(error) {
             throw NetworkError.cancelled
         } catch let error as NetworkError {
             throw error

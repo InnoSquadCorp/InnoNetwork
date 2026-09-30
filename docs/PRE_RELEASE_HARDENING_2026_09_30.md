@@ -104,7 +104,7 @@ or publication was performed in this phase.
 
 The legacy `6.0-release-state: OK (ready)` output checks the historical 6.0
 contract, not this later encoded-request candidate's release approval. Its own
-[candidate notes](releases/6.1.0-encoded-request-candidate.md) remain Draft.
+[candidate notes](releases/6.1.0.md) remain Draft.
 The public core 6.1 tag is absent; normal companion CI/public resolution remains
 a separate publication dependency. Pinned paired-candidate CI is additional
 exact-source evidence, not a bypass of the public release gate.
@@ -115,3 +115,68 @@ No full UI/accessibility acceptance, consumer app source migration or multi-writ
 cache support is claimed. Earlier WebSocket performance anomalies remain
 unexplained; later passing guards do not retroactively diagnose them. A green
 suite does not prove the absence of further defects.
+
+## 6.1 compatibility correction — local follow-up
+
+Input: core `79e1900ed283c129ab9523c7661c2f1a8e9cdc3c`, paired with unchanged
+adapter `4411f763ccfb0af79e6ff3f828399133fef5f0c6`. The maintainer authorized
+corrections while retaining the 6.1 target. These results apply to the subsequent
+local working-tree patch, not to the previously pushed SHA or its CI results.
+
+### Decision and failure contract
+
+- Problem: the blanket conditional-member macro rejection broke accepted Stable
+  6.0 declarations; the operation adapter's generic-bound migration was missing;
+  encoder-lock wording overstated the guarantee; the historical roadmap occupied
+  the real 6.1 release-note path and contradicted its future Ready transition.
+- Constraints: retain the 6.0 Stable generated contract, binary/macro-first APIs,
+  existing public symbol budgets and release gates. Keep the candidate Draft;
+  no staging, repository commits, push, merge, tag or publication in this phase.
+- Alternatives: keep the blanket restriction and use a major release, or restore
+  JSON source compatibility and issue a minor. Conditional branch inference is
+  not a safe replacement because it can silently change old requests' wire shape.
+- Decision: choose the minor-compatible approach. JSON accepts conditional
+  helpers/policies and warns on conditional payloads without changing inference.
+  An unconditional manual payload pair is authoritative. Encoded companions
+  retain their stricter new contract. Document the Provisionally Stable operation
+  migration and the actual synchronous encoder lock rather than changing runtime
+  synchronization. Archive the superseded roadmap and restore canonical 6.1 notes.
+- Failure behavior: warning-as-error consumers must migrate conditional payloads
+  to an unconditional manual pair or whole-endpoint conditional. No claim of full
+  conditional inference is made. Missing historical scope or non-Ready canonical
+  notes still fails validation; immutable old refs retain their legacy path.
+- Validation: macro snapshots, actual compiler controls against published 6.0,
+  Debug/Release external execution, paired Protobuf negative/positive compiler
+  checks, full ordinary core tests, migration compilation, release fixtures and
+  formatting/documentation/API contracts. Final-SHA remote gates remain separate.
+
+### Fresh correction evidence
+
+Local Xcode 27 / Swift 6.4 logs are in `.build/fix-6.1-compatibility/`.
+
+| Correction | Fresh result |
+| --- | --- |
+| Stable JSON admission | Four macro tests with twelve cases pass: conditional payloads (including nested/custom/inactive conditions), escaped query and manual witnesses, unrelated helpers/policies/local names/nested types, and authoritative manual payloads. |
+| External compatibility | The same minor consumer and Operation migration compile with published 6.0 (`9d8053d`) and corrected sources, both with and without DEBUG: eight successful compiler comparisons. The real candidate consumer executes in Debug and Release, checking selected headers, manual JSON body and unchanged omitted legacy payload. |
+| Invalid JSON declarations | The existing five negative compiler fixtures fail with their expected diagnostics against the rebuilt actual plugin; positive controls before and after pass. This is direct compiler validation, not five fresh package builds. |
+| Protobuf contract | All 43 runtime and two macro tests pass with the local corrected core. All 22 negative compiler cases, including three conditional variants, remain rejected; two passing controls succeed. |
+| Core regression | One fresh full `swift test --no-parallel` passes: 1,992 registered tests, 1,988 ordinary passes and four explicit opt-in live skips. Repeated focused/parameterized runs are not added to that inventory. |
+| Migration and static checks | All four opted-in migration examples compile. Formatting passes for 543 files; docs/API contract (1,764 runtime declarations), changelog and provisional enum ledger pass. No public symbol budget changed. |
+| Release boundary | Historical state fixtures and 22 tag-validator fixtures pass, including canonical Ready notes beside an archived Draft, rejection of missing history and rejection of a Ready noncanonical file. The new validator also passes against the immutable published `6.0.0` ref. All test tags/commits are confined to disposable fixture repositories. |
+
+The initial pre-fix macro failures remain in `before-macro.log`. The first
+post-fix snapshot expectations had incorrect visibility/type spelling and a
+single-line nested-type formatting mismatch; those test-fixture errors were
+corrected without another generated-contract change. Final evidence is
+`macro-regression.log`. An initial diagnostic shell harness hit macOS Bash's
+empty-array/nounset behavior; `compiler-controls-final.log` records the corrected
+complete comparison. Neither fixture failure is reported as a runtime defect.
+
+Production changes here are compiler-host macro admission/diagnostics and an
+encoder comment only. Runtime synchronization, transport, dependency graph,
+performance thresholds and CI workflows are unchanged. Earlier full preflight,
+TSAN, SDK and physical-loopback results above remain earlier-source evidence;
+they were not rerun or relabeled fresh for this patch. Updated remote CI,
+protected integration, final-main Release validation and candidate Ready
+approval are still required. The adapter's existing pinned candidate SHA is not
+silently advanced to an uncommitted working tree.

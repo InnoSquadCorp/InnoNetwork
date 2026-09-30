@@ -12,7 +12,10 @@ Versioning.
 - Add the Stable buffered `EncodedRequest` / `EncodedRequestClient` boundary
   for custom codecs without GeneratedClientSupport SPI or Codable requirements.
 - Share operation deadlines/cancellation with binary-only clients, memoize body
-  bytes per invocation, and tighten response budgets before collection.
+  bytes per invocation, and tighten response budgets before collection. The
+  Provisionally Stable `OperationNetworkClient` now has a `Base: Sendable` type
+  bound; existing generic JSON extensions/wrappers must explicitly constrain
+  `Base: NetworkClient` (see the compile-checked migration example).
 - Add payload-free `EncodedPayloadFailure` and configuration reason `invalidPayload`;
   exhaustive switches over configuration reasons must handle the new case.
 - Separate explicit HTTP no-content decoding from empty codec messages.
@@ -23,11 +26,18 @@ Versioning.
 
 ### Fixed
 
+- Preserve bounded error-snapshot metadata when snapshots are wrapped again.
+- Preserve cancellation through JSON, encoded and streaming codecs without
+  changing direct custom-decoder error contracts.
+- Do not start refresh-failure cooldowns for provider cancellation.
 - Bound persistent-cache telemetry by aggregating totals per reason between
   drains, saturating counters instead of retaining unlimited event batches.
   Document single-owner directory usage, including App Group extensions.
-- Reject member-level conditional endpoint declarations rather than silently
-  dropping payload or policy; place `#if` around the complete endpoint instead.
+- Preserve Stable JSON macro conditional helpers and policy witnesses. Warn on
+  conditional payload declarations without changing 6.0 inference; use a whole
+  endpoint conditional or unconditional manual payload pair for varying input.
+  New encoded companion macros reject conditional members to prevent omitted
+  payloads or policies in their generated factories.
 - Preserve escaped Swift identifiers and qualify generated path property access.
 - Partition request coalescing by effective response collection limit.
 - Preserve trailing and encoded slash boundaries in non-S3 AWS canonical paths.

@@ -378,8 +378,10 @@ struct RefreshCoalescerRaceTests {
         #expect(observedCount == 2, "fresh coordinator must drive its own refresh — got \(observedCount)")
     }
 
-    @Test("Refresh that throws CancellationError returns coordinator to idle, allowing a fresh restart")
-    func cancelledRefreshReturnsToIdleAndPermitsRestart() async throws {
+    @Test("Provider cancellation returns coordinator to idle without failure cooldown", arguments: [0, 1, 2])
+    func cancelledRefreshReturnsToIdleAndPermitsRestart(representation: Int) async throws {
+        let cancellations: [any Error] = [CancellationError(), URLError(.cancelled), NetworkError.cancelled]
+        let cancellation = cancellations[representation]
         actor InvocationLog {
             private(set) var attempts: Int = 0
             func bump() -> Int {
@@ -398,7 +400,7 @@ struct RefreshCoalescerRaceTests {
                     // through the actor's reducer and reset state to `.idle`
                     // before re-throwing, so the next caller is not blocked
                     // observing a stale `.inFlight` phase.
-                    throw CancellationError()
+                    throw cancellation
                 }
                 return "new"
             }

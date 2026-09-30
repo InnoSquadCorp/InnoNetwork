@@ -67,13 +67,18 @@ public struct SendableUnderlyingError: Error, Sendable, Equatable, CustomStringC
     }
 
     public init(_ error: Error) {
+        if let snapshot = error as? Self {
+            self.init(
+                domain: snapshot.domain, code: snapshot.code, message: snapshot.message,
+                failureReason: snapshot.failureReason, recoverySuggestion: snapshot.recoverySuggestion,
+                underlyingChain: Array(snapshot.underlyingChain.prefix(Self.maxUnderlyingDepth)))
+            return
+        }
         let nsError = error as NSError
-        self.domain = nsError.domain
-        self.code = nsError.code
-        self.message = nsError.localizedDescription
-        self.failureReason = nsError.localizedFailureReason
-        self.recoverySuggestion = nsError.localizedRecoverySuggestion
-        self.underlyingChain = Self.captureChain(from: nsError)
+        self.init(
+            domain: nsError.domain, code: nsError.code, message: nsError.localizedDescription,
+            failureReason: nsError.localizedFailureReason, recoverySuggestion: nsError.localizedRecoverySuggestion,
+            underlyingChain: Self.captureChain(from: nsError))
     }
 
     public static func == (lhs: SendableUnderlyingError, rhs: SendableUnderlyingError) -> Bool {
@@ -86,8 +91,19 @@ public struct SendableUnderlyingError: Error, Sendable, Equatable, CustomStringC
 
     private static func captureChain(from error: NSError) -> [Frame] {
         var frames: [Frame] = []
-        var cursor: NSError? = error.userInfo[NSUnderlyingErrorKey] as? NSError
-        while let current = cursor, frames.count < maxUnderlyingDepth {
+        var cursor: Any? = error.userInfo[NSUnderlyingErrorKey]
+        while let cause = cursor, frames.count < maxUnderlyingDepth {
+            // A value snapshot bridges to a generic Swift NSError, losing its
+            // original domain and flattened causes. Read it before bridging.
+            if let snapshot = cause as? Self {
+                frames.append(
+                    Frame(
+                        domain: snapshot.domain, code: snapshot.code, message: snapshot.message,
+                        failureReason: snapshot.failureReason, recoverySuggestion: snapshot.recoverySuggestion))
+                frames.append(contentsOf: snapshot.underlyingChain.prefix(maxUnderlyingDepth - frames.count))
+                break
+            }
+            guard let current = cause as? NSError else { break }
             frames.append(
                 Frame(
                     domain: current.domain,
@@ -97,7 +113,7 @@ public struct SendableUnderlyingError: Error, Sendable, Equatable, CustomStringC
                     recoverySuggestion: current.localizedRecoverySuggestion
                 )
             )
-            cursor = current.userInfo[NSUnderlyingErrorKey] as? NSError
+            cursor = current.userInfo[NSUnderlyingErrorKey]
         }
         return frames
     }

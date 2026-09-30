@@ -13,6 +13,13 @@
 
 ## Release Process
 
+The canonical `docs/releases/6.1.0.md` describes the new encoded-request
+candidate. The earlier 6.1 roadmap absorbed into 6.0 is retained at
+`docs/releases/archive/6.1.0-superseded-roadmap.md` and must stay unpublished.
+The 6.0 state validator checks that archive in current trees, while supporting
+its original path when validating immutable old refs. Passing that historical
+gate is not approval to mark the new 6.1 candidate Ready.
+
 1. Update `CHANGELOG.md`
 2. Confirm `docs/releases/<version>.md`. While the release is being prepared,
    its first byte must begin the exact marker

@@ -58,6 +58,8 @@ required_meta_docs=(
   "$repo_root/docs/releases/4.0.0.md"
   "$repo_root/docs/releases/5.0.0.md"
   "$repo_root/docs/releases/6.0.0.md"
+  "$repo_root/docs/releases/6.1.0.md"
+  "$repo_root/docs/releases/archive/6.1.0-superseded-roadmap.md"
 )
 required_feature_docs=(
   "$repo_root/Sources/InnoNetwork/InnoNetwork.docc/Articles/StreamingGuide.md"

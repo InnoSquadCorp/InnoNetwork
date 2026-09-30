@@ -1,9 +1,57 @@
 import SwiftSyntax
+import SwiftSyntaxMacros
 
 extension EndpointDefinitionExpansion {
+    static func diagnoseConditionalJSONPayload(
+        in declaration: some DeclGroupSyntax, context: some MacroExpansionContext
+    ) {
+        // 6.0 accepted conditional helpers and explicit policy witnesses. The
+        // compiler still selects those declarations; do not turn them into an
+        // error or guess the consumer's build conditions. Legacy inference only
+        // sees direct payload declarations. Warn about potentially omitted input
+        // while preserving that Stable 6.x generated contract.
+        guard !hasCompleteManualPayloadContract(in: declaration) else { return }
+        for member in declaration.memberBlock.members {
+            guard let conditional = member.decl.as(IfConfigDeclSyntax.self),
+                containsConditionalPayload(conditional)
+            else { continue }
+            context.diagnose(
+                InnoNetworkMacroDiagnostic(
+                    "@APIDefinition does not infer conditional body/query or payload witnesses; 6.x preserves the unconditional payload contract. Place #if around the whole endpoint or declare unconditional Parameter + parameters.",
+                    id: "api-definition-conditional-payload", severity: .warning
+                ).diagnostic(at: conditional))
+        }
+    }
+
+    private static func containsConditionalPayload(_ conditional: IfConfigDeclSyntax) -> Bool {
+        for clause in conditional.clauses {
+            guard case .decls(let members) = clause.elements else { continue }
+            for member in members {
+                if let nested = member.decl.as(IfConfigDeclSyntax.self), containsConditionalPayload(nested) {
+                    return true
+                }
+                if let alias = member.decl.as(TypeAliasDeclSyntax.self), semanticName(alias.name) == "Parameter" {
+                    return true
+                }
+                guard let variable = member.decl.as(VariableDeclSyntax.self) else { continue }
+                for binding in variable.bindings {
+                    if binding.pattern.tokens(viewMode: .sourceAccurate).contains(where: {
+                        ["body", "query", "parameters"].contains(semanticName($0))
+                    }) {
+                        return true
+                    }
+                }
+            }
+        }
+        // Do not descend into functions, accessors or nested types: their
+        // similarly named values are not this endpoint's payload declarations.
+        return false
+    }
+
     static func validateUnconditionalMembers(in declaration: some DeclGroupSyntax) throws {
-        // Macro expansion cannot select the consumer's compilation conditions.
-        // Never infer an empty payload/default policy by skipping a branch.
+        // New encoded companions have no legacy conditional-member contract.
+        // Their generated factory copies policies as well as payloads, so never
+        // skip a branch and silently use an empty payload or default policy.
         for member in declaration.memberBlock.members where member.decl.is(IfConfigDeclSyntax.self) {
             throw InnoNetworkMacroDiagnostic(
                 "@APIDefinition does not support conditional members; place #if around the entire endpoint declaration or use a manual endpoint.",
