@@ -82,7 +82,7 @@ module ConsumerCIContract
              cache_steps[0]['run'] == 'python3 Scripts/consumer_ci_cache.py "$CONSUMER_CACHE_LANE" --github-output' &&
              cache_steps[0].dig('env', 'CONSUMER_CACHE_LANE') == '${{ inputs.lane }}', 'cache fingerprint missing')
     cache = cache_steps[1]
-    require!(cache['uses'] == 'actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae', 'cache action must stay pinned')
+    require!(cache.fetch('uses', '').match?(/\Aactions\/cache@[0-9a-f]{40}\z/), 'cache action must stay pinned')
     require!(cache['with'] == {
       'path' => '${{ steps.fingerprint.outputs.paths }}',
       'key' => '${{ steps.fingerprint.outputs.prefix }}${{ github.sha }}',
