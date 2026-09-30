@@ -64,6 +64,13 @@ class ConsumerCIContractTest < Minitest::Test
     assert_raises(ArgumentError) { validate }
   end
 
+  def test_cache_source_and_immutable_commit_are_required
+    ['actions/cache@v6', 'attacker/cache@' + 'a' * 40, 'actions/cache@' + 'a' * 39].each do |source|
+      @action['runs']['steps'][1]['uses'] = source
+      assert_raises(ArgumentError) { validate }
+    end
+  end
+
   def test_no_broad_cache_fallback
     @action['runs']['steps'][1]['with']['restore-keys'] = 'consumer-'
     assert_raises(ArgumentError) { validate }
