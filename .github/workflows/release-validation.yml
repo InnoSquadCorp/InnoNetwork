@@ -1,0 +1,344 @@
+name: Release Candidate Validation
+
+on:
+  workflow_call:
+    inputs:
+      publish:
+        description: 'Must remain false; this workflow never publishes'
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate-release:
+    name: Validate Release
+    runs-on: xcode-27
+    timeout-minutes: 90
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Test release artifact scripts
+        run: |
+          bash Scripts/tests/test_validate_docs_release_state.sh
+          bash Scripts/tests/test_validate_6_release_state.sh
+          bash Scripts/tests/test_validate_release_ref.sh
+          bash Scripts/tests/test_validate_release_candidate.sh
+          bash Scripts/tests/test_generate_sbom.sh
+          bash Scripts/tests/test_prepare_release_artifacts.sh
+          bash Scripts/tests/test_generate_dependency_snapshot.sh
+          bash Scripts/tests/test_check_guarded_benchmark_contract.sh
+          bash Scripts/tests/test_run_same_runner_benchmarks.sh
+          python3 Scripts/tests/test_run_with_guarded_benchmarks.py
+          python3 Scripts/tests/test_check_macro_build_baseline_contract.py
+          python3 Scripts/tests/test_check_public_api_tiers.py
+          python3 Scripts/check_required_status_checks.py
+          python3 Scripts/tests/test_check_required_status_checks.py
+          bash Scripts/tests/test_build_consumer_examples.sh
+          python3 Scripts/tests/test_check_example_platform_floors.py
+          python3 Scripts/tests/test_check_apple_platform_build_contract.py
+          bash Scripts/tests/test_check_docc_archives.sh
+          bash Scripts/tests/test_run_local_release_preflight.sh
+          python3 Scripts/tests/test_check_release_workflow_contract.py
+
+      - name: Validate immutable CI candidate
+        env:
+          PUBLISH: ${{ inputs.publish }}
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          test "$PUBLISH" = 'false'
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_SHA"
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Cache SwiftPM artifacts
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            .build/checkouts
+            .build/repositories
+          key: ${{ runner.os }}-release-xcode-27.0-${{ hashFiles('Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-release-xcode-27.0-
+
+      - name: Show Xcode and Swift versions
+        run: |
+          xcodebuild -version
+          xcrun swift --version
+
+      - name: Resolve dependencies
+        run: xcrun swift package resolve
+
+      - name: Verify resolved dependency lock
+        run: |
+          test -f Package.resolved
+          git ls-files --error-unmatch Package.resolved >/dev/null
+          git diff --exit-code -- Package.resolved
+
+      - name: Verify macro trait manifest and default graph
+        run: bash Scripts/check_macro_trait_graphs.sh
+
+      - name: Build root core without default traits
+        run: bash Scripts/check_core_trait_build.sh
+
+      - name: Verify docs and stability contract
+        run: bash Scripts/check_docs_contract_sync.sh
+
+      - name: Verify guarded benchmark contract
+        run: bash Scripts/check_guarded_benchmark_contract.sh
+
+      - name: Verify repeated macro build baselines
+        run: python3 Scripts/check_macro_build_baseline_contract.py
+
+      - name: Verify stable examples contract
+        run: bash Scripts/check_stable_examples.sh
+
+      - name: Verify example deployment floors
+        run: |
+          python3 Scripts/check_example_platform_floors.py
+          python3 Scripts/check_apple_platform_build_contract.py
+
+      - name: Verify migration guide code blocks compile
+        run: bash Scripts/check_migration_examples.sh
+
+      - name: Verify CHANGELOG Unreleased section
+        run: bash Scripts/check_changelog_sync.sh
+
+      - name: Verify provisionally stable enum case ledger
+        run: bash Scripts/check_provisional_enum_cases.sh
+
+      - name: Verify macro compile-failure diagnostics
+        run: bash Scripts/check_macro_compile_failures.sh
+
+      - name: Enforce @unchecked Sendable policy
+        run: bash Scripts/check_unchecked_sendable.sh
+
+      - name: Enforce SharedCoders immutability
+        run: bash Scripts/check_shared_coders_mutation.sh
+
+      - name: Enforce no force unwrap in production sources
+        run: bash Scripts/check_production_force_unwraps.sh
+
+      - name: Enforce no print() in production sources
+        run: bash Scripts/check_no_print_in_production.sh
+
+      - name: Build and run documentation smoke target
+        run: |
+          xcrun swift build --target InnoNetworkDocSmoke
+          xcrun swift run InnoNetworkDocSmoke
+
+      - name: Build all independent consumer examples
+        run: bash Scripts/build_consumer_examples.sh
+
+      - name: Verify resumable upload recovery across process exit
+        run: bash Scripts/test_resumable_process_recovery.sh
+
+      - name: Run macro adopter smoke
+        run: xcrun swift run --package-path Examples/MacroAdopterSmoke
+
+      - name: Run OpenAPI adopter smoke
+        run: xcrun swift run --package-path Examples/OpenAPIAdopterSmoke
+
+      - name: Build openapi-to-innonetwork CLI
+        working-directory: Tools/openapi-to-innonetwork
+        run: xcrun swift build
+
+      - name: Test openapi-to-innonetwork CLI
+        working-directory: Tools/openapi-to-innonetwork
+        run: xcrun swift test
+
+      - name: Typecheck generated OpenAPI output
+        run: bash Scripts/test_openapi_generated_output.sh
+
+      - name: Run quick benchmarks
+        run: |
+          bash Scripts/run_same_runner_benchmarks.sh \
+            --output-dir .build/release-artifacts/benchmarks \
+            --max-regression-percent 20
+
+      - name: Retain raw benchmark diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-benchmark-diagnostics-${{ github.sha }}-${{ github.run_attempt }}
+          path: .build/release-artifacts/benchmarks/
+          include-hidden-files: true
+          if-no-files-found: warn
+
+      - name: Run serial tests with coverage
+        run: xcrun swift test --no-parallel --enable-code-coverage
+
+      - name: Generate runtime coverage report
+        run: |
+          set -euo pipefail
+
+          runtime_source_roots=()
+          while IFS= read -r source_root; do
+            runtime_source_roots+=("$source_root")
+          done < <(
+            find Sources -mindepth 1 -maxdepth 1 -type d \
+              ! -name InnoNetworkMacros -print | sort
+          )
+
+          bash Scripts/generate_coverage_report.sh \
+            .build \
+            .build/release-artifacts/coverage-core \
+            "${runtime_source_roots[@]}"
+
+      - name: Run bounded target-sharded tests
+        run: bash Scripts/run_bounded_parallel_tests.sh
+
+      - name: Run macro tests from source with coverage
+        run: |
+          xcrun swift test \
+            --disable-experimental-prebuilts \
+            --filter InnoNetworkMacroTests \
+            --enable-code-coverage
+
+      - name: Generate macro coverage report
+        run: |
+          bash Scripts/generate_coverage_report.sh \
+            .build \
+            .build/release-artifacts/coverage-macros \
+            Sources/InnoNetworkMacros
+
+      - name: Build DocC archives
+        run: |
+          xcodebuild docbuild \
+            -scheme InnoNetwork-Package \
+            -destination 'generic/platform=macOS' \
+            -skipMacroValidation \
+            -derivedDataPath .build/DocC
+
+      - name: Verify public DocC archives
+        run: bash Scripts/check_docc_archives.sh .build/DocC
+
+      - name: Generate SBOMs (CycloneDX 1.5)
+        env:
+          SBOM_VERSION: ${{ format('candidate-{0}', github.sha) }}
+        run: |
+          SBOM_TRAIT_PROFILE=default \
+            bash Scripts/generate-sbom.sh .build/release-artifacts/sbom.cdx.json
+          SBOM_TRAIT_PROFILE=core-only \
+            bash Scripts/generate-sbom.sh .build/release-artifacts/sbom-core-only.cdx.json
+
+      - name: Prepare release artifact manifest
+        run: bash Scripts/prepare_release_artifacts.sh .build/release-artifacts
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-artifacts
+          path: |
+            .build/release-artifacts/benchmarks.json
+            .build/release-artifacts/benchmarks-json-codec.json
+            .build/release-artifacts/sbom.cdx.json
+            .build/release-artifacts/sbom-core-only.cdx.json
+            .build/release-artifacts/coverage-core/
+            .build/release-artifacts/coverage-macros/
+          if-no-files-found: error
+
+
+  validate-platform-builds:
+    name: Validate ${{ matrix.runtime }} Build
+    runs-on: macos-15
+    timeout-minutes: 45
+    permissions:
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - destination: "platform=macOS"
+            runtime: "macOS"
+            sdk: "macosx"
+            builder: "xcodebuild"
+          - destination: "generic/platform=iOS Simulator"
+            runtime: "iOS"
+            sdk: "iphonesimulator"
+            builder: "xcodebuild"
+          - triple: "arm64-apple-tvos16.0"
+            runtime: "tvOS"
+            sdk: "appletvos"
+            builder: "swiftpm-cross"
+          - triple: "arm64_32-apple-watchos9.0"
+            runtime: "watchOS"
+            sdk: "watchos"
+            builder: "swiftpm-cross"
+          - triple: "arm64-apple-xros1.0"
+            runtime: "visionOS"
+            sdk: "xros"
+            builder: "swiftpm-cross"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.0.1.app
+
+      - name: Cache SwiftPM artifacts
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            .build/checkouts
+            .build/repositories
+          key: ${{ runner.os }}-release-${{ matrix.sdk }}-xcode-26.0.1-${{ hashFiles('Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-release-${{ matrix.sdk }}-xcode-26.0.1-
+
+      - name: Show Xcode and Swift versions
+        run: |
+          xcodebuild -version
+          xcrun swift --version
+
+      - name: Resolve dependencies
+        run: xcrun swift package resolve
+
+      - name: Require SDK
+        run: |
+          set -euo pipefail
+
+          sdk="${{ matrix.sdk }}"
+          runtime="${{ matrix.runtime }}"
+
+          if ! xcrun --sdk "$sdk" --show-sdk-path >/dev/null 2>&1; then
+            echo "::error::Required $runtime SDK $sdk is not installed on the release runner."
+            exit 1
+          fi
+
+      - name: Build package for ${{ matrix.runtime }}
+        run: |
+          set -euo pipefail
+
+          if [[ '${{ matrix.builder }}' == "swiftpm-cross" ]]; then
+            bash Scripts/build_apple_platform_targets.sh \
+              '${{ matrix.runtime }}' \
+              '${{ matrix.sdk }}' \
+              '${{ matrix.triple }}'
+            exit 0
+          fi
+
+          xcodebuild \
+            -scheme InnoNetwork-Package \
+            -destination '${{ matrix.destination }}' \
+            -skipMacroValidation \
+            -derivedDataPath build/release-${{ matrix.sdk }} \
+            CODE_SIGNING_ALLOWED=NO \
+            build
