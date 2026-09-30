@@ -37,7 +37,13 @@ part of this authorization.
    and restored deadlines remain pending across slices and drain on cancellation.
    Non-finite restored deadlines use observable existing terminal-failure cleanup;
    destination files are not deleted and no persistence schema changes were made.
-5. Retry jitter/delay arithmetic: pending.
+5. Retry jitter/delay arithmetic: focused retry tests passed (20 functions).
+   Finite extreme jitter samples do not create an infinite random range; normal
+   jitter/base-cap controls retain their behavior. Non-finite configured values
+   fail before dispatch and invalid custom computed delays fail before retry.
+   Huge finite backoff remains pending across slices and cancels with no waiter.
+   A new fixture's initial timeout constructor compile error was corrected; the
+   failed compilation log is retained alongside the passing run.
 6. Circuit backoff arithmetic: pending.
 7. Macro helper coverage and unused binding: pending.
 8. Documentation and local Periphery gate: pending.
