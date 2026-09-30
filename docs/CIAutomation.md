@@ -85,8 +85,11 @@ Manual PRs receive the Ready policy check without enabling auto-merge. Native
 `enablePullRequestAutoMerge(expectedHeadOid: ...)` is used, with a pending Ready
 check while the proof is re-read. No immediate merge API or bypass path exists.
 Metadata reconciliation cancels ineligible approvals and native auto-merge.
-Scheduled discovery includes retargeted open PRs, so a former main-target bot
-approval is not stranded when its base changes outside the trusted event ref. Write outcomes are read
+Scheduled discovery includes retargeted open PRs to repair missed, delayed or
+suppressed lifecycle notifications. [Current GitHub documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request_target) places
+`pull_request_target` in the default-branch context, so normal `edited` delivery
+can already reach the cancellation path; retargeting is not assumed to suppress
+that event. This is reconciliation hardening, not proof of a native merge bypass. Write outcomes are read
 back; uncertain writes are never blindly retried.
 
 GitHub events cannot form an atomic lock with the merge operation. A review or
