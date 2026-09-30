@@ -1,6 +1,17 @@
 import SwiftSyntax
 
 extension EndpointDefinitionExpansion {
+    static func validateUnconditionalMembers(in declaration: some DeclGroupSyntax) throws {
+        // Macro expansion cannot select the consumer's compilation conditions.
+        // Never infer an empty payload/default policy by skipping a branch.
+        for member in declaration.memberBlock.members where member.decl.is(IfConfigDeclSyntax.self) {
+            throw InnoNetworkMacroDiagnostic(
+                "@APIDefinition does not support conditional members; place #if around the entire endpoint declaration or use a manual endpoint.",
+                id: "api-definition-conditional-member"
+            ).error(at: member.decl)
+        }
+    }
+
     struct StoredProperty {
         let isOptional: Bool
         let typeKind: TypeKind

@@ -53,6 +53,11 @@ codec and schema types remain Provisionally Stable.
 
 ### Next minor: buffered custom codecs
 
+Endpoint macros reject member-level `#if` declarations rather than silently
+omitting payloads or policies. Put conditional compilation around the complete
+endpoint declaration, or use the manual endpoint contract. This admission rule
+is shared by JSON and encoded companion macros, including inactive branches.
+
 <!-- encoded-request-candidate: 6.1.0 -->
 
 `EncodedRequest`, `EncodedRequestBody`, `EncodedRequestOptions` and
