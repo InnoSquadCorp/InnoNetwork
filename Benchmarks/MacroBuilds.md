@@ -35,6 +35,36 @@ baseline first, then review a sustained median regression above 10%. Macro
 source edit timing is measured in the package's normal build gate; this
 consumer harness never touches the checked-out library source while running.
 
+## Companion and mixed profiles
+
+The default `--profile json` preserves the core-only matrix. For coordinated
+development, `--profile protobuf` measures the companion macro with the JSON
+macro disabled, and `--profile mixed` alternates protobuf and JSON endpoints.
+Both companion profiles include a control with both `Macros` traits disabled.
+The zero-endpoint profile still enables the relevant macro target: it measures
+import/plugin setup separately from expansion cost.
+
+From the core checkout, with a sibling companion checkout:
+
+```bash
+INNONETWORK_LOCAL_PATH="$PWD" python3 Scripts/measure_macro_builds.py \
+  --profile protobuf --protobuf-repository ../InnoNetwork-Protobuf \
+  --repeat 5 --endpoint-counts 0,10,50,200 \
+  --raw-log-dir .build/macro-builds/protobuf-raw \
+  --json-path .build/macro-builds/protobuf.json
+```
+
+Set `--profile mixed` or `--driver xcode` for a separate matrix; do not compare
+those samples as if they used the same graph/driver. `--raw-log-dir` preserves
+build output and macOS `/usr/bin/time -l` resource diagnostics. The elapsed
+measurement includes package resolution and process startup, not just reported
+compiler time. Fresh scratch directories do not erase shared package/prebuilt
+caches. Command-level resident-memory diagnostics are not codec peak-memory
+guarantees. Review no-op logs for scheduled compilation and retain toolchain,
+source hashes, cache conditions and failures beside the samples. New companion
+measurements do not replace the historical JSON baselines below or establish a
+new release threshold.
+
 ## Repeated local baseline
 
 The committed 2026-07-18 baseline uses five isolated consumer builds per

@@ -51,7 +51,37 @@ codec and schema types remain Provisionally Stable.
 
 ## Stable
 
+### Next minor: buffered custom codecs
+
+<!-- encoded-request-candidate: 6.1.0 -->
+
+`EncodedRequest`, `EncodedRequestBody`, `EncodedRequestOptions` and
+`EncodedRequestClient` form the new supported binary adapter boundary.
+`EncodedCodecMeasurement` supplies payload-free opt-in timing; `EncodedPayloadFailure`
+supplies stable numeric codec reasons. No user callback executes under the payload lock.
+`AnyResponseDecoder.noContent(statusCodes:)` separates HTTP no-content from an
+empty codec message. These additions are unpublished; they do not alter 6.0.0.
+Body bytes are prepared once per invocation and reused on retry/refresh. Per-request
+response limits only tighten the client cap. Neither post-encoding size checks
+nor synchronous cancellation checkpoints promise bounded intermediate allocation
+or forced preemption. The existing operation lifecycle also accepts encoded requests.
+No SwiftProtobuf dependency is introduced into the core.
+
+`EncodedAPIDefinition` adds named endpoints and a checked, once-per-invocation
+factory bridge to both clients. `EncodedRequestOptions.addingQuery(_:encoder:)`
+appends query values without exposing foreign encoding errors. These seven new
+inventory rows plus the typed client/operation overloads are additive in 6.1.
+
+The package now exports nine runtime products plus `InnoNetworkMacroSupport`,
+a compiler-host-only product. Its twelve public declarations are separately
+checked in `Scripts/symbols/macro-support.tsv`; they are not Stable runtime API.
+They are Provisionally Stable within the 6.1 minor and SwiftSyntax 603.0.x.
+Companion macro packages should pin that minor; future support API changes require
+an explicit minor migration. Applications must not link this product directly.
+
+
 - `APIDefinition`
+- `EncodedRequest`, `EncodedRequestBody`, `EncodedRequestOptions`, `EncodedRequestClient`, `EncodedCodecMeasurement`, `EncodedPayloadFailure` (new in the unpublished 6.1 candidate)
 - `@APIDefinition(method:path:auth:)` and the default-enabled `Macros` package trait (promoted to Stable in 6.0.0; `traits: []` remains the supported opt-out)
 - `CancellationTag`
 - `Endpoint`
@@ -356,7 +386,9 @@ general handshake retry policy would retry an ordinary transport timeout.
   request-coalescing entry created before that probe was granted.
 - `NetworkConfigurationFailureReason` — typed payload for
   ``NetworkError/configuration(reason:)``. Carries
-  `invalidBaseURL` / `invalidRequest` / `offline` cases. The standalone
+  `invalidBaseURL` / `invalidRequest` / `offline` cases, plus the next-minor
+  `invalidPayload(EncodedPayloadFailure)` case. As with other evolving error
+  payloads, consumers must handle new cases with an unknown/default branch. The standalone
   `NetworkError.invalidBaseURL` and
   `NetworkError.invalidRequestConfiguration` cases are not part of the
   6.x surface; adopters switch on this reason payload directly.
@@ -595,8 +627,8 @@ below keeps the high-level compatibility classification readable. Historical
 5.x HLS sections document the migration source but are no longer included in
 the current machine-checked inventory.
 
-The machine-checked snapshot currently partitions all 1,702 declarations into
-307 Stable consumer declarations, 1,362 Provisionally Stable consumer
+The machine-checked snapshot currently partitions all 1,764 declarations into
+367 Stable consumer declarations, 1,364 Provisionally Stable consumer
 declarations, and 33 opt-in SPI declarations. The three sets are disjoint and
 exhaustive. `Scripts/symbols/stable-rules.tsv` maps the Stable ledger to symbol
 paths, while the compiler-authored SPI flag is snapshotted in
@@ -605,6 +637,8 @@ Stable.
 
 ### InnoNetwork
 
+- Binary codec boundary: `EncodedAPIDefinition`, `EncodedRequest`, `EncodedRequestBody`, `EncodedRequestOptions`,
+  `EncodedRequestClient`, `EncodedCodecMeasurement`, and `EncodedPayloadFailure`.
 - Preserved JSON declarations (Provisionally Stable): `PreservedJSON`,
   `PreservedJSONCoding`, `JSONSchema`, `JSONSchemaPlan`, `JSONSchemaDialect`, `JSONProcessingLimits`, and `JSONProcessingError`.
   See [the wire/validation contract](docs/PRESERVED_JSON.md); Foundation codecs
@@ -1106,7 +1140,7 @@ requires `@_spi` import.
 - event pipeline metric payload and aggregation format
 - append-log persistence format (`checkpoint.json`, `events.log`)
 - reconnect taxonomy internal types and close disposition rules
-- `InnoNetworkProtobuf` package composition and protobuf adapter surface
+- `InnoNetwork-Protobuf` companion implementation; its public adapter surface follows its own stability ledger
 - package/internal request/response policy layers
 - package/internal request execution pipeline stages that power auth refresh,
   coalescing, response cache, and circuit breaker features

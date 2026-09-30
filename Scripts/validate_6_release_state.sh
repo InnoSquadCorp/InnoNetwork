@@ -143,15 +143,32 @@ require_line 'Status: Superseded by 6.0.0 scope (unreleased)' "$superseded_notes
 forbid_contains '<!-- release-status: ready -->' "$superseded_notes"
 require_contains '1,702 declarations: 307 Stable,' "$notes"
 require_contains '1,362 Provisionally Stable, and 33 SPI.' "$notes"
-require_line '| **Total** | **1,702** |' "$symbols"
-require_line '| Stable consumer API | 307 |' "$symbols"
-require_line '| Provisionally Stable consumer API | 1,362 |' "$symbols"
+# Keep the immutable 6.0 release-note inventory above separate from the explicitly
+# approved, unpublished 6.1 source inventory. The symbol-graph gate checks actual
+# declarations against these exact budgets; neither path accepts arbitrary growth.
+total=1702
+stable=307
+provisional=1362
+if grep -Fxq '<!-- encoded-request-candidate: 6.1.0 -->' "$api"; then
+  total=1764
+  stable=367
+  provisional=1364
+  require_contains 'These additions are unpublished; they do not alter 6.0.0.' "$api"
+  require_line '## [Unreleased]' "$changelog"
+  require_line '| **Total** | **1,764** |' "$symbols"
+  require_line '| Stable consumer API | 367 |' "$symbols"
+  require_line '| Provisionally Stable consumer API | 1,364 |' "$symbols"
+else
+  require_line '| **Total** | **1,702** |' "$symbols"
+  require_line '| Stable consumer API | 307 |' "$symbols"
+  require_line '| Provisionally Stable consumer API | 1,362 |' "$symbols"
+fi
 require_line '| `@_spi(GeneratedClientSupport)` | 33 |' "$symbols"
-require_line $'TOTAL\t1702' "$budgets"
-require_line $'STABLE_CONSUMER\t307' "$tier_budgets"
-require_line $'PROVISIONAL\t1362' "$tier_budgets"
+require_line "$(printf 'TOTAL\t%s' "$total")" "$budgets"
+require_line "$(printf 'STABLE_CONSUMER\t%s' "$stable")" "$tier_budgets"
+require_line "$(printf 'PROVISIONAL\t%s' "$provisional")" "$tier_budgets"
 require_line $'SPI\t33' "$tier_budgets"
-require_line $'TOTAL\t1702' "$tier_budgets"
+require_line "$(printf 'TOTAL\t%s' "$total")" "$tier_budgets"
 
 if [[ "$state" == "draft" ]]; then
   require_line "Status: Draft (unreleased)" "$notes"

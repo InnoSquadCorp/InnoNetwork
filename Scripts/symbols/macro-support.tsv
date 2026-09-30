@@ -1,0 +1,12 @@
+swift.enum	EndpointDefinitionExpansion
+swift.property	EncodedEndpointExpansion.accessPrefix
+swift.property	EncodedEndpointExpansion.authenticationExpression
+swift.property	EncodedEndpointExpansion.hasBody
+swift.property	EncodedEndpointExpansion.hasQuery
+swift.property	EncodedEndpointExpansion.methodExpression
+swift.property	EncodedEndpointExpansion.pathWitness
+swift.property	EncodedEndpointExpansion.presentPolicies
+swift.property	EncodedEndpointExpansion.typeName
+swift.struct	EncodedEndpointExpansion
+swift.type.method	EndpointDefinitionExpansion.analyzeEncoded(attribute:declaration:type:macroName:policyNames:)
+swift.type.method	EndpointDefinitionExpansion.expansion(of:attachedTo:providingExtensionsOf:conformingTo:in:)

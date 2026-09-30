@@ -80,6 +80,7 @@ extension NetworkClient {
         try await self.request(request, tag: nil)
     }
 
+
 }
 
 /// Multipart-upload capability for clients that execute
@@ -632,6 +633,15 @@ public final class DefaultNetworkClient: NetworkClient, UploadNetworkClient, Sen
         executable: D,
         tag: CancellationTag? = nil
     ) async throws -> D.APIResponse {
+        let configuration: NetworkConfiguration
+        if let maximum = (executable as? any EncodedExecutableMetadata)?.maximumResponseBytes {
+            var builder = NetworkConfiguration.AdvancedBuilder(preset: self.configuration)
+            let clientLimit = self.configuration.responseBodyBufferingPolicy.maxBytes
+            builder.responseBodyBufferingPolicy = .streaming(maxBytes: min(maximum, clientLimit ?? maximum))
+            configuration = builder.build()
+        } else {
+            configuration = self.configuration
+        }
         let requestID = UUID()
         let startGate = TaskStartGate()
         let generation = inFlight.generation(for: tag)
@@ -668,6 +678,15 @@ public final class DefaultNetworkClient: NetworkClient, UploadNetworkClient, Sen
         }
     }
 
+    /// Executes a buffered custom codec through the same cancellation, retry and auth engine.
+    public func request<Output: Sendable>(
+        _ request: EncodedRequest<Output>, tag: CancellationTag?
+    ) async throws(NetworkError) -> Output {
+        try await Self.mappingTransportErrors {
+            try await self.perform(executable: EncodedRequestExecutable(request), tag: tag)
+        }
+    }
+
     private var isShutdown: Bool {
         shutdownLock.withLock { $0 }
     }
@@ -682,3 +701,5 @@ public final class DefaultNetworkClient: NetworkClient, UploadNetworkClient, Sen
 }
 
 @_spi(GeneratedClientSupport) extension DefaultNetworkClient: LowLevelNetworkClient {}
+
+extension DefaultNetworkClient: EncodedRequestClient {}

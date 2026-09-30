@@ -245,7 +245,7 @@ run_runtime_coverage() {
     runtime_source_roots+=("$source_root")
   done < <(
     find Sources -mindepth 1 -maxdepth 1 -type d \
-      ! -name InnoNetworkMacros -print | sort
+      ! -name InnoNetworkMacros ! -name InnoNetworkMacroSupport -print | sort
   )
   bash Scripts/generate_coverage_report.sh \
     .build \
@@ -261,7 +261,7 @@ run_macro_coverage() {
   bash Scripts/generate_coverage_report.sh \
     .build \
     "$artifacts_dir/coverage-macros" \
-    Sources/InnoNetworkMacros
+    Sources/InnoNetworkMacros Sources/InnoNetworkMacroSupport
 }
 
 run_guarded_benchmarks() {

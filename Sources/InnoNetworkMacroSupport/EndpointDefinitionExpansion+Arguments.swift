@@ -1,7 +1,7 @@
 import SwiftDiagnostics
 import SwiftSyntax
 
-extension APIDefinitionMacro {
+extension EndpointDefinitionExpansion {
     enum Authentication {
         case anonymous
         case optional

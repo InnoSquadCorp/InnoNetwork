@@ -33,6 +33,7 @@ cd "$repo_root"
 production_paths=(
     "Sources/InnoNetwork"
     "Sources/InnoNetworkMacros"
+    "Sources/InnoNetworkMacroSupport"
     "Sources/InnoNetworkAuthAWS"
     "Sources/InnoNetworkDownload"
     "Sources/InnoNetworkUpload"

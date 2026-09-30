@@ -723,7 +723,7 @@ private func expectRedirectAdmissionFailure(
         switch reason {
         case .invalidBaseURL, .invalidRequest:
             break
-        case .offline:
+        case .offline, .invalidPayload:
             Issue.record("Expected redirect URL admission failure, got \(reason)")
         }
     } catch {

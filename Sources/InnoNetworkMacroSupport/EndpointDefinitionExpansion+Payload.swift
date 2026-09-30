@@ -1,6 +1,6 @@
 import SwiftSyntax
 
-extension APIDefinitionMacro {
+extension EndpointDefinitionExpansion {
     static func payloadWitnesses(
         in declaration: some DeclGroupSyntax,
         properties: [String: StoredProperty],

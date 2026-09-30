@@ -1,11 +1,11 @@
 import Foundation
 
-/// Operation-first adapter over any ``NetworkClient``.
+/// Operation-first adapter over a ``NetworkClient`` or ``EncodedRequestClient``.
 ///
 /// The generic base keeps test doubles and application-owned client wrappers
 /// usable during migration. Use the configuration initializer when the base is
 /// ``DefaultNetworkClient``.
-public struct OperationNetworkClient<Base: NetworkClient>: Sendable {
+public struct OperationNetworkClient<Base: Sendable>: Sendable {
     private let base: Base
     private let deadlineClock: any InnoNetworkClock
 
@@ -22,7 +22,7 @@ public struct OperationNetworkClient<Base: NetworkClient>: Sendable {
     /// Starts a typed request and immediately returns its operation handle.
     public func start<Request: APIDefinition>(
         _ request: Request
-    ) -> NetworkOperation<Request.APIResponse> {
+    ) -> NetworkOperation<Request.APIResponse> where Base: NetworkClient {
         start(request, replaySafety: .methodDefault, deadline: nil)
     }
 
@@ -35,7 +35,7 @@ public struct OperationNetworkClient<Base: NetworkClient>: Sendable {
     public func start<Request: APIDefinition>(
         _ request: Request,
         replaySafety: NetworkOperationReplaySafety
-    ) -> NetworkOperation<Request.APIResponse> {
+    ) -> NetworkOperation<Request.APIResponse> where Base: NetworkClient {
         start(request, replaySafety: replaySafety, deadline: nil)
     }
 
@@ -43,7 +43,7 @@ public struct OperationNetworkClient<Base: NetworkClient>: Sendable {
     public func start<Request: APIDefinition>(
         _ request: Request,
         deadline: NetworkOperationDeadline
-    ) -> NetworkOperation<Request.APIResponse> {
+    ) -> NetworkOperation<Request.APIResponse> where Base: NetworkClient {
         start(request, replaySafety: .methodDefault, deadline: deadline)
     }
 
@@ -53,7 +53,7 @@ public struct OperationNetworkClient<Base: NetworkClient>: Sendable {
         _ request: Request,
         replaySafety: NetworkOperationReplaySafety,
         deadline: NetworkOperationDeadline
-    ) -> NetworkOperation<Request.APIResponse> {
+    ) -> NetworkOperation<Request.APIResponse> where Base: NetworkClient {
         start(request, replaySafety: replaySafety, deadline: Optional(deadline))
     }
 
@@ -61,17 +61,61 @@ public struct OperationNetworkClient<Base: NetworkClient>: Sendable {
         _ request: Request,
         replaySafety: NetworkOperationReplaySafety,
         deadline: NetworkOperationDeadline?
-    ) -> NetworkOperation<Request.APIResponse> {
+    ) -> NetworkOperation<Request.APIResponse> where Base: NetworkClient {
+        startExecution(
+            method: request.method, auth: request.sessionAuthentication,
+            replaySafety: replaySafety, deadline: deadline
+        ) { [base] tag in
+            try await base.request(request, tag: tag)
+        }
+    }
+
+    /// Starts a custom-codec request using the same operation lifecycle and deadline gate.
+    public func start<Output: Sendable>(
+        _ request: EncodedRequest<Output>,
+        replaySafety: NetworkOperationReplaySafety = .methodDefault,
+        deadline: NetworkOperationDeadline? = nil
+    ) -> NetworkOperation<Output> where Base: EncodedRequestClient {
+        startExecution(
+            method: request.method, auth: request.sessionAuthentication,
+            replaySafety: replaySafety, deadline: deadline
+        ) { [base] tag in
+            try await base.request(request, tag: tag)
+        }
+    }
+
+    /// Starts a named binary endpoint. Preparation failures are delivered through
+    /// the handle, after the existing cancellation/deadline admission checks.
+    public func start<Definition: EncodedAPIDefinition>(
+        _ definition: Definition,
+        replaySafety: NetworkOperationReplaySafety = .methodDefault,
+        deadline: NetworkOperationDeadline? = nil
+    ) -> NetworkOperation<Definition.APIResponse> where Base: EncodedRequestClient {
+        let metadata = EncodedDefinitionMetadata(definition)
+        return startExecution(
+            method: metadata.method, auth: metadata.authentication,
+            replaySafety: replaySafety, deadline: deadline
+        ) { [base] tag in
+            let request = try metadata.prepare(definition)
+            return try await base.request(request, tag: tag)
+        }
+    }
+
+    private func startExecution<Output: Sendable>(
+        method requestMethod: HTTPMethod,
+        auth sessionAuthentication: SessionAuthentication,
+        replaySafety: NetworkOperationReplaySafety,
+        deadline: NetworkOperationDeadline?,
+        execute: @escaping @Sendable (CancellationTag) async throws -> Output
+    ) -> NetworkOperation<Output> {
         let id = UUID()
         let tag = CancellationTag(id.uuidString)
-        let requestMethod = request.method
-        let sessionAuthentication = request.sessionAuthentication
         let (events, continuation) = AsyncStream<NetworkOperationEvent>.makeStream(
             bufferingPolicy: .bufferingNewest(8)
         )
         let deadlineClock = self.deadlineClock
         let deadlineInstant = deadline.map { deadlineClock.monotonicNow() + $0.duration }
-        let task = Task { [base] in
+        let task = Task {
             continuation.yield(.started(id: id))
             let tracker = NetworkOperationDeadlineTracker()
             tracker.mark(.requestPreparation)
@@ -84,7 +128,7 @@ public struct OperationNetworkClient<Base: NetworkClient>: Sendable {
             if Task.isCancelled {
                 continuation.yield(.failed(id: id, failure: cancellationFailure))
                 continuation.finish()
-                return Result<Request.APIResponse, NetworkFailure>.failure(cancellationFailure)
+                return Result<Output, NetworkFailure>.failure(cancellationFailure)
             }
             if let deadlineInstant, deadlineClock.monotonicNow() >= deadlineInstant {
                 let failure = Self.deadlineFailure(
@@ -94,15 +138,15 @@ public struct OperationNetworkClient<Base: NetworkClient>: Sendable {
                 )
                 continuation.yield(.failed(id: id, failure: failure))
                 continuation.finish()
-                return Result<Request.APIResponse, NetworkFailure>.failure(failure)
+                return Result<Output, NetworkFailure>.failure(failure)
             }
 
-            let gate = NetworkOperationResultGate<Request.APIResponse>()
-            let requestTask = Task<Result<Request.APIResponse, NetworkFailure>, Never> {
-                let result: Result<Request.APIResponse, NetworkFailure> = await NetworkOperationDeadlineContext.$tracker
+            let gate = NetworkOperationResultGate<Output>()
+            let requestTask = Task<Result<Output, NetworkFailure>, Never> {
+                let result: Result<Output, NetworkFailure> = await NetworkOperationDeadlineContext.$tracker
                     .withValue(tracker) {
                         do {
-                            let value = try await base.request(request, tag: tag)
+                            let value = try await execute(tag)
                             return .success(value)
                         } catch let error as NetworkError {
                             return .failure(
@@ -179,11 +223,11 @@ public struct OperationNetworkClient<Base: NetworkClient>: Sendable {
             case .success(let value):
                 continuation.yield(.succeeded(id: id))
                 continuation.finish()
-                return Result<Request.APIResponse, NetworkFailure>.success(value)
+                return Result<Output, NetworkFailure>.success(value)
             case .failure(let failure):
                 continuation.yield(.failed(id: id, failure: failure))
                 continuation.finish()
-                return Result<Request.APIResponse, NetworkFailure>.failure(failure)
+                return Result<Output, NetworkFailure>.failure(failure)
             }
         }
         return NetworkOperation(id: id, events: events, task: task)

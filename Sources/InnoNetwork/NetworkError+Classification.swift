@@ -71,6 +71,7 @@ extension NetworkError {
         case .configuration(reason: .offline):
             return true
         case .configuration(reason: .invalidBaseURL),
+            .configuration(reason: .invalidPayload),
             .configuration(reason: .invalidRequest),
             .cancelled:
             return false
