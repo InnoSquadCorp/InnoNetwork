@@ -14,8 +14,8 @@ Usage: bash Scripts/run_local_release_preflight.sh [--fast|--full] [--list]
 
 Run the release checks that can be reproduced before a tag exists.
 
-  --fast  Run deterministic contracts, consumer builds, tools, and bounded tests.
-          This is the default. Xcode 27 and Swift 6.4 are required.
+  --fast  Run deterministic contracts, consumer builds, tools, bounded tests,
+          and strict Periphery. Xcode 27, Swift 6.4 and Periphery 3.8.0 are required.
   --full  Also generate coverage and SBOMs, enforce same-runner benchmark guards,
           build all-product DocC, and build all five supported Apple platforms.
   --list  Print the selected gate names without running them.
@@ -50,6 +50,7 @@ fast_gates=(
   "release-script-fixtures"
   "dependency-lock"
   "static-contracts"
+  "periphery"
   "documentation-smoke"
   "consumer-examples"
   "openapi-generator"
@@ -169,6 +170,8 @@ run_release_script_fixtures() {
   bash Scripts/tests/test_generate_sbom.sh
   bash Scripts/tests/test_prepare_release_artifacts.sh
   ruby Scripts/tests/test_check_changelog_sync.rb
+  ruby Scripts/tests/test_check_post_release_docs.rb
+  ruby Scripts/tests/test_check_periphery.rb
   bash Scripts/tests/test_generate_dependency_snapshot.sh
   bash Scripts/tests/test_check_guarded_benchmark_contract.sh
   bash Scripts/tests/test_run_same_runner_benchmarks.sh
@@ -207,6 +210,7 @@ run_static_contracts() {
   python3 Scripts/check_apple_platform_build_contract.py
   bash Scripts/check_migration_examples.sh
   bash Scripts/check_changelog_sync.sh
+  ruby Scripts/check_post_release_docs.rb
   bash Scripts/check_provisional_enum_cases.sh
   bash Scripts/check_macro_compile_failures.sh
   bash Scripts/check_unchecked_sendable.sh
@@ -319,6 +323,7 @@ run_gate() {
     release-script-fixtures) run_release_script_fixtures ;;
     dependency-lock) run_dependency_lock ;;
     static-contracts) run_static_contracts ;;
+    periphery) bash Scripts/check_periphery.sh ;;
     documentation-smoke) run_documentation_smoke ;;
     consumer-examples) run_consumer_examples ;;
     openapi-generator) run_openapi_generator ;;

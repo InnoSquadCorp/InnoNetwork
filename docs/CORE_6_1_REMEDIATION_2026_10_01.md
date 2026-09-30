@@ -50,14 +50,22 @@ part of this authorization.
    1e16-second failed-probe controls preserve the doubled open interval; Duration
    values beyond Int64 seconds do not require narrow components when opened.
 7. Macro helper coverage and unused binding: direct companion analysis fixtures
-   and the complete macro suite passed. Tests cover body/query, escaped route
+   and all 70 macro test functions passed. Tests cover body/query, escaped route
    access, policies, access levels, all supported methods, empty endpoints,
    conditional/conflicting declarations and companion diagnostic rewriting.
    The unused expansion parameter binding was removed without changing its
    external signature. Initial fixture assumptions about a helper name and
    relative-path rejection were corrected against the existing shared contract;
    no path semantics were changed to satisfy the tests.
-8. Documentation and local Periphery gate: pending.
+8. Documentation and local Periphery gate: strict Periphery 3.8.0 native scan,
+   format (551 Swift files), 1,764 runtime declarations / 12 compiler-host
+   declarations, and the historical 6.0 Ready-state contract passed. The latter
+   is not a new publication/Ready approval. Current guidance distinguishes the
+   published 6.0 release from the unpublished 6.1 candidate. Local fast/full
+   lists are 8/15; four wrapper fixtures prove missing tool/version/strict
+   failure handling, and ten publication-doc fixtures include LC_ALL=C Unicode.
+   Fixture realpath/locale assumptions and a legacy date/text contract mismatch
+   were corrected without weakening the Ready validator; failed logs remain.
 9. Final frozen-source integration gates: pending.
 10. Exact candidate evidence and remaining acceptance boundaries: pending.
 

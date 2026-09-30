@@ -19,6 +19,7 @@ six_release_state_validator="$repo_root/Scripts/validate_6_release_state.sh"
 # The 5.x documentation contract is historical and remains covered by the
 # validator's fixture tests. Keep the last released 5.x state explicit while
 # the 6.0 validator accepts either a coherent draft or a coherent ready state.
+ruby "$repo_root/Scripts/check_post_release_docs.rb"
 docs_release_state="ready"
 bash "$six_release_state_validator"
 

@@ -10,6 +10,7 @@ cat > "$work_dir/expected-fast.txt" <<'EOF'
 release-script-fixtures
 dependency-lock
 static-contracts
+periphery
 documentation-smoke
 consumer-examples
 openapi-generator
@@ -20,6 +21,7 @@ cat > "$work_dir/expected-full.txt" <<'EOF'
 release-script-fixtures
 dependency-lock
 static-contracts
+periphery
 documentation-smoke
 consumer-examples
 openapi-generator
@@ -39,6 +41,8 @@ diff -u "$work_dir/expected-fast.txt" "$work_dir/actual-fast.txt"
 diff -u "$work_dir/expected-full.txt" "$work_dir/actual-full.txt"
 
 bash "$runner" --help | grep -Fq -- '--full'
+grep -Fq 'periphery) bash Scripts/check_periphery.sh' "$runner"
+ruby "$repo_root/Scripts/tests/test_check_periphery.rb"
 grep -Fq 'run_package_xcodebuild docbuild' "$runner"
 grep -Fq 'prepare_package_xcodebuild_view' "$runner"
 for entry_point in "$runner" \

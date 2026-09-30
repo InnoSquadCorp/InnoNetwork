@@ -1,8 +1,9 @@
 # API Stability (6.x)
 
 This document defines the approved compatibility contract for InnoNetwork 6.
-`6.0.0` is the approved compatibility baseline for this contract. Approval is
-not publication; confirm the matching tag and GitHub Release before adoption.
+`6.0.0` is the approved compatibility baseline and was published on 2026-09-29
+UTC with its matching GitHub Release. The 6.1 candidate remains unpublished;
+approval, local validation and a Ready marker are not publication.
 The Stable ledger inherited from 5.x remains protected unless the 6.0
 migration guide explicitly removes or relocates a package boundary.
 
@@ -611,8 +612,8 @@ general handshake retry policy would retry an ordinary transport timeout.
 
 ## Version Pinning Guidance
 
-After confirming that the `6.0.0` tag and GitHub Release are published,
-Stable-only applications can adopt the new major with:
+The `6.0.0` tag and GitHub Release are published. Stable-only applications can
+adopt the new major with:
 
 ```swift
 .package(url: "https://github.com/InnoSquadCorp/InnoNetwork", .upToNextMajor(from: "6.0.0"))
@@ -628,9 +629,29 @@ range:
 Pin the exact published version when a reproducible release build must not accept
 any dependency update.
 
-Until 6.0 is published, retain the existing tagged 5.x dependency. Neither a
-Ready marker nor a green candidate workflow makes an unpublished version
-resolvable from SwiftPM.
+The 6.1 candidate is not published. Neither a Ready marker nor a green
+candidate workflow makes an unpublished version resolvable from SwiftPM.
+
+### Scheduling input boundaries in the 6.1 candidate
+
+Finite long deadlines, quota windows, server cooldowns, retry delays and
+restored download deadlines retain their full requested wait. Internally a
+timer sleeps in cancellation-safe slices; a slice is not a public maximum
+delay, and expiry or quota is rechecked before dispatch. Existing zero and
+negative sentinel meanings remain specific to each configuration field.
+
+Non-finite retry policy values fail through the existing invalid-request
+configuration boundary before dispatch. A non-finite custom computed delay
+fails before another attempt. The nonthrowing direct exponential-delay helper
+returns zero for unsupported non-finite arithmetic inputs; this is not an
+executor admission rule. Finite jitter arithmetic saturates only at the largest
+representable finite Double and retains the existing pre-jitter base cap.
+Invalid restored download deadlines use the existing observable terminal-failure
+path without deleting destination files or changing persistence schema.
+An unavailable monitor returns nil for a non-finite timeout; a snapshot already
+available retains precedence. Invalid pong timeout and reconnect arithmetic
+use the existing WebSocket typed failure boundaries. Public configuration packs
+retain their existing constructor normalization and zero/negative sentinels.
 
 ## Public Declaration Ledger
 

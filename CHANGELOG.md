@@ -30,6 +30,15 @@ Versioning.
 - Preserve cancellation through JSON, encoded and streaming codecs without
   changing direct custom-decoder error contracts.
 - Do not start refresh-failure cooldowns for provider cancellation.
+- Keep extreme finite scheduling budgets pending across cancellation-safe timer
+  slices instead of overflowing timers or dispatching early. Reject unsupported
+  non-finite retry inputs at the existing configuration boundary.
+- Keep retry jitter finite and circuit backoff cap-safe without narrow integer
+  millisecond conversion; preserve normal jitter/base caps and circuit probes.
+- Cover companion macro analysis directly and add strict Periphery to both
+  local preflight modes using the same native index layout and 3.8.0 version as CI.
+- Correct current adoption guidance for the published 6.0.0 release and guard
+  against stale publication advice with offline positive/negative fixtures.
 - Bound persistent-cache telemetry by aggregating totals per reason between
   drains, saturating counters instead of retaining unlimited event batches.
   Document single-owner directory usage, including App Group extensions.
@@ -67,8 +76,9 @@ the unpublished candidate's source-compatibility changes.
 
 ## [6.0.0] - 2026-09-28
 
-Approved release contents; the date is intended until publication. Confirm the
-matching tag and GitHub Release separately before adopting this version.
+Contents approved on 2026-09-28; published on 2026-09-29 UTC with the matching
+tag and GitHub Release. The heading retains the approved contents date used by
+the historical Ready-state validation contract.
 The previously planned 6.1 candidates are included in this 6.0 release scope.
 
 ### Fixed — final hardening
