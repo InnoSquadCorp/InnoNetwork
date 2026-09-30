@@ -23,6 +23,9 @@ Versioning.
 
 ### Fixed
 
+- Bound persistent-cache telemetry by aggregating totals per reason between
+  drains, saturating counters instead of retaining unlimited event batches.
+  Document single-owner directory usage, including App Group extensions.
 - Reject member-level conditional endpoint declarations rather than silently
   dropping payload or policy; place `#if` around the complete endpoint instead.
 - Preserve escaped Swift identifiers and qualify generated path property access.

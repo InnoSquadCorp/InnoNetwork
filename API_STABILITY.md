@@ -224,6 +224,9 @@ acquiring a 6.x Stable compatibility promise.
 - bounded companion transport contracts: `BoundedNetworkTransfer`,
   `NetworkRetryExecutor`, `NetworkURLPolicy`, and `NetworkURLValidator`
 - `PersistentResponseCache` statistics and telemetry surfaces
+  aggregate operational totals per reason between drains (saturating counts;
+  no individual batch chronology). Cache directories require one active owner;
+  actor isolation and App Group URLs do not coordinate independent processes.
 - `WebSocketError.unsupportedProtocolFeature`
 - `WebSocketProtocolFeature`
 - `RequestSigner` and `RequestBody` late body-aware signing contract
