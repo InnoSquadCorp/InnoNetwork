@@ -356,6 +356,16 @@ let package = Package(
                     condition: .when(platforms: [.macOS], traits: ["Macros"])
                 ),
                 .product(
+                    name: "SwiftParser",
+                    package: "swift-syntax",
+                    condition: .when(platforms: [.macOS], traits: ["Macros"])
+                ),
+                .product(
+                    name: "SwiftSyntax",
+                    package: "swift-syntax",
+                    condition: .when(platforms: [.macOS], traits: ["Macros"])
+                ),
+                .product(
                     name: "SwiftSyntaxMacros",
                     package: "swift-syntax",
                     condition: .when(platforms: [.macOS], traits: ["Macros"])

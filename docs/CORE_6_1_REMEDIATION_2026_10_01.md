@@ -44,12 +44,19 @@ part of this authorization.
    Huge finite backoff remains pending across slices and cancels with no waiter.
    A new fixture's initial timeout constructor compile error was corrected; the
    failed compilation log is retained alongside the passing run.
-6. Circuit backoff arithmetic: broad circuit/resilience/retry tests passed.
+6. Circuit backoff arithmetic: 252 circuit/resilience/retry functions passed.
    The implementation now caps before Duration addition, avoids narrow integer
    millisecond conversion, and preserves nanosecond precision. Ordinary and
    1e16-second failed-probe controls preserve the doubled open interval; Duration
    values beyond Int64 seconds do not require narrow components when opened.
-7. Macro helper coverage and unused binding: pending.
+7. Macro helper coverage and unused binding: direct companion analysis fixtures
+   and the complete macro suite passed. Tests cover body/query, escaped route
+   access, policies, access levels, all supported methods, empty endpoints,
+   conditional/conflicting declarations and companion diagnostic rewriting.
+   The unused expansion parameter binding was removed without changing its
+   external signature. Initial fixture assumptions about a helper name and
+   relative-path rejection were corrected against the existing shared contract;
+   no path semantics were changed to satisfy the tests.
 8. Documentation and local Periphery gate: pending.
 9. Final frozen-source integration gates: pending.
 10. Exact candidate evidence and remaining acceptance boundaries: pending.
