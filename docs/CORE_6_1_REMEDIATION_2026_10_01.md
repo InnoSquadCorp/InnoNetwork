@@ -44,7 +44,11 @@ part of this authorization.
    Huge finite backoff remains pending across slices and cancels with no waiter.
    A new fixture's initial timeout constructor compile error was corrected; the
    failed compilation log is retained alongside the passing run.
-6. Circuit backoff arithmetic: pending.
+6. Circuit backoff arithmetic: broad circuit/resilience/retry tests passed.
+   The implementation now caps before Duration addition, avoids narrow integer
+   millisecond conversion, and preserves nanosecond precision. Ordinary and
+   1e16-second failed-probe controls preserve the doubled open interval; Duration
+   values beyond Int64 seconds do not require narrow components when opened.
 7. Macro helper coverage and unused binding: pending.
 8. Documentation and local Periphery gate: pending.
 9. Final frozen-source integration gates: pending.
