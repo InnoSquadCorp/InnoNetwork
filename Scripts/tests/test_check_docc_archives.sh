@@ -7,6 +7,7 @@ work_dir="$(mktemp -d "${TMPDIR:-/tmp}/innonetwork-docc-archive-contract-tests.X
 trap 'rm -rf "$work_dir"' EXIT
 
 products=(
+  InnoNetworkMacroSupport
   InnoNetwork
   InnoNetworkAuthAWS
   InnoNetworkDownload
@@ -56,7 +57,34 @@ run_checker() {
 
 success_root="$work_dir/success"
 make_fixture "$success_root"
+# Bind the positive control to the actual manifest. A second hard-coded product
+# list alone can agree with a stale ledger while omitting a newly added product.
+xcrun swift package --package-path "$repo_root" dump-package > "$success_root/package.json"
 run_checker "$success_root" >/dev/null
+
+missing_host_archive_root="$work_dir/missing-host-archive"
+make_fixture "$missing_host_archive_root"
+rmdir "$missing_host_archive_root/DerivedData/Build/Products/Debug/InnoNetworkMacroSupport.doccarchive"
+if run_checker "$missing_host_archive_root" \
+  > "$work_dir/missing-host-archive.stdout" \
+  2> "$work_dir/missing-host-archive.stderr"; then
+  echo "Expected a missing compiler-host public DocC archive to fail." >&2
+  exit 1
+fi
+grep -Fq 'expected exactly one InnoNetworkMacroSupport.doccarchive' \
+  "$work_dir/missing-host-archive.stderr"
+
+missing_host_contract_root="$work_dir/missing-host-contract"
+make_fixture "$missing_host_contract_root"
+sed '/^InnoNetworkMacroSupport$/d' "$repo_root/docs/public-docc-products.txt" \
+  > "$missing_host_contract_root/docs/public-docc-products.txt"
+if run_checker "$missing_host_contract_root" \
+  > "$work_dir/missing-host-contract.stdout" \
+  2> "$work_dir/missing-host-contract.stderr"; then
+  echo "Expected an omitted compiler-host public product to fail." >&2
+  exit 1
+fi
+grep -Fq 'missing InnoNetworkMacroSupport' "$work_dir/missing-host-contract.stderr"
 
 missing_archive_root="$work_dir/missing-archive"
 make_fixture "$missing_archive_root"
