@@ -132,18 +132,11 @@ public struct AWSSigV4Interceptor: RequestSigner {
     private func canonicalRequest(for request: URLRequest, payloadHash: String) -> String {
         let method = request.httpMethod ?? "GET"
         let url = request.url
-        let urlPath = url?.path ?? ""
-        let firstPass = urlPath.isEmpty ? "/" : Self.uriEncode(urlPath, allowSlash: true)
-        // SigV4: S3 uses single-encoded paths; every other service expects
-        // the canonical URI to be encoded again (percent signs re-escaped).
-        // Foundation's decoded URL.path drops trailing empty components on
-        // macOS. S3 object keys distinguish /key, /key/, and /key//, while
-        // canonical URI encoding must still escape reserved path characters.
         let path: String
         if service.lowercased() == "s3" {
             path = Self.canonicalS3Path(url)
         } else {
-            path = Self.uriEncode(firstPass, allowSlash: true)
+            path = Self.canonicalServicePath(url)
         }
         let query = canonicalQueryString(from: url)
         let (headers, signed) = canonicalHeaders(of: request)
@@ -257,6 +250,28 @@ public struct AWSSigV4Interceptor: RequestSigner {
                 uriEncode(String(segment).removingPercentEncoding ?? String(segment), allowSlash: false)
             }
             .joined(separator: "/")
+    }
+
+    private static func canonicalServicePath(_ url: URL?) -> String {
+        guard let url,
+            let path = URLComponents(url: url, resolvingAgainstBaseURL: false)?.percentEncodedPath,
+            !path.isEmpty
+        else { return "/" }
+        // Normalize literal segments, not decoded bytes: %2F is data, not a
+        // separator. Match SigV4 non-S3 normalization while preserving a
+        // trailing slash. S3 deliberately does not use this normalization.
+        var segments: [Substring] = []
+        for segment in path.split(separator: "/") {
+            switch segment {
+            case ".": continue
+            case "..": if !segments.isEmpty { segments.removeLast() }
+            default: segments.append(segment)
+            }
+        }
+        let normalized =
+            (path.hasPrefix("/") ? "/" : "") + segments.joined(separator: "/")
+            + (path.hasSuffix("/") && !segments.isEmpty ? "/" : "")
+        return uriEncode(normalized, allowSlash: true)
     }
 
     private static func collapseWhitespace(_ value: String) -> String {

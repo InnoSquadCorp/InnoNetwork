@@ -219,6 +219,29 @@ struct AWSSigV4InterceptorTests {
         #expect(!s3Canonical.contains("/hello%2520world"))
     }
 
+    @Test("Non-S3 signing preserves encoded separators and trailing slashes")
+    func nonS3CanonicalPathBoundaries() async throws {
+        // Oracle: botocore 21f2f87daead94d25b0cf562422e752e9c2accc2,
+        // auth.py SigV4Auth._normalize_url_path and utils.py remove_dot_segments.
+        let signer = Self.makeInterceptor()
+        let vectors = [
+            ("/folder", "/folder"), ("/folder/", "/folder/"),
+            ("/a%2Fb", "/a%252Fb"), ("/a/b", "/a/b"),
+            ("/", "/"), ("/hello%20world", "/hello%2520world"),
+            ("/a//b/", "/a/b/"), ("/a/./b/../c/", "/a/c/"),
+            ("/a%252Fb", "/a%25252Fb"), ("/a!b", "/a%21b"),
+        ]
+        var signatures: [String] = []
+        for (raw, expected) in vectors {
+            let request = URLRequest(url: try #require(URL(string: "https://example.amazonaws.com" + raw)))
+            #expect(signer.canonicalRequest(for: request).components(separatedBy: "\n")[1] == expected)
+            let signed = try await Self.signedRequest(request, using: signer)
+            #expect(signed.url == request.url)
+            signatures.append(try #require(signed.value(forHTTPHeaderField: "Authorization")))
+        }
+        #expect(Set(signatures.prefix(4)).count == 4)
+    }
+
     @Test("S3 signs trailing and repeated slashes as distinct object keys")
     func s3PreservesExactEncodedPath() async throws {
         let signer = AWSSigV4Interceptor(
