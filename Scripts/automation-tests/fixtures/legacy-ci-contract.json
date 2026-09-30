@@ -1,0 +1,472 @@
+{
+  "source": "InnoNetwork main 9d8053d5f921ebf5c38cc2f816efe90c7db4a450 CI; intentional protection baseline, not hosted pass evidence",
+  "jobs": {
+    "dependency-review": {
+      "name": "Dependency Review",
+      "runs-on": "ubuntu-latest",
+      "timeout-minutes": 10,
+      "steps": [
+        {
+          "name": "Verify immutable dependency transition",
+          "run": "set -euo pipefail\n\ntest \"$(git rev-parse HEAD)\" = \"$BASE_SHA\"\ngh api \\\n  --method GET \\\n  -H 'Accept: application/vnd.github.raw+json' \\\n  -H 'X-GitHub-Api-Version: 2022-11-28' \\\n  \"repos/$GITHUB_REPOSITORY/contents/Package.resolved\" \\\n  -f ref=\"$HEAD_SHA\" > \"$RUNNER_TEMP/head.Package.resolved\"\npython3 -I Scripts/generate_dependency_snapshot.py \\\n  --verify-package-resolved-transition \\\n  Package.resolved \\\n  \"$RUNNER_TEMP/head.Package.resolved\"\n"
+        },
+        {
+          "name": "Wait for complete dependency snapshots",
+          "run": "set -euo pipefail\n\nfor attempt in $(seq 1 18); do\n  headers=\"$RUNNER_TEMP/dependency-review-$attempt.headers\"\n  body=\"$RUNNER_TEMP/dependency-review-$attempt.json\"\n  curl \\\n    --fail-with-body \\\n    --silent \\\n    --show-error \\\n    --retry 3 \\\n    --dump-header \"$headers\" \\\n    --output \"$body\" \\\n    -H \"Authorization: Bearer $GH_TOKEN\" \\\n    -H 'Accept: application/vnd.github+json' \\\n    -H 'Cache-Control: no-cache' \\\n    -H 'X-GitHub-Api-Version: 2022-11-28' \\\n    \"https://api.github.com/repos/$GITHUB_REPOSITORY/dependency-graph/compare/$BASE_SHA...$HEAD_SHA\"\n\n  if python3 - \"$headers\" \"$body\" <<'PY'\nimport base64\nimport json\nimport sys\nfrom pathlib import Path\n\nheaders = {}\nfor line in Path(sys.argv[1]).read_text(encoding=\"utf-8\").splitlines():\n    name, separator, value = line.partition(\":\")\n    if separator:\n        headers[name.lower()] = value.strip()\n\nwarning_header = \"x-github-dependency-graph-snapshot-warnings\"\nif warning_header not in headers:\n    print(\"Dependency graph response omitted the snapshot warning header.\")\n    raise SystemExit(1)\ntry:\n    warning = base64.b64decode(headers[warning_header], validate=True).decode()\nexcept (ValueError, UnicodeError) as error:\n    print(f\"Dependency graph returned an invalid snapshot warning: {error}\")\n    raise SystemExit(1)\n\nwith Path(sys.argv[2]).open(encoding=\"utf-8\") as source:\n    changes = json.load(source)\nif not isinstance(changes, list):\n    print(\"Dependency graph comparison response is not an array.\")\n    raise SystemExit(1)\nif warning:\n    print(f\"Dependency snapshots are not ready: {warning}\")\n    raise SystemExit(1)\nprint(f\"Dependency snapshots are complete ({len(changes)} change(s)).\")\nPY\n  then\n    break\n  fi\n\n  if [[ \"$attempt\" -eq 18 ]]; then\n    echo \"::error::Dependency snapshots remained incomplete for 180 seconds.\"\n    exit 1\n  fi\n  sleep 10\ndone\n"
+        }
+      ]
+    },
+    "lint": {
+      "name": "Lint (swift-format)",
+      "runs-on": "macos-15",
+      "timeout-minutes": 15,
+      "steps": [
+        {
+          "name": "Select Xcode",
+          "run": "sudo xcode-select -s /Applications/Xcode_26.0.1.app\n"
+        },
+        {
+          "name": "Show swift-format version",
+          "run": "xcrun swift-format --version"
+        },
+        {
+          "name": "Run swift-format lint",
+          "run": "bash Scripts/format.sh --lint"
+        }
+      ]
+    },
+    "dead-code": {
+      "name": "Lint (Periphery)",
+      "runs-on": "xcode-27",
+      "timeout-minutes": 25,
+      "steps": [
+        {
+          "name": "Select Xcode",
+          "run": "sudo xcode-select -s /Applications/Xcode.app\n"
+        },
+        {
+          "name": "Install Periphery 3.8.0",
+          "run": "set -euo pipefail\n\narchive=\"$RUNNER_TEMP/periphery-$PERIPHERY_VERSION.zip\"\ninstall_dir=\"$RUNNER_TEMP/periphery-$PERIPHERY_VERSION\"\n\ncurl --fail --location --proto '=https' --tlsv1.2 --retry 3 \\\n  --output \"$archive\" \\\n  \"https://github.com/peripheryapp/periphery/releases/download/$PERIPHERY_VERSION/periphery-$PERIPHERY_VERSION.zip\"\n\nprintf '%s  %s\\n' \"$PERIPHERY_SHA256\" \"$archive\" \\\n  | shasum -a 256 -c -\n\nmkdir -p \"$install_dir\"\nditto -x -k \"$archive\" \"$install_dir\"\n\ncodesign --verify --strict \"$install_dir/periphery\"\ncodesign --verify --strict \"$install_dir/libIndexStore.dylib\"\n\nactual_version=\"$(\"$install_dir/periphery\" version)\"\ntest \"$actual_version\" = \"$PERIPHERY_VERSION\"\necho \"Periphery $actual_version\"\necho \"$install_dir\" >> \"$GITHUB_PATH\"\n"
+        },
+        {
+          "name": "Resolve dependencies",
+          "run": "xcrun swift package resolve"
+        },
+        {
+          "name": "Run Periphery scan",
+          "run": "set -eo pipefail\n# Periphery 3.8 still expects the native SwiftPM index-store layout;\n# Swift 6.4's default SwiftBuild layout is not discoverable yet.\nperiphery scan --config .periphery.yml -- --build-system native\n"
+        }
+      ]
+    },
+    "build-and-test": {
+      "name": "Build and Test (SwiftPM) — Xcode ${{ matrix.xcode.label }}",
+      "runs-on": "${{ matrix.xcode.runner }}",
+      "timeout-minutes": 45,
+      "strategy": {
+        "fail-fast": false,
+        "matrix": {
+          "xcode": [
+            {
+              "label": "26.0.1",
+              "runner": "macos-15",
+              "path": "/Applications/Xcode_26.0.1.app",
+              "required": true
+            },
+            {
+              "label": "27.0",
+              "runner": "xcode-27",
+              "path": "/Applications/Xcode.app",
+              "required": true
+            }
+          ]
+        }
+      },
+      "continue-on-error": "${{ !matrix.xcode.required }}",
+      "steps": [
+        {
+          "name": "Select Xcode",
+          "run": "sudo xcode-select -s ${{ matrix.xcode.path }}\n"
+        },
+        {
+          "name": "Show Xcode and Swift versions",
+          "run": "xcodebuild -version\nxcrun swift --version\n"
+        },
+        {
+          "name": "Check Swift tools compatibility",
+          "run": "set -eo pipefail\n\npackage_tools=\"$(sed -nE 's#^// swift-tools-version: *([0-9]+)\\.([0-9]+).*#\\1.\\2#p' Package.swift | head -n 1)\"\nswift_version=\"$(xcrun swift --version | sed -nE 's/^Apple Swift version ([0-9]+)\\.([0-9]+).*/\\1.\\2/p' | head -n 1)\"\n\nif [[ -z \"$package_tools\" || -z \"$swift_version\" ]]; then\n  echo \"::error::Unable to determine Package.swift tools version or active Swift version.\"\n  exit 1\nfi\n\ntools_major=\"${package_tools%%.*}\"\ntools_minor=\"${package_tools##*.}\"\nswift_major=\"${swift_version%%.*}\"\nswift_minor=\"${swift_version##*.}\"\n\nif (( swift_major > tools_major || (swift_major == tools_major && swift_minor >= tools_minor) )); then\n  echo \"compatible=true\" >> \"$GITHUB_OUTPUT\"\n  echo \"Active Swift ${swift_version} supports Package.swift tools ${package_tools}.\"\nelif [[ \"$REQUIRED_TOOLCHAIN\" == \"true\" ]]; then\n  echo \"compatible=false\" >> \"$GITHUB_OUTPUT\"\n  echo \"::error::Required toolchain Swift ${swift_version} cannot load Package.swift tools ${package_tools}.\"\n  exit 1\nelse\n  echo \"compatible=false\" >> \"$GITHUB_OUTPUT\"\n  echo \"::warning::Skipping non-required ${GITHUB_JOB} matrix leg because Swift ${swift_version} cannot load Package.swift tools ${package_tools}.\"\nfi\n"
+        },
+        {
+          "name": "Resolve dependencies",
+          "run": "xcrun swift package resolve",
+          "if": "steps.toolchain-compatibility.outputs.compatible == 'true'"
+        },
+        {
+          "name": "Verify resolved dependency lock",
+          "run": "test -f Package.resolved\ngit ls-files --error-unmatch Package.resolved >/dev/null\ngit diff --exit-code -- Package.resolved\n",
+          "if": "matrix.xcode.required == true && steps.toolchain-compatibility.outputs.compatible == 'true'"
+        },
+        {
+          "name": "Verify resolved dependency snapshot",
+          "run": "output_root=\"$RUNNER_TEMP/innonetwork-dependency-dry-run\"\nmkdir -p \"$output_root\"\npython3 Scripts/generate_dependency_snapshot.py \\\n  --package-resolved \\\n  Package.resolved \\\n  \"$output_root/snapshot.json\"\n",
+          "if": "matrix.xcode.required == true && steps.toolchain-compatibility.outputs.compatible == 'true'"
+        },
+        {
+          "name": "Build (Swift 6 language mode)",
+          "run": "set -eo pipefail\necho \"🔨 Building InnoNetwork...\"\nxcrun swift --version\n# Swift 6 language mode is enabled per-target in Package.swift, so\n# strict concurrency is always in effect without an explicit flag.\nxcrun swift build\necho \"✅ Build completed successfully!\"\n",
+          "if": "steps.toolchain-compatibility.outputs.compatible == 'true'"
+        },
+        {
+          "name": "Test (with code coverage)",
+          "run": "set -eo pipefail\necho \"🧪 Running tests with --enable-code-coverage...\"\n# Coverage instrumentation makes the macOS Actions runner much more\n# scheduler-sensitive; keep this run non-parallel so wall-clock\n# polling tests do not starve under runner load.\nxcrun swift test --no-parallel --enable-code-coverage\necho \"✅ Tests completed successfully!\"\n",
+          "if": "steps.toolchain-compatibility.outputs.compatible == 'true'"
+        },
+        {
+          "name": "Generate runtime coverage report",
+          "run": "set -euo pipefail\n\nruntime_source_roots=()\nwhile IFS= read -r source_root; do\n  runtime_source_roots+=(\"$source_root\")\ndone < <(\n  find Sources -mindepth 1 -maxdepth 1 -type d \\\n    ! -name InnoNetworkMacros -print | sort\n)\n\nbash Scripts/generate_coverage_report.sh \\\n  .build \\\n  .build/coverage \\\n  \"${runtime_source_roots[@]}\"\n",
+          "if": "steps.toolchain-compatibility.outputs.compatible == 'true'"
+        },
+        {
+          "name": "Enforce @unchecked Sendable policy",
+          "run": "bash Scripts/check_unchecked_sendable.sh",
+          "if": "steps.toolchain-compatibility.outputs.compatible == 'true'"
+        },
+        {
+          "name": "Enforce SharedCoders immutability",
+          "run": "bash Scripts/check_shared_coders_mutation.sh",
+          "if": "steps.toolchain-compatibility.outputs.compatible == 'true'"
+        },
+        {
+          "name": "Enforce no force unwrap in production sources",
+          "run": "bash Scripts/check_production_force_unwraps.sh",
+          "if": "steps.toolchain-compatibility.outputs.compatible == 'true'"
+        },
+        {
+          "name": "Enforce no print() in production sources",
+          "run": "bash Scripts/check_no_print_in_production.sh",
+          "if": "steps.toolchain-compatibility.outputs.compatible == 'true'"
+        }
+      ]
+    },
+    "upload-core-coverage": {
+      "name": "Upload Core Coverage",
+      "runs-on": "ubuntu-latest",
+      "timeout-minutes": 10,
+      "steps": [
+        {
+          "name": "Install Codecov CLI v11.3.1",
+          "run": "set -euo pipefail\n\nbinary=\"$RUNNER_TEMP/codecov-$CODECOV_CLI_VERSION\"\ncurl --fail --location --proto '=https' --tlsv1.2 --retry 3 \\\n  --output \"$binary\" \\\n  \"https://cli.codecov.io/$CODECOV_CLI_VERSION/linux/codecov\"\nprintf '%s  %s\\n' \"$CODECOV_CLI_SHA256\" \"$binary\" \\\n  | sha256sum -c -\nchmod 0755 \"$binary\"\n\"$binary\" --version\n",
+          "continue-on-error": "${{ !(github.event_name == 'push' && github.repository == 'InnoSquadCorp/InnoNetwork') }}"
+        },
+        {
+          "name": "Report artifact-only Codecov fallback",
+          "run": "echo \"::notice::Codecov CLI installation failed; retaining the uploaded coverage artifact without a Codecov upload.\"",
+          "if": "${{ always() && steps.install-codecov-cli.outcome != 'success' }}"
+        }
+      ]
+    },
+    "parallel-tests": {
+      "name": "Test (Bounded Target Shards) — Xcode 26.0.1",
+      "runs-on": "macos-15",
+      "timeout-minutes": 45,
+      "steps": [
+        {
+          "name": "Select Xcode",
+          "run": "sudo xcode-select -s /Applications/Xcode_26.0.1.app\n"
+        },
+        {
+          "name": "Show Xcode and Swift versions",
+          "run": "xcodebuild -version\nxcrun swift --version\n"
+        },
+        {
+          "name": "Resolve dependencies",
+          "run": "xcrun swift package resolve"
+        },
+        {
+          "name": "Run bounded target-sharded tests",
+          "run": "set -eo pipefail\n# Swift Testing 6.2 ignores SwiftPM's --num-workers value. Keep the\n# coverage lane serial, then load four target-filtered copies of the\n# built test bundle so hosted concurrency is actually bound.\nbash Scripts/run_bounded_parallel_tests.sh\n"
+        }
+      ]
+    },
+    "docs-contract-sync": {
+      "name": "Docs / Contract Sync",
+      "runs-on": "xcode-27",
+      "timeout-minutes": 30,
+      "steps": [
+        {
+          "name": "Select Xcode",
+          "run": "sudo xcode-select -s /Applications/Xcode.app\n"
+        },
+        {
+          "name": "Show Xcode and Swift versions",
+          "run": "xcodebuild -version\nxcrun swift --version\n"
+        },
+        {
+          "name": "Resolve dependencies",
+          "run": "xcrun swift package resolve"
+        },
+        {
+          "name": "Test docs-contract assertion helpers",
+          "run": "bash Scripts/tests/test_docs_contract_helpers.sh"
+        },
+        {
+          "name": "Verify docs and stability contract",
+          "run": "bash Scripts/tests/test_validate_6_release_state.sh\nbash Scripts/check_docs_contract_sync.sh\n"
+        },
+        {
+          "name": "Verify guarded benchmark contract",
+          "run": "bash Scripts/check_guarded_benchmark_contract.sh\nbash Scripts/tests/test_check_guarded_benchmark_contract.sh\nbash Scripts/tests/test_run_same_runner_benchmarks.sh\npython3 Scripts/tests/test_run_with_guarded_benchmarks.py\n"
+        },
+        {
+          "name": "Verify repeated macro build baselines",
+          "run": "python3 Scripts/check_macro_build_baseline_contract.py\npython3 Scripts/tests/test_check_macro_build_baseline_contract.py\n"
+        },
+        {
+          "name": "Verify public API tier fixtures",
+          "run": "python3 Scripts/tests/test_check_public_api_tiers.py\npython3 Scripts/check_required_status_checks.py\npython3 Scripts/tests/test_check_required_status_checks.py\n"
+        },
+        {
+          "name": "Verify dependency snapshot conversion",
+          "run": "bash Scripts/tests/test_generate_dependency_snapshot.sh"
+        },
+        {
+          "name": "Verify local release preflight contract",
+          "run": "bash Scripts/tests/test_run_local_release_preflight.sh\n"
+        },
+        {
+          "name": "Verify release workflow contract",
+          "run": "bash Scripts/tests/test_validate_release_candidate.sh\npython3 Scripts/check_release_workflow_contract.py\npython3 Scripts/tests/test_check_release_workflow_contract.py\n"
+        },
+        {
+          "name": "Verify DocC archive contract",
+          "run": "bash Scripts/tests/test_check_docc_archives.sh"
+        },
+        {
+          "name": "Verify stable examples contract",
+          "run": "bash Scripts/check_stable_examples.sh"
+        },
+        {
+          "name": "Verify example deployment floors",
+          "run": "python3 Scripts/check_example_platform_floors.py\npython3 Scripts/tests/test_check_example_platform_floors.py\nbash Scripts/tests/test_build_consumer_examples.sh\nruby Scripts/check_consumer_ci_contract.rb\nruby Scripts/tests/test_consumer_ci_contract.rb\npython3 Scripts/tests/test_consumer_ci.py\npython3 Scripts/check_apple_platform_build_contract.py\npython3 Scripts/tests/test_check_apple_platform_build_contract.py\n"
+        },
+        {
+          "name": "Verify migration guide code blocks compile",
+          "run": "bash Scripts/check_migration_examples.sh"
+        },
+        {
+          "name": "Verify CHANGELOG Unreleased section",
+          "run": "bash Scripts/check_changelog_sync.sh"
+        },
+        {
+          "name": "Verify provisionally stable enum case ledger",
+          "run": "bash Scripts/check_provisional_enum_cases.sh"
+        },
+        {
+          "name": "Build documentation smoke target",
+          "run": "xcrun swift build --target InnoNetworkDocSmoke"
+        },
+        {
+          "name": "Run documentation smoke target",
+          "run": "xcrun swift run InnoNetworkDocSmoke"
+        },
+        {
+          "name": "Verify resumable upload recovery across process exit",
+          "run": "bash Scripts/test_resumable_process_recovery.sh"
+        }
+      ]
+    },
+    "apple-platform-build-smoke": {
+      "name": "Apple Platform Build Smoke",
+      "runs-on": "macos-15",
+      "timeout-minutes": 45,
+      "strategy": {
+        "fail-fast": false,
+        "matrix": {
+          "include": [
+            {
+              "destination": "platform=macOS",
+              "runtime": "macOS",
+              "sdk": "macosx",
+              "builder": "xcodebuild"
+            },
+            {
+              "destination": "generic/platform=iOS Simulator",
+              "runtime": "iOS",
+              "sdk": "iphonesimulator",
+              "builder": "xcodebuild"
+            },
+            {
+              "triple": "arm64-apple-tvos16.0",
+              "runtime": "tvOS",
+              "sdk": "appletvos",
+              "builder": "swiftpm-cross"
+            },
+            {
+              "triple": "arm64_32-apple-watchos9.0",
+              "runtime": "watchOS",
+              "sdk": "watchos",
+              "builder": "swiftpm-cross"
+            },
+            {
+              "triple": "arm64-apple-xros1.0",
+              "runtime": "visionOS",
+              "sdk": "xros",
+              "builder": "swiftpm-cross"
+            }
+          ]
+        }
+      },
+      "steps": [
+        {
+          "name": "Select Xcode",
+          "run": "sudo xcode-select -s /Applications/Xcode_26.0.1.app\n"
+        },
+        {
+          "name": "Show Xcode and Swift versions",
+          "run": "xcodebuild -version\nxcrun swift --version\nxcrun simctl list devicetypes\n"
+        },
+        {
+          "name": "Resolve dependencies",
+          "run": "xcrun swift package resolve"
+        },
+        {
+          "name": "Build package for ${{ matrix.runtime }}",
+          "run": "set -euo pipefail\n\nruntime=\"${{ matrix.runtime }}\"\nsdk=\"${{ matrix.sdk }}\"\nbuilder=\"${{ matrix.builder }}\"\n\nif ! xcrun --sdk \"$sdk\" --show-sdk-path >/dev/null 2>&1; then\n  echo \"::error::Required $runtime SDK $sdk is not installed on the pinned runner.\"\n  exit 1\nfi\n\nif [[ \"$builder\" == \"swiftpm-cross\" ]]; then\n  bash Scripts/build_apple_platform_targets.sh \\\n    \"$runtime\" \\\n    \"$sdk\" \\\n    '${{ matrix.triple }}'\n  exit 0\nfi\n\nxcodebuild \\\n  -scheme InnoNetwork-Package \\\n  -destination '${{ matrix.destination }}' \\\n  -skipMacroValidation \\\n  -derivedDataPath build/apple-platform-smoke \\\n  CODE_SIGNING_ALLOWED=NO \\\n  build\n"
+        }
+      ]
+    },
+    "consumer-smoke": {
+      "name": "Consumer Smoke",
+      "runs-on": "ubuntu-latest",
+      "timeout-minutes": 5,
+      "steps": [
+        {
+          "name": "Require all consumer lanes to succeed",
+          "run": "python3 Scripts/check_consumer_ci_results.py"
+        }
+      ]
+    },
+    "consumer-examples": {
+      "name": "Consumer Examples",
+      "runs-on": "macos-15",
+      "timeout-minutes": 45,
+      "steps": [
+        {
+          "name": "Select Xcode",
+          "run": "sudo xcode-select -s /Applications/Xcode_26.0.1.app\n"
+        },
+        {
+          "name": "Show Xcode and Swift versions",
+          "run": "xcodebuild -version\nxcrun swift --version\n"
+        },
+        {
+          "name": "Verify macro trait manifest and default graph",
+          "run": "bash Scripts/check_macro_trait_graphs.sh"
+        },
+        {
+          "name": "Build root core without default traits",
+          "run": "bash Scripts/check_core_trait_build.sh"
+        },
+        {
+          "name": "Build all independent consumer examples",
+          "run": "bash Scripts/build_consumer_examples.sh"
+        },
+        {
+          "name": "Run macro adopter smoke",
+          "run": "xcrun swift run --package-path Examples/MacroAdopterSmoke"
+        },
+        {
+          "name": "Run OpenAPI adopter smoke",
+          "run": "xcrun swift run --package-path Examples/OpenAPIAdopterSmoke"
+        }
+      ]
+    },
+    "consumer-macros": {
+      "name": "Consumer Macros",
+      "runs-on": "macos-15",
+      "timeout-minutes": 30,
+      "steps": [
+        {
+          "name": "Select Xcode",
+          "run": "sudo xcode-select -s /Applications/Xcode_26.0.1.app"
+        },
+        {
+          "name": "Test macros from source (with code coverage)",
+          "run": "xcrun swift test \\\n  --disable-experimental-prebuilts \\\n  --filter InnoNetworkMacroTests \\\n  --enable-code-coverage\n"
+        },
+        {
+          "name": "Verify macro compile-failure diagnostics",
+          "run": "bash Scripts/check_macro_compile_failures.sh"
+        },
+        {
+          "name": "Generate macro coverage report",
+          "run": "bash Scripts/generate_coverage_report.sh \\\n  .build \\\n  .build/coverage-macros \\\n  Sources/InnoNetworkMacros\n"
+        }
+      ]
+    },
+    "consumer-openapi": {
+      "name": "Consumer OpenAPI",
+      "runs-on": "macos-15",
+      "timeout-minutes": 30,
+      "steps": [
+        {
+          "name": "Select Xcode",
+          "run": "sudo xcode-select -s /Applications/Xcode_26.0.1.app"
+        },
+        {
+          "name": "Build openapi-to-innonetwork CLI",
+          "run": "xcrun swift build",
+          "working-directory": "Tools/openapi-to-innonetwork"
+        },
+        {
+          "name": "Test openapi-to-innonetwork CLI",
+          "run": "xcrun swift test",
+          "working-directory": "Tools/openapi-to-innonetwork"
+        },
+        {
+          "name": "Typecheck generated OpenAPI output",
+          "run": "bash Scripts/test_openapi_generated_output.sh"
+        }
+      ]
+    },
+    "upload-macro-coverage": {
+      "name": "Upload Macro Coverage",
+      "runs-on": "ubuntu-latest",
+      "timeout-minutes": 10,
+      "steps": [
+        {
+          "name": "Install Codecov CLI v11.3.1",
+          "run": "set -euo pipefail\n\nbinary=\"$RUNNER_TEMP/codecov-$CODECOV_CLI_VERSION\"\ncurl --fail --location --proto '=https' --tlsv1.2 --retry 3 \\\n  --output \"$binary\" \\\n  \"https://cli.codecov.io/$CODECOV_CLI_VERSION/linux/codecov\"\nprintf '%s  %s\\n' \"$CODECOV_CLI_SHA256\" \"$binary\" \\\n  | sha256sum -c -\nchmod 0755 \"$binary\"\n\"$binary\" --version\n",
+          "continue-on-error": "${{ !(github.event_name == 'push' && github.repository == 'InnoSquadCorp/InnoNetwork') }}"
+        },
+        {
+          "name": "Report artifact-only Codecov fallback",
+          "run": "echo \"::notice::Codecov CLI installation failed; retaining the uploaded coverage artifact without a Codecov upload.\"",
+          "if": "${{ always() && steps.install-codecov-cli.outcome != 'success' }}"
+        }
+      ]
+    },
+    "benchmark-smoke": {
+      "name": "Benchmark Smoke",
+      "runs-on": "macos-15",
+      "timeout-minutes": 30,
+      "steps": [
+        {
+          "name": "Select Xcode",
+          "run": "sudo xcode-select -s /Applications/Xcode_26.0.1.app\n"
+        },
+        {
+          "name": "Show Xcode and Swift versions",
+          "run": "xcodebuild -version\nxcrun swift --version\n"
+        },
+        {
+          "name": "Resolve dependencies",
+          "run": "xcrun swift package resolve"
+        },
+        {
+          "name": "Run benchmark smoke",
+          "run": "mkdir -p .build/benchmarks\nxcrun swift run -c release InnoNetworkBenchmarks \\\n  --quick \\\n  --json-path .build/benchmarks/results.json\n"
+        }
+      ]
+    }
+  }
+}

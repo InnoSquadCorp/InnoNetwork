@@ -4,9 +4,11 @@
 
 DocC documentation is built and deployed to GitHub Pages via:
 
-- `.github/workflows/docc-pages.yml`
+- `.github/workflows/ci.yml`: read-only validation and exact-run Pages artifact
+- `.github/workflows/docs-publish.yml`: trusted API-only publication followed by read-only route smoke
+- `.github/workflows/docc-pages.yml`: standalone manual preview
 
-The workflow builds and publishes DocC archives for all public products:
+The CI and publication workflows build and publish DocC archives for all public products:
 
 1. `InnoNetwork`
 2. `InnoNetworkAuthAWS`
@@ -26,8 +28,12 @@ symbol-only fallback behavior.
 
 ## Triggers
 
-- `push` to `main`
-- `workflow_dispatch` (manual run)
+- Successful current-main push CI, after all selected validation succeeds
+- Successful authenticated Dependabot current-main recovery CI
+- `DocC Pages` manual dispatch produces preview artifacts only
+
+PRs, stale main runs and ordinary unverified manual CI dispatches cannot publish.
+See [CI automation](CIAutomation.md) for origin checks and activation boundaries.
 
 ## Deployment Output
 
@@ -87,7 +93,9 @@ machines.
 ## Operational Notes
 
 - Ensure GitHub Pages is enabled in repository settings.
-- The workflow uses `actions/upload-pages-artifact` and `actions/deploy-pages`.
+- CI uses `actions/upload-pages-artifact`; the trusted publisher uses the Pages
+  deployment API after exact-origin/attempt/job/step/artifact verification.
+- Post-deployment route smoke retains bounded retries in a separate read-only job.
 - A library product addition or rename must update its DocC catalog,
   `docs/public-docc-products.txt`, this route list, and `docs/site/index.html`
   together. The archive contract rejects drift from `Package.swift`.

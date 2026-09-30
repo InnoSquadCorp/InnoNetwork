@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "checks": [
+    {
+      "context": "CI Required",
+      "integration_id": 15368
+    },
+    {
+      "context": "Dependabot Merge Ready",
+      "integration_id": 15368
+    }
+  ]
+}

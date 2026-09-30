@@ -30,9 +30,10 @@ class ConsumerCIContractTest < Minitest::Test
   def test_lanes_cannot_skip_or_ignore_failure
     ConsumerCIContract::LANES.each do |id|
       %w[if continue-on-error needs].each do |key|
+        old = @workflow['jobs'][id][key]
         @workflow['jobs'][id][key] = true
         assert_raises(ArgumentError) { validate }
-        @workflow['jobs'][id].delete(key)
+        old.nil? ? @workflow['jobs'][id].delete(key) : @workflow['jobs'][id][key] = old
       end
     end
   end
@@ -61,6 +62,13 @@ class ConsumerCIContractTest < Minitest::Test
     step = @workflow['jobs']['consumer-macros']['steps'].find { |s| s.dig('with', 'name') == 'innonetwork-coverage-macros' }
     step['with']['if-no-files-found'] = 'ignore'
     assert_raises(ArgumentError) { validate }
+  end
+
+  def test_cache_source_and_immutable_commit_are_required
+    ['actions/cache@v6', 'attacker/cache@' + 'a' * 40, 'actions/cache@' + 'a' * 39].each do |source|
+      @action['runs']['steps'][1]['uses'] = source
+      assert_raises(ArgumentError) { validate }
+    end
   end
 
   def test_no_broad_cache_fallback

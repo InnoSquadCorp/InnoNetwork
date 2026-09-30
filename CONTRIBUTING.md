@@ -87,3 +87,9 @@ from being blocked indefinitely on a single keyholder.
 - Docs contract sync passes.
 - Consumer smoke build still succeeds.
 - Changelog and release notes are updated when behavior changes.
+
+## CI and dependency automation
+
+See [CI and dependency automation](docs/CIAutomation.md) for changed-path lanes,
+read-only candidate validation, exact-head Dependabot safeguards and the separately
+approved flag-last activation procedure. Native review requirements remain in force.

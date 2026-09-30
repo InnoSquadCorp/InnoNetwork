@@ -1,0 +1,91 @@
+name: Publish Documentation
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-docs:
+    name: Deploy Documentation
+    outputs:
+      page_url: ${{ steps.deployment.outputs.page_url }}
+    if: >-
+      github.repository == 'InnoSquadCorp/InnoNetwork' &&
+      github.ref == 'refs/heads/main' &&
+      github.workflow_ref == 'InnoSquadCorp/InnoNetwork/.github/workflows/docs-publish.yml@refs/heads/main' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.repository.full_name == github.repository &&
+      (github.event.workflow_run.event == 'push' || github.event.workflow_run.event == 'workflow_dispatch') &&
+      github.event.workflow_run.name == 'CI' && github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Ineligible workflow_run notifications must not enter the Pages queue.
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      actions: read
+      checks: read
+      pull-requests: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      # workflow_run loads this workflow from main. Never check out the upstream
+      # source head, download its artifact or execute a PR-controlled helper.
+      - name: Checkout trusted publisher only
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+          sparse-checkout: Scripts/publish-docs.py
+          sparse-checkout-cone-mode: false
+
+      - name: Verify origin and publish current-main documentation
+        id: deployment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -B Scripts/publish-docs.py
+
+  smoke-docs:
+    name: Smoke deployed DocC routes
+    needs: deploy-docs
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout trusted route inventory
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+          sparse-checkout: docs/public-docc-products.txt
+          sparse-checkout-cone-mode: false
+
+      - name: Smoke deployed DocC URLs
+        env:
+          SITE_URL: ${{ needs.deploy-docs.outputs.page_url }}
+        run: |
+          set -euo pipefail
+
+          base_url="${SITE_URL%/}"
+          curl --fail --location --silent --show-error \
+            --retry 12 --retry-delay 5 --retry-all-errors \
+            --connect-timeout 10 --max-time 30 \
+            "$base_url/" >/dev/null
+
+          while IFS= read -r module; do
+            slug="$(printf '%s' "$module" | tr '[:upper:]' '[:lower:]')"
+            curl --fail --location --silent --show-error \
+              --retry 12 --retry-delay 5 --retry-all-errors \
+              --connect-timeout 10 --max-time 30 \
+              "$base_url/${module}/documentation/${slug}/" >/dev/null
+          done < docs/public-docc-products.txt

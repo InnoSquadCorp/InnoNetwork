@@ -1209,9 +1209,14 @@ validate_release_quality_gates() {
   docc_product_loop_count="$(grep -F -c \
     'done < docs/public-docc-products.txt' \
     "$repo_root/.github/workflows/docc-pages.yml")"
-  if [[ "$docc_product_loop_count" != "3" ]]; then
-    fail "DocC Pages must use docs/public-docc-products.txt in all three product loops"
+  if [[ "$docc_product_loop_count" != "2" ]]; then
+    fail "DocC preview must use docs/public-docc-products.txt in both build loops"
   fi
+  ci_docc_product_loop_count="$(grep -F -c 'done < docs/public-docc-products.txt' "$repo_root/.github/workflows/ci.yml")"
+  [[ "$ci_docc_product_loop_count" == "2" ]] || fail "CI DocC must retain both product loops"
+  require_contains 'done < docs/public-docc-products.txt' "$repo_root/.github/workflows/docs-publish.yml"
+  require_contains 'Smoke deployed DocC URLs' "$repo_root/.github/workflows/docs-publish.yml"
+  require_contains 'python3 -B Scripts/publish-docs.py' "$repo_root/.github/workflows/docs-publish.yml"
   require_contains 'Sources/InnoNetworkPersistentCache' "$repo_root/Scripts/check_unchecked_sendable.sh"
   require_contains 'Sources/InnoNetworkMacros' "$repo_root/Scripts/check_unchecked_sendable.sh"
   require_contains 'Sources/InnoNetworkMacros' "$repo_root/Scripts/check_production_force_unwraps.sh"

@@ -28,3 +28,12 @@ Scripts/symbols/**                      @ethan-is
 .github/workflows/**                    @ethan-is
 .github/required-status-checks.json     @ethan-is
 .github/CODEOWNERS                      @ethan-is
+
+# Automation decisions and trusted metadata publishers are maintainer-owned.
+Scripts/ci-policy.py                     @ethan-is
+Scripts/dependabot-merge-policy.py       @ethan-is
+Scripts/publish-docs.py                  @ethan-is
+Scripts/check-public-operations.py      @ethan-is
+Scripts/automation-tests/**             @ethan-is
+.github/automation-required-status-checks.json @ethan-is
+.spi.yml                                @ethan-is

@@ -1,23 +1,6 @@
 name: Benchmarks
 
 on:
-  pull_request:
-    paths:
-      - "Benchmarks/**"
-      - "Sources/**"
-      - "Package.swift"
-      - ".github/workflows/benchmarks.yml"
-      - "Scripts/compare_benchmark_runs.py"
-      - "Scripts/render_benchmark_comment.py"
-      - "Scripts/append_benchmark_trend.py"
-      - "Scripts/check_guarded_benchmark_contract.sh"
-      - "Scripts/guarded_benchmarks.py"
-      - "Scripts/run_with_guarded_benchmarks.py"
-      - "Scripts/run_same_runner_benchmarks.sh"
-      - "Scripts/tests/test_check_guarded_benchmark_contract.sh"
-      - "Scripts/tests/test_run_with_guarded_benchmarks.py"
-      - "Scripts/tests/test_run_same_runner_benchmarks.sh"
-      - "Scripts/tests/test_compare_benchmark_runs.py"
   workflow_dispatch:
   schedule:
     - cron: "0 3 * * 1"
@@ -36,12 +19,10 @@ jobs:
     timeout-minutes: 60
     permissions:
       contents: read
-      issues: write
-      pull-requests: write
 
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -52,7 +33,7 @@ jobs:
           sudo xcode-select -s /Applications/Xcode_26.0.1.app
 
       - name: Cache SwiftPM artifacts
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             .build/checkouts
@@ -93,46 +74,6 @@ jobs:
           fi
           bash Scripts/run_same_runner_benchmarks.sh "${arguments[@]}"
 
-      - name: Render benchmark PR comment
-        if: always() && github.event_name == 'pull_request'
-        run: |
-          mkdir -p .build/benchmarks
-          {
-            printf '<!-- innonetwork-benchmark-comment -->\n'
-            if [ -f .build/benchmarks/results.json ]; then
-              python3 Scripts/render_benchmark_comment.py \
-                .build/benchmarks/results.json \
-                /dev/stdout
-            else
-              printf '## InnoNetwork benchmark summary\n\nBenchmark run did not produce results.json.\n'
-            fi
-            if [ -f .build/benchmarks/json/results.json ]; then
-              printf '\n## Preserved JSON codec\n\n'
-              python3 Scripts/render_benchmark_comment.py \
-                .build/benchmarks/json/results.json /dev/stdout
-            else
-              printf '\nJSON codec lane did not produce results.json.\n'
-            fi
-          } > .build/benchmarks/comment.md
-
-      - name: Find existing benchmark comment
-        if: always() && github.event_name == 'pull_request'
-        id: find-benchmark-comment
-        uses: peter-evans/find-comment@b30e6a3c0ed37e7c023ccd3f1db5c6c0b0c23aad # v4
-        with:
-          issue-number: ${{ github.event.pull_request.number }}
-          body-includes: "<!-- innonetwork-benchmark-comment -->"
-
-      - name: Comment benchmark summary on PR (sticky)
-        if: always() && github.event_name == 'pull_request'
-        continue-on-error: true
-        uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5
-        with:
-          comment-id: ${{ steps.find-benchmark-comment.outputs.comment-id }}
-          issue-number: ${{ github.event.pull_request.number }}
-          body-path: .build/benchmarks/comment.md
-          edit-mode: replace
-
       - name: Upload benchmark artifact
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -151,7 +92,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Download benchmark artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1

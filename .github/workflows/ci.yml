@@ -1,23 +1,90 @@
 name: CI
+run-name: >-
+  ${{ inputs.dependabot_merge_pr != '' && format('CI / Dependabot merge #{0}', inputs.dependabot_merge_pr) || 'CI' }}
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, edited, labeled, unlabeled, ready_for_review]
   push:
-    branches:
-      - main
+    branches: [main]
+  merge_group:
+    types: [checks_requested]
   workflow_dispatch:
+    inputs:
+      dependabot_merge_pr:
+        description: 'Trusted recovery only: actual merged Dependabot PR at current main'
+        type: string
+        required: false
+        default: ''
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ inputs.dependabot_merge_pr != '' && format('dependabot-{0}', inputs.dependabot_merge_pr) || 'validation' }}
   cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
+  ci-plan:
+    name: CI Plan
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      plan: ${{ steps.plan.outputs.plan }}
+      post_merge: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dependabot_merge_pr != '')) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Verify actual post-merge main origin
+        if: inputs.dependabot_merge_pr != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MERGED_PR: ${{ inputs.dependabot_merge_pr }}
+          EVENT_REF: ${{ github.ref }}
+        run: |
+          [[ "$EVENT_REF" == 'refs/heads/main' ]] || { echo 'Recovery must run on main.' >&2; exit 1; }
+          python3 -B Scripts/dependabot-merge-policy.py verify-post-merge --pr "$MERGED_PR" --expected-sha "$GITHUB_SHA"
+      - name: Plan exact changed paths
+        id: plan
+        run: python3 -B Scripts/ci-policy.py plan --event "$GITHUB_EVENT_PATH" --output .build/ci-plan.json
+      - name: Preserve change selection evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ci-plan-${{ github.sha }}-${{ github.run_attempt }}
+          path: .build/ci-plan.json
+          if-no-files-found: error
+
+
+  policy:
+    name: CI and public operations policy
+    needs: ci-plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Verify CI selection and public operations
+        run: |
+          python3 -B -m unittest discover -s Scripts/automation-tests -p 'test_*.py'
+          python3 -B Scripts/check-public-operations.py
+          python3 -B Scripts/check_required_status_checks.py
+          ruby Scripts/check_consumer_ci_contract.rb
+          ruby Scripts/tests/test_consumer_ci_contract.rb
+          python3 -B Scripts/check_release_workflow_contract.py
+          python3 -B Scripts/tests/test_check_release_workflow_contract.py
+
   dependency-review:
+    needs: ci-plan
     name: Dependency Review
-    if: github.event_name == 'pull_request'
+    if: fromJSON(needs.ci-plan.outputs.plan).jobs.dependency-review
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -25,11 +92,11 @@ jobs:
 
     steps:
       - name: Checkout trusted dependency verifier
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           ref: ${{ github.event.pull_request.base.sha }}
           fetch-depth: 1
-          persist-credentials: false
           submodules: false
           lfs: false
 
@@ -133,14 +200,19 @@ jobs:
           retry-on-snapshot-warnings: true
           retry-on-snapshot-warnings-timeout: 180
 
+
   lint:
+    needs: ci-plan
     name: Lint (swift-format)
+    if: fromJSON(needs.ci-plan.outputs.plan).jobs.lint
     runs-on: macos-15
     timeout-minutes: 15
 
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Select Xcode
         run: |
@@ -152,14 +224,19 @@ jobs:
       - name: Run swift-format lint
         run: bash Scripts/format.sh --lint
 
+
   dead-code:
+    needs: ci-plan
     name: Lint (Periphery)
+    if: fromJSON(needs.ci-plan.outputs.plan).jobs.dead-code
     runs-on: xcode-27
     timeout-minutes: 25
 
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Select Xcode
         run: |
@@ -203,8 +280,11 @@ jobs:
           # Swift 6.4's default SwiftBuild layout is not discoverable yet.
           periphery scan --config .periphery.yml -- --build-system native
 
+
   build-and-test:
+    needs: ci-plan
     name: Build and Test (SwiftPM) — Xcode ${{ matrix.xcode.label }}
+    if: fromJSON(needs.ci-plan.outputs.plan).jobs.build-and-test
     runs-on: ${{ matrix.xcode.runner }}
     timeout-minutes: 45
     # Run the toolchain matrix in parallel so a green / red signal is
@@ -230,14 +310,16 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Select Xcode
         run: |
           sudo xcode-select -s ${{ matrix.xcode.path }}
 
       - name: Cache SwiftPM artifacts
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             .build/checkouts
@@ -371,9 +453,11 @@ jobs:
         if: steps.toolchain-compatibility.outputs.compatible == 'true'
         run: bash Scripts/check_no_print_in_production.sh
 
+
   upload-core-coverage:
     name: Upload Core Coverage
-    needs: build-and-test
+    needs: [ci-plan, build-and-test]
+    if: fromJSON(needs.ci-plan.outputs.plan).jobs.upload-core-coverage
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -382,7 +466,9 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Download canonical coverage artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -414,7 +500,7 @@ jobs:
 
       - name: Upload coverage to Codecov
         if: steps.install-codecov-cli.outcome == 'success'
-        uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2 # v6.0.0
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
         with:
           binary: ${{ runner.temp }}/codecov-v11.3.1
           use_oidc: true
@@ -430,21 +516,26 @@ jobs:
           # gate. PRs keep the artifact-only fallback non-blocking.
           fail_ci_if_error: ${{ github.event_name == 'push' && github.repository == 'InnoSquadCorp/InnoNetwork' }}
 
+
   parallel-tests:
+    needs: ci-plan
     name: Test (Bounded Target Shards) — Xcode 26.0.1
+    if: fromJSON(needs.ci-plan.outputs.plan).jobs.parallel-tests
     runs-on: macos-15
     timeout-minutes: 45
 
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Select Xcode
         run: |
           sudo xcode-select -s /Applications/Xcode_26.0.1.app
 
       - name: Cache SwiftPM artifacts
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             .build/checkouts
@@ -469,15 +560,19 @@ jobs:
           # built test bundle so hosted concurrency is actually bound.
           bash Scripts/run_bounded_parallel_tests.sh
 
+
   docs-contract-sync:
+    needs: ci-plan
     name: Docs / Contract Sync
+    if: fromJSON(needs.ci-plan.outputs.plan).jobs.docs-contract-sync
     runs-on: xcode-27
     timeout-minutes: 30
 
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
 
       - name: Select Xcode
@@ -566,8 +661,11 @@ jobs:
       - name: Verify resumable upload recovery across process exit
         run: bash Scripts/test_resumable_process_recovery.sh
 
+
   apple-platform-build-smoke:
+    needs: ci-plan
     name: Apple Platform Build Smoke
+    if: fromJSON(needs.ci-plan.outputs.plan).jobs.apple-platform-build-smoke
     runs-on: macos-15
     timeout-minutes: 45
 
@@ -599,7 +697,9 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Select Xcode
         run: |
@@ -643,32 +743,41 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             build
 
+
   consumer-smoke:
     name: Consumer Smoke
     # Preserve the protected check name. A skipped/cancelled/failed child is
     # never a successful aggregate (including when an upstream job fails).
-    needs: [consumer-examples, consumer-macros, consumer-openapi]
-    if: always()
+    needs: [ci-plan, consumer-examples, consumer-macros, consumer-openapi]
+    if: always() && fromJSON(needs.ci-plan.outputs.plan).jobs.consumer-smoke
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Require all consumer lanes to succeed
         env:
-          CONSUMER_JOB_RESULTS: ${{ toJSON(needs) }}
+          CONSUMER_JOB_RESULTS: >-
+            {"consumer-examples": ${{ toJSON(needs.consumer-examples) }}, "consumer-macros": ${{ toJSON(needs.consumer-macros) }}, "consumer-openapi": ${{ toJSON(needs.consumer-openapi) }}}
         run: python3 Scripts/check_consumer_ci_results.py
 
+
   consumer-examples:
+    needs: ci-plan
     name: Consumer Examples
+    if: fromJSON(needs.ci-plan.outputs.plan).jobs.consumer-examples
     runs-on: macos-15
     timeout-minutes: 45
 
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Select Xcode
         run: |
@@ -699,14 +808,19 @@ jobs:
       - name: Run OpenAPI adopter smoke
         run: xcrun swift run --package-path Examples/OpenAPIAdopterSmoke
 
+
   consumer-macros:
+    needs: ci-plan
     name: Consumer Macros
+    if: fromJSON(needs.ci-plan.outputs.plan).jobs.consumer-macros
     runs-on: macos-15
     timeout-minutes: 30
 
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Select Xcode
         run: sudo xcode-select -s /Applications/Xcode_26.0.1.app
@@ -741,14 +855,19 @@ jobs:
           path: .build/coverage-macros/
           if-no-files-found: error
 
+
   consumer-openapi:
+    needs: ci-plan
     name: Consumer OpenAPI
+    if: fromJSON(needs.ci-plan.outputs.plan).jobs.consumer-openapi
     runs-on: macos-15
     timeout-minutes: 30
 
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Select Xcode
         run: sudo xcode-select -s /Applications/Xcode_26.0.1.app
@@ -769,9 +888,11 @@ jobs:
       - name: Typecheck generated OpenAPI output
         run: bash Scripts/test_openapi_generated_output.sh
 
+
   upload-macro-coverage:
     name: Upload Macro Coverage
-    needs: consumer-macros
+    needs: [ci-plan, consumer-macros]
+    if: fromJSON(needs.ci-plan.outputs.plan).jobs.upload-macro-coverage
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -780,7 +901,9 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Download macro coverage artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -812,7 +935,7 @@ jobs:
 
       - name: Upload macro coverage to Codecov
         if: steps.install-codecov-cli.outcome == 'success'
-        uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2 # v6.0.0
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
         with:
           binary: ${{ runner.temp }}/codecov-v11.3.1
           use_oidc: true
@@ -822,14 +945,19 @@ jobs:
           name: macro-coverage
           fail_ci_if_error: ${{ github.event_name == 'push' && github.repository == 'InnoSquadCorp/InnoNetwork' }}
 
+
   benchmark-smoke:
+    needs: ci-plan
     name: Benchmark Smoke
+    if: fromJSON(needs.ci-plan.outputs.plan).jobs.benchmark-smoke
     runs-on: macos-15
     timeout-minutes: 30
 
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Select Xcode
         run: |
@@ -857,3 +985,272 @@ jobs:
           name: innonetwork-benchmark-smoke
           path: .build/benchmarks/results.json
           if-no-files-found: error
+
+  codeql:
+    name: CodeQL / Swift
+    needs: ci-plan
+    if: fromJSON(needs.ci-plan.outputs.plan).jobs.codeql
+    runs-on: macos-15
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      # CodeQL needs to publish results into the security tab and read
+      # action metadata to discover queries.
+      actions: read
+      security-events: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [swift]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.0.1.app
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        with:
+          languages: ${{ matrix.language }}
+          # `security-extended` adds higher-signal queries beyond the default
+          # `security-and-quality` pack. Swift coverage in CodeQL is still
+          # maturing, so we run both packs and rely on triage to suppress
+          # false positives via per-issue dismissals.
+          queries: security-extended,security-and-quality
+
+      - name: Build
+        run: |
+          set -eo pipefail
+          xcrun swift --version
+          xcrun swift build
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        with:
+          category: "/language:${{ matrix.language }}"
+
+  thread-sanitizer:
+    name: Tests under ThreadSanitizer
+    needs: ci-plan
+    if: fromJSON(needs.ci-plan.outputs.plan).jobs.thread-sanitizer
+    runs-on: xcode-27
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Show Xcode and Swift versions
+        run: |
+          xcodebuild -version
+          xcrun swift --version
+
+      - name: Resolve dependencies
+        run: xcrun swift package resolve
+
+      - name: Run tests under ThreadSanitizer
+        env:
+          # Surface warnings as hard failures so flaky races are caught.
+          TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1
+        run: |
+          set -eo pipefail
+          xcrun swift test \
+            --sanitize thread \
+            --no-parallel
+
+  benchmarks:
+    name: Run Benchmarks
+    needs: ci-plan
+    if: fromJSON(needs.ci-plan.outputs.plan).jobs.benchmarks
+    runs-on: macos-15
+    timeout-minutes: 60
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.0.1.app
+
+      - name: Cache SwiftPM artifacts
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            .build/checkouts
+            .build/repositories
+            .build/swiftpm-cache
+          key: ${{ runner.os }}-bench-xcode-26.0.1-${{ hashFiles('Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-bench-xcode-26.0.1-
+
+      - name: Show Xcode and Swift versions
+        run: |
+          xcodebuild -version
+          xcrun swift --version
+
+      - name: Test benchmark report tooling
+        run: |
+          python3 Scripts/tests/test_compare_benchmark_runs.py
+          python3 Scripts/tests/test_run_with_guarded_benchmarks.py
+          bash Scripts/tests/test_run_same_runner_benchmarks.sh
+
+      - name: Verify guarded benchmark contract
+        run: |
+          bash Scripts/check_guarded_benchmark_contract.sh
+          bash Scripts/tests/test_check_guarded_benchmark_contract.sh
+
+      - name: Compare same-runner benchmark medians
+        env:
+          PR_BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
+          MAX_REGRESSION_PERCENT: "20"
+        run: |
+          set -euo pipefail
+          arguments=(
+            --output-dir .build/benchmarks
+            --max-regression-percent "$MAX_REGRESSION_PERCENT"
+          )
+          if [[ -n "$PR_BASE_SHA" ]]; then
+            arguments+=(--base-revision "$PR_BASE_SHA")
+          fi
+          bash Scripts/run_same_runner_benchmarks.sh "${arguments[@]}"
+
+      - name: Upload benchmark artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: innonetwork-benchmarks
+          path: .build/benchmarks/
+          if-no-files-found: error
+
+
+  documentation:
+    name: Build DocC Site
+    needs: ci-plan
+    if: fromJSON(needs.ci-plan.outputs.plan).jobs.documentation
+    runs-on: xcode-27
+    timeout-minutes: 30
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Show Xcode and Swift versions
+        run: |
+          xcodebuild -version
+          xcrun swift --version
+
+      - name: Verify DocC archive contract fixtures
+        run: bash Scripts/tests/test_check_docc_archives.sh
+
+      - name: Build DocC archives
+        run: |
+          xcodebuild docbuild \
+            -scheme InnoNetwork-Package \
+            -destination 'generic/platform=macOS' \
+            -skipMacroValidation \
+            -derivedDataPath .build/DocC
+
+      - name: Verify public DocC archives
+        run: bash Scripts/check_docc_archives.sh .build/DocC
+
+      - name: Transform DocC archives for static hosting
+        env:
+          BASE_PATH: ${{ github.event.repository.name }}
+        run: |
+          set -euo pipefail
+
+          SITE_DIR=".build/docc-site"
+          rm -rf "$SITE_DIR"
+          mkdir -p "$SITE_DIR"
+          touch "$SITE_DIR/.nojekyll"
+
+          while IFS= read -r module; do
+            archive="$(find .build/DocC/Build/Products -type d -path "*/${module}.doccarchive" -print -quit)"
+            if [[ -z "$archive" || ! -d "$archive" ]]; then
+              echo "Missing DocC archive for module: $module"
+              exit 1
+            fi
+
+            xcrun docc process-archive transform-for-static-hosting "$archive" \
+              --output-path "$SITE_DIR/$module" \
+              --hosting-base-path "$BASE_PATH/$module"
+          done < docs/public-docc-products.txt
+
+          cp docs/site/index.html "$SITE_DIR/index.html"
+
+      - name: Validate DocC site files
+        run: |
+          set -euo pipefail
+
+          SITE_DIR=".build/docc-site"
+          test -f "$SITE_DIR/.nojekyll"
+          test -s "$SITE_DIR/index.html"
+
+          while IFS= read -r module; do
+            slug="$(printf '%s' "$module" | tr '[:upper:]' '[:lower:]')"
+            route="./${module}/documentation/${slug}"
+
+            test -s "$SITE_DIR/${module}/index.html"
+            test -s "$SITE_DIR/${module}/documentation/${slug}/index.html"
+            test -s "$SITE_DIR/${module}/data/documentation/${slug}.json"
+            grep -Fq "href=\"${route}" "$SITE_DIR/index.html"
+          done < docs/public-docc-products.txt
+
+      - name: Upload Documentation Artifact
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          name: github-pages-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
+          path: .build/docc-site
+
+
+  release-candidate:
+    name: Release Candidate
+    needs: ci-plan
+    if: fromJSON(needs.ci-plan.outputs.plan).jobs.release-candidate
+    uses: ./.github/workflows/release-validation.yml
+    with:
+      publish: false
+
+
+  ci-required:
+    name: CI Required
+    if: always()
+    needs: [ci-plan, policy, dependency-review, lint, dead-code, build-and-test, upload-core-coverage, parallel-tests, docs-contract-sync, apple-platform-build-smoke, consumer-smoke, consumer-examples, consumer-macros, consumer-openapi, upload-macro-coverage, benchmark-smoke, codeql, thread-sanitizer, benchmarks, documentation, release-candidate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Require every planned CI result
+        env:
+          CI_PLAN: ${{ needs.ci-plan.outputs.plan }}
+          CI_NEEDS: ${{ toJSON(needs) }}
+        run: python3 -B Scripts/ci-policy.py evaluate

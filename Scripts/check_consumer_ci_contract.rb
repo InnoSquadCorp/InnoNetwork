@@ -33,20 +33,20 @@ module ConsumerCIContract
     jobs = workflow.fetch('jobs')
     gate = jobs.fetch('consumer-smoke')
     require!(gate['name'] == 'Consumer Smoke', 'protected check name changed')
-    require!(gate['needs'].is_a?(Array) && gate['needs'].sort == LANES.sort,
+    require!(gate['needs'].is_a?(Array) && gate['needs'].sort == (LANES + ['ci-plan']).sort,
              'aggregate must need exactly all three lanes')
-    require!(gate['if'] == 'always()', 'aggregate must run even after child failure')
+    require!(gate['if'] == 'always() && fromJSON(needs.ci-plan.outputs.plan).jobs.consumer-smoke', 'aggregate must run even after child failure')
     require!(gate['runs-on'] == 'ubuntu-latest', 'aggregate must not occupy a macOS runner')
     require!(!gate.key?('continue-on-error'), 'aggregate may not ignore failure')
     check = gate.fetch('steps').find { |s| command(s) == 'python3 Scripts/check_consumer_ci_results.py' }
     require!(check && !check.key?('if') && !check.key?('continue-on-error') &&
-             check.dig('env', 'CONSUMER_JOB_RESULTS') == '${{ toJSON(needs) }}',
+             check.dig('env', 'CONSUMER_JOB_RESULTS') == '{"consumer-examples": ${{ toJSON(needs.consumer-examples) }}, "consumer-macros": ${{ toJSON(needs.consumer-macros) }}, "consumer-openapi": ${{ toJSON(needs.consumer-openapi) }}}' ,
              'aggregate must validate actual needs without skipping')
 
     COMMANDS.each do |id, required|
       job = jobs.fetch(id)
       require!(job['runs-on'] == 'macos-15', "#{id}: pinned runner changed")
-      require!(!job.key?('if') && !job.key?('needs') && !job.key?('continue-on-error'),
+      require!(job['if'] == "fromJSON(needs.ci-plan.outputs.plan).jobs.#{id}" && job['needs'] == 'ci-plan' && !job.key?('continue-on-error'),
                "#{id}: lane must be independent and unconditional")
       steps = job.fetch('steps')
       require!(steps.none? { |s| s.key?('continue-on-error') }, "#{id}: soft failure is forbidden")
@@ -71,7 +71,7 @@ module ConsumerCIContract
              artifact.dig('with', 'path') == '.build/coverage-macros/' &&
              artifact.fetch('uses', '').start_with?('actions/upload-artifact@'),
              'macro artifact must fail if missing')
-    require!(jobs.dig('upload-macro-coverage', 'needs') == 'consumer-macros', 'coverage must depend on its producer')
+    require!(jobs.dig('upload-macro-coverage', 'needs') == ['ci-plan', 'consumer-macros'], 'coverage must depend on its producer')
 
     require!(action.dig('runs', 'using') == 'composite' &&
              action.dig('inputs', 'lane', 'required') == true, 'cache action must require a lane')
@@ -82,7 +82,7 @@ module ConsumerCIContract
              cache_steps[0]['run'] == 'python3 Scripts/consumer_ci_cache.py "$CONSUMER_CACHE_LANE" --github-output' &&
              cache_steps[0].dig('env', 'CONSUMER_CACHE_LANE') == '${{ inputs.lane }}', 'cache fingerprint missing')
     cache = cache_steps[1]
-    require!(cache['uses'] == 'actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae', 'cache action must stay pinned')
+    require!(cache.fetch('uses', '').match?(/\Aactions\/cache@[0-9a-f]{40}\z/), 'cache action must stay pinned')
     require!(cache['with'] == {
       'path' => '${{ steps.fingerprint.outputs.paths }}',
       'key' => '${{ steps.fingerprint.outputs.prefix }}${{ github.sha }}',
