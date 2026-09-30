@@ -62,7 +62,7 @@ package actor FixedWindowRequestLimiter {
             let now = clock.now()
             if let windowStart {
                 let elapsed = now.timeIntervalSince(windowStart)
-                if elapsed >= interval.rateLimitTimeInterval {
+                if elapsed >= interval / .seconds(1) {
                     self.windowStart = now
                     admissions = 0
                 }
@@ -77,16 +77,10 @@ package actor FixedWindowRequestLimiter {
 
             guard let windowStart else { continue }
             let elapsed = max(0, now.timeIntervalSince(windowStart))
-            let remaining = max(0, interval.rateLimitTimeInterval - elapsed)
-            try await clock.sleep(for: .seconds(remaining))
+            let remaining = max(0, interval / .seconds(1) - elapsed)
+            // Recheck the window after every slice; a timer slice ending is
+            // not permission to admit another request.
+            try await clock.sleep(forSeconds: min(SchedulingTime.maximumSleepSeconds, remaining))
         }
-    }
-}
-
-private extension Duration {
-    var rateLimitTimeInterval: TimeInterval {
-        let components = self.components
-        return TimeInterval(components.seconds)
-            + TimeInterval(components.attoseconds) / 1_000_000_000_000_000_000
     }
 }

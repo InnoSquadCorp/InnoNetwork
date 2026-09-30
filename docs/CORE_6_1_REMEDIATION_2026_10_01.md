@@ -27,7 +27,11 @@ part of this authorization.
    finite Double/Duration, relative-boundary and cancellation controls. Actual
    ContinuousClock and SuspendingClock 24h slices cancel without fatal timer
    conversion; the 24h value is a slice, not a total wait cap.
-3. Core deadline/queue/rate paths: pending.
+3. Core deadline/queue/rate paths: passed 57 test functions. Large budgets
+   remain pending after a timer slice; queued cancellation releases scope state,
+   server cooldown survives dispatch rechecks, and ordinary deadline/queue/rate
+   controls pass. The initial new test had a catch-type compile error; its log
+   is retained separately from the successful corrected fixture.
 4. WebSocket/monitor/restored download paths: pending.
 5. Retry jitter/delay arithmetic: pending.
 6. Circuit backoff arithmetic: pending.

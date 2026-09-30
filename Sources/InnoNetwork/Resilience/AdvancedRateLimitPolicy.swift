@@ -109,7 +109,7 @@ package actor AdvancedRateLimitCoordinator {
         var dispatchTokens: Double?
         var lastDispatchRefill: Duration?
         var dispatchedSlidingEntries: [(instant: Duration, cost: Double)] = []
-        var cooldownUntil: Duration?
+        var cooldown: TimingBudget?
         var uncommittedReservations: Set<UUID> = []
         var committedReservations: Set<UUID> = []
         var activeReserveCalls = 0
@@ -236,9 +236,12 @@ package actor AdvancedRateLimitCoordinator {
                 )
         }
         guard let delay, delay > 0 else { return }
-        let proposed = clock.monotonicNow() + .seconds(delay)
-        if let current = scopes[scope]?.cooldownUntil, current >= proposed { return }
-        scopes[scope]?.cooldownUntil = proposed
+        let now = clock.monotonicNow()
+        if let current = scopes[scope]?.cooldown, current.remainingSeconds(at: now) >= delay { return }
+        // Parsed feedback is finite after policy validation; keep the entire
+        // budget while passing only bounded slices to the dispatch timer.
+        guard let proposed = try? TimingBudget(seconds: delay, startedAt: now) else { return }
+        scopes[scope]?.cooldown = proposed
     }
 
     package var snapshot: (scopes: Int, pending: Int) { (scopes.count, pending) }
@@ -256,10 +259,10 @@ package actor AdvancedRateLimitCoordinator {
                 "Rate-limit scope state was released while admission was active."
             )
         }
-        if let cooldown = state.cooldownUntil, cooldown > now {
-            return cooldown - now
+        if let cooldown = state.cooldown, !cooldown.isExpired(at: now) {
+            return cooldown.sleepSlice(at: now)
         }
-        state.cooldownUntil = nil
+        state.cooldown = nil
 
         switch policy.algorithm {
         case .tokenBucket(let capacity, let refillPerSecond):
@@ -274,7 +277,7 @@ package actor AdvancedRateLimitCoordinator {
             }
             state.tokens = available
             scopes[scope] = state
-            return .seconds((cost - available) / refillPerSecond)
+            return .seconds(min(SchedulingTime.maximumSleepSeconds, (cost - available) / refillPerSecond))
 
         case .slidingWindow(let limit, let interval):
             state.slidingEntries.removeAll {
@@ -290,7 +293,7 @@ package actor AdvancedRateLimitCoordinator {
             }
             guard let oldest = state.slidingEntries.first else { return .zero }
             scopes[scope] = state
-            return oldest.instant + interval - now
+            return min(SchedulingTime.maximumSleepSlice, interval - max(.zero, now - oldest.instant))
         }
     }
 
@@ -300,8 +303,8 @@ package actor AdvancedRateLimitCoordinator {
         now: Duration
     ) -> Duration? {
         guard var state = scopes[scope] else { return .zero }
-        if let cooldown = state.cooldownUntil, cooldown > now {
-            return cooldown - now
+        if let cooldown = state.cooldown, !cooldown.isExpired(at: now) {
+            return cooldown.sleepSlice(at: now)
         }
 
         switch policy.algorithm {
@@ -320,7 +323,7 @@ package actor AdvancedRateLimitCoordinator {
             }
             state.dispatchTokens = available
             scopes[scope] = state
-            return .seconds((cost - available) / refillPerSecond)
+            return .seconds(min(SchedulingTime.maximumSleepSeconds, (cost - available) / refillPerSecond))
 
         case .slidingWindow(let limit, let interval):
             state.dispatchedSlidingEntries.removeAll { now - $0.instant >= interval }
@@ -332,7 +335,7 @@ package actor AdvancedRateLimitCoordinator {
             }
             guard let oldest = state.dispatchedSlidingEntries.first else { return .zero }
             scopes[scope] = state
-            return oldest.instant + interval - now
+            return min(SchedulingTime.maximumSleepSlice, interval - max(.zero, now - oldest.instant))
         }
     }
 
@@ -347,7 +350,7 @@ package actor AdvancedRateLimitCoordinator {
             guard state.activeReserveCalls == 0,
                 state.uncommittedReservations.isEmpty,
                 state.committedReservations.isEmpty,
-                state.cooldownUntil.map({ $0 <= now }) ?? true
+                state.cooldown.map({ $0.isExpired(at: now) }) ?? true
             else { continue }
 
             switch policy.algorithm {
@@ -654,8 +657,6 @@ package enum RateLimitHeaderAdapterV11 {
 
 private extension Duration {
     var rateLimitSeconds: TimeInterval {
-        let components = self.components
-        return TimeInterval(components.seconds)
-            + TimeInterval(components.attoseconds) / 1_000_000_000_000_000_000
+        self / .seconds(1)
     }
 }

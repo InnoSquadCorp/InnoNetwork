@@ -114,7 +114,9 @@ public struct OperationNetworkClient<Base: Sendable>: Sendable {
             bufferingPolicy: .bufferingNewest(8)
         )
         let deadlineClock = self.deadlineClock
-        let deadlineInstant = deadline.map { deadlineClock.monotonicNow() + $0.duration }
+        let deadlineBudget = deadline.map {
+            TimingBudget(duration: $0.duration, startedAt: deadlineClock.monotonicNow())
+        }
         let task = Task {
             continuation.yield(.started(id: id))
             let tracker = NetworkOperationDeadlineTracker()
@@ -130,7 +132,7 @@ public struct OperationNetworkClient<Base: Sendable>: Sendable {
                 continuation.finish()
                 return Result<Output, NetworkFailure>.failure(cancellationFailure)
             }
-            if let deadlineInstant, deadlineClock.monotonicNow() >= deadlineInstant {
+            if let deadlineBudget, deadlineBudget.isExpired(at: deadlineClock.monotonicNow()) {
                 let failure = Self.deadlineFailure(
                     tracker: tracker,
                     requestMethod: requestMethod,
@@ -169,7 +171,7 @@ public struct OperationNetworkClient<Base: Sendable>: Sendable {
                             )
                         }
                     }
-                if let deadlineInstant, deadlineClock.monotonicNow() >= deadlineInstant {
+                if let deadlineBudget, deadlineBudget.isExpired(at: deadlineClock.monotonicNow()) {
                     _ = gate.resolve(
                         .failure(
                             Self.deadlineFailure(
@@ -186,11 +188,10 @@ public struct OperationNetworkClient<Base: Sendable>: Sendable {
             }
 
             let deadlineTask: Task<Void, Never>?
-            if let deadlineInstant {
+            if let deadlineBudget {
                 deadlineTask = Task {
                     do {
-                        let remaining = max(.zero, deadlineInstant - deadlineClock.monotonicNow())
-                        try await deadlineClock.sleep(for: remaining)
+                        try await deadlineBudget.sleep(using: deadlineClock)
                     } catch {
                         return
                     }
