@@ -4,7 +4,7 @@ run-name: >-
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, edited, labeled, unlabeled, ready_for_review]
+    types: [opened, synchronize, reopened, edited, labeled, unlabeled]
   push:
     branches: [main]
   merge_group:
@@ -33,8 +33,16 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
+      actions: read
+      checks: read
     outputs:
       plan: ${{ steps.plan.outputs.plan }}
+      reuse: ${{ steps.reuse.outputs.proof }}
+      lint: ${{ steps.plan.outputs.lint }}
+      dead-code: ${{ steps.plan.outputs.dead-code }}
+      parallel-tests: ${{ steps.plan.outputs.parallel-tests }}
+      apple-platform-build-smoke: ${{ steps.plan.outputs.apple-platform-build-smoke }}
+      thread-sanitizer: ${{ steps.plan.outputs.thread-sanitizer }}
       post_merge: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dependabot_merge_pr != '')) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -50,8 +58,15 @@ jobs:
         run: |
           [[ "$EVENT_REF" == 'refs/heads/main' ]] || { echo 'Recovery must run on main.' >&2; exit 1; }
           python3 -B Scripts/dependabot-merge-policy.py verify-post-merge --pr "$MERGED_PR" --expected-sha "$GITHUB_SHA"
+      - name: Admit equivalent-tree PR verification for main
+        id: reuse
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -B Scripts/main-ci-reuse-policy.py --event "$GITHUB_EVENT_PATH"
       - name: Plan exact changed paths
         id: plan
+        env:
+          CI_REUSE: ${{ steps.reuse.outputs.proof }}
         run: python3 -B Scripts/ci-policy.py plan --event "$GITHUB_EVENT_PATH" --output .build/ci-plan.json
       - name: Preserve change selection evidence
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -74,6 +89,8 @@ jobs:
       - name: Verify CI selection and public operations
         run: |
           python3 -B -m unittest discover -s Scripts/automation-tests -p 'test_*.py'
+          python3 -B Scripts/tests/test_ci_cache.py
+          python3 -B Scripts/tests/test_consumer_ci.py
           python3 -B Scripts/check-public-operations.py
           python3 -B Scripts/check_required_status_checks.py
           ruby Scripts/check_consumer_ci_contract.rb
@@ -204,7 +221,7 @@ jobs:
   lint:
     needs: ci-plan
     name: Lint (swift-format)
-    if: fromJSON(needs.ci-plan.outputs.plan).jobs.lint
+    if: needs.ci-plan.outputs.lint == 'true'
     runs-on: macos-15
     timeout-minutes: 15
 
@@ -228,7 +245,7 @@ jobs:
   dead-code:
     needs: ci-plan
     name: Lint (Periphery)
-    if: fromJSON(needs.ci-plan.outputs.plan).jobs.dead-code
+    if: needs.ci-plan.outputs.dead-code == 'true'
     runs-on: xcode-27
     timeout-minutes: 25
 
@@ -241,6 +258,11 @@ jobs:
       - name: Select Xcode
         run: |
           sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Cache SwiftPM artifacts
+        uses: ./.github/actions/swiftpm-cache
+        with:
+          profile: dead-code
 
       - name: Install Periphery 3.8.0
         env:
@@ -280,6 +302,9 @@ jobs:
           # Swift 6.4's default SwiftBuild layout is not discoverable yet.
           periphery scan --config .periphery.yml -- --build-system native
 
+      - name: Report cache observations
+        if: always()
+        run: python3 -B Scripts/ci-cache.py report --profile dead-code
 
   build-and-test:
     needs: ci-plan
@@ -319,14 +344,9 @@ jobs:
           sudo xcode-select -s ${{ matrix.xcode.path }}
 
       - name: Cache SwiftPM artifacts
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: ./.github/actions/swiftpm-cache
         with:
-          path: |
-            .build/checkouts
-            .build/repositories
-          key: ${{ runner.os }}-xcode-${{ matrix.xcode.label }}-${{ hashFiles('Package.resolved') }}
-          restore-keys: |
-            ${{ runner.os }}-xcode-${{ matrix.xcode.label }}-
+          profile: build-and-test
 
       - name: Show Xcode and Swift versions
         run: |
@@ -453,6 +473,9 @@ jobs:
         if: steps.toolchain-compatibility.outputs.compatible == 'true'
         run: bash Scripts/check_no_print_in_production.sh
 
+      - name: Report cache observations
+        if: always()
+        run: python3 -B Scripts/ci-cache.py report --profile build-and-test
 
   upload-core-coverage:
     name: Upload Core Coverage
@@ -520,7 +543,7 @@ jobs:
   parallel-tests:
     needs: ci-plan
     name: Test (Bounded Target Shards) — Xcode 26.0.1
-    if: fromJSON(needs.ci-plan.outputs.plan).jobs.parallel-tests
+    if: needs.ci-plan.outputs.parallel-tests == 'true'
     runs-on: macos-15
     timeout-minutes: 45
 
@@ -535,14 +558,9 @@ jobs:
           sudo xcode-select -s /Applications/Xcode_26.0.1.app
 
       - name: Cache SwiftPM artifacts
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: ./.github/actions/swiftpm-cache
         with:
-          path: |
-            .build/checkouts
-            .build/repositories
-          key: ${{ runner.os }}-bounded-shards-xcode-26.0.1-${{ hashFiles('Package.resolved') }}
-          restore-keys: |
-            ${{ runner.os }}-bounded-shards-xcode-26.0.1-
+          profile: parallel-tests
 
       - name: Show Xcode and Swift versions
         run: |
@@ -560,6 +578,9 @@ jobs:
           # built test bundle so hosted concurrency is actually bound.
           bash Scripts/run_bounded_parallel_tests.sh
 
+      - name: Report cache observations
+        if: always()
+        run: python3 -B Scripts/ci-cache.py report --profile parallel-tests
 
   docs-contract-sync:
     needs: ci-plan
@@ -578,6 +599,11 @@ jobs:
       - name: Select Xcode
         run: |
           sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Cache SwiftPM artifacts
+        uses: ./.github/actions/swiftpm-cache
+        with:
+          profile: docs-contract-sync
 
       - name: Show Xcode and Swift versions
         run: |
@@ -661,11 +687,14 @@ jobs:
       - name: Verify resumable upload recovery across process exit
         run: bash Scripts/test_resumable_process_recovery.sh
 
+      - name: Report cache observations
+        if: always()
+        run: python3 -B Scripts/ci-cache.py report --profile docs-contract-sync
 
   apple-platform-build-smoke:
     needs: ci-plan
     name: Apple Platform Build Smoke
-    if: fromJSON(needs.ci-plan.outputs.plan).jobs.apple-platform-build-smoke
+    if: needs.ci-plan.outputs.apple-platform-build-smoke == 'true'
     runs-on: macos-15
     timeout-minutes: 45
 
@@ -705,6 +734,12 @@ jobs:
         run: |
           sudo xcode-select -s /Applications/Xcode_26.0.1.app
 
+      - name: Cache SwiftPM artifacts
+        uses: ./.github/actions/swiftpm-cache
+        with:
+          profile: apple-platform-build-smoke
+          variant: ${{ matrix.runtime }}
+
       - name: Show Xcode and Swift versions
         run: |
           xcodebuild -version
@@ -743,6 +778,9 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             build
 
+      - name: Report cache observations
+        if: always()
+        run: python3 -B Scripts/ci-cache.py report --profile apple-platform-build-smoke --variant '${{ matrix.runtime }}'
 
   consumer-smoke:
     name: Consumer Smoke
@@ -808,6 +846,9 @@ jobs:
       - name: Run OpenAPI adopter smoke
         run: xcrun swift run --package-path Examples/OpenAPIAdopterSmoke
 
+      - name: Report cache observations
+        if: always()
+        run: python3 -B Scripts/ci-cache.py report --profile consumer-examples
 
   consumer-macros:
     needs: ci-plan
@@ -855,6 +896,9 @@ jobs:
           path: .build/coverage-macros/
           if-no-files-found: error
 
+      - name: Report cache observations
+        if: always()
+        run: python3 -B Scripts/ci-cache.py report --profile consumer-macros
 
   consumer-openapi:
     needs: ci-plan
@@ -888,6 +932,9 @@ jobs:
       - name: Typecheck generated OpenAPI output
         run: bash Scripts/test_openapi_generated_output.sh
 
+      - name: Report cache observations
+        if: always()
+        run: python3 -B Scripts/ci-cache.py report --profile consumer-openapi
 
   upload-macro-coverage:
     name: Upload Macro Coverage
@@ -963,6 +1010,11 @@ jobs:
         run: |
           sudo xcode-select -s /Applications/Xcode_26.0.1.app
 
+      - name: Cache SwiftPM artifacts
+        uses: ./.github/actions/swiftpm-cache
+        with:
+          profile: benchmark-smoke
+
       - name: Show Xcode and Swift versions
         run: |
           xcodebuild -version
@@ -985,6 +1037,10 @@ jobs:
           name: innonetwork-benchmark-smoke
           path: .build/benchmarks/results.json
           if-no-files-found: error
+
+      - name: Report cache observations
+        if: always()
+        run: python3 -B Scripts/ci-cache.py report --profile benchmark-smoke
 
   codeql:
     name: CodeQL / Swift
@@ -1014,6 +1070,11 @@ jobs:
         run: |
           sudo xcode-select -s /Applications/Xcode_26.0.1.app
 
+      - name: Cache SwiftPM artifacts
+        uses: ./.github/actions/swiftpm-cache
+        with:
+          profile: codeql
+
       - name: Initialize CodeQL
         uses: github/codeql-action/init@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         with:
@@ -1035,10 +1096,14 @@ jobs:
         with:
           category: "/language:${{ matrix.language }}"
 
+      - name: Report cache observations
+        if: always()
+        run: python3 -B Scripts/ci-cache.py report --profile codeql
+
   thread-sanitizer:
     name: Tests under ThreadSanitizer
     needs: ci-plan
-    if: fromJSON(needs.ci-plan.outputs.plan).jobs.thread-sanitizer
+    if: needs.ci-plan.outputs.thread-sanitizer == 'true'
     runs-on: xcode-27
     timeout-minutes: 90
 
@@ -1050,6 +1115,11 @@ jobs:
 
       - name: Select Xcode
         run: sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Cache SwiftPM artifacts
+        uses: ./.github/actions/swiftpm-cache
+        with:
+          profile: thread-sanitizer
 
       - name: Show Xcode and Swift versions
         run: |
@@ -1068,6 +1138,10 @@ jobs:
           xcrun swift test \
             --sanitize thread \
             --no-parallel
+
+      - name: Report cache observations
+        if: always()
+        run: python3 -B Scripts/ci-cache.py report --profile thread-sanitizer
 
   benchmarks:
     name: Run Benchmarks
@@ -1091,15 +1165,9 @@ jobs:
           sudo xcode-select -s /Applications/Xcode_26.0.1.app
 
       - name: Cache SwiftPM artifacts
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: ./.github/actions/swiftpm-cache
         with:
-          path: |
-            .build/checkouts
-            .build/repositories
-            .build/swiftpm-cache
-          key: ${{ runner.os }}-bench-xcode-26.0.1-${{ hashFiles('Package.resolved') }}
-          restore-keys: |
-            ${{ runner.os }}-bench-xcode-26.0.1-
+          profile: benchmarks
 
       - name: Show Xcode and Swift versions
         run: |
@@ -1140,6 +1208,9 @@ jobs:
           path: .build/benchmarks/
           if-no-files-found: error
 
+      - name: Report cache observations
+        if: always()
+        run: python3 -B Scripts/ci-cache.py report --profile benchmarks
 
   documentation:
     name: Build DocC Site
@@ -1159,6 +1230,11 @@ jobs:
       - name: Select Xcode
         run: |
           sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Cache SwiftPM artifacts
+        uses: ./.github/actions/swiftpm-cache
+        with:
+          profile: documentation
 
       - name: Show Xcode and Swift versions
         run: |
@@ -1228,6 +1304,9 @@ jobs:
           name: github-pages-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
           path: .build/docc-site
 
+      - name: Report cache observations
+        if: always()
+        run: python3 -B Scripts/ci-cache.py report --profile documentation
 
   release-candidate:
     name: Release Candidate
@@ -1244,6 +1323,11 @@ jobs:
     needs: [ci-plan, policy, dependency-review, lint, dead-code, build-and-test, upload-core-coverage, parallel-tests, docs-contract-sync, apple-platform-build-smoke, consumer-smoke, consumer-examples, consumer-macros, consumer-openapi, upload-macro-coverage, benchmark-smoke, codeql, thread-sanitizer, benchmarks, documentation, release-candidate]
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+      checks: read
+      pull-requests: read
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -1251,6 +1335,8 @@ jobs:
           persist-credentials: false
       - name: Require every planned CI result
         env:
+          GH_TOKEN: ${{ github.token }}
+          CI_REUSE: ${{ needs.ci-plan.outputs.reuse }}
           CI_PLAN: ${{ needs.ci-plan.outputs.plan }}
           CI_NEEDS: ${{ toJSON(needs) }}
         run: python3 -B Scripts/ci-policy.py evaluate

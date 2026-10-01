@@ -1,10 +1,13 @@
 {
-  "source": "Expected Network workflow inventory generated from authored CI and release-validation YAML. Not a hosted CI success claim.",
   "jobs": {
     "CI Plan": [
       {
         "name": "Verify actual post-merge main origin",
         "conclusion": "skipped"
+      },
+      {
+        "name": "Admit equivalent-tree PR verification for main",
+        "conclusion": "success"
       },
       {
         "name": "Plan exact changed paths",
@@ -71,6 +74,10 @@
         "conclusion": "success"
       },
       {
+        "name": "Cache SwiftPM artifacts",
+        "conclusion": "success"
+      },
+      {
         "name": "Install Periphery 3.8.0",
         "conclusion": "success"
       },
@@ -80,6 +87,10 @@
       },
       {
         "name": "Run Periphery scan",
+        "conclusion": "success"
+      },
+      {
+        "name": "Report cache observations",
         "conclusion": "success"
       }
     ],
@@ -147,6 +158,10 @@
       {
         "name": "Enforce no print() in production sources",
         "conclusion": "success"
+      },
+      {
+        "name": "Report cache observations",
+        "conclusion": "success"
       }
     ],
     "Build and Test (SwiftPM) \u2014 Xcode 27.0": [
@@ -213,6 +228,10 @@
       {
         "name": "Enforce no print() in production sources",
         "conclusion": "success"
+      },
+      {
+        "name": "Report cache observations",
+        "conclusion": "success"
       }
     ],
     "Upload Core Coverage": [
@@ -261,6 +280,10 @@
       {
         "name": "Run bounded target-sharded tests",
         "conclusion": "success"
+      },
+      {
+        "name": "Report cache observations",
+        "conclusion": "success"
       }
     ],
     "Docs / Contract Sync": [
@@ -270,6 +293,10 @@
       },
       {
         "name": "Select Xcode",
+        "conclusion": "success"
+      },
+      {
+        "name": "Cache SwiftPM artifacts",
         "conclusion": "success"
       },
       {
@@ -347,6 +374,10 @@
       {
         "name": "Verify resumable upload recovery across process exit",
         "conclusion": "success"
+      },
+      {
+        "name": "Report cache observations",
+        "conclusion": "success"
       }
     ],
     "Apple Platform Build Smoke (platform=macOS, macOS, macosx, xcodebuild)": [
@@ -356,6 +387,10 @@
       },
       {
         "name": "Select Xcode",
+        "conclusion": "success"
+      },
+      {
+        "name": "Cache SwiftPM artifacts",
         "conclusion": "success"
       },
       {
@@ -369,6 +404,10 @@
       {
         "name": "Build package for macOS",
         "conclusion": "success"
+      },
+      {
+        "name": "Report cache observations",
+        "conclusion": "success"
       }
     ],
     "Apple Platform Build Smoke (generic/platform=iOS Simulator, iOS, iphonesimulator, xcodebuild)": [
@@ -378,6 +417,10 @@
       },
       {
         "name": "Select Xcode",
+        "conclusion": "success"
+      },
+      {
+        "name": "Cache SwiftPM artifacts",
         "conclusion": "success"
       },
       {
@@ -391,6 +434,10 @@
       {
         "name": "Build package for iOS",
         "conclusion": "success"
+      },
+      {
+        "name": "Report cache observations",
+        "conclusion": "success"
       }
     ],
     "Apple Platform Build Smoke (arm64-apple-tvos16.0, tvOS, appletvos, swiftpm-cross)": [
@@ -400,6 +447,10 @@
       },
       {
         "name": "Select Xcode",
+        "conclusion": "success"
+      },
+      {
+        "name": "Cache SwiftPM artifacts",
         "conclusion": "success"
       },
       {
@@ -413,6 +464,10 @@
       {
         "name": "Build package for tvOS",
         "conclusion": "success"
+      },
+      {
+        "name": "Report cache observations",
+        "conclusion": "success"
       }
     ],
     "Apple Platform Build Smoke (arm64_32-apple-watchos9.0, watchOS, watchos, swiftpm-cross)": [
@@ -422,6 +477,10 @@
       },
       {
         "name": "Select Xcode",
+        "conclusion": "success"
+      },
+      {
+        "name": "Cache SwiftPM artifacts",
         "conclusion": "success"
       },
       {
@@ -435,6 +494,10 @@
       {
         "name": "Build package for watchOS",
         "conclusion": "success"
+      },
+      {
+        "name": "Report cache observations",
+        "conclusion": "success"
       }
     ],
     "Apple Platform Build Smoke (arm64-apple-xros1.0, visionOS, xros, swiftpm-cross)": [
@@ -447,6 +510,10 @@
         "conclusion": "success"
       },
       {
+        "name": "Cache SwiftPM artifacts",
+        "conclusion": "success"
+      },
+      {
         "name": "Show Xcode and Swift versions",
         "conclusion": "success"
       },
@@ -456,6 +523,10 @@
       },
       {
         "name": "Build package for visionOS",
+        "conclusion": "success"
+      },
+      {
+        "name": "Report cache observations",
         "conclusion": "success"
       }
     ],
@@ -505,6 +576,10 @@
       {
         "name": "Run OpenAPI adopter smoke",
         "conclusion": "success"
+      },
+      {
+        "name": "Report cache observations",
+        "conclusion": "success"
       }
     ],
     "Consumer Macros": [
@@ -535,6 +610,10 @@
       {
         "name": "Upload macro coverage artifact",
         "conclusion": "success"
+      },
+      {
+        "name": "Report cache observations",
+        "conclusion": "success"
       }
     ],
     "Consumer OpenAPI": [
@@ -560,6 +639,10 @@
       },
       {
         "name": "Typecheck generated OpenAPI output",
+        "conclusion": "success"
+      },
+      {
+        "name": "Report cache observations",
         "conclusion": "success"
       }
     ],
@@ -595,6 +678,10 @@
         "conclusion": "success"
       },
       {
+        "name": "Cache SwiftPM artifacts",
+        "conclusion": "success"
+      },
+      {
         "name": "Show Xcode and Swift versions",
         "conclusion": "success"
       },
@@ -609,6 +696,10 @@
       {
         "name": "Upload benchmark smoke artifact",
         "conclusion": "success"
+      },
+      {
+        "name": "Report cache observations",
+        "conclusion": "success"
       }
     ],
     "CodeQL / Swift (swift)": [
@@ -618,6 +709,10 @@
       },
       {
         "name": "Select Xcode",
+        "conclusion": "success"
+      },
+      {
+        "name": "Cache SwiftPM artifacts",
         "conclusion": "success"
       },
       {
@@ -631,6 +726,10 @@
       {
         "name": "Perform CodeQL Analysis",
         "conclusion": "success"
+      },
+      {
+        "name": "Report cache observations",
+        "conclusion": "success"
       }
     ],
     "Tests under ThreadSanitizer": [
@@ -643,6 +742,10 @@
         "conclusion": "success"
       },
       {
+        "name": "Cache SwiftPM artifacts",
+        "conclusion": "success"
+      },
+      {
         "name": "Show Xcode and Swift versions",
         "conclusion": "success"
       },
@@ -652,6 +755,10 @@
       },
       {
         "name": "Run tests under ThreadSanitizer",
+        "conclusion": "success"
+      },
+      {
+        "name": "Report cache observations",
         "conclusion": "success"
       }
     ],
@@ -687,6 +794,10 @@
       {
         "name": "Upload benchmark artifact",
         "conclusion": "success"
+      },
+      {
+        "name": "Report cache observations",
+        "conclusion": "success"
       }
     ],
     "Build DocC Site": [
@@ -696,6 +807,10 @@
       },
       {
         "name": "Select Xcode",
+        "conclusion": "success"
+      },
+      {
+        "name": "Cache SwiftPM artifacts",
         "conclusion": "success"
       },
       {
@@ -724,6 +839,10 @@
       },
       {
         "name": "Upload Documentation Artifact",
+        "conclusion": "success"
+      },
+      {
+        "name": "Report cache observations",
         "conclusion": "success"
       }
     ],
@@ -899,6 +1018,10 @@
       {
         "name": "Upload release artifacts",
         "conclusion": "success"
+      },
+      {
+        "name": "Report cache observations",
+        "conclusion": "success"
       }
     ],
     "Release Candidate / Validate macOS Build": [
@@ -928,6 +1051,10 @@
       },
       {
         "name": "Build package for macOS",
+        "conclusion": "success"
+      },
+      {
+        "name": "Report cache observations",
         "conclusion": "success"
       }
     ],
@@ -959,6 +1086,10 @@
       {
         "name": "Build package for iOS",
         "conclusion": "success"
+      },
+      {
+        "name": "Report cache observations",
+        "conclusion": "success"
       }
     ],
     "Release Candidate / Validate tvOS Build": [
@@ -988,6 +1119,10 @@
       },
       {
         "name": "Build package for tvOS",
+        "conclusion": "success"
+      },
+      {
+        "name": "Report cache observations",
         "conclusion": "success"
       }
     ],
@@ -1019,6 +1154,10 @@
       {
         "name": "Build package for watchOS",
         "conclusion": "success"
+      },
+      {
+        "name": "Report cache observations",
+        "conclusion": "success"
       }
     ],
     "Release Candidate / Validate visionOS Build": [
@@ -1048,6 +1187,10 @@
       },
       {
         "name": "Build package for visionOS",
+        "conclusion": "success"
+      },
+      {
+        "name": "Report cache observations",
         "conclusion": "success"
       }
     ],

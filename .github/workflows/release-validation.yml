@@ -9,6 +9,10 @@ on:
         required: false
         default: false
 
+concurrency:
+  group: release-validation-${{ github.run_id }}-${{ github.run_attempt }}
+  cancel-in-progress: false
+
 permissions:
   contents: read
 
@@ -64,14 +68,9 @@ jobs:
           sudo xcode-select -s /Applications/Xcode.app
 
       - name: Cache SwiftPM artifacts
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: ./.github/actions/swiftpm-cache
         with:
-          path: |
-            .build/checkouts
-            .build/repositories
-          key: ${{ runner.os }}-release-xcode-27.0-${{ hashFiles('Package.resolved') }}
-          restore-keys: |
-            ${{ runner.os }}-release-xcode-27.0-
+          profile: release-validation
 
       - name: Show Xcode and Swift versions
         run: |
@@ -250,6 +249,9 @@ jobs:
             .build/release-artifacts/coverage-macros/
           if-no-files-found: error
 
+      - name: Report cache observations
+        if: always()
+        run: python3 -B Scripts/ci-cache.py report --profile release-validation
 
   validate-platform-builds:
     name: Validate ${{ matrix.runtime }} Build
@@ -294,14 +296,10 @@ jobs:
           sudo xcode-select -s /Applications/Xcode_26.0.1.app
 
       - name: Cache SwiftPM artifacts
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: ./.github/actions/swiftpm-cache
         with:
-          path: |
-            .build/checkouts
-            .build/repositories
-          key: ${{ runner.os }}-release-${{ matrix.sdk }}-xcode-26.0.1-${{ hashFiles('Package.resolved') }}
-          restore-keys: |
-            ${{ runner.os }}-release-${{ matrix.sdk }}-xcode-26.0.1-
+          profile: release-platform-builds
+          variant: ${{ matrix.runtime }}
 
       - name: Show Xcode and Swift versions
         run: |
@@ -342,3 +340,7 @@ jobs:
             -derivedDataPath build/release-${{ matrix.sdk }} \
             CODE_SIGNING_ALLOWED=NO \
             build
+
+      - name: Report cache observations
+        if: always()
+        run: python3 -B Scripts/ci-cache.py report --profile release-platform-builds --variant '${{ matrix.runtime }}'

@@ -98,6 +98,33 @@ class PlannerTests(unittest.TestCase):
                 with self.assertRaises((ValueError, UnicodeError)): p.changed_paths(ROOT, 'a'*40, 'b'*40)
         with self.assertRaises(ValueError): p.changed_paths(ROOT, 'main', 'b'*40)
 
+    def test_edited_base_retarget_replans_the_new_base_diff(self):
+        # The same head is docs-only against its old base but includes source
+        # changes against main. A retarget must not retain that old narrow plan.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            def git(*args):
+                return subprocess.check_output(['git', '-C', tmp, *args], text=True).strip()
+            git('init', '-q'); git('config', 'user.email', 'test@example.invalid'); git('config', 'user.name', 'Test')
+            (root / 'README.md').write_text('base\n')
+            git('add', '.'); git('commit', '-qm', 'main'); main = git('rev-parse', 'HEAD')
+            (root / 'Sources').mkdir(); (root / 'Sources/Retarget.swift').write_text('struct Retarget {}\n')
+            git('add', '.'); git('commit', '-qm', 'old base'); old_base = git('rev-parse', 'HEAD')
+            (root / 'README.md').write_text('head docs\n')
+            git('add', '.'); git('commit', '-qm', 'head'); head = git('rev-parse', 'HEAD')
+            old = p.make_plan('pull_request', event(), p.changed_paths(root, old_base, head))
+            self.assertFalse(old['jobs']['build-and-test'])
+            retarget = event(action='edited')
+            retarget['changes'] = {'base': {'ref': {'from': 'integration'}}}
+            retarget['pull_request'].update(base={'sha':main}, head={'sha':head})
+            paths = p.changed_paths(root, retarget['pull_request']['base']['sha'], head)
+            self.assertIn('Sources/Retarget.swift', paths)
+            current = p.make_plan('pull_request', retarget, paths)
+            self.assertTrue(all(current['jobs'].values()))
+            p.evaluate(current, results(current))
+            with self.assertRaises(ValueError):
+                p.evaluate(current, results(old))
+
     def test_real_git_deletion_and_both_rename_sides_force_full(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

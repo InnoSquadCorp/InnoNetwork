@@ -1,5 +1,5 @@
-name: Consumer SwiftPM cache
-description: Restore lane-isolated SwiftPM inputs without skipping validation
+name: Consumer SwiftPM dependency cache
+description: Restore exact lane-isolated downloads without skipping independent consumer validation
 inputs:
   lane:
     description: examples, macros, or openapi
@@ -7,16 +7,23 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Fingerprint actual toolchain and dependency graphs
+    - name: Fingerprint actual toolchain and tracked dependency graphs
       id: fingerprint
       shell: bash
       env:
         CONSUMER_CACHE_LANE: ${{ inputs.lane }}
       run: python3 Scripts/consumer_ci_cache.py "$CONSUMER_CACHE_LANE" --github-output
 
-    - name: Restore SwiftPM cache
+    - name: Restore exact SwiftPM dependency cache
+      id: dependency-cache
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
-        path: ${{ steps.fingerprint.outputs.paths }}
-        key: ${{ steps.fingerprint.outputs.prefix }}${{ github.sha }}
-        restore-keys: ${{ steps.fingerprint.outputs.prefix }}
+        path: ${{ steps.fingerprint.outputs.dependency-paths }}
+        key: ${{ steps.fingerprint.outputs.dependency-key }}
+
+    - name: Observe restored consumer dependencies
+      shell: bash
+      env:
+        CONSUMER_CACHE_LANE: ${{ inputs.lane }}
+        DEPENDENCY_CACHE_HIT: ${{ steps.dependency-cache.outputs.cache-hit }}
+      run: python3 -B Scripts/ci-cache.py restored --profile "consumer-$CONSUMER_CACHE_LANE"

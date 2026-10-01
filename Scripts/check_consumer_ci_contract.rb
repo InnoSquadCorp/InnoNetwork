@@ -76,7 +76,7 @@ module ConsumerCIContract
     require!(action.dig('runs', 'using') == 'composite' &&
              action.dig('inputs', 'lane', 'required') == true, 'cache action must require a lane')
     cache_steps = action.fetch('runs').fetch('steps')
-    require!(cache_steps.length == 2 && cache_steps.none? { |s| s.key?('if') || s.key?('continue-on-error') },
+    require!(cache_steps.length == 3 && cache_steps.none? { |s| s.key?('if') || s.key?('continue-on-error') },
              'cache action must fingerprint and restore without bypassing validation')
     require!(cache_steps[0]['id'] == 'fingerprint' &&
              cache_steps[0]['run'] == 'python3 Scripts/consumer_ci_cache.py "$CONSUMER_CACHE_LANE" --github-output' &&
@@ -84,10 +84,17 @@ module ConsumerCIContract
     cache = cache_steps[1]
     require!(cache.fetch('uses', '').match?(/\Aactions\/cache@[0-9a-f]{40}\z/), 'cache action must stay pinned')
     require!(cache['with'] == {
-      'path' => '${{ steps.fingerprint.outputs.paths }}',
-      'key' => '${{ steps.fingerprint.outputs.prefix }}${{ github.sha }}',
-      'restore-keys' => '${{ steps.fingerprint.outputs.prefix }}'
+      'path' => '${{ steps.fingerprint.outputs.dependency-paths }}',
+      'key' => '${{ steps.fingerprint.outputs.dependency-key }}'
     }, 'cache must not fall back across toolchain/dependency/lane boundaries')
+    require!(cache['id'] == 'dependency-cache', 'exact dependency cache observation source changed')
+    observed = cache_steps[2]
+    require!(observed['shell'] == 'bash' &&
+             observed['run'] == 'python3 -B Scripts/ci-cache.py restored --profile "consumer-$CONSUMER_CACHE_LANE"' &&
+             observed['env'] == {
+               'CONSUMER_CACHE_LANE' => '${{ inputs.lane }}',
+               'DEPENDENCY_CACHE_HIT' => '${{ steps.dependency-cache.outputs.cache-hit }}'
+             }, 'consumer cache must observe the matching exact dependency restore')
     true
   end
 end

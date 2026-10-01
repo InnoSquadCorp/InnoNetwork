@@ -1,0 +1,35 @@
+name: Exact SwiftPM dependency cache
+description: Restore exact profile-isolated downloads; never restore build or test evidence
+inputs:
+  profile:
+    description: Explicit CI job profile accepted by Scripts/ci-cache.py
+    required: true
+  variant:
+    description: Platform for apple-platform-build-smoke, otherwise default
+    required: false
+    default: default
+runs:
+  using: composite
+  steps:
+    - name: Fingerprint actual toolchain and tracked dependency inputs
+      id: fingerprint
+      shell: bash
+      env:
+        CI_CACHE_PROFILE: ${{ inputs.profile }}
+        CI_CACHE_VARIANT: ${{ inputs.variant }}
+      run: python3 -B Scripts/ci-cache.py fingerprint --profile "$CI_CACHE_PROFILE" --variant "$CI_CACHE_VARIANT"
+
+    - name: Restore exact SwiftPM dependency cache
+      id: dependency-cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ steps.fingerprint.outputs.dependency-paths }}
+        key: ${{ steps.fingerprint.outputs.dependency-key }}
+
+    - name: Observe restored dependencies without treating hits as validation
+      shell: bash
+      env:
+        CI_CACHE_PROFILE: ${{ inputs.profile }}
+        CI_CACHE_VARIANT: ${{ inputs.variant }}
+        DEPENDENCY_CACHE_HIT: ${{ steps.dependency-cache.outputs.cache-hit }}
+      run: python3 -B Scripts/ci-cache.py restored --profile "$CI_CACHE_PROFILE" --variant "$CI_CACHE_VARIANT"

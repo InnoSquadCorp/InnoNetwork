@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Plan InnoNetwork CI from exact Git changes and reject incomplete results (stdlib only)."""
 import argparse
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -10,7 +11,7 @@ import sys
 
 JOBS = ('policy', 'dependency-review', 'lint', 'dead-code', 'build-and-test', 'upload-core-coverage', 'parallel-tests', 'docs-contract-sync', 'apple-platform-build-smoke', 'consumer-smoke', 'consumer-examples', 'consumer-macros', 'consumer-openapi', 'upload-macro-coverage', 'benchmark-smoke', 'codeql', 'thread-sanitizer', 'benchmarks', 'documentation', 'release-candidate')
 SHA = re.compile(r"[0-9a-f]{40}")
-PR_ACTIONS = {"opened", "synchronize", "reopened", "edited", "labeled", "unlabeled", "ready_for_review"}
+PR_ACTIONS = {"opened", "synchronize", "reopened", "edited", "labeled", "unlabeled"}
 DEPENDENCIES = {
     "upload-core-coverage": {"build-and-test"},
     "upload-macro-coverage": {"consumer-macros"},
@@ -26,7 +27,25 @@ WORKFLOW_IMPACT = {
     "pr-dependency-submission.yml": {"dependency-review", "build-and-test"},
     "scorecard.yml": set(), "nightly-live.yml": set(JOBS),
     "dependabot-auto-merge.yml": set(), "dependabot-review-notice.yml": set(),
+    "dependabot-ready.yml": set(),
 }
+
+
+def reuse_policy():
+    spec = importlib.util.spec_from_file_location("main_ci_reuse_policy", Path(__file__).with_name("main-ci-reuse-policy.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def reused_jobs(plan, proof):
+    reuse = reuse_policy()
+    reuse.validate_proof(proof)
+    if not proof:
+        return set()
+    if plan["event"] != "push" or plan["lane"] != "full" or plan["jobs"] != {job: job != "dependency-review" for job in JOBS}:
+        raise ValueError("reuse must preserve every full logical requirement")
+    return set(reuse.REUSED_JOBS)
 
 
 def path_impact(path):
@@ -173,13 +192,14 @@ def validate_plan(plan):
         raise ValueError("plan does not match required changed-path and dependency selection")
 
 
-def evaluate(plan, needs):
+def evaluate(plan, needs, proof=None):
     validate_plan(plan)
+    reused = reused_jobs(plan, proof or {})
     if not isinstance(needs, dict) or set(needs) != set(JOBS) | {"ci-plan"}:
         raise ValueError("missing or unexpected CI result")
     for job, selected in {"ci-plan": True, **plan["jobs"]}.items():
         result = needs[job].get("result") if isinstance(needs[job], dict) else None
-        expected = "success" if selected else "skipped"
+        expected = "success" if selected and job not in reused else "skipped"
         if result != expected:
             raise ValueError(f"{job}: expected {expected}, got {result!r}")
 
@@ -202,10 +222,12 @@ def main():
     plan_cmd.add_argument("--event", required=True, type=Path)
     plan_cmd.add_argument("--root", type=Path, default=Path("."))
     plan_cmd.add_argument("--output", type=Path, required=True)
+    plan_cmd.add_argument("--reuse-proof-json", default=os.environ.get("CI_REUSE", "{}"))
     for name in ("evaluate",):
         evaluate_cmd = sub.add_parser(name)
         evaluate_cmd.add_argument("--plan-json", default=os.environ.get("CI_PLAN", ""))
         evaluate_cmd.add_argument("--needs-json", default=os.environ.get("CI_NEEDS", ""))
+        evaluate_cmd.add_argument("--reuse-proof-json", default=os.environ.get("CI_REUSE", "{}"))
     args = parser.parse_args()
     try:
         if args.command == "plan":
@@ -217,6 +239,10 @@ def main():
                 paths = changed_paths(args.root, pr["base"]["sha"], pr["head"]["sha"])
             plan = make_plan(event_name, event, paths)
             validate_plan(plan)
+            proof = load_json(args.reuse_proof_json)
+            reused = reused_jobs(plan, proof)
+            if reused and (event_name != "push" or event.get("ref") != "refs/heads/main" or proof["main"] != event.get("after")):
+                raise ValueError("reused proof is not for this main push")
             payload = json.dumps(plan, separators=(",", ":"))
             args.output.parent.mkdir(parents=True, exist_ok=True)
             args.output.write_text(payload + "\n")
@@ -224,11 +250,17 @@ def main():
                 with open(os.environ["GITHUB_OUTPUT"], "a") as stream:
                     stream.write("plan=" + payload + "\n")
                     for job, selected in plan["jobs"].items():
-                        stream.write(job + "=" + str(selected).lower() + "\n")
+                        stream.write(job + "=" + str(selected and job not in reused).lower() + "\n")
             print(json.dumps(plan, indent=2))
         else:
-            evaluate(load_json(args.plan_json), load_json(args.needs_json))
-            print("CI Required: every planned job succeeded; only declared non-targets skipped.")
+            proof = load_json(args.reuse_proof_json)
+            reuse = reuse_policy()
+            reuse.validate_proof(proof)
+            if proof:
+                event = load_json(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
+                reuse.revalidate(proof, event, os.environ)
+            evaluate(load_json(args.plan_json), load_json(args.needs_json), proof)
+            print("CI Required: every logical contract has fresh success or revalidated exact-tree PR evidence; no unexplained skips.")
     except (ValueError, KeyError, TypeError, OSError, subprocess.CalledProcessError) as error:
         print(f"CI policy rejected: {error}", file=sys.stderr)
         return 1

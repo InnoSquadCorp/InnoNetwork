@@ -10,8 +10,10 @@ from pathlib import Path
 REPOSITORY = Path(__file__).resolve().parent.parent
 WORKFLOW = REPOSITORY / ".github" / "workflows" / "release.yml"
 TAG_ONLY_CONDITION = (
-    "if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')"
+    "if: startsWith(github.ref, 'refs/tags/') && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish))"
 )
+REF_CONDITION = "if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish)"
+CANDIDATE_CONDITION = "if: github.event_name == 'workflow_dispatch' && !inputs.publish"
 
 
 def fail(message: str) -> None:
@@ -38,10 +40,12 @@ def validate(path: Path = WORKFLOW) -> None:
     if "  workflow_dispatch:\n" not in trigger:
         fail("Release must support workflow_dispatch validation")
 
+    if not re.search(r"(?ms)^      publish:\n        description:.*?^        type: boolean\n        required: false\n        default: false\n", trigger):
+        fail("manual publication requires explicit boolean publish with default false")
     validation = job_section(workflow, "validate-release")
-    if validation.count(TAG_ONLY_CONDITION) != 1:
+    if validation.count(REF_CONDITION) != 1:
         fail("release-ref validation must have exactly one tag-only condition")
-    if "if: github.event_name == 'workflow_dispatch'" not in validation:
+    if CANDIDATE_CONDITION not in validation:
         fail("release candidate validation must be workflow_dispatch-only")
     if "bash Scripts/validate_release_candidate.sh" not in validation:
         fail("manual validation must invoke validate_release_candidate.sh")
@@ -59,6 +63,11 @@ def validate(path: Path = WORKFLOW) -> None:
     if needs_index == -1 or condition_index > needs_index:
         fail("publication tag-only condition must be declared at job level")
 
+    for gate in ["validate-release", "validate-platform-builds"]:
+        if "      - " + gate not in publication:
+            fail("publication must retain every validation gate")
+    if "Revalidate exact release ref before publication" not in publication or "bash Scripts/validate_release_ref.sh" not in publication:
+        fail("publication must revalidate the exact current-main tag")
     if ".build/release-artifacts/benchmarks-json-codec.json" not in validation:
         fail("validation must upload the JSON codec benchmark artifact")
     diagnostics = re.search(
@@ -87,7 +96,7 @@ def validate(path: Path = WORKFLOW) -> None:
         if f".release-artifacts/benchmarks-json-codec.json{suffix}" not in asset_lines:
             fail("publication must retain the JSON codec benchmark and signatures")
 
-    print("release-workflow-contract: OK (manual validation cannot publish)")
+    print("release-workflow-contract: OK (manual validation defaults to no publication; explicit tag publication keeps every gate)")
 
 
 if __name__ == "__main__":

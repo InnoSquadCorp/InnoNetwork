@@ -7,10 +7,6 @@ on:
     # `in_progress` also covers manual reruns, where `requested` is omitted.
     types: [requested, in_progress]
 
-concurrency:
-  group: swift-pr-dependency-submission-${{ github.event.workflow_run.head_sha }}
-  cancel-in-progress: true
-
 permissions: {}
 
 jobs:
@@ -19,6 +15,12 @@ jobs:
     if: >-
       github.event.workflow_run.event == 'pull_request' &&
       github.event.workflow_run.pull_requests[0].number != null
+    # Requested/in_progress can refer to the same immutable snapshot. Keep
+    # admitted submissions; a later notification must not interrupt one.
+    concurrency:
+      group: swift-pr-dependency-submission-${{ github.event.workflow_run.head_sha }}
+      cancel-in-progress: false
+      queue: max
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

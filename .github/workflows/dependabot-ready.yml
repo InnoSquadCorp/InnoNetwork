@@ -1,0 +1,47 @@
+name: Dependabot Ready
+run-name: 'Ready v1 pr:${{ github.event.pull_request.number }} head:${{ github.event.pull_request.head.sha }} head-repo:${{ github.event.pull_request.head.repo.id }} base-repo:${{ github.event.pull_request.base.repo.id }} base:${{ github.event.pull_request.base.ref }} source:${{ github.workflow_sha }}'
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, synchronize, reopened, edited, labeled, unlabeled, ready_for_review, converted_to_draft]
+
+permissions:
+  contents: read
+
+# GitHub owns this native fixed-name check. No API creates/patches a verdict.
+# Superseded reporters cancel instead of publishing a late old-head success.
+concurrency:
+  group: dependabot-native-ready-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  ready:
+    name: Dependabot Merge Ready
+    # No job-level condition: skipped/neutral must not masquerade as readiness.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+      checks: read
+      pull-requests: read
+    steps:
+      - name: Checkout immutable trusted reporter source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+          sparse-checkout: Scripts
+      - name: 'Evaluate Ready snapshot from ${{ github.workflow_sha }} for Ready v1 pr:${{ github.event.pull_request.number }} head:${{ github.event.pull_request.head.sha }} head-repo:${{ github.event.pull_request.head.repo.id }} base-repo:${{ github.event.pull_request.base.repo.id }} base:${{ github.event.pull_request.base.ref }}'
+        id: snapshot
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          DEPENDABOT_AUTO_MERGE_ENABLED: ${{ vars.DEPENDABOT_AUTO_MERGE_ENABLED }}
+        run: python3 -B Scripts/dependabot-ready-policy.py snapshot --pr "$PR_NUMBER"
+      - name: Enforce Ready snapshot
+        if: always()
+        env:
+          READY: ${{ steps.snapshot.outputs.ready }}
+        run: test "$READY" = 'true'

@@ -91,7 +91,11 @@ class WorkflowContractTests(unittest.TestCase):
             if name == 'policy': continue
             guard = ci[name]['if']
             expected = 'fromJSON(needs.ci-plan.outputs.plan).jobs.' + name
-            self.assertEqual(guard, ('always() && ' if name == 'consumer-smoke' else '') + expected)
+            reused = {'lint', 'dead-code', 'parallel-tests', 'apple-platform-build-smoke', 'thread-sanitizer'}
+            if name in reused:
+                self.assertEqual(guard, "needs.ci-plan.outputs." + name + " == 'true'")
+            else:
+                self.assertEqual(guard, ('always() && ' if name == 'consumer-smoke' else '') + expected)
 
         for name,job in self.docs['ci.yml']['jobs'].items():
             for step in job.get('steps',[]):

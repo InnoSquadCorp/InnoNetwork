@@ -2,7 +2,9 @@
 
 ## Scope and preserved contracts
 
-This change starts from `main` at `9d8053d5f921ebf5c38cc2f816efe90c7db4a450`.
+The first automation change started from `9d8053d5f921ebf5c38cc2f816efe90c7db4a450`.
+The Ready/cache/reuse follow-up starts from current `main`
+`82d3c8d5c943bdd93ce39394774678f641b0e393`.
 The initial change is automation-only; the later user-requested [dependency PR
 integration](DependencyIntegration-2026-09-30.md) also updates Swift Crypto and
 GitHub Actions pins. Swift tools 6.2, all five Apple deployment floors,
@@ -15,8 +17,8 @@ The planner reads exact base/head commit SHAs with NUL-delimited Git output.
 Deleted, renamed, copied, type-changed, empty and unknown path evidence chooses
 the full lane; malformed/unavailable evidence fails instead of producing green.
 Both rename paths remain in the audit artifact. The final aggregate recomputes
-the declared plan and accepts success for selected jobs and skipped only for
-explicit non-targets. Failure, cancellation, unexpected skips, missing jobs and
+the declared plan and accepts success for selected jobs, skipped for explicit
+non-targets, or narrowly revalidated equivalent-tree PR proof described below. Failure, cancellation, unexpected skips, missing jobs and
 extra jobs all fail.
 
 - Sources, tests, examples, smoke tests, benchmarks, package/lock/tooling changes:
@@ -37,14 +39,82 @@ PR work now lives in CI and cannot escape the aggregate. Benchmark PR comments
 are replaced by preserved artifacts, so PR benchmark code no longer holds
 issue/pull-request write credentials. Scheduled trend append remains separate.
 
+## Ready events and equivalent-tree main verification
+
+Heavy PR CI runs on opened, synchronize, reopened, edited, labeled and unlabeled
+events. Ready/draft changes reach the native Ready/coordinator workflows, so
+marking an unchanged Draft ready does not cancel or restart the heavy matrix.
+`edited` remains because base-branch retargeting must refresh the changed-path
+selection and tested merge tree. Labels still select additional contracts and
+therefore trigger CI.
+
+Main push may reuse only five tree-dependent logical groups: swift-format lint,
+Periphery, bounded target-sharded tests, the five Apple build-smoke variants, and
+ThreadSanitizer. Admission requires a single-commit non-force squash push, one
+merged same-repository PR, exact pre-merge main/base/head parents, and an identical
+complete Git tree to the tested merge commit. The immutable reusable
+`release-validation.yml` reference binds the original PR merge SHA. Every one of
+the full PR's 32 concrete jobs, mandatory steps and native app/suite/job/check
+identities must be successful at the latest run/attempt, completed within 24
+hours before merge and still fresh at admission. Source run/attempt and current
+main are checked again after paginated evidence reads to detect races.
+
+Missing, stale, failed, forked, ambiguous, API-error, direct-push or changed-tree
+evidence falls back to ordinary full CI before any job is skipped. The logical
+plan remains full (except PR-only Dependency Review), and `CI Required` fetches
+and verifies the same proof again. Later revocation fails closed. The aggregate
+does not create status results for skipped jobs or weaken native required checks.
+
+Coverage and macro artifact producers/uploaders, all consumer checks, docs and
+DocC, benchmarks, CodeQL and release-candidate validation still execute freshly.
+Main publishers consume only exact-main artifacts from their verified source
+run. Reuse never downloads PR artifacts, logs, caches or executable code into a
+privileged main workflow and cannot authorize release or deployment.
+
+## Exact download cache and dependency snapshots
+
+The cache key binds tracked package manifests/lockfiles, validated package pins,
+the explicit cache implementation/profile contract, actual Swift binary/version,
+selected Xcode,
+every advertised SDK identity, OS/architecture and explicit job/platform profile.
+Generated nested locks and downloaded packages are excluded. The root, 11 example,
+five macro fixture and standalone OpenAPI package graphs remain distinct inputs.
+Identical repeated Xcode SDK rows are coalesced only after each occurrence's
+version/build/path agrees. An unused SDK may report an empty build field, which
+is fingerprinted exactly; every profile-required SDK remains strict.
+
+Only SwiftPM repository mirrors and downloaded prebuilts are cached. Same-runner
+benchmarks use the same narrow subdirectories in their existing dedicated cache
+root. No compiled `.build` trees, coverage profiles, receipts or test/DocC/release
+outputs are restored. Exact keys have no broad fallback. Restore-hit and bounded
+file metadata/timing observations are diagnostic only; every selected assertion
+still runs, and a hit is never evidence of validation or a claimed speedup.
+
+Snapshot serialization now lives on eligible submission jobs, with
+`cancel-in-progress: false` and `queue: max`, scoped by immutable main/head SHA.
+Previously a no-op CI `workflow_run` could replace/cancel a main `push` submission
+before its job-level condition was evaluated. Eligibility now runs before the
+job enters the queue. Requested/in-progress duplicate wakes cannot interrupt a
+valid submission. Recovery still authenticates actual current-main bot origin;
+PR submission still loads trusted source, treats PR lockfiles only as bounded
+data and rechecks exact head/base immediately before submitting. `ACCEPTED` and
+`SUCCESS` API responses are acknowledged; incomplete graph comparison remains a
+hard CI failure. An already missing historical base snapshot needs a separate
+bounded recovery of that exact current-main submission.
+
 ## Candidate validation and publication
 
 CI invokes `release-validation.yml` with `publish: false`. It has only read
 permissions, asserts the exact checkout commit, rejects `publish: true`, and
 contains no publication job. All existing release validation commands and five
 platform tuples are compared against `release.yml` in an executable parity test.
-The existing tag-only release workflow, main-tag validation, signature generation,
-release asset set and publication conditions are unchanged. A candidate pass is
+Manual `Release` now exposes boolean `publish`, default `false`. With false,
+all validation runs without signing or publication. Explicit true is accepted
+only for an existing annotated SemVer tag at exact current main with ready
+release notes; a branch dispatch fails tag validation. Both full validation and
+all five platform builds must succeed. The publisher revalidates the current-main
+tag before consuming this run's artifacts, signing and publishing the unchanged
+asset set. Tag-push behavior remains available. A candidate pass is
 not a release, tag, approval or authorization to publish.
 
 DocC artifacts are built without Pages/repository write permissions. A trusted
@@ -83,16 +153,32 @@ requested reviewers and unresolved threads are not waived. No title/version
 heuristic exempts a major update.
 
 The writer loads trusted main scripts only, never PR code, artifacts or caches.
-Manual PRs receive the Ready policy check without enabling auto-merge. Native
-`enablePullRequestAutoMerge(expectedHeadOid: ...)` is used, with a pending Ready
-check while the proof is re-read. No immediate merge API or bypass path exists.
-Metadata reconciliation cancels ineligible approvals and native auto-merge.
-Scheduled discovery includes retargeted open PRs to repair missed, delayed or
-suppressed lifecycle notifications. [Current GitHub documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request_target) places
-`pull_request_target` in the default-branch context, so normal `edited` delivery
-can already reach the cancellation path; retargeting is not assumed to suppress
-that event. This is reconciliation hardening, not proof of a native merge bypass. Write outcomes are read
-back; uncertain writes are never blindly retried.
+`Dependabot Ready` is now an unconditional native `pull_request_target` check,
+using immutable `github.workflow_sha` source and read-only permissions. Human PRs
+receive a policy pass without auto-merge approval. Bot readiness requires the full
+current proof and enabled flag. No API creates or patches a Ready conclusion.
+The native run title and evaluation step bind PR number, exact head, head/base
+repository IDs, base main and immutable source. This also supports legitimate
+fork runs whose REST `pull_requests` association is empty without treating branch
+or display-name matches alone as provenance.
+
+The trusted coordinator can request only a bounded rerun of a verified native
+Ready reporter when its verdict changed. It verifies current attempt, source
+compatibility and prior writer claims before its single request; uncertain
+writes are read back, never blindly retried. Historical native/coordinator
+transport checks are excluded only with exact job/app/head/suite/source binding.
+The literal unevaluated skipped matrix name is allowed only for an empty native
+skip paired with a successful immutable-source inspector. Serialized writers
+retain pending jobs with `queue: max`.
+
+Native `enablePullRequestAutoMerge(expectedHeadOid: ...)` happens only after
+repeated CI/metadata/native-Ready reads. No immediate merge API or bypass path
+exists. Native strict checks and required PR/resolved-thread rules must be
+verified, including the runtime token's explicit never-bypass signal; missing
+protection evidence leaves the coordinator in standby. No repository setting or
+approval count changes here. Metadata reconciliation can revoke ineligible bot
+auto-merge approvals. Scheduled discovery includes retargeted open bot PRs;
+normal default-branch `edited` delivery also reaches the cancellation path.
 
 GitHub events cannot form an atomic lock with the merge operation. A review or
 new failing external check can race the final proof and native completion.
@@ -136,9 +222,11 @@ CI, publish a release, or retag anything.
 
 ## Existing 6.1 candidate integration order
 
-PR #132 (`79e1900ed283c129ab9523c7661c2f1a8e9cdc3c`) is independent and unchanged.
-Its companion InnoNetwork-Protobuf PR #2 is also unchanged. Their known Periphery
-and artifact transport failures are not repaired by editing runtime code here.
+PR #132 (`7957642bca41773bae12a5e201ed063d3e4ca08c`, observed 2026-10-01)
+is independent and unchanged.
+Its companion InnoNetwork-Protobuf PR #2 is also unchanged. Its broader feature/API and companion-release scope is not changed here.
+Open bot PRs #134–#137 likewise remain untouched; dependency base-snapshot
+failures are distinct from their existing contract, benchmark and test failures.
 
 The safe proposed order is automation review/full CI and a separately approved
 merge first; then rebase #132 on that new main, reconcile CI/CODEOWNERS/consumer

@@ -76,6 +76,21 @@ class ConsumerCIContractTest < Minitest::Test
     assert_raises(ArgumentError) { validate }
   end
 
+  def test_cache_key_is_exact_without_commit_suffix
+    @action['runs']['steps'][1]['with']['key'] += '${{ github.sha }}'
+    assert_raises(ArgumentError) { validate }
+  end
+
+  def test_restore_observation_is_mandatory_and_bound_to_lane
+    observation = @action['runs']['steps'][2]
+    original = observation['env']['CONSUMER_CACHE_LANE']
+    observation['env']['CONSUMER_CACHE_LANE'] = 'examples'
+    assert_raises(ArgumentError) { validate }
+    observation['env']['CONSUMER_CACHE_LANE'] = original
+    observation['if'] = "steps.dependency-cache.outputs.cache-hit == 'true'"
+    assert_raises(ArgumentError) { validate }
+  end
+
   def test_no_early_cache_restore
     steps = @workflow['jobs']['consumer-macros']['steps']
     steps[1], steps[2] = steps[2], steps[1]
