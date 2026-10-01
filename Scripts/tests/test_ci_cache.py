@@ -104,7 +104,7 @@ class FingerprintTests(unittest.TestCase):
             self.assertEqual(cache.PROFILES[name + "-sanitizer"]["sanitizer"], name)
 
     def test_unknown_or_wrong_profile_variant_is_rejected(self):
-        for profile, variant in [("unknown", "default"), ("build-and-test", "iOS"), ("apple-platform-build-smoke", "default"),
+        for profile, variant in [("unknown", "default"), ("codeql", "default"), ("build-and-test", "iOS"), ("apple-platform-build-smoke", "default"),
                                  ("sample-package-builds", "macOS"), ("swift-syntax-compatibility", "605.0.0")]:
             with self.subTest(profile=profile, variant=variant), self.assertRaises(ValueError):
                 fingerprint(profile=profile, variant=variant)

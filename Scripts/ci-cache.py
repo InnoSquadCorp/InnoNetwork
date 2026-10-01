@@ -36,7 +36,6 @@ PROFILES = {
     "consumer-macros": {"configuration": "debug", "graph": "root-and-compile-failure-fixtures", "instrumentation": "code-coverage", "source-fallback": True},
     "consumer-openapi": {"configuration": "debug", "graph": "standalone-openapi-tool-and-generated-consumers", "traits": "core-only"},
     "benchmark-smoke": {"configuration": "release", "validation": "quick-benchmark"},
-    "codeql": {"configuration": "debug", "instrumentation": "codeql"},
     "thread-sanitizer": {"configuration": "debug", "sanitizer": "thread", "parallel": False},
     "benchmarks": {"configuration": "release", "validation": "same-runner-paired-medians"},
     "documentation": {"configuration": "debug", "validation": "docc"},

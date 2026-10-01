@@ -90,6 +90,13 @@ outputs are restored. Exact keys have no broad fallback. Restore-hit and bounded
 file metadata/timing observations are diagnostic only; every selected assertion
 still runs, and a hit is never evidence of validation or a claimed speedup.
 
+CodeQL keeps its original uncached build/analyze/SARIF path and permissions.
+The first hosted run completed CodeQL analysis but failed the newly added cache
+post-check because its before/after fingerprint did not agree. The exact changed
+identity field was not exposed in that log. CodeQL's independently instrumented
+build environment is outside this cache observation contract; removing only its
+cache wrapper avoids weakening the strict identity checks for other lanes.
+
 Snapshot serialization now lives on eligible submission jobs, with
 `cancel-in-progress: false` and `queue: max`, scoped by immutable main/head SHA.
 Previously a no-op CI `workflow_run` could replace/cancel a main `push` submission

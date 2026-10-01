@@ -712,10 +712,6 @@
         "conclusion": "success"
       },
       {
-        "name": "Cache SwiftPM artifacts",
-        "conclusion": "success"
-      },
-      {
         "name": "Initialize CodeQL",
         "conclusion": "success"
       },
@@ -725,10 +721,6 @@
       },
       {
         "name": "Perform CodeQL Analysis",
-        "conclusion": "success"
-      },
-      {
-        "name": "Report cache observations",
         "conclusion": "success"
       }
     ],
