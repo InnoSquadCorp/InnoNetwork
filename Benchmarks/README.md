@@ -273,3 +273,44 @@ Guarded benchmark set:
 - `client/decoding-interceptor-chain-8`: deeper passive decoding interceptor chain overhead baseline.
 - `cache/response-cache-lookup`: cache hit lookup baseline.
 - `cache/response-cache-revalidation`: conditional revalidation preparation baseline.
+
+
+## CI sample provenance and bounded diagnostics
+
+The original 20% paired-median guard, three interleaved base/head pairs and
+300,000 complete single-listener deliveries are unchanged. The runner records
+actual build/sample argv, compiler/Xcode/SDK/OS, source Git objects and measured
+file hashes, compiled binary SHA-256, report SHA-256, process-boundary clocks,
+child CPU time and context-switch counts under `protocol/`. Observer work is
+outside Swift's timed measurement closure; process CPU/wall observations cover
+the whole executable, not just one internal benchmark. Identical sources are
+not described as identical binaries without binary hash evidence.
+
+Comparisons reject non-finite/non-positive metrics, malformed schemas, duplicate
+identifiers/JSON fields, inconsistent throughput and different base/head
+iteration counts. A sustained 20.01% throughput regression still fails. A valid
+runtime guard failure can retain the independent JSON lane and diagnostics;
+compile errors, process failures, cancellation, timeouts and invalid reports
+stop measurement rather than being treated as a completed comparison.
+The comparator alone emits a receipt after successful validation and writing;
+it binds this invocation, source HEAD, all input hashes, output hash and verdict.
+Stale output, guard-contract failures and non-finite derived statistics cannot
+issue that receipt. Output/serialization failures are execution errors (exit 2).
+Cancellation/timeout cleanup signals only the newly created process group and
+kills residual descendants after bounded TERM grace even if its leader exited.
+A successful leader that leaves descendants is an incomplete execution, not a
+completed measurement.
+
+After both primary lane comparisons complete, a predeclared diagnostic schedule
+runs 24 event-only samples: three A/A pairs, three B/B pairs and three A/B pairs
+in each order. The same compiled binary/hash is used in both roles for A/A or
+B/B. Each sample has a 45-second ceiling; the entire diagnostic phase has a
+360-second budget with termination grace reserved inside it. Missing/incomplete
+controls are recorded and never retried. These diagnostic observations do not
+replace the primary guard, select favorable samples, change the 20% budget or
+reset baseline source SHAs. The original failed verdict survives collection.
+
+Event-only controls use fresh processes and omit the full suite's predecessor
+workloads. They measure same-binary variability and order effects in the new
+controlled run, not the precise cause of a past unprofiled host failure. A/A
+variation, source equality or a later passing run alone is not proof of noise.

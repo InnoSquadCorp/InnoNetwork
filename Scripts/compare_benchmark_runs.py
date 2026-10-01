@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import math
 import os
 import statistics
 import sys
@@ -12,9 +14,55 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _benchmark_report import load_report  # noqa: E402
+def load_report(path: Path) -> dict:
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError(f"duplicate JSON field: {key}")
+            result[key] = value
+        return result
+    return json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=unique)
+
+
+def positive_number(value, label):
+    try:
+        valid = type(value) in (int, float) and math.isfinite(value) and value > 0
+    except OverflowError:
+        valid = False
+    if not valid:
+        raise ValueError(f"{label} must be a finite positive number")
+    return float(value)
 
 Identifier = tuple[str, str]
+
+
+def finite_numbers(value):
+    if isinstance(value, dict):
+        for item in value.values():
+            finite_numbers(item)
+    elif isinstance(value, list):
+        for item in value:
+            finite_numbers(item)
+    elif type(value) in (float, int):
+        try:
+            finite = math.isfinite(value)
+        except OverflowError:
+            finite = False
+        if not finite:
+            raise ValueError("non-finite report number")
+
+
+def file_identity(path):
+    return {"path": str(path.resolve()), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+
+
+def comparison_receipt(report, output, bases, heads, invocation_id, source_head):
+    return {"schema": 1, "invocation_id": invocation_id, "source_head": source_head,
+            "exit_code": 1 if report["baseline"]["guardFailures"] else 0,
+            "output": file_identity(output),
+            "base": [file_identity(path) for path in bases],
+            "head": [file_identity(path) for path in heads]}
 
 
 def identifier(result: dict) -> Identifier:
@@ -35,6 +83,8 @@ def parse_identifier(raw: str) -> Identifier:
 
 
 def result_map(report: dict, label: str) -> tuple[list[Identifier], dict[Identifier, dict]]:
+    if not isinstance(report, dict) or type(report.get("version")) is not int or report["version"] != 2:
+        raise ValueError(f"{label} has an unsupported report schema")
     results = report.get("results")
     if not isinstance(results, list) or not results:
         raise ValueError(f"{label} has no benchmark results")
@@ -42,6 +92,22 @@ def result_map(report: dict, label: str) -> tuple[list[Identifier], dict[Identif
     order: list[Identifier] = []
     mapped: dict[Identifier, dict] = {}
     for result in results:
+        if not isinstance(result, dict):
+            raise ValueError(f"{label} has a malformed result")
+        if any(not isinstance(result.get(key), str) or not result[key] or
+               any(ord(c) < 32 for c in result[key]) for key in ("group", "name")):
+            raise ValueError(f"{label} has an invalid benchmark identifier")
+        count = result.get("iterations")
+        if type(count) is not int or count <= 0:
+            raise ValueError(f"{label} iterations must be a positive integer")
+        elapsed = positive_number(result.get("elapsedSeconds"), f"{label} elapsedSeconds")
+        ops = positive_number(result.get("operationsPerSecond"), f"{label} operationsPerSecond")
+        if not math.isclose(ops, count / elapsed, rel_tol=0.000001, abs_tol=0.000000001):
+            raise ValueError(f"{label} throughput disagrees with iterations/elapsedSeconds")
+        for key in ("peakResidentBytes", "residentDeltaBytes"):
+            optional = result.get(key)
+            if optional is not None and (type(optional) is not int or (key == "peakResidentBytes" and optional < 0)):
+                raise ValueError(f"{label} has invalid {key}")
         value = identifier(result)
         if value in mapped:
             raise ValueError(f"{label} contains duplicate benchmark {identifier_text(value)}")
@@ -61,6 +127,8 @@ def aggregate_reports(reports: list[dict], label: str) -> dict:
     if len(reports) < 3 or len(reports) % 2 == 0:
         raise ValueError(f"{label} requires an odd sample count of at least 3")
 
+    if any(not isinstance(report, dict) for report in reports):
+        raise ValueError(f"{label} contains a malformed report")
     versions = {report.get("version") for report in reports}
     if len(versions) != 1:
         raise ValueError(f"{label} reports use different schema versions")
@@ -118,6 +186,8 @@ def build_comparison_report(
     max_regression_percent: float,
     regression_reason: str | None = None,
 ) -> dict:
+    if type(max_regression_percent) not in (int, float) or not math.isfinite(max_regression_percent) or max_regression_percent < 0:
+        raise ValueError("regression percentage must be finite and non-negative")
     if len(base_reports) != len(head_reports):
         raise ValueError("base and head require the same sample count")
 
@@ -128,6 +198,11 @@ def build_comparison_report(
 
     _, base_map = result_map(base, "aggregated base")
     _, head_map = result_map(head, "aggregated head")
+    if set(base_map) != set(head_map):
+        raise ValueError("base and head have different benchmark sets")
+    for value in base_map:
+        if base_map[value]["iterations"] != head_map[value]["iterations"]:
+            raise ValueError(f"base and head have different iteration counts for {identifier_text(value)}")
     missing_guarded = guarded - (set(base_map) & set(head_map))
     if missing_guarded:
         missing = ", ".join(sorted(identifier_text(value) for value in missing_guarded))
@@ -175,6 +250,8 @@ def build_comparison_report(
         # different phases.
         delta = float(statistics.median(paired_deltas))
         paired_delta_spread = max(paired_deltas) - min(paired_deltas)
+        if not all(math.isfinite(value) for value in [unpaired_delta, delta, paired_delta_spread, *paired_deltas]):
+            raise ValueError("non-finite comparison delta")
         is_guarded = value in guarded
         deltas.append(
             {
@@ -212,6 +289,7 @@ def build_comparison_report(
         "deltas": deltas,
         "guardFailures": failures,
     }
+    finite_numbers(head)
     return head
 
 
@@ -222,11 +300,18 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--guard-benchmark", action="append", default=[], type=parse_identifier)
     parser.add_argument("--max-regression-percent", required=True, type=float)
+    parser.add_argument("--receipt", type=Path)
+    parser.add_argument("--invocation-id")
+    parser.add_argument("--source-head")
     parser.add_argument(
         "--regression-reason",
         default=os.environ.get("INNO_BENCHMARK_REGRESSION_REASON"),
     )
     arguments = parser.parse_args()
+    if any((arguments.receipt, arguments.invocation_id, arguments.source_head)) and not all(
+        (arguments.receipt, arguments.invocation_id, arguments.source_head)
+    ):
+        parser.error("--receipt, --invocation-id and --source-head must be supplied together")
     if arguments.max_regression_percent < 0:
         parser.error("--max-regression-percent must be non-negative")
     return arguments
@@ -235,6 +320,14 @@ def parse_arguments() -> argparse.Namespace:
 def main() -> int:
     arguments = parse_arguments()
     try:
+        # Invalidate the completion marker first, including output-write failure.
+        destinations = ([arguments.receipt] if arguments.receipt else []) + [arguments.output]
+        if len({path.resolve() for path in destinations + arguments.base + arguments.head}) != len(
+            destinations + arguments.base + arguments.head
+        ):
+            raise ValueError("comparison input and output paths must be distinct")
+        for path in destinations:
+            path.unlink(missing_ok=True)
         report = build_comparison_report(
             [load_report(path) for path in arguments.base],
             [load_report(path) for path in arguments.head],
@@ -242,15 +335,21 @@ def main() -> int:
             arguments.max_regression_percent,
             arguments.regression_reason,
         )
-    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as error:
+        arguments.output.parent.mkdir(parents=True, exist_ok=True)
+        arguments.output.write_text(
+            json.dumps(report, indent=2, sort_keys=True, allow_nan=False) + "\n", encoding="utf-8",
+        )
+        if arguments.receipt:
+            receipt = comparison_receipt(report, arguments.output, arguments.base, arguments.head,
+                                         arguments.invocation_id, arguments.source_head)
+            arguments.receipt.parent.mkdir(parents=True, exist_ok=True)
+            temporary = arguments.receipt.with_name(arguments.receipt.name + ".tmp")
+            temporary.write_text(json.dumps(receipt, sort_keys=True, allow_nan=False) + "\n", encoding="utf-8")
+            temporary.replace(arguments.receipt)
+    except (OSError, ValueError, KeyError, TypeError, OverflowError, json.JSONDecodeError) as error:
         print(f"benchmark comparison failed: {error}", file=sys.stderr)
         return 2
 
-    arguments.output.parent.mkdir(parents=True, exist_ok=True)
-    arguments.output.write_text(
-        json.dumps(report, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
     failures = report["baseline"]["guardFailures"]
     if failures:
         for failure in failures:

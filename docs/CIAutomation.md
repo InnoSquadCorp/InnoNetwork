@@ -109,6 +109,19 @@ data and rechecks exact head/base immediately before submitting. `ACCEPTED` and
 hard CI failure. An already missing historical base snapshot needs a separate
 bounded recovery of that exact current-main submission.
 
+## Benchmark evidence follow-up
+
+The `f7b6f8e` run retained a -23.77% paired throughput regression for
+`events/task-event-fanout-single` with unchanged runtime and benchmark sources.
+Its three pairs were -25.10%, -23.77%, +5.29%, and no binary hash or CPU profile
+was captured, so the original cause remains unresolved. The next measurement
+adds bounded process-boundary provenance and fixed same-binary/order controls
+as documented in [Benchmarks](../Benchmarks/README.md#ci-sample-provenance-and-bounded-diagnostics).
+The original 20% gate, complete-delivery workload, baseline and runtime code are
+not changed. Diagnostic results cannot turn an original failure into success.
+Malformed/nonfinite data and unmatched workloads are rejected before any
+performance verdict, and executable/build failures do not launch more controls.
+
 ## Candidate validation and publication
 
 CI invokes `release-validation.yml` with `publish: false`. It has only read

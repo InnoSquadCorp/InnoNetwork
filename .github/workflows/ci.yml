@@ -89,6 +89,9 @@ jobs:
       - name: Verify CI selection and public operations
         run: |
           python3 -B -m unittest discover -s Scripts/automation-tests -p 'test_*.py'
+          python3 -B Scripts/tests/test_benchmark_protocol.py
+          python3 -B Scripts/tests/test_benchmark_protocol_integration.py
+          python3 -B Scripts/tests/test_compare_benchmark_runs.py
           python3 -B Scripts/tests/test_ci_cache.py
           python3 -B Scripts/tests/test_consumer_ci.py
           python3 -B Scripts/check-public-operations.py
