@@ -148,6 +148,17 @@ failed runs and unverified manual dispatches cannot publish. `DocC Pages` manual
 runs produce preview artifacts only. Main push CI and authenticated Dependabot
 recovery CI can publish; publication does not alter Pages settings.
 
+The publisher treats `syncing_files`, `finished_file_sync`, `updating_pages`,
+and `purging_cdn` from the [GitHub Pages status schema](https://github.com/github/rest-api-description/blob/6b4be6b6054d4e344ba0e57c89ff6be99427fa23/descriptions/api.github.com/api.github.com.json),
+plus the exact `deployment_queued` value observed in a
+[real Flow deployment response](https://github.com/InnoSquadCorp/InnoFlow/actions/runs/36887168389/job/110453338248),
+as intermediate states. They never count as success: only `succeed` does.
+The existing 600-second deadline, 120-poll cap, terminal failures, cancellation,
+and immutable source/artifact checks remain in place. Unknown values are escaped
+and logged before cancellation, including when the cancellation request fails.
+This protocol fix has offline state-machine coverage; Network's actual privileged
+Pages publication remains a separate post-merge verification.
+
 The package is already listed in the public Swift Package Index package list.
 `.spi.yml` points to the same DocC root as README. The policy verifies that DocC's
 product inventory equals the manifest's exported library products. Local examples
