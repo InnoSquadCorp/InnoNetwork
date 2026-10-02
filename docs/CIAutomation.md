@@ -217,6 +217,66 @@ Strict native required checks and the repository's existing native review rules
 are the safety boundary; scheduled/event reconciliation reduces, but cannot
 eliminate, this residual race. Do not describe the coordinator as race-free.
 
+## Native Ready bootstrap and recovery
+
+Installing or changing the trusted Ready workflow/policies does not create a
+native reporter for every already-open PR. The initial main deployment at
+`d4a569c58b9a190b2798f84c104cce63d686064e` demonstrated this: bulk planning reached
+manual draft #132 before bots #134–#137 and stopped because #132 had no reporter.
+Fresh events later gave #137 a reporter, but its single-PR planner success did
+not establish recovery for the other open PRs.
+
+The planner now isolates two verified lifecycle gaps per PR:
+`missing_native_reporter` and `obsolete_reporter_policy`. It emits their exact
+PR/head pairs in `blocked` and the job summary, excludes them from rerun
+`targets`, and continues planning other PRs. An empty `targets=[]` means the
+refresh writer is intentionally skipped. A successful planning job is **not**
+a successful Ready verdict. Missing/obsolete reporters still fail the native
+Ready requirement and cannot arm bot auto-merge. API/permission errors,
+malformed identities, foreign ancestry, invalid provenance and ambiguous
+reporter failures still fail the whole plan without publishing partial targets.
+
+Bootstrap remains a separately authorized maintainer action:
+
+1. After deploying the change to trusted main, read the latest bulk planner
+   summary and recheck each listed PR's current head, open state and main base.
+   Record the exact heads; stop/replan if they moved. This policy change itself
+   makes old reporter policy blobs incompatible, including a previously seeded
+   #137 reporter, so inspect **all** currently open PRs rather than relying on
+   the original four-PR incident list
+2. With approval for the specific PR metadata change, use the GitHub UI or a
+   maintainer-authenticated API/CLI to make one appropriate real event already
+   subscribed by `dependabot-ready.yml`, such as `edited`, `labeled` or
+   `unlabeled`. Preserve the intended title/body/labels and draft state; do not
+   close/reopen a PR or mark draft #132 ready merely to seed a check. These
+   metadata events also trigger ordinary PR CI. If temporary metadata needs
+   restoration, include that restoration in the approval and verify the newest
+   resulting reporter after both events. No such metadata mutation is performed
+   by the planner
+3. Verify GitHub created a **new** `pull_request_target` run of the fixed
+   `Dependabot Ready` workflow. Its trusted title/evaluation step must bind the
+   current PR number, exact head, head/base repository IDs, main base and new
+   immutable trusted source. Confirm the native GitHub Actions app/job/suite
+   association and successful evaluation. A bot in standby must still finish
+   with the deliberate failing Ready verdict; a manual PR may pass the policy
+   check without authorizing auto-merge or removing draft/review requirements
+4. Verify a subsequent bulk planner no longer lists these exact PR/head pairs
+   as lifecycle-blocked, and independently verify every required CI/review/Ready
+   gate before considering merge eligibility. If no event appears or provenance
+   is invalid, leave it blocked and diagnose the event rather than synthesizing
+   a green check. Enabling the bot flag remains separately approved
+
+There is no supported first-run bootstrap using the existing read-only reporter
+and bounded Actions rerun writer. A [workflow dispatch](https://docs.github.com/en/rest/actions/workflows#create-a-workflow-dispatch-event)
+requires `workflow_dispatch`; adding that event would not preserve this
+`pull_request_target` PR-head provenance contract. [Rerunning](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/re-run-workflows-and-jobs)
+retains the original event's SHA/ref and privileges, so it cannot create an
+absent run or refresh an obsolete workflow definition. Mutating labels with
+the workflow's [GITHUB_TOKEN](https://docs.github.com/en/actions/concepts/security/github_token)
+does not trigger the needed new run. Do not work around these boundaries with
+new credentials, broader permissions, fabricated status/check results, or an
+automatic edit/label/close/reopen loop.
+
 ## Activation is a separately approved operation
 
 This PR does not change repository settings, rulesets, permissions, review rules,

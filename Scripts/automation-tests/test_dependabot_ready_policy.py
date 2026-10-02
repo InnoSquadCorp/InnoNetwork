@@ -2,6 +2,7 @@
 import copy
 from datetime import datetime, timezone, timedelta
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -463,7 +464,8 @@ class NativeReadyTests(unittest.TestCase):
             with mock.patch.object(n, 'policy_module', return_value=p), mock.patch.object(p, 'GitHub', return_value=self.api), \
                     mock.patch.object(n.sys, 'argv', ['ready-policy', 'plan']), \
                     mock.patch.dict(os.environ, PR_NUMBERS=json.dumps([NUMBER, NUMBER + 1]), GITHUB_OUTPUT=str(output)), \
-                    mock.patch.object(n, 'refresh_plan', side_effect=[dict(pr=NUMBER), OSError('API unavailable')]):
+                    mock.patch.object(n, 'current_pr', return_value=self.api.pr), \
+                    mock.patch.object(n, 'refresh_plan', side_effect=[dict(pr=NUMBER, head=HEAD), OSError('API unavailable')]):
                 self.assertEqual(n.main(), 1)
             self.assertFalse(output.exists())
             with mock.patch.object(n, 'policy_module', return_value=p), mock.patch.object(p, 'GitHub') as api, \
@@ -472,6 +474,169 @@ class NativeReadyTests(unittest.TestCase):
                 self.assertEqual(n.main(), 1)
                 api.assert_not_called()
             self.assertFalse(self.api.mutations)
+
+    def test_missing_reporter_is_typed_but_never_a_success_verdict(self):
+        self.api.native_runs = []
+        for manual, draft in [(True, True), (True, False), (False, False)]:
+            self.api.pr.update(user=dict(id=1, login='human', type='User') if manual else dict(p.BOT), draft=draft)
+            with self.subTest(manual=manual, draft=draft):
+                targets, blocked = n.refresh_batch(self.api, p, [NUMBER], False)
+                self.assertEqual(targets, [])
+                self.assertEqual(blocked, [dict(pr=NUMBER, head=HEAD, reason='missing_native_reporter')])
+                with self.assertRaises(p.Rejected): n.require_success(self.api, p, NUMBER, HEAD)
+                self.assertFalse(self.api.mutations)
+
+    def test_mixed_batch_retains_later_valid_refresh_without_approving_gaps(self):
+        # Reproduce the first-deployment ordering: draft #132, old bots, then
+        # a bot with a real current reporter. Only that reporter may be rerun.
+        prs = {number: copy.deepcopy(self.api.pr) for number in [132, 134, 135, 136, 137]}
+        for number, pr in prs.items(): pr['number'] = number
+        prs[132].update(draft=True, user=dict(id=1, login='human', type='User'))
+        target = dict(pr=137, head=HEAD, run=NATIVE_RUN, attempt=1, job=9001)
+        def current(api, policy, number, head=None):
+            self.assertTrue(head is None or head == prs[number]['head']['sha'])
+            return prs[number]
+        def refresh(api, policy, number, enabled):
+            if number != 137:
+                reason = 'obsolete_reporter_policy' if number == 136 else 'missing_native_reporter'
+                raise p.NeedsFreshReporter(reason, 'fresh lifecycle event required')
+            return target
+        for numbers in [list(prs), list(reversed(prs))]:
+            with mock.patch.object(n, 'current_pr', side_effect=current), \
+                    mock.patch.object(n, 'refresh_plan', side_effect=refresh) as planner:
+                targets, blocked = n.refresh_batch(self.api, p, numbers, True)
+            self.assertEqual(targets, [target])
+            self.assertEqual([item['pr'] for item in blocked], [132, 134, 135, 136])
+            self.assertEqual(blocked[-1]['reason'], 'obsolete_reporter_policy')
+            self.assertEqual(planner.call_count, 5)
+        self.assertFalse(self.api.mutations)
+
+    def test_obsolete_reporter_is_recovery_only_after_all_blob_identities_validate(self):
+        self.api.base = 'e' * 40
+        self.api.source_blobs[f'contents/{n.REPORTER_PATH}?ref={BASE}'] = 'f' * 40
+        targets, blocked = n.refresh_batch(self.api, p, [NUMBER], True)
+        self.assertEqual(targets, [])
+        self.assertEqual(blocked, [dict(pr=NUMBER, head=HEAD, reason='obsolete_reporter_policy')])
+        with self.assertRaises(p.Rejected): n.require_success(self.api, p, NUMBER, HEAD)
+        # A valid earlier mismatch must not hide corrupted later API evidence.
+        for invalid in [None, '', 'not-a-sha', 1]:
+            for ref in [BASE, self.api.base]:
+                key = f'contents/Scripts/dependabot-merge-policy.py?ref={ref}'
+                self.api.source_blobs[key] = invalid
+                with self.subTest(invalid=invalid, ref=ref), self.assertRaisesRegex(p.Rejected, 'blob identity'):
+                    n.refresh_batch(self.api, p, [NUMBER], True)
+                self.api.source_blobs.pop(key)
+        self.assertFalse(self.api.mutations)
+
+    def test_real_mixed_transcript_bootstrap_gap_does_not_stop_valid_reporter(self):
+        for bot in [False, True]:
+            api = Transcript()
+            api.pr['number'] = 137
+            api.pr['user'] = dict(p.BOT) if bot else dict(id=1, login='human', type='User')
+            api.native_run['pull_requests'][0]['number'] = 137
+            missing = copy.deepcopy(api.pr)
+            missing.update(number=132, draft=True, user=dict(id=1, login='human', type='User'))
+            # Human false -> true, or enabled-before/standby-now bot true -> false.
+            self.verdict(bot, api)
+            original_get = api.get
+            def get(route):
+                if route == p.route('pulls/132'): return copy.deepcopy(missing)
+                if route == p.route('pulls/137'): return copy.deepcopy(api.pr)
+                return original_get(route)
+            with mock.patch.object(api, 'get', side_effect=get):
+                for numbers in [[132, 137], [137, 132]]:
+                    targets, blocked = n.refresh_batch(api, p, numbers, False)
+                    self.assertEqual(targets, [dict(pr=137, head=HEAD, run=NATIVE_RUN, attempt=1, job=9001)])
+                    self.assertEqual(blocked, [dict(pr=132, head=HEAD, reason='missing_native_reporter')])
+                    self.assertTrue(missing['draft'])
+                    self.assertFalse(api.mutations)
+
+    def test_batch_never_reclassifies_foreign_stale_provenance_or_infrastructure(self):
+        changes = [lambda a: a.native_run.update(event='workflow_dispatch'),
+                   lambda a: a.native_run.update(head_sha=BASE),
+                   lambda a: a.native_run.update(workflow_id=999),
+                   lambda a: a.native_run['repository'].update(id=999),
+                   lambda a: a.native_check['app'].update(id=999),
+                   lambda a: a.native_check['check_suite'].update(id=999),
+                   lambda a: a.native_job['steps'][0].update(conclusion='failure'),
+                   lambda a: a.native_run.update(conclusion='cancelled')]
+        for change in changes:
+            api = Transcript()
+            # Avoid the fixture's shared repository dict hiding a foreign run.
+            api.native_run['repository'] = copy.deepcopy(api.repo)
+            change(api)
+            with self.subTest(change=change), self.assertRaises(p.Rejected) as raised:
+                n.refresh_batch(api, p, [NUMBER], True)
+            self.assertNotIsInstance(raised.exception, p.NeedsFreshReporter)
+            self.assertFalse(api.mutations)
+        original = self.api.get
+        with mock.patch.object(self.api, 'get', side_effect=lambda path:
+                dict(status='diverged', merge_base_commit=dict(sha=HEAD)) if '/compare/' in path else original(path)):
+            with self.assertRaisesRegex(p.Rejected, 'ancestry'):
+                n.refresh_batch(self.api, p, [NUMBER], True)
+        with mock.patch.object(self.api, 'pages', side_effect=PermissionError('403 denied')):
+            with self.assertRaises(PermissionError): n.refresh_batch(self.api, p, [NUMBER], True)
+
+    def test_batch_rechecks_changed_head_before_recording_recovery_or_target(self):
+        for outcome in [p.NeedsFreshReporter('missing_native_reporter', 'missing'),
+                        dict(pr=NUMBER, head=HEAD, run=NATIVE_RUN, attempt=1, job=9001), None]:
+            with mock.patch.object(n, 'current_pr', side_effect=[self.api.pr, p.Rejected('PR/head/base changed')]), \
+                    mock.patch.object(n, 'refresh_plan', side_effect=outcome if isinstance(outcome, Exception) else None,
+                                      return_value=outcome):
+                with self.subTest(outcome=outcome), self.assertRaisesRegex(p.Rejected, 'changed'):
+                    n.refresh_batch(self.api, p, [NUMBER], True)
+        self.assertFalse(self.api.mutations)
+
+    def test_bootstrap_event_recovers_real_reporter_then_ordinary_policy_decides(self):
+        # No synthetic check creation: simulate GitHub delivering a new native
+        # event after the maintainer's separately authorized lifecycle action.
+        self.api.native_runs = []
+        self.assertEqual(len(n.refresh_batch(self.api, p, [NUMBER], False)[1]), 1)
+        self.api.native_runs = [self.api.native_run]
+        self.verdict(False)
+        self.assertEqual(n.refresh_batch(self.api, p, [NUMBER], False), ([], []))
+        with self.assertRaises(p.Rejected): n.require_success(self.api, p, NUMBER, HEAD)
+        self.api.pr.update(draft=True, user=dict(id=1, login='human', type='User'))
+        self.running()
+        self.assertTrue(self.snapshot(False)[0])
+        self.verdict(True)
+        self.assertEqual(n.require_success(self.api, p, NUMBER, HEAD), (NATIVE_RUN, 1, 9000))
+        self.assertIn('manual PR', p.coordinate(self.api, NUMBER, True))
+        self.assertTrue(self.api.pr['draft'])
+        self.assertFalse(self.api.mutations)
+
+    def test_plan_outputs_and_summary_are_stable_and_do_not_publish_ready(self):
+        self.api.native_runs = []
+        with tempfile.TemporaryDirectory() as directory:
+            output, summary = (Path(directory) / name for name in ['output', 'summary'])
+            environment = dict(PR_NUMBERS=json.dumps([NUMBER]), GITHUB_OUTPUT=str(output), GITHUB_STEP_SUMMARY=str(summary))
+            for _ in range(2):
+                with mock.patch.object(n, 'policy_module', return_value=p), mock.patch.object(p, 'GitHub', return_value=self.api), \
+                        mock.patch.object(n.sys, 'argv', ['ready-policy', 'plan']), mock.patch.dict(os.environ, **environment), \
+                        mock.patch('sys.stdout', new_callable=io.StringIO) as stdout:
+                    self.assertEqual(n.main(), 0)
+                lines = output.read_text().splitlines()
+                self.assertEqual(lines[0], 'targets=[]')
+                self.assertEqual(json.loads(lines[1].split('=', 1)[1]),
+                                 [dict(pr=NUMBER, head=HEAD, reason='missing_native_reporter')])
+                self.assertEqual(len(lines), 2)
+                self.assertEqual(summary.read_text(), stdout.getvalue())
+                self.assertIn('Planning success is not a Ready verdict', summary.read_text())
+                self.assertIn(f'https://github.com/{p.REPOSITORY}/pull/{NUMBER}', summary.read_text())
+                output.unlink()
+                summary.unlink()
+        self.assertFalse(self.api.mutations)
+
+    def test_empty_or_unchanged_plan_has_no_refresh_and_explicit_no_blockers(self):
+        for numbers in [[], [NUMBER]]:
+            self.assertEqual(n.refresh_batch(self.api, p, numbers, True), ([], []))
+        coordinator = (ROOT / p.COORDINATOR_PATH).read_text()
+        writer = coordinator.split('  ready-refresh:\n', 1)[1].split('  bot-ready:\n', 1)[0]
+        self.assertIn("needs.ready-plan.outputs.targets != '[]'", writer)
+        self.assertIn("needs.ready-plan.outputs.targets != ''", writer)
+        self.assertNotIn('blocked', writer)
+        # Recovery is diagnostic step output/summary, never a writer input.
+        self.assertNotIn('steps.plan.outputs.blocked', coordinator)
 
     def test_coordinator_refuses_missing_or_changed_native_verdict_and_cancels(self):
         self.verdict(False)
