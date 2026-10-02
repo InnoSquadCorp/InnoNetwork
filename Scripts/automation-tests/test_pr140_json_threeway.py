@@ -2,6 +2,7 @@
 from copy import deepcopy
 from pathlib import Path
 import sys
+import os
 from unittest.mock import patch
 import tempfile
 import unittest
@@ -23,6 +24,11 @@ def sample(ops=100):
 
 
 class ThreewayTests(unittest.TestCase):
+    def setUp(self):
+        environment = patch.dict(os.environ)
+        environment.start()
+        self.addCleanup(environment.stop)
+
     def test_exact_schedule_and_source_identity(self):
         planned = diagnostic.schedule()
         self.assertEqual(len(planned), 36)
