@@ -19,14 +19,16 @@ def validate(workflow, helper):
     require('        type: boolean\n        required: false\n        default: false' in workflow)
     require("    if: github.event_name != 'workflow_dispatch' || !inputs.pr140_json_diagnostic\n" in jobs['run-benchmarks'])
     require("    if: success() && !inputs.pr140_json_diagnostic && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')\n" in jobs['append-trend'])
+    require('options: [attribution, threeway]' in workflow and 'default: attribution' in workflow)
     diagnostic = jobs['pr140-json-diagnostic']
     require("    if: github.event_name == 'workflow_dispatch' && inputs.pr140_json_diagnostic\n" in diagnostic)
     permissions = re.search(r'^    permissions:\n((?:^      [\w-]+: \w+\n)+)', diagnostic, re.M)
     require(permissions is not None and permissions[1] == '      contents: read\n')
-    for marker in ['    timeout-minutes: 30', 'persist-credentials: false',
+    for marker in ['    timeout-minutes: 50', 'persist-credentials: false',
                    'xcrun swift --version', 'Xcode_26.0.1.app',
                    "'^Apple Swift version 6[.]2([ .]|$)'",
-                   'run: bash Scripts/run_pr140_json_attribution.sh',
+                   'attribution) bash Scripts/run_pr140_json_attribution.sh ;;',
+                   'threeway) python3 Scripts/run_pr140_json_threeway.py ;;',
                    'name: pr140-json-attribution-${{ github.run_id }}-${{ github.run_attempt }}',
                    'path: .build/pr140-json-attribution/', 'if-no-files-found: error']:
         require(marker in diagnostic)

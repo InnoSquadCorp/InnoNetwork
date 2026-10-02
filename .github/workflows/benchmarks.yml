@@ -8,6 +8,11 @@ on:
         type: boolean
         required: false
         default: false
+      pr140_json_experiment:
+        description: 'Fixed report-only experiment; requires pr140_json_diagnostic'
+        type: choice
+        options: [attribution, threeway]
+        default: attribution
   schedule:
     - cron: "0 3 * * 1"
 
@@ -93,7 +98,7 @@ jobs:
     name: PR140 JSON attribution (report only)
     if: github.event_name == 'workflow_dispatch' && inputs.pr140_json_diagnostic
     runs-on: macos-15
-    timeout-minutes: 30
+    timeout-minutes: 50
     permissions:
       contents: read
     steps:
@@ -108,8 +113,15 @@ jobs:
           xcodebuild -version
           xcrun swift --version
           xcrun swift --version | grep -E '^Apple Swift version 6[.]2([ .]|$)'
-      - name: Compare the fixed candidate with its exact main base once
-        run: bash Scripts/run_pr140_json_attribution.sh
+      - name: Run the selected fixed experiment once
+        env:
+          EXPERIMENT: ${{ inputs.pr140_json_experiment }}
+        run: |
+          case "$EXPERIMENT" in
+            attribution) bash Scripts/run_pr140_json_attribution.sh ;;
+            threeway) python3 Scripts/run_pr140_json_threeway.py ;;
+            *) echo "Unknown fixed experiment" >&2; exit 64 ;;
+          esac
       - name: Retain separate diagnostic evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

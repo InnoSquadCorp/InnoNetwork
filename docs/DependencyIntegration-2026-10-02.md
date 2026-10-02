@@ -102,3 +102,36 @@ cannot append benchmark trends. The normal scheduled/manual gates, archived
 baseline, iteration/warmup contract and original failure remain unchanged.
 A diagnostic pass is not permission to merge or evidence that the earlier
 failure was noise. Invalid or failed collection is not retried automatically.
+
+### Fixed three-way attribution protocol
+
+The first separate [diagnostic](https://github.com/InnoSquadCorp/InnoNetwork/actions/runs/37008045026)
+completed with valid exact-source receipts. All five JSON guards passed for
+current main versus the candidate; parse-preserved paired median was +3.31%.
+This did not reproduce a dependency-specific >20% regression, but it did not
+compare the archived source and cannot erase the original canonical failure.
+
+The follow-up `threeway` choice is one preregistered experiment, still on the
+separate diagnostic branch. A/B/C are exact archived `b358692`, main `e74f322`,
+and candidate `955841b`. Each is built once with the candidate's unchanged
+harness, release flags, no default traits, actual Xcode 26.0.1 / Swift 6.2,
+and its exact tracked lock. All five JSON workloads retain 20,000 iterations.
+
+The planned upper bound is 36 fresh processes: three paired samples for each
+AA/AB/BB/BC/CC/AC comparison. Kind order rotates two slots each round so every
+kind occurs early, middle and late once. Each kind's side order is AB/BA/AB.
+AA/BB/CC reuse the exact same binary and original build receipt on both sides.
+No samples are selected or retried. Processes are bounded to 60 seconds;
+one 2400-second deadline covers setup, builds and collection, with a 50-minute
+job allowing cleanup and artifact upload. Invalid data, execution failure or
+timeout stops collection as incomplete. Valid guard failures are retained.
+
+All comparisons use the unchanged five-guard comparator and 20% threshold.
+Control variation is considered large if any JSON row has absolute paired
+median >20% or either side's relative spread >20%. That makes attribution
+inconclusive, with no code or baseline adjustment. Controls inside those bounds
+only mean no large variation was observed in this small experiment; they do
+not prove environmental stability or code causality. Three pairs cannot fully
+balance direction, and JSON-only runs do not reproduce the original full-suite
+predecessor workload. Binary copies, source/lock/build identities, all samples,
+receipts and the fixed schedule remain in the separate diagnostic artifact.
