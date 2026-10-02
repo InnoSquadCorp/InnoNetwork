@@ -26,6 +26,8 @@ Versioning.
 
 ### Fixed
 
+- Settle upload terminal delivery and runtime retirement before admitting an
+  explicit retry; cancelling a queued retry does not start a replacement task.
 - Preserve bounded error-snapshot metadata when snapshots are wrapped again.
 - Preserve cancellation through JSON, encoded and streaming codecs without
   changing direct custom-decoder error contracts.

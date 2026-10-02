@@ -21,6 +21,7 @@ public actor UploadManager {
     private let invalidationBarrier = UploadInvalidationBarrier()
     private let invalidationTimeout: Duration
     private let startPreparationHook: (@Sendable (String) async -> Void)?
+    private let terminalPublicationHook: (@Sendable () async -> Void)?
     private nonisolated let consumerTask =
         OSAllocatedUnfairLock<Task<Void, Never>?>(initialState: nil)
 
@@ -48,11 +49,18 @@ public actor UploadManager {
     private var restoredTaskIDs: Set<String> = []
     private var retryingTaskIDs: Set<String> = []
     private var terminalTaskOrder: [String] = []
+    // A logical task cannot start a new attempt until its previous state,
+    // runtime bookkeeping and terminal event partition have all settled.
+    private var terminalRetryWaiters: [String: [UUID: AsyncStream<Void>.Continuation]] = [:]
     private var isShutdown = false
     private let ownsBackgroundSessionIdentifier: Bool
 
     package var retainedSystemIdentifierRangeCount: Int {
         retiredSystemIdentifiers.rangeCount
+    }
+
+    package var pendingTerminalRetryWaiterCount: Int {
+        terminalRetryWaiters.values.reduce(0) { $0 + $1.count }
     }
 
     /// Creates a manager for the supplied upload domain.
@@ -74,6 +82,7 @@ public actor UploadManager {
         self.backgroundCompletionStore = UploadBackgroundCompletionStore()
         self.invalidationTimeout = .seconds(5)
         self.startPreparationHook = nil
+        self.terminalPublicationHook = nil
         self.eventHub = TaskEventHub(
             policy: configuration.eventDeliveryPolicy,
             metricsReporter: configuration.eventMetricsReporter,
@@ -96,7 +105,8 @@ public actor UploadManager {
         channel: UploadDelegateEventChannel,
         backgroundCompletionStore: UploadBackgroundCompletionStore = UploadBackgroundCompletionStore(),
         invalidationTimeout: Duration = .seconds(5),
-        startPreparationHook: (@Sendable (String) async -> Void)? = nil
+        startPreparationHook: (@Sendable (String) async -> Void)? = nil,
+        terminalPublicationHook: (@Sendable () async -> Void)? = nil
     ) {
         self.configuration = configuration
         self.session = session
@@ -105,6 +115,7 @@ public actor UploadManager {
         self.backgroundCompletionStore = backgroundCompletionStore
         self.invalidationTimeout = invalidationTimeout
         self.startPreparationHook = startPreparationHook
+        self.terminalPublicationHook = terminalPublicationHook
         self.eventHub = TaskEventHub(
             policy: configuration.eventDeliveryPolicy,
             metricsReporter: configuration.eventMetricsReporter,
@@ -435,6 +446,8 @@ public actor UploadManager {
     /// must carry a non-empty application-owned `Idempotency-Key`. InnoNetwork
     /// does not retain credentials, request headers, or source-file URLs after
     /// an attempt, so callers must provide every retry input again.
+    /// A retry waits for the previous terminal event and cleanup to settle.
+    /// Cancelling that wait does not cancel the preceding terminal delivery.
     public func retry(
         _ task: UploadTask,
         with request: URLRequest,
@@ -445,16 +458,21 @@ public actor UploadManager {
         guard tasks[task.id] === task else {
             throw .invalidRequest("The upload task is not owned by this manager")
         }
-        guard await task.state == .failed else {
-            throw .invalidRequest("Only failed uploads can be retried")
-        }
-        guard !isShutdown else { throw .managerShutdown }
         guard !retryingTaskIDs.contains(task.id) else {
             throw .invalidRequest("An upload retry is already being prepared")
         }
         retryingTaskIDs.insert(task.id)
         defer { retryingTaskIDs.remove(task.id) }
-
+        await waitForTerminalTransition(of: task.id)
+        guard !Task.isCancelled else { throw .cancelled }
+        guard !isShutdown else { throw .managerShutdown }
+        guard tasks[task.id] === task else {
+            throw .invalidRequest("The upload task is no longer retained by this manager")
+        }
+        guard await task.state == .failed else {
+            throw .invalidRequest("Only failed uploads can be retried")
+        }
+        guard !isShutdown else { throw .managerShutdown }
         try Self.validate(request: request, fileURL: fileURL, configuration: configuration)
         guard let url = request.url,
             url == task.requestURL,
@@ -535,10 +553,7 @@ public actor UploadManager {
     public func cancel(_ task: UploadTask) async {
         guard tasks[task.id] === task, !(await task.state.isTerminal) else { return }
         uploadTasks[task.id]?.cancel()
-        guard await task.fail(with: .cancelled) else { return }
-        await eventHub.publishTerminalAndFinish(.failed(.cancelled), for: task.id)
-        recordTerminal(task.id)
-        removeRuntime(for: task.id)
+        await fail(task, with: .cancelled)
     }
 
     /// Installs the one-shot completion supplied by the application delegate
@@ -760,39 +775,57 @@ public actor UploadManager {
             )
             let receipt = UploadReceipt(response: coreResponse)
             guard configuration.acceptableStatusCodes.contains(response.statusCode) else {
-                guard
-                    await task.fail(
-                        with: .unacceptableStatusCode(response.statusCode),
-                        receipt: receipt
-                    )
-                else { return }
-                await eventHub.publishTerminalAndFinish(
-                    .failed(.unacceptableStatusCode(response.statusCode)),
-                    for: task.id
+                await fail(
+                    task,
+                    with: .unacceptableStatusCode(response.statusCode),
+                    receipt: receipt
                 )
-                recordTerminal(task.id)
-                removeRuntime(for: task.id)
                 return
             }
 
+            guard beginTerminalTransition(of: task.id) else { return }
+            defer { finishTerminalTransition(of: task.id) }
             guard await task.complete(with: receipt) else { return }
-            await eventHub.publishTerminalAndFinish(.completed(receipt), for: task.id)
             recordTerminal(task.id)
             removeRuntime(for: task.id)
+            await eventHub.publishTerminalAndFinish(.completed(receipt), for: task.id)
         }
     }
 
-    private func fail(_ task: UploadTask, with error: UploadError) async {
-        guard await task.fail(with: error) else { return }
-        await eventHub.publishTerminalAndFinish(.failed(error), for: task.id)
+    private func fail(_ task: UploadTask, with error: UploadError, receipt: UploadReceipt? = nil) async {
+        guard beginTerminalTransition(of: task.id) else { return }
+        defer { finishTerminalTransition(of: task.id) }
+        guard await task.fail(with: error, receipt: receipt) else { return }
         recordTerminal(task.id)
         removeRuntime(for: task.id)
+        await eventHub.publishTerminalAndFinish(.failed(error), for: task.id)
+        await terminalPublicationHook?()
     }
 
     private func terminateRetry(_ task: UploadTask, with error: UploadError) async {
-        guard await task.fail(with: error) else { return }
-        await eventHub.publishTerminalAndFinish(.failed(error), for: task.id)
-        recordTerminal(task.id)
+        await fail(task, with: error)
+    }
+
+    private func beginTerminalTransition(of taskID: String) -> Bool {
+        guard terminalRetryWaiters[taskID] == nil else { return false }
+        terminalRetryWaiters[taskID] = [:]
+        return true
+    }
+
+    private func finishTerminalTransition(of taskID: String) {
+        let waiters = terminalRetryWaiters.removeValue(forKey: taskID) ?? [:]
+        for waiter in waiters.values { waiter.finish() }
+    }
+
+    private func waitForTerminalTransition(of taskID: String) async {
+        while terminalRetryWaiters[taskID] != nil, !Task.isCancelled {
+            let waiterID = UUID()
+            let signal = AsyncStream<Void>.makeStream()
+            terminalRetryWaiters[taskID]?[waiterID] = signal.continuation
+            // Finishing signals retirement; cancellation ends only this waiter.
+            for await _ in signal.stream {}
+            terminalRetryWaiters[taskID]?.removeValue(forKey: waiterID)
+        }
     }
 
     private func task(forSystemIdentifier identifier: Int) -> UploadTask? {
