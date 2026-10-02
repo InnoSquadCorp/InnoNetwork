@@ -6,6 +6,7 @@ Missing/ambiguous admission evidence selects ordinary full CI. Once jobs have
 been skipped, the aggregate must revalidate the identical proof or fail closed.
 """
 import argparse
+import importlib.util
 from datetime import datetime, timedelta, timezone
 import json
 import os
@@ -411,6 +412,14 @@ def require(condition, reason):
         raise Rejected(reason)
 
 
+def validation_runs(api, runs, workflow_id, repository_id, number, head, source):
+    spec = importlib.util.spec_from_file_location("ci_metadata_policy", Path(__file__).with_name("ci-metadata-policy.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.partition(api, runs, repository=REPOSITORY, repository_id=repository_id,
+                            workflow_id=workflow_id, number=number, head=head, source=source, require=require)
+
+
 def route(suffix):
     return f"repos/{REPOSITORY}/" + suffix
 
@@ -536,6 +545,7 @@ def prove(api, event, context, now=None):
     require(workflow.get("path") == CI_PATH and workflow.get("state") == "active" and
             type(workflow.get("id")) is int and workflow["id"] > 0, "wrong/inactive source workflow")
     runs = api.pages(route(f"actions/workflows/ci.yml/runs?event=pull_request&head_sha={head}"), "workflow_runs")
+    runs, _, _ = validation_runs(api, runs, workflow["id"], repository_id, number, head, main)
     require(bool(runs), "missing exact-head CI")
     require(all(type(run.get("id")) is int and run["id"] > 0 and
                 type(run.get("run_number")) is int and run["run_number"] > 0 for run in runs),
@@ -637,6 +647,7 @@ def prove(api, event, context, now=None):
     # run snapshot is not a final verdict: bracket those reads with the latest
     # list/detail and main identity before admitting or revalidating any skip.
     final_runs = api.pages(route(f"actions/workflows/ci.yml/runs?event=pull_request&head_sha={head}"), "workflow_runs")
+    final_runs, _, _ = validation_runs(api, final_runs, workflow["id"], repository_id, number, head, main)
     require(bool(final_runs) and all(type(item.get("id")) is int and item["id"] > 0 and
             type(item.get("run_number")) is int and item["run_number"] > 0 for item in final_runs),
             "latest source run disappeared or became ambiguous")

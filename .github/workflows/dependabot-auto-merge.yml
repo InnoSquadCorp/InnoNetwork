@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   inspect:
-    if: github.repository == 'InnoSquadCorp/InnoNetwork' && github.ref == 'refs/heads/main' && github.workflow_ref == 'InnoSquadCorp/InnoNetwork/.github/workflows/dependabot-auto-merge.yml@refs/heads/main'
+    if: (github.event_name != 'workflow_run' || github.event.workflow_run.path != '.github/workflows/ci.yml' || github.event.workflow_run.event == 'pull_request') && github.repository == 'InnoSquadCorp/InnoNetwork' && github.ref == 'refs/heads/main' && github.workflow_ref == 'InnoSquadCorp/InnoNetwork/.github/workflows/dependabot-auto-merge.yml@refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -44,7 +44,7 @@ jobs:
 
   ready-plan:
     needs: inspect
-    if: needs.inspect.result == 'success' && github.repository == 'InnoSquadCorp/InnoNetwork' && github.ref == 'refs/heads/main' && github.workflow_ref == 'InnoSquadCorp/InnoNetwork/.github/workflows/dependabot-auto-merge.yml@refs/heads/main' && github.event_name != 'pull_request_target'
+    if: needs.inspect.result == 'success' && needs.inspect.outputs.prs != '' && needs.inspect.outputs.prs != '[]' && github.repository == 'InnoSquadCorp/InnoNetwork' && github.ref == 'refs/heads/main' && github.workflow_ref == 'InnoSquadCorp/InnoNetwork/.github/workflows/dependabot-auto-merge.yml@refs/heads/main' && github.event_name != 'pull_request_target'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

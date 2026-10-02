@@ -128,7 +128,9 @@ def make_plan(event_name, event, paths):
             raise ValueError("missing or malformed PR labels")
         if not isinstance(user, dict) or not isinstance(user.get("login"), str) or not user["login"]:
             raise ValueError("missing or malformed PR author")
-        names = {label["name"] for label in labels}
+        if event["action"] == "edited" and not event.get("changes", {}).get("base"):
+            raise ValueError("metadata-only edit must not create a validation plan")
+        names = {label["name"].lower() for label in labels}
         lane = "release-validation" if user["login"] == "dependabot[bot]" or "release-validation" in names else "fast"
         if "concurrency-review" in names:
             requested = ["thread-sanitizer"]

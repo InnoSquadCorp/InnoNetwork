@@ -468,6 +468,14 @@ class GitHub:
         return response["data"]
 
 
+def validation_runs(api, runs, workflow_id, repository_id, number, head, source):
+    spec = importlib.util.spec_from_file_location("ci_metadata_policy", Path(__file__).with_name("ci-metadata-policy.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.partition(api, runs, repository=REPOSITORY, repository_id=repository_id,
+                            workflow_id=workflow_id, number=number, head=head, source=source, require=require)
+
+
 def route(suffix):
     return f"repos/{REPOSITORY}" + ("/" + suffix if suffix else "")
 
@@ -591,6 +599,7 @@ def proof(api, number, notification=None):
     workflow = api.get(route("actions/workflows/ci.yml"))
     require(workflow.get("path") == CI_PATH and workflow.get("state") == "active", "wrong/inactive CI workflow")
     runs = api.pages(route(f"actions/workflows/ci.yml/runs?event=pull_request&head_sha={head}"), "workflow_runs")
+    runs, metadata_check_ids, _ = validation_runs(api, runs, workflow["id"], repo["id"], number, head, merge_sha)
     require(bool(runs), "missing exact-head CI")
     run = max(runs, key=lambda r: (r["run_number"], r["id"]))
     run = api.get(route(f"actions/runs/{run['id']}"))
@@ -654,7 +663,7 @@ def proof(api, number, notification=None):
                   r.get("event") == "pull_request" and r.get("head_sha") == head and
                   r.get("workflow_id") == workflow["id"] and r.get("head_repository", {}).get("id") == repo["id"] and
                   [p.get("number") for p in r.get("pull_requests", [])] == [number] and r.get("status") == "completed"}
-    transport_ids = coordinator_check_ids(api, number, head, checks)
+    transport_ids = coordinator_check_ids(api, number, head, checks) | metadata_check_ids
     for check in sorted(checks, key=lambda c: c["id"], reverse=True):
         if check.get("name") == READY:
             require(check["id"] in transport_ids, "unassociated/legacy Ready check; fresh native reporter head required")
@@ -802,14 +811,22 @@ def coordinate(api, number, enabled=False, notification=None):
         return "manual PR; native read-only reporter owns Ready, auto-merge not requested"
     # Notifications are only wake-ups. Obsolete run events do not overwrite a
     # newer decision; current pending/failure events invalidate readiness.
-    if notification:
-        current = api.get(route(f"actions/runs/{notification['id']}"))
-        if current.get("run_attempt") != notification.get("run_attempt") or current.get("head_sha") != head:
-            return "obsolete notification; no mutation"
-        runs = api.pages(route(f"actions/workflows/ci.yml/runs?event=pull_request&head_sha={head}"), "workflow_runs")
-        if not runs or max(runs, key=lambda r: (r["run_number"], r["id"]))["id"] != notification["id"]:
-            return "obsolete notification; no mutation"
     try:
+        if notification:
+            current = api.get(route(f"actions/runs/{notification['id']}"))
+            if current.get("run_attempt") != notification.get("run_attempt") or current.get("head_sha") != head:
+                return "obsolete notification; no mutation"
+            runs = api.pages(route(f"actions/workflows/ci.yml/runs?event=pull_request&head_sha={head}"), "workflow_runs")
+            workflow = api.get(route("actions/workflows/ci.yml"))
+            runs, _, metadata_runs = validation_runs(api, runs, workflow["id"], pr["base"]["repo"]["id"],
+                                                     number, head, pr["merge_commit_sha"])
+            if (notification["id"], notification["run_attempt"]) in metadata_runs:
+                # A verified no-op can finish after real CI was blocked on it.
+                # Reconcile current facts without binding proof to the no-op:
+                # only the latest actual full CI and native Ready can arm.
+                notification = None
+            elif not runs or max(runs, key=lambda r: (r["run_number"], r["id"]))["id"] != notification["id"]:
+                return "obsolete notification; no mutation"
         require(enabled is True, "standby: new auto-merge approvals disabled")
         first = proof(api, number, notification)
         require(first["head"] == head, "head changed before native enable")

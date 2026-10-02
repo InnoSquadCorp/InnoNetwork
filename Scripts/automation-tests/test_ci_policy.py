@@ -15,7 +15,7 @@ spec.loader.exec_module(p)
 
 
 def event(author='contributor', labels=(), action='opened'):
-    return {'action': action, 'pull_request': {'user': {'login': author}, 'labels': [{'name': x} for x in labels]}}
+    return {'changes': {'base': {'ref': {'from': 'develop'}}} if action == 'edited' else {}, 'action': action, 'pull_request': {'user': {'login': author}, 'labels': [{'name': x} for x in labels]}}
 
 
 def results(plan):
@@ -23,6 +23,13 @@ def results(plan):
 
 
 class PlannerTests(unittest.TestCase):
+    def test_metadata_edit_rejected_and_reserved_labels_case_insensitive(self):
+        edited=event(action='edited');edited.pop('changes')
+        with self.assertRaisesRegex(ValueError, 'metadata-only'):
+            p.make_plan('pull_request', edited, ['README.md'])
+        self.assertTrue(all(p.make_plan('pull_request', event(labels=['RELEASE-VALIDATION']), ['README.md'])['jobs'].values()))
+        self.assertTrue(p.make_plan('pull_request', event(labels=['CONCURRENCY-REVIEW']), ['README.md'])['jobs']['thread-sanitizer'])
+
     def test_source_test_example_paths_keep_every_gate(self):
         for path in ['Sources/InnoNetwork/RequestExecutor.swift', 'Sources/README.md', 'Tests/README.md',
                      'Examples/CoreSmoke/Package.swift', 'SmokeTests/README.md', 'Benchmarks/README.md',

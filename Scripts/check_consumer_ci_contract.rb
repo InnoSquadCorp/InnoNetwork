@@ -32,10 +32,10 @@ module ConsumerCIContract
   def self.validate(workflow, action)
     jobs = workflow.fetch('jobs')
     gate = jobs.fetch('consumer-smoke')
-    require!(gate['name'] == 'Consumer Smoke', 'protected check name changed')
+    require!(gate['name'] == "${{ (github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base))) && 'Consumer Metadata Only' || 'Consumer Smoke' }}", 'protected check name changed')
     require!(gate['needs'].is_a?(Array) && gate['needs'].sort == (LANES + ['ci-plan']).sort,
              'aggregate must need exactly all three lanes')
-    require!(gate['if'] == 'always() && fromJSON(needs.ci-plan.outputs.plan).jobs.consumer-smoke', 'aggregate must run even after child failure')
+    require!(gate['if'] == "${{ always() && !(github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base))) && fromJSON(needs.ci-plan.outputs.plan).jobs.consumer-smoke }}", 'aggregate must run even after child failure')
     require!(gate['runs-on'] == 'ubuntu-latest', 'aggregate must not occupy a macOS runner')
     require!(!gate.key?('continue-on-error'), 'aggregate may not ignore failure')
     check = gate.fetch('steps').find { |s| command(s) == 'python3 Scripts/check_consumer_ci_results.py' }
