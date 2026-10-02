@@ -52,16 +52,31 @@ class GateTests(unittest.TestCase):
 
 class CacheTests(unittest.TestCase):
     def setUp(self):
+        from unittest import mock
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()
+        self.tracked = ["Package.resolved"]
         for directory in (".", "Examples/A", "Tests/MacroCompileFailureFixtures/A",
                           "Tools/openapi-to-innonetwork"):
             path = self.root / directory
             path.mkdir(parents=True, exist_ok=True)
-            (path / "Package.swift").write_text("manifest")
-        self.context = dict(xcode="26.0.1", swift="6.2", sdk="25A", arch="arm64",
-                            os="24A", runner_image="20260928")
+            manifest = path / "Package.swift"
+            manifest.write_text("// swift-tools-version: 6.2\n// fixture manifest\n")
+            self.tracked.append(manifest.relative_to(self.root).as_posix())
+        (self.root / "Package.resolved").write_text((Path(__file__).resolve().parents[2] / "Package.resolved").read_text())
+        patch = mock.patch.object(cache.cache, "command", side_effect=lambda *args:
+                                  "\0".join(self.tracked) if "--others" not in args else "")
+        patch.start()
+        self.addCleanup(patch.stop)
+        self.context = {
+            "swift": "Apple Swift version 6.2 (swiftlang-6.2.0.19.9 clang-1700.3.19.1)\nTarget: arm64-apple-macosx15.0",
+            "swift-path": "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift",
+            "xcode": "Xcode 26.0.1\nBuild version 17A400",
+            "developer-dir": "/Applications/Xcode.app/Contents/Developer",
+            "os-version": "15.6.1", "os-build": "24G90", "architecture": "arm64",
+            "sdks": {"macosx26.0": {"version": "26.0", "build": "25A354", "path": "/fixture/MacOSX26.0.sdk"}},
+        }
 
     def spec(self, lane="examples"):
         return cache.cache_spec(self.root, lane, self.context)
@@ -71,60 +86,80 @@ class CacheTests(unittest.TestCase):
 
     def test_each_toolchain_component_invalidates(self):
         baseline = self.spec()
-        for key in self.context:
-            self.context[key] += "-new"
+        for key, value in (("swift", self.context["swift"].replace("19.9", "19.10")),
+                           ("xcode", "Xcode 26.0.1\nBuild version 17A401"),
+                           ("swift-path", "/other/swift"), ("developer-dir", "/other/Developer"),
+                           ("os-version", "15.6.2"), ("os-build", "24G91"), ("architecture", "x86_64")):
+            previous = self.context[key]
+            self.context[key] = value
             self.assertNotEqual(baseline, self.spec(), key)
-            self.context[key] = self.context[key].removesuffix("-new")
+            self.context[key] = previous
+        self.context["sdks"]["macosx26.0"]["build"] = "25A355"
+        self.assertNotEqual(baseline, self.spec())
 
-    def test_each_manifest_and_pin_invalidates(self):
-        for manifest in self.root.glob("**/Package.swift"):
+    def test_each_tracked_manifest_and_pin_invalidates(self):
+        for manifest in sorted(self.root.glob("**/Package.swift")):
             baseline = self.spec()
-            manifest.write_text("changed")
+            original = manifest.read_text()
+            manifest.write_text(original + "// changed\n")
             self.assertNotEqual(baseline, self.spec())
-            manifest.write_text("manifest")
+            manifest.write_text(original)
             pin = manifest.with_name("Package.resolved")
-            pin.write_text("pin 1")
-            self.assertNotEqual(baseline, self.spec())
+            if pin == self.root / "Package.resolved":
+                continue
+            self.tracked.append(pin.relative_to(self.root).as_posix())
+            pin.write_text((self.root / "Package.resolved").read_text())
             pinned = self.spec()
-            pin.write_text("pin 2")
+            self.assertNotEqual(baseline, pinned)
+            value = json.loads(pin.read_text())
+            value["pins"][0]["state"]["revision"] = "1" * 40
+            pin.write_text(json.dumps(value))
             self.assertNotEqual(pinned, self.spec())
             pin.unlink()
+            self.tracked.remove(pin.relative_to(self.root).as_posix())
             self.assertEqual(baseline, self.spec())
 
-    def test_lane_and_workspace_do_not_share(self):
-        self.assertEqual(len({self.spec(lane)['prefix'] for lane in cache.LANES}), 3)
+    def test_lanes_do_not_share_but_downloads_are_workspace_independent(self):
+        self.assertEqual(len({self.spec(lane)['dependency-key'] for lane in cache.LANES}), 3)
         with tempfile.TemporaryDirectory() as another:
             import shutil
             other = Path(another) / "repository"
             shutil.copytree(self.root, other)
-            self.assertNotEqual(self.spec(), cache.cache_spec(other, "examples", self.context))
+            self.assertEqual(self.spec(), cache.cache_spec(other, "examples", self.context))
 
-    def test_packages_keep_separate_build_directories(self):
+    def test_packages_keep_separate_graphs_without_restoring_compiled_products(self):
         second = self.root / "Examples/B"
         second.mkdir()
-        (second / "Package.swift").write_text("manifest")
-        self.assertEqual(self.spec()['paths'], ['Examples/A/.build', 'Examples/B/.build',
-                                               *cache.DEPENDENCY_PATHS])
+        (second / "Package.swift").write_text("// swift-tools-version: 6.2\n// second graph")
+        self.tracked.append("Examples/B/Package.swift")
+        result = self.spec()
+        self.assertEqual(result['dependency-paths'], cache.DEPENDENCY_PATHS)
+        self.assertEqual(result['identity']['package-graphs']['examples'],
+                         ['Examples/A/Package.swift', 'Examples/B/Package.swift'])
+        self.assertEqual(result['identity']['package-graphs']['macros'],
+                         ['Tests/MacroCompileFailureFixtures/A/Package.swift'])
+        self.assertEqual(result['identity']['package-graphs']['openapi'],
+                         ['Tools/openapi-to-innonetwork/Package.swift'])
 
     def test_coverage_outputs_and_fresh_core_are_not_cached(self):
-        self.assertEqual(self.spec("macros")['paths'], cache.DEPENDENCY_PATHS)
         for lane in cache.LANES:
-            self.assertNotIn('.build', self.spec(lane)['paths'])
-            self.assertNotIn('.build/core-only-trait-build', self.spec(lane)['paths'])
+            self.assertEqual(self.spec(lane)['dependency-paths'], cache.DEPENDENCY_PATHS)
+            self.assertNotIn('.build', '\n'.join(self.spec(lane)['dependency-paths']))
 
-    def test_build_products_do_not_change_key(self):
+    def test_downloaded_products_and_generated_ignored_locks_do_not_change_key(self):
         before = self.spec()
         product = self.root / "Examples/A/.build/checkouts/Dependency"
         product.mkdir(parents=True)
         (product / "Package.swift").write_text("downloaded")
+        (self.root / "Examples/A/Package.resolved").write_text("ignored generated lock")
         self.assertEqual(before, self.spec())
 
-    def test_build_policy_invalidates_key(self):
-        before = self.spec()
-        policy = self.root / ".github/workflows/ci.yml"
-        policy.parent.mkdir(parents=True)
-        policy.write_text("changed build flags")
-        self.assertNotEqual(before, self.spec())
+    def test_missing_independent_graph_fails_closed(self):
+        for path in ("Examples/A/Package.swift", "Tests/MacroCompileFailureFixtures/A/Package.swift"):
+            self.tracked.remove(path)
+            with self.assertRaisesRegex(ValueError, "consumer package graph"):
+                self.spec()
+            self.tracked.append(path)
 
     def test_unknown_lane_rejected(self):
         with self.assertRaises(ValueError):

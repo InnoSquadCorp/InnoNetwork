@@ -25,7 +25,7 @@ class PublicOperationsTests(unittest.TestCase):
                    ('docs/public-docc-products.txt', 'InnoNetworkTrust\n', ''),
                    ('.github/workflows/dependabot-auto-merge.yml', 'ref: refs/heads/main', 'ref: ${{ github.event.pull_request.head.sha }}'),
                    ('.github/workflows/dependabot-auto-merge.yml', 'persist-credentials: false', 'persist-credentials: true'),
-                   ('.github/workflows/dependabot-auto-merge.yml', '      checks: write', '      checks: read'),
+                   ('.github/workflows/dependabot-auto-merge.yml', '      checks: read', '      checks: write'),
                    ('.github/workflows/dependabot-review-notice.yml', 'permissions: {}', 'permissions: write-all'),
                    ('.github/workflows/release-validation.yml', '  contents: read', '  contents: write')]
         for path, old, new in changes:

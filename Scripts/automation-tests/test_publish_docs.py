@@ -1,6 +1,8 @@
 """Offline source/provenance transcripts for the trusted Pages publisher."""
 import copy
+from contextlib import redirect_stderr
 import importlib.util
+import io
 from pathlib import Path
 import re
 import unittest
@@ -12,6 +14,7 @@ p = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(p)
 HEAD, OLD = 'a' * 40, 'b' * 40
 RUN, ATTEMPT = 91, 2
+NEW_INTERMEDIATE_STATES = ['syncing_files', 'finished_file_sync', 'updating_pages', 'purging_cdn', 'deployment_queued']
 
 
 class Transcript:
@@ -258,6 +261,73 @@ class PublisherProofTests(unittest.TestCase):
             else:
                 with self.assertRaises(p.Rejected): p.publish(api, api.notice, sleep=lambda _: None)
                 self.assertEqual([path.rsplit('/', 1)[1] for path, _ in api.mutations], ['deployments', 'cancel'])
+
+    def test_known_intermediate_states_only_succeed_after_explicit_success(self):
+        for states in [[state] for state in NEW_INTERMEDIATE_STATES] + [NEW_INTERMEDIATE_STATES]:
+            with self.subTest(states=states):
+                api = Transcript()
+                api.statuses = list(states) + ['succeed']
+                sleeps = []
+                self.assertEqual(p.publish(api, api.notice, sleep=sleeps.append), api.page['html_url'])
+                self.assertEqual(sleeps, [5] * len(states))
+                self.assertEqual(len(api.mutations), 1)
+                self.assertEqual(api.reads.count(p.route(f'pages/deployments/{HEAD}')), len(states) + 1)
+
+    def test_each_known_intermediate_state_still_times_out_and_cancels_once(self):
+        for state in NEW_INTERMEDIATE_STATES:
+            with self.subTest(state=state):
+                api = Transcript()
+                api.statuses = [state]
+                sleeps = []
+                with mock.patch.object(p.time, 'monotonic', return_value=0), self.assertRaisesRegex(p.Rejected, 'timed out'):
+                    p.publish(api, api.notice, sleep=sleeps.append)
+                self.assertEqual(sleeps, [5] * 120)
+                self.assertEqual(api.reads.count(p.route(f'pages/deployments/{HEAD}')), 120)
+                self.assertEqual([path.rsplit('/', 1)[1] for path, _ in api.mutations], ['deployments', 'cancel'])
+
+    def test_intermediate_states_cannot_extend_the_absolute_deadline(self):
+        api = Transcript()
+        api.statuses = ['deployment_queued', 'succeed']
+        sleeps = []
+        with mock.patch.object(p.time, 'monotonic', side_effect=[0, 0, 600]), self.assertRaisesRegex(p.Rejected, 'timed out'):
+            p.publish(api, api.notice, sleep=sleeps.append)
+        self.assertEqual(sleeps, [5])
+        self.assertEqual(api.reads.count(p.route(f'pages/deployments/{HEAD}')), 1)
+        self.assertEqual([path.rsplit('/', 1)[1] for path, _ in api.mutations], ['deployments', 'cancel'])
+
+    def test_intermediate_then_terminal_failure_never_reports_success(self):
+        for state in ['deployment_failed', 'deployment_content_failed', 'deployment_cancelled', 'deployment_lost']:
+            with self.subTest(state=state):
+                api = Transcript()
+                api.statuses = ['deployment_queued', state, 'succeed']
+                sleeps = []
+                with self.assertRaisesRegex(p.Rejected, 'Pages deployment failed'):
+                    p.publish(api, api.notice, sleep=sleeps.append)
+                self.assertEqual(sleeps, [5])
+                self.assertEqual(len(api.mutations), 1)
+
+    def test_unknown_status_is_escaped_before_cancellation_even_when_cancel_fails(self):
+        for state in ['success', 'deployment_queued_extra', 'updating_page', '', None, [], {},
+                      'unexpected\n::error::injected\r\x1b[31m']:
+            for cancel_fails in [False, True]:
+                with self.subTest(state=state, cancel_fails=cancel_fails):
+                    api = Transcript()
+                    api.statuses = [state, 'succeed']
+                    stderr = io.StringIO()
+                    original = api.mutate
+                    def mutation(route, data):
+                        if route.endswith('/cancel'):
+                            self.assertIn(repr(state), stderr.getvalue())
+                            self.assertEqual(len(stderr.getvalue().splitlines()), 1)
+                            if cancel_fails:
+                                api.mutations.append((route, data))
+                                raise p.urllib.error.URLError('cancel transport failure')
+                        return original(route, data)
+                    api.mutate = mutation
+                    with redirect_stderr(stderr), self.assertRaises(p.urllib.error.URLError if cancel_fails else p.Rejected):
+                        p.publish(api, api.notice, sleep=lambda _: self.fail('unknown status must not wait'))
+                    self.assertEqual(api.reads.count(p.route(f'pages/deployments/{HEAD}')), 1)
+                    self.assertEqual([path.rsplit('/', 1)[1] for path, _ in api.mutations], ['deployments', 'cancel'])
 
     def test_every_api_page_is_consumed_without_following_external_links(self):
         api = object.__new__(p.GitHub)

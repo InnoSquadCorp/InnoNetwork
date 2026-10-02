@@ -32,6 +32,19 @@ class WorkflowContractTests(unittest.TestCase):
                 self.assertEqual(len(matching), 1)
                 self.assertEqual({k:v for k,v in matching[0].items() if k in ['name','run','if','continue-on-error','working-directory']}, expected)
 
+    def test_codeql_stays_uncached_with_every_native_validation_gate(self):
+        job = self.docs['ci.yml']['jobs']['codeql']
+        self.assertEqual(job['permissions'], {'contents':'read', 'actions':'read', 'security-events':'write'})
+        self.assertEqual([step['name'] for step in job['steps']],
+                         ['Checkout', 'Select Xcode', 'Initialize CodeQL', 'Build', 'Perform CodeQL Analysis'])
+        for step in job['steps']:
+            self.assertNotIn('if', step)
+            self.assertNotIn('continue-on-error', step)
+            self.assertNotIn('cache', step.get('uses', ''))
+            self.assertNotIn('ci-cache.py', step.get('run', ''))
+        self.assertEqual(job['if'], 'fromJSON(needs.ci-plan.outputs.plan).jobs.codeql')
+        self.assertIn('codeql', self.docs['ci.yml']['jobs']['ci-required']['needs'])
+
     def test_readonly_candidate_preserves_all_release_validation_commands(self):
         release = self.docs['release.yml']['jobs']
         candidate = self.docs['release-validation.yml']['jobs']
@@ -91,7 +104,11 @@ class WorkflowContractTests(unittest.TestCase):
             if name == 'policy': continue
             guard = ci[name]['if']
             expected = 'fromJSON(needs.ci-plan.outputs.plan).jobs.' + name
-            self.assertEqual(guard, ('always() && ' if name == 'consumer-smoke' else '') + expected)
+            reused = {'lint', 'dead-code', 'parallel-tests', 'apple-platform-build-smoke', 'thread-sanitizer'}
+            if name in reused:
+                self.assertEqual(guard, "needs.ci-plan.outputs." + name + " == 'true'")
+            else:
+                self.assertEqual(guard, ('always() && ' if name == 'consumer-smoke' else '') + expected)
 
         for name,job in self.docs['ci.yml']['jobs'].items():
             for step in job.get('steps',[]):

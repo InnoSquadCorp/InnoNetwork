@@ -10,8 +10,10 @@ ROOT = Path(__file__).resolve().parents[1]
 SAMPLE = 'Tools/openapi-to-innonetwork'
 PERMISSIONS = {
     'inspect': {'contents': 'read', 'actions': 'read', 'checks': 'read', 'pull-requests': 'read'},
-    'manual-ready': {'contents': 'read', 'actions': 'read', 'checks': 'write', 'pull-requests': 'read'},
-    'bot-ready': {'contents': 'write', 'actions': 'read', 'checks': 'write', 'pull-requests': 'write'},
+    'ready-plan': {'contents': 'read', 'actions': 'read', 'checks': 'read', 'pull-requests': 'read'},
+    'ready-refresh': {'contents': 'read', 'actions': 'write', 'checks': 'read', 'pull-requests': 'read'},
+    'bot-ready': {'contents': 'write', 'actions': 'read', 'checks': 'read', 'pull-requests': 'write'},
+    'post-merge-plan': {'contents': 'read', 'actions': 'read', 'pull-requests': 'read'},
     'post-merge': {'contents': 'read', 'actions': 'write', 'pull-requests': 'read'},
 }
 
@@ -90,14 +92,35 @@ def workflow_boundaries(root):
     require(set(jobs) == set(PERMISSIONS), 'unexpected coordinator job')
     for name, expected in PERMISSIONS.items():
         job = jobs[name]
+        if name in {'ready-refresh', 'bot-ready'}:
+            require(re.search(r'^    strategy:\n      fail-fast: false\n      matrix:', job, re.M),
+                    name + ': independent PR matrix must not fail fast')
         block = re.search(r'^    permissions:\n((?:^      [\w-]+: (?:read|write|none)\n)+)', job, re.M)
         require(block is not None, name + ': missing explicit dedicated permissions')
         found = dict(re.findall(r'^      ([\w-]+): (read|write|none)$', block[1], re.M))
         require(found == expected, name + ': permissions expanded or missing')
-        require(job.count('ref: refs/heads/main') == 1 and job.count('persist-credentials: false') == 1 and job.count('sparse-checkout: Scripts') == 1, name + ': trusted checkout contract missing')
+        if name in {'ready-refresh', 'bot-ready', 'post-merge'}:
+            require('      cancel-in-progress: false' in job and '      queue: max' in job,
+                    name + ': serialized writers must retain pending work')
+        trusted_ref = 'ref: ${{ github.workflow_sha }}' if name == 'inspect' else 'ref: refs/heads/main'
+        require(job.count(trusted_ref) == 1 and job.count('persist-credentials: false') == 1 and job.count('sparse-checkout: Scripts') == 1, name + ': trusted checkout contract missing')
+        if name == 'inspect':
+            require('name: Resolve authoritative API targets from ${{ github.workflow_sha }}' in job,
+                    'inspector must expose immutable native source attribution')
         require("github.ref == 'refs/heads/main'" in job and "github.workflow_ref == 'InnoSquadCorp/InnoNetwork/.github/workflows/dependabot-auto-merge.yml@refs/heads/main'" in job, name + ': trusted execution guard missing')
     for unsafe in ['pull_request.head', 'secrets.', 'download-artifact', 'cache@', 'gh pr merge', 'pip install', 'npm install', 'continue-on-error']:
         require(unsafe not in source, 'unsafe privileged coordinator input: ' + unsafe)
+    reporter = (root / '.github/workflows/dependabot-ready.yml').read_text()
+    require('pull_request_target:\n    branches: [main]' in reporter and 'run-name:' in reporter and 'Ready v1 pr:' in reporter,
+            'native reporter requires trusted event binding')
+    require('ref: ${{ github.workflow_sha }}' in reporter and 'persist-credentials: false' in reporter and
+            'sparse-checkout: Scripts' in reporter, 'native reporter must checkout immutable trusted source')
+    require(reporter.count('    name: Dependabot Merge Ready') == 1 and '\n    if:' not in reporter,
+            'Ready must be exactly one unconditional native job')
+    require('        if: always()' in reporter and 'run: test "$READY" = \'true\'' in reporter,
+            'Ready must fail closed on an absent verdict')
+    for unsafe in [': write', 'secrets.', 'download-artifact', 'cache@', 'pip install', 'npm install', 'continue-on-error']:
+        require(unsafe not in reporter, 'unsafe native reporter input: ' + unsafe)
     notice = (root / '.github/workflows/dependabot-review-notice.yml').read_text()
     require('permissions: {}' in notice and 'uses:' not in notice and 'secrets.' not in notice and 'GH_TOKEN' not in notice, 'review notice must be inert and zero-permission')
     for path in ['release-validation.yml', 'docc-pages.yml']:

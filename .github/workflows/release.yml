@@ -5,6 +5,12 @@ on:
     tags:
       - "*.*.*"
   workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish only an existing validated tag; false runs all validation without publication'
+        type: boolean
+        required: false
+        default: false
 
 concurrency:
   group: release-${{ github.ref }}
@@ -22,6 +28,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
 
       - name: Test release artifact scripts
@@ -48,7 +55,7 @@ jobs:
           python3 Scripts/tests/test_check_release_workflow_contract.py
 
       - name: Validate release ref
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish)
         env:
           RELEASE_TAG: ${{ github.ref_name }}
           RELEASE_TAG_REF: ${{ github.ref }}
@@ -59,7 +66,7 @@ jobs:
         run: bash Scripts/validate_release_ref.sh
 
       - name: Validate release candidate
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' && !inputs.publish
         env:
           RELEASE_CANDIDATE_REF: ${{ github.sha }}
           RELEASE_REMOTE: origin
@@ -73,14 +80,9 @@ jobs:
           sudo xcode-select -s /Applications/Xcode.app
 
       - name: Cache SwiftPM artifacts
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: ./.github/actions/swiftpm-cache
         with:
-          path: |
-            .build/checkouts
-            .build/repositories
-          key: ${{ runner.os }}-release-xcode-27.0-${{ hashFiles('Package.resolved') }}
-          restore-keys: |
-            ${{ runner.os }}-release-xcode-27.0-
+          profile: release-validation
 
       - name: Show Xcode and Swift versions
         run: |
@@ -236,7 +238,7 @@ jobs:
 
       - name: Generate SBOMs (CycloneDX 1.5)
         env:
-          SBOM_VERSION: ${{ github.event_name == 'push' && github.ref_name || format('candidate-{0}', github.sha) }}
+          SBOM_VERSION: ${{ (github.event_name == 'push' || inputs.publish) && github.ref_name || format('candidate-{0}', github.sha) }}
         run: |
           SBOM_TRAIT_PROFILE=default \
             bash Scripts/generate-sbom.sh .build/release-artifacts/sbom.cdx.json
@@ -258,6 +260,10 @@ jobs:
             .build/release-artifacts/coverage-core/
             .build/release-artifacts/coverage-macros/
           if-no-files-found: error
+
+      - name: Report cache observations
+        if: always()
+        run: python3 -B Scripts/ci-cache.py report --profile release-validation
 
   validate-platform-builds:
     name: Validate ${{ matrix.runtime }} Build
@@ -294,20 +300,18 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Select Xcode
         run: |
           sudo xcode-select -s /Applications/Xcode_26.0.1.app
 
       - name: Cache SwiftPM artifacts
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: ./.github/actions/swiftpm-cache
         with:
-          path: |
-            .build/checkouts
-            .build/repositories
-          key: ${{ runner.os }}-release-${{ matrix.sdk }}-xcode-26.0.1-${{ hashFiles('Package.resolved') }}
-          restore-keys: |
-            ${{ runner.os }}-release-${{ matrix.sdk }}-xcode-26.0.1-
+          profile: release-platform-builds
+          variant: ${{ matrix.runtime }}
 
       - name: Show Xcode and Swift versions
         run: |
@@ -349,13 +353,18 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             build
 
+      - name: Report cache observations
+        if: always()
+        run: python3 -B Scripts/ci-cache.py report --profile release-platform-builds --variant '${{ matrix.runtime }}'
+
   publish-release:
     name: Publish Release
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    if: startsWith(github.ref, 'refs/tags/') && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish))
     needs:
       - validate-release
       - validate-platform-builds
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write
       # Required for sigstore keyless signing (OIDC token).
@@ -365,7 +374,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
+
+      - name: Revalidate exact release ref before publication
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG_REF: ${{ github.ref }}
+          RELEASE_REMOTE: origin
+          RELEASE_MAIN_REMOTE_REF: refs/heads/main
+          RELEASE_MAIN_REF: refs/remotes/origin/main
+          RELEASE_FETCH_MAIN: '1'
+        run: bash Scripts/validate_release_ref.sh
 
       - name: Download release artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1

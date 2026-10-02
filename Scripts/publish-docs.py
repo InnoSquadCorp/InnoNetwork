@@ -242,14 +242,21 @@ def publish(api, event, sleep=time.sleep):
             continue
         if status.get("status") == "succeed":
             return url
-        # These terminal/temporary states match the pinned actions/deploy-pages
-        # implementation. Transient status failures never create a new deployment.
+        # Known intermediate states are bounded waits, never success. The four
+        # file-sync/Pages/CDN states are in GitHub's deployment-status schema;
+        # deployment_queued was observed in a real deployment response.
+        # Transient status failures never create a new deployment.
         state = status.get("status")
-        require(state not in {"deployment_failed", "deployment_content_failed", "deployment_cancelled", "deployment_lost"},
+        require(not isinstance(state, str) or state not in {"deployment_failed", "deployment_content_failed", "deployment_cancelled", "deployment_lost"},
                 "Pages deployment failed: " + str(state))
-        if state not in {"deployment_in_progress", "queued", "pending", "unknown_status", "not_found", "deployment_attempt_error"}:
+        if not isinstance(state, str) or state not in {
+                "deployment_in_progress", "queued", "pending", "unknown_status", "not_found", "deployment_attempt_error",
+                "syncing_files", "finished_file_sync", "updating_pages", "purging_cdn", "deployment_queued"}:
+            # Preserve an escaped diagnostic even if the cancellation request
+            # itself fails; an unknown value must not inject extra log lines.
+            print("Unknown Pages status before cancellation: " + repr(state), file=sys.stderr)
             api.mutate(route("pages/deployments/" + deployment_id + "/cancel"), {})
-            raise Rejected("Unknown Pages status; cancellation requested")
+            raise Rejected("Unknown Pages status; cancellation requested: " + repr(state))
         sleep(5)
     # Timeout does not create a second deployment. The known operation is stopped.
     api.mutate(route("pages/deployments/" + deployment_id + "/cancel"), {})

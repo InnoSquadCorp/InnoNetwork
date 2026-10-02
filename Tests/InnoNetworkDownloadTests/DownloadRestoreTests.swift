@@ -390,6 +390,10 @@ struct DownloadRestoreTests {
                 task: restartedRetry
             )
         )
+        // A runtime identifier becomes visible before the separate actor call
+        // completes the retry's lifecycle transition. Observe that transition,
+        // using the existing bounded state wait rather than registration alone.
+        try #require(await waitForTaskState(restartedRetry) { $0 == .downloading })
         #expect(await restartedRetry.state == .downloading)
         await harness.manager.shutdown()
     }

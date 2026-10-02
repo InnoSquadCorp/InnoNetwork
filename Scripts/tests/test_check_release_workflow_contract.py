@@ -60,7 +60,7 @@ def main() -> None:
     expect_failure(
         validator,
         workflow.replace(
-            "        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')\n",
+            "        " + validator.REF_CONDITION + "\n",
             "",
             1,
         ),
@@ -75,8 +75,16 @@ def main() -> None:
         ),
         "exact release artifact manifest",
     )
+    for old, new, reason in [
+        ("default: false", "default: true", "default false"),
+        ("type: boolean", "type: string", "explicit boolean"),
+        (validator.CANDIDATE_CONDITION, "if: github.event_name == 'workflow_dispatch'", "workflow_dispatch-only"),
+        ("      - validate-platform-builds", "", "every validation gate"),
+        ("      - name: Revalidate exact release ref before publication", "      - name: Removed ref validation", "revalidate the exact current-main tag"),
+    ]:
+        expect_failure(validator, workflow.replace(old, new, 1), reason)
     publish_condition = (
-        "    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')\n"
+        "    " + validator.TAG_ONLY_CONDITION + "\n"
     )
     publish_start = workflow.index("  publish-release:\n")
     unsafe_publication = (
