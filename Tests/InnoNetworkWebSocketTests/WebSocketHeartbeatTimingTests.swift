@@ -236,11 +236,24 @@ struct WebSocketHeartbeatTimingTests {
             reconnectDelay: 0,
             maxReconnectAttempts: 1
         )
-        let task = try await harness.connectAndReady()
+        let url = try #require(URL(string: "wss://stub.invalid/socket"))
+        let task = await harness.manager.connect(url: url)
         let recorder = WebSocketEventCollector()
         let subscription = await harness.manager.addEventListener(for: task) { event in
             recorder.record(event)
         }
+
+        // Register before opening the connection: heartbeat starts at connected,
+        // and an event published before subscription is intentionally not replayed.
+        #expect(harness.stubTask.pingCount == 0)
+        harness.manager.handleConnected(taskIdentifier: harness.stubTaskIdentifier, protocolName: nil)
+        #expect(
+            await waitFor(timeout: 1.0) {
+                recorder.snapshot().contains { event in
+                    if case .connected = event { return true }
+                    return false
+                }
+            })
 
         #expect(await waitFor(timeout: 2.0) { harness.stubTask.pingCount >= 1 })
         harness.stubTask.completePendingPong(with: nil)

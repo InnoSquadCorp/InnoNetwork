@@ -406,6 +406,13 @@ class Rejected(ValueError):
     pass
 
 
+class NeedsFreshReporter(Rejected):
+    """Verified absence/obsolescence; never a successful Ready verdict."""
+    def __init__(self, reason, message):
+        super().__init__(message)
+        self.reason = reason
+
+
 class Superseded(Rejected):
     pass
 

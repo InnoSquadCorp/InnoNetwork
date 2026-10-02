@@ -84,7 +84,9 @@ def runs(api, p, number, head):
 
 def latest(api, p, number, head):
     candidates = runs(api, p, number, head)
-    p.require(bool(candidates), "no native reporter: fresh PR lifecycle event required after trusted-main deployment")
+    if not candidates:
+        raise p.NeedsFreshReporter("missing_native_reporter",
+                                   "no native reporter: fresh PR lifecycle event required after trusted-main deployment")
     return max(candidates, key=lambda r: (r["run_number"], r["id"]))
 
 
@@ -133,11 +135,17 @@ def source_compatible(api, p, source):
     main = source_ancestor(api, p, source)
     # Re-running preserves the old workflow definition and privileges. Do not
     # rerun an obsolete definition while checking out newer policy code.
+    obsolete = False
     for path in (REPORTER_PATH, p.COORDINATOR_PATH, "Scripts/dependabot-ready-policy.py", "Scripts/dependabot-merge-policy.py"):
         old = api.get(p.route(f"contents/{path}?ref={source}"))
         current = api.get(p.route(f"contents/{path}?ref={main}"))
-        p.require(isinstance(old.get("sha"), str) and p.SHA.fullmatch(old["sha"]) and old["sha"] == current.get("sha"),
-                  "obsolete reporter definition/policy: fresh PR lifecycle event required")
+        p.require(all(isinstance(item.get("sha"), str) and p.SHA.fullmatch(item["sha"]) for item in (old, current)),
+                  "missing/malformed reporter definition/policy blob identity")
+        obsolete = obsolete or old["sha"] != current["sha"]
+    # Validate every identity before classifying normal policy deployment skew.
+    if obsolete:
+        raise p.NeedsFreshReporter("obsolete_reporter_policy",
+                                   "obsolete reporter definition/policy: fresh PR lifecycle event required")
 
 
 def controlled_verdict(p, run, job, check):
@@ -261,6 +269,40 @@ def refresh_plan(api, p, number, enabled):
     return dict(pr=number, head=pr["head"]["sha"], run=run["id"], attempt=run["run_attempt"], job=job["id"])
 
 
+def refresh_batch(api, p, numbers, enabled):
+    """Isolate verified lifecycle gaps, not API/provenance failures or verdicts."""
+    targets, blocked = [], []
+    for number in sorted(numbers):
+        head = current_pr(api, p, number)["head"]["sha"]
+        try:
+            target = refresh_plan(api, p, number, enabled)
+        except p.NeedsFreshReporter as error:
+            p.require(error.reason in {"missing_native_reporter", "obsolete_reporter_policy"},
+                      "unrecognized native reporter recovery reason")
+            current_pr(api, p, number, head)
+            blocked.append(dict(pr=number, head=head, reason=error.reason))
+        else:
+            current_pr(api, p, number, head)
+            if target is not None:
+                p.require(target["head"] == head, "refresh head changed during batch planning")
+                targets.append(target)
+    return targets, blocked
+
+
+def plan_summary(p, targets, blocked):
+    lines = ["## Native Ready refresh plan", "",
+             f"Refresh targets: {len(targets)}; lifecycle recovery required: {len(blocked)}.",
+             "Planning success is not a Ready verdict or permission to merge."]
+    for item in blocked:
+        lines.append(f"- [PR #{item['pr']}](https://github.com/{p.REPOSITORY}/pull/{item['pr']}) "
+                     f"at `{item['head']}`: `{item['reason']}`; no refresh or Ready approval emitted.")
+    if blocked:
+        lines.extend(["", "A maintainer must authorize a fresh supported PR lifecycle event after trusted-main deployment.",
+                      "Re-running this coordinator or an obsolete reporter cannot bootstrap a native PR check.",
+                      f"See the [bootstrap and recovery runbook](https://github.com/{p.REPOSITORY}/blob/main/docs/CIAutomation.md#native-ready-bootstrap-and-recovery)."])
+    return "\n".join(lines) + "\n"
+
+
 def claim_name(target):
     return f"Ready refresh PR{target['pr']} run{target['run']} attempt{target['attempt']}"
 
@@ -377,13 +419,15 @@ def main():
             p.trusted_context(os.environ)
             numbers = json.loads(os.environ["PR_NUMBERS"])
             p.require(isinstance(numbers, list) and all(type(n) is int and n > 0 for n in numbers) and len(set(numbers)) == len(numbers), "invalid refresh PR targets")
-            plans = []
-            for number in numbers:
-                plan = refresh_plan(api, p, number, enabled)
-                if plan is not None:
-                    plans.append(plan)
+            plans, blocked = refresh_batch(api, p, numbers, enabled)
+            summary = plan_summary(p, plans, blocked)
+            print(summary, end="")
+            if os.environ.get("GITHUB_STEP_SUMMARY"):
+                with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as stream:
+                    stream.write(summary)
             with open(os.environ["GITHUB_OUTPUT"], "a") as stream:
                 stream.write("targets=" + json.dumps(plans, separators=(",", ":")) + "\n")
+                stream.write("blocked=" + json.dumps(blocked, separators=(",", ":")) + "\n")
         else:
             print(refresh(api, p, json.loads(os.environ["REFRESH_TARGET"]), enabled))
         return 0
