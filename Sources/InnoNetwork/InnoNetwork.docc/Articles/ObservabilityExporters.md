@@ -178,10 +178,11 @@ they're frequent and not interesting on their own unless they fail.
 
 ## Versioning and compatibility
 
-The current observability surface belongs to the planned Provisionally Stable
-6.x contract. Until 6.0.0 is tagged, production adapter packages should remain
-on a 5.x minor range or an exact released version. After adopting 6.x, use a
-minor-bounded range when reproducibility is required. Changes remain additive;
+The observability surface is Provisionally Stable in the published 6.0.0
+contract. Adapter packages can adopt that release; use a minor-bounded range
+or an exact version when reproducibility is required. The 6.1 candidate remains
+unpublished and is not an adoption target until its release gates close.
+Event additions preserve the documented provisional compatibility boundary;
 adapters should include a `default:` case in event switches so new
 ``NetworkEvent`` cases do not break compilation before the adapter has mapped
 them.

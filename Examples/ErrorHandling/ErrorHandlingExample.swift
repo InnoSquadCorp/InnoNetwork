@@ -189,6 +189,8 @@ actor ErrorHandlingExample {
                 print("   Invalid Base URL: \(message)")
             case .invalidRequest(let message):
                 print("   Invalid Request: \(message)")
+            case .invalidPayload:
+                print("   Invalid Payload: request encoding or validation failed")
             case .offline(let message):
                 print("   Offline: \(message)")
             }

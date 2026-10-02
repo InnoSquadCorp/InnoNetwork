@@ -59,6 +59,8 @@ extension NetworkError {
         switch self {
         case .configuration(let reason):
             switch reason {
+            case .invalidPayload(let failure):
+                return "configuration.invalid_payload.\(failure.rawValue)"
             case .invalidBaseURL:
                 return "configuration.invalid_base_url"
             case .invalidRequest:

@@ -112,6 +112,21 @@ package struct RetryCoordinator {
         eventObservers: [any NetworkEventObserving],
         operation: @Sendable (Int, UUID) async throws -> Response
     ) async throws -> Response {
+        try Task.checkCancellation()
+        if let retryPolicy {
+            guard retryPolicy.retryDelay.isFinite,
+                retryPolicy.maxRetryAfterDelay.map({ $0.isFinite }) ?? true,
+                retryPolicy.networkChangeTimeout.map({ $0.isFinite }) ?? true
+            else {
+                throw NetworkError.configuration(reason: .invalidRequest("Retry policy time values must be finite."))
+            }
+            if let exponential = retryPolicy as? ExponentialBackoffRetryPolicy {
+                guard exponential.maxDelay.isFinite, exponential.jitterRatio.isFinite else {
+                    throw NetworkError.configuration(
+                        reason: .invalidRequest("Retry backoff and jitter must be finite."))
+                }
+            }
+        }
         var retryIndex = 0
         var totalRetries = 0
         var snapshot = await networkMonitor?.currentSnapshot()
@@ -300,6 +315,12 @@ package struct RetryCoordinator {
 
         let computedDelay = policy.retryDelay(for: retryIndex)
         let delay = Self.delay(for: decision, computedDelay: computedDelay, policy: policy)
+        guard computedDelay.isFinite, delay.isFinite else {
+            throw NetworkError.configuration(reason: .invalidRequest("Computed retry delay must be finite."))
+        }
+        if case .retryAfter(let hint) = decision, !hint.isFinite {
+            throw NetworkError.configuration(reason: .invalidRequest("Retry-After delay must be finite."))
+        }
         await publishRetryDecision(
             requestID: requestID,
             retryIndex: retryIndex,
@@ -339,7 +360,7 @@ package struct RetryCoordinator {
 
         if delay > 0 {
             NetworkOperationDeadlineContext.mark(.retryDelay)
-            try await clock.sleep(for: .seconds(delay))
+            try await clock.sleep(forSeconds: delay)
         }
 
         return RetryStepOutcome(

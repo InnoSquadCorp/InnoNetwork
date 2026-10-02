@@ -65,6 +65,11 @@ extension AppendLogDownloadTaskStore {
         func replayLine(_ lineData: Data) throws {
             guard !lineData.isEmpty else { return }
             let event = try decoder.decode(Event.self, from: lineData)
+            let successor = event.sequence.addingReportingOverflow(1)
+            guard event.sequence >= 0, !successor.overflow else {
+                // Reject before applying even a removal to the valid prefix.
+                throw CocoaError(.coderInvalidValue)
+            }
             switch event.kind {
             case .upsert:
                 guard let url = event.url, let destinationURL = event.destinationURL else { return }
@@ -105,7 +110,7 @@ extension AppendLogDownloadTaskStore {
                 }
                 tombstoneCount += 1
             }
-            nextSequence = max(nextSequence, event.sequence + 1)
+            nextSequence = max(nextSequence, successor.partialValue)
             logEventCount += 1
         }
 

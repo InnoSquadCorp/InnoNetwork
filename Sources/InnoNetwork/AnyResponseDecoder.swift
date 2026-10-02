@@ -28,6 +28,8 @@ extension AnyResponseDecoder where Output: Decodable & Sendable {
 
                 do {
                     return try decoder.decode(Output.self, from: data)
+                } catch  where NetworkError.isCancellation(error) {
+                    throw NetworkError.cancelled
                 } catch {
                     throw NetworkError.decoding(
                         stage: .responseBody,
@@ -51,6 +53,8 @@ public extension AnyResponseDecoder where Output: Decodable {
         Self { data, response in
             do {
                 return try decoder.decode(Output.self, from: data)
+            } catch  where NetworkError.isCancellation(error) {
+                throw NetworkError.cancelled
             } catch {
                 throw NetworkError.decoding(
                     stage: .responseBody,
@@ -71,6 +75,8 @@ public extension AnyResponseDecoder where Output: Decodable & HTTPEmptyResponseD
 
             do {
                 return try decoder.decode(Output.self, from: data)
+            } catch  where NetworkError.isCancellation(error) {
+                throw NetworkError.cancelled
             } catch {
                 throw NetworkError.decoding(
                     stage: .responseBody,

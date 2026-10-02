@@ -37,6 +37,14 @@ private struct PipelineStampingInterceptor: RequestInterceptor {
     }
 }
 
+private struct ResponseSigningTrace: ResponseInterceptor {
+    let trace: SigningTrace
+    func adapt(_ response: Response, request: URLRequest) async throws -> Response {
+        trace.record("response", request: request)
+        return response
+    }
+}
+
 private struct ConditionalValidatorInterceptor: RequestInterceptor {
     func adapt(_ urlRequest: URLRequest) async throws -> URLRequest {
         var request = urlRequest
@@ -292,6 +300,7 @@ struct RequestSignerPipelineTests {
     @Test("A refresh-token replay is signed again after the refreshed token is applied")
     func refreshReplayResigns() async throws {
         let trace = SigningTrace()
+        let responseTrace = SigningTrace()
         let session = MockURLSession()
         let body = try JSONEncoder().encode(SignerPipelineResponse(value: "network"))
         session.setScriptedResponses([
@@ -306,6 +315,7 @@ struct RequestSignerPipelineTests {
             configuration: makeTestNetworkConfiguration(
                 baseURL: "https://api.example.com/v1",
                 requestSigners: [PipelineSigner(label: "signature", trace: trace)],
+                responseInterceptors: [ResponseSigningTrace(trace: responseTrace)],
                 refreshTokenPolicy: refresh
             ),
             session: session
@@ -322,6 +332,9 @@ struct RequestSignerPipelineTests {
         #expect(trace.observedRequests[0].value(forHTTPHeaderField: "Authorization") == "Bearer current-token")
         #expect(trace.observedRequests[1].value(forHTTPHeaderField: "Authorization") == "Bearer refreshed-token")
         #expect(session.capturedRequestsInOrder.count == 2)
+        let observed = try #require(responseTrace.observedRequests.last)
+        #expect(observed.value(forHTTPHeaderField: "Authorization") == "Bearer refreshed-token")
+        #expect(observed.value(forHTTPHeaderField: "X-Signer-Order") == "signature")
     }
 
     @Test("All interceptor-provided pre-transport headers are present before the signer runs")

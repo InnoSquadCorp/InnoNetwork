@@ -42,7 +42,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-InnoNetwork is a type-safe Swift network library shipped as **9 products**.
+InnoNetwork is a type-safe Swift network library with **9 runtime products** and
+the compiler-host-only **InnoNetworkMacroSupport** product (6.1 candidate).
 The former HLS products live in the sibling InnoStream package.
 
 **InnoNetwork (Core):**
@@ -121,7 +122,7 @@ swift test --list-tests
 
 ## Architecture
 
-전체 9개 product. 신규 기여 시 진입 파일과 책임만 빠르게 파악하세요.
+런타임 9개 product와 별도 compiler-host support product. 신규 기여 시 진입 파일과 책임만 빠르게 파악하세요.
 
 ### Sources/InnoNetwork (Core)
 - `APIDefinition.swift` / `APIDefinition+Macro.swift` — endpoint 선언 프로토콜 + `@APIDefinition` 매크로

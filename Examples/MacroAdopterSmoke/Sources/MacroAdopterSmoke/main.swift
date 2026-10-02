@@ -150,4 +150,5 @@ let listRequest = requests[2]
 precondition(listRequest.url?.absoluteString == "https://api.example.com/v1/users")
 precondition(listRequest.value(forHTTPHeaderField: "X-Feature") == "Directory")
 
+try await runMinorCompatibilitySmoke()
 print("MacroAdopterSmoke OK")

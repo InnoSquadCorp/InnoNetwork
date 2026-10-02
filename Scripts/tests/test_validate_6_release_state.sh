@@ -38,6 +38,7 @@ for path in \
   docs/ROADMAP.md \
   docs/releases/6.0.0.md \
   docs/releases/6.1.0.md \
+  docs/releases/archive/6.1.0-superseded-roadmap.md \
   docs/site/index.html; do
   mkdir -p "$scratch/$(dirname "$path")"
   cp "$repo_root/$path" "$scratch/$path"
@@ -48,6 +49,31 @@ git -C "$scratch" add .
 git -C "$scratch" commit --quiet -m fixture
 
 bash "$scratch/Scripts/validate_6_release_state.sh" --expect "$current_state" --ref HEAD
+
+# A later candidate can become Ready without publishing the superseded roadmap
+# or changing the historical 6.0 contract. This edits only the disposable fixture.
+sed 's/release-status: draft/release-status: ready/' \
+  "$repo_root/docs/releases/6.1.0.md" > "$scratch/docs/releases/6.1.0.md"
+bash "$scratch/Scripts/validate_6_release_state.sh" --expect "$current_state"
+cp "$repo_root/docs/releases/6.1.0.md" "$scratch/docs/releases/6.1.0.md"
+
+# Losing the archive must not silently treat the new candidate as old scope.
+mv "$scratch/docs/releases/archive/6.1.0-superseded-roadmap.md" "$scratch/superseded-record.md"
+if bash "$scratch/Scripts/validate_6_release_state.sh" \
+  --expect "$current_state" > "$scratch/rejection.log" 2>&1; then
+  echo "6.0 release-state test: accepted a missing historical scope record" >&2
+  exit 1
+fi
+grep -Fq "missing" "$scratch/rejection.log"
+
+# Existing tags retain the old layout. Validate that committed layout even when
+# the working tree subsequently restores the new canonical candidate/archive.
+cp "$scratch/superseded-record.md" "$scratch/docs/releases/6.1.0.md"
+git -C "$scratch" add docs/releases
+git -C "$scratch" commit --quiet -m legacy-layout
+bash "$scratch/Scripts/validate_6_release_state.sh" --expect "$current_state" --ref HEAD
+mv "$scratch/superseded-record.md" "$scratch/docs/releases/archive/6.1.0-superseded-roadmap.md"
+cp "$repo_root/docs/releases/6.1.0.md" "$scratch/docs/releases/6.1.0.md"
 
 assert_scope_change_rejected() {
   local relative_path="$1"
@@ -69,12 +95,18 @@ assert_scope_change_rejected() {
 assert_scope_change_rejected docs/releases/6.0.0.md \
   's/1,702 declarations/1,407 declarations/g' 'the superseded 6.0 API count'
 assert_scope_change_rejected Scripts/symbols/budgets.tsv \
-  's/1702/1407/g' 'an outdated API budget'
+  's/1702/1407/g;s/1764/1407/g' 'an outdated API budget'
 assert_scope_change_rejected Scripts/symbols/tier-budgets.tsv \
-  's/1362/1068/g' 'an outdated provisional tier budget'
+  's/1362/1068/g;s/1364/1068/g' 'an outdated provisional tier budget'
+if grep -Fq 'encoded-request-candidate: 6.1.0' "$repo_root/API_STABILITY.md"; then
+  assert_scope_change_rejected API_STABILITY.md \
+    '/encoded-request-candidate: 6.1.0/d' 'an implicit new-version inventory'
+  assert_scope_change_rejected API_STABILITY.md \
+    '/These additions are unpublished; they do not alter 6.0.0./d' 'a candidate without its unpublished boundary'
+fi
 assert_scope_change_rejected docs/ROADMAP.md \
   's/## 6.0.0 Included Capabilities/## 6.1.0 Candidate Scope/' 'a split roadmap'
-assert_scope_change_rejected docs/releases/6.1.0.md \
+assert_scope_change_rejected docs/releases/archive/6.1.0-superseded-roadmap.md \
   's/release-status: draft/release-status: ready/' 'publishable superseded notes'
 
 assert_scope_change_rejected docs/releases/6.0.0.md \

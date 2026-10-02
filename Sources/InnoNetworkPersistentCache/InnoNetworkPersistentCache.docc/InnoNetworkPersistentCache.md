@@ -46,7 +46,24 @@ oversized body state is scrubbed.
 Use ``PersistentResponseCache/statistics()`` for storage-pressure snapshots and
 ``PersistentResponseCache/telemetrySnapshot()`` or
 ``PersistentResponseCache/drainTelemetryEvents()`` to inspect scrub and
-eviction events during rollout.
+eviction totals during rollout. Matching reasons are aggregated between drains,
+with at most one retained event per reason (currently five), even without a
+consumer. Counts and bytes saturate at `Int.max`. A drain clears the aggregates,
+not lifetime statistics; event chronology and individual batch boundaries are
+not retained.
+
+## Directory ownership
+
+One owner may actively use a cache directory. Share a single cache actor among
+in-process network clients. Before reopening, finish outstanding operations and
+stop using the previous owner. Independent instances do not coordinate indexes
+or staged files; concurrent access to the same directory is unsupported and can
+lose entries. There is no interprocess ownership lock.
+
+The App Group directory helper supplies a URL, not multi-process coordination.
+An app and its extensions should append distinct owner-specific subdirectories.
+Application code must serialize ownership if it deliberately hands off a
+directory. This contract does not provide a shared writable cache database.
 
 ## Topics
 

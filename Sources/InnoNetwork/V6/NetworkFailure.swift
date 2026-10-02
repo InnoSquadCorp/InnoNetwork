@@ -126,7 +126,7 @@ public struct NetworkFailure: Error, Sendable, Equatable {
                     code: code,
                     recovery: .waitForConnectivity
                 )
-            case .invalidBaseURL, .invalidRequest:
+            case .invalidBaseURL, .invalidRequest, .invalidPayload:
                 self.init(kind: .configuration, code: code, recovery: .doNotRetry)
             }
         case .statusCode(let response):

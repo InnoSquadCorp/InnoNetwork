@@ -441,7 +441,7 @@ jobs:
             runtime_source_roots+=("$source_root")
           done < <(
             find Sources -mindepth 1 -maxdepth 1 -type d \
-              ! -name InnoNetworkMacros -print | sort
+              ! -name InnoNetworkMacros ! -name InnoNetworkMacroSupport -print | sort
           )
 
           bash Scripts/generate_coverage_report.sh \
@@ -676,7 +676,9 @@ jobs:
         run: bash Scripts/check_migration_examples.sh
 
       - name: Verify CHANGELOG Unreleased section
-        run: bash Scripts/check_changelog_sync.sh
+        run: |
+          ruby Scripts/tests/test_check_changelog_sync.rb
+          bash Scripts/check_changelog_sync.sh
 
       - name: Verify provisionally stable enum case ledger
         run: bash Scripts/check_provisional_enum_cases.sh
@@ -889,7 +891,7 @@ jobs:
           bash Scripts/generate_coverage_report.sh \
             .build \
             .build/coverage-macros \
-            Sources/InnoNetworkMacros
+            Sources/InnoNetworkMacros Sources/InnoNetworkMacroSupport
 
       - name: Upload macro coverage artifact
         if: always()

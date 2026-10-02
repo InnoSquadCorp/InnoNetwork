@@ -253,7 +253,7 @@ private func expectURLAdmissionFailure(
         switch reason {
         case .invalidBaseURL, .invalidRequest:
             break
-        case .offline:
+        case .offline, .invalidPayload:
             Issue.record("Expected URL admission failure, got \(reason)")
             return
         }

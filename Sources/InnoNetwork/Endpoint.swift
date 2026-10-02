@@ -318,6 +318,8 @@ extension EndpointBuilder where Response == EmptyResponse {
     ) throws -> T {
         do {
             return try SharedCoders.decode(type, from: data)
+        } catch  where NetworkError.isCancellation(error) {
+            throw NetworkError.cancelled
         } catch {
             throw NetworkError.decoding(
                 stage: .responseBody,

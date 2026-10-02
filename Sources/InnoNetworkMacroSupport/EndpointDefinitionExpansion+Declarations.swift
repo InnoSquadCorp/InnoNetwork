@@ -1,7 +1,67 @@
 import SwiftSyntax
+import SwiftSyntaxMacros
 
-extension APIDefinitionMacro {
+extension EndpointDefinitionExpansion {
+    static func diagnoseConditionalJSONPayload(
+        in declaration: some DeclGroupSyntax, context: some MacroExpansionContext
+    ) {
+        // 6.0 accepted conditional helpers and explicit policy witnesses. The
+        // compiler still selects those declarations; do not turn them into an
+        // error or guess the consumer's build conditions. Legacy inference only
+        // sees direct payload declarations. Warn about potentially omitted input
+        // while preserving that Stable 6.x generated contract.
+        guard !hasCompleteManualPayloadContract(in: declaration) else { return }
+        for member in declaration.memberBlock.members {
+            guard let conditional = member.decl.as(IfConfigDeclSyntax.self),
+                containsConditionalPayload(conditional)
+            else { continue }
+            context.diagnose(
+                InnoNetworkMacroDiagnostic(
+                    "@APIDefinition does not infer conditional body/query or payload witnesses; 6.x preserves the unconditional payload contract. Place #if around the whole endpoint or declare unconditional Parameter + parameters.",
+                    id: "api-definition-conditional-payload", severity: .warning
+                ).diagnostic(at: conditional))
+        }
+    }
+
+    private static func containsConditionalPayload(_ conditional: IfConfigDeclSyntax) -> Bool {
+        for clause in conditional.clauses {
+            guard case .decls(let members) = clause.elements else { continue }
+            for member in members {
+                if let nested = member.decl.as(IfConfigDeclSyntax.self), containsConditionalPayload(nested) {
+                    return true
+                }
+                if let alias = member.decl.as(TypeAliasDeclSyntax.self), semanticName(alias.name) == "Parameter" {
+                    return true
+                }
+                guard let variable = member.decl.as(VariableDeclSyntax.self) else { continue }
+                for binding in variable.bindings {
+                    if binding.pattern.tokens(viewMode: .sourceAccurate).contains(where: {
+                        ["body", "query", "parameters"].contains(semanticName($0))
+                    }) {
+                        return true
+                    }
+                }
+            }
+        }
+        // Do not descend into functions, accessors or nested types: their
+        // similarly named values are not this endpoint's payload declarations.
+        return false
+    }
+
+    static func validateUnconditionalMembers(in declaration: some DeclGroupSyntax) throws {
+        // New encoded companions have no legacy conditional-member contract.
+        // Their generated factory copies policies as well as payloads, so never
+        // skip a branch and silently use an empty payload or default policy.
+        for member in declaration.memberBlock.members where member.decl.is(IfConfigDeclSyntax.self) {
+            throw InnoNetworkMacroDiagnostic(
+                "@APIDefinition does not support conditional members; place #if around the entire endpoint declaration or use a manual endpoint.",
+                id: "api-definition-conditional-member"
+            ).error(at: member.decl)
+        }
+    }
+
     struct StoredProperty {
+        let sourceName: String
         let isOptional: Bool
         let typeKind: TypeKind
         let type: TypeSyntax?
@@ -114,11 +174,12 @@ extension APIDefinitionMacro {
             guard let variable = member.decl.as(VariableDeclSyntax.self) else { continue }
             for binding in variable.bindings {
                 guard isEligibleStoredInstanceProperty(variable: variable, binding: binding),
-                    let identifier = binding.pattern.as(IdentifierPatternSyntax.self)?.identifier.text,
-                    !consumed.contains(identifier)
+                    let token = binding.pattern.as(IdentifierPatternSyntax.self)?.identifier,
+                    !consumed.contains(semanticName(token))
                 else {
                     continue
                 }
+                let identifier = semanticName(token)
                 throw InnoNetworkMacroDiagnostic(
                     "@APIDefinition stored property '\(identifier)' is not used by the route or inferred payload. In simple mode place GET/HEAD values in 'query' and POST/PUT/PATCH/DELETE values in 'body'; for every other method declare a complete Parameter + parameters fallback.",
                     id: "api-definition-unused-stored-property"
@@ -136,12 +197,13 @@ extension APIDefinitionMacro {
             guard let variable = member.decl.as(VariableDeclSyntax.self) else { continue }
             for binding in variable.bindings {
                 guard isEligibleStoredInstanceProperty(variable: variable, binding: binding),
-                    let identifier = binding.pattern.as(IdentifierPatternSyntax.self)?.identifier.text
+                    let identifier = binding.pattern.as(IdentifierPatternSyntax.self)?.identifier
                 else {
                     continue
                 }
                 let type = binding.typeAnnotation?.type
-                properties[identifier] = StoredProperty(
+                properties[semanticName(identifier)] = StoredProperty(
+                    sourceName: identifier.text,
                     isOptional: isOptionalType(type),
                     typeKind: classifyType(type, genericParameters: genericParameters),
                     type: type
@@ -157,7 +219,7 @@ extension APIDefinitionMacro {
     ) -> TypeAliasDeclSyntax? {
         declaration.memberBlock.members.lazy.compactMap { member in
             member.decl.as(TypeAliasDeclSyntax.self)
-        }.first { $0.name.text == name }
+        }.first { semanticName($0.name) == name }
     }
 
     static func declaresTypeAlias(
@@ -193,12 +255,20 @@ extension APIDefinitionMacro {
         for member in declaration.memberBlock.members {
             guard let variable = member.decl.as(VariableDeclSyntax.self) else { continue }
             for binding in variable.bindings {
-                if binding.pattern.as(IdentifierPatternSyntax.self)?.identifier.text == name {
+                if let token = binding.pattern.as(IdentifierPatternSyntax.self)?.identifier,
+                    semanticName(token) == name
+                {
                     return (variable, binding)
                 }
             }
         }
         return nil
+    }
+
+    static func semanticName(_ token: TokenSyntax) -> String {
+        let spelling = token.text
+        guard spelling.hasPrefix("`"), spelling.hasSuffix("`"), spelling.count >= 2 else { return spelling }
+        return String(spelling.dropFirst().dropLast())
     }
 
     static func isEligibleStoredInstanceProperty(

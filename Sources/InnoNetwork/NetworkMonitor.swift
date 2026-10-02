@@ -256,6 +256,10 @@ public actor NetworkMonitor: NetworkMonitoring {
             return current
         }
 
+        // A nonthrowing wait reports invalid timeout input as no observation.
+        // Do not construct a Duration or register a stream for NaN/infinity.
+        if let timeout, !timeout.isFinite { return nil }
+
         let stream = makeSnapshotStream(replayCurrent: false)
         return await withTaskGroup(of: NetworkSnapshot?.self) { group in
             group.addTask {
@@ -266,8 +270,7 @@ public actor NetworkMonitor: NetworkMonitoring {
             }
             if let timeout {
                 group.addTask {
-                    let safeTimeout = max(0, timeout)
-                    try? await Task.sleep(for: .seconds(safeTimeout), clock: .suspending)
+                    try? await SchedulingTime.sleep(for: max(0, timeout), clock: SuspendingClock())
                     return nil
                 }
             }
