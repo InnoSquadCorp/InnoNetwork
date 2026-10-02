@@ -81,3 +81,24 @@ No source/prebuilt path, supported compiler, platform floor, performance
 threshold or security gate is relaxed to accept the dependency update.
 Publication of this candidate does not merge or close the four original PRs,
 mark the candidate Ready, publish a release or authorize an automatic merge.
+
+## First hosted benchmark failure and bounded attribution
+
+[Run 36992525790](https://github.com/InnoSquadCorp/InnoNetwork/actions/runs/36992525790/job/110791851913)
+retains the original JSON guard failure for candidate `955841b`: parse-preserved
+paired deltas were -21.98%, -16.01% and -33.71%, with median -21.98% against the
+archived `b358692e1e583b5cef1c97bb65208729b313f574` baseline. The 20% guard failed;
+the current-main runtime guards passed. Validated sample/receipt hashes establish
+the measurement's identity, not its cause. A prior main run's +4.10% JSON result
+is a different execution and cannot waive this failure.
+
+The existing manual `Benchmarks` workflow now offers an off-by-default,
+report-only PR140 JSON attribution mode. It uses Swift 6.2 and the original
+candidate's unchanged collector to compare exact `e74f322` with exact `955841b`
+once: three AB/BA/AB pairs at the same 20% threshold. A separate candidate
+worktree preserves the original measured source while the orchestration commit
+is recorded independently. Reports use a separate artifact/path; diagnostic mode
+cannot append benchmark trends. The normal scheduled/manual gates, archived
+baseline, iteration/warmup contract and original failure remain unchanged.
+A diagnostic pass is not permission to merge or evidence that the earlier
+failure was noise. Invalid or failed collection is not retried automatically.

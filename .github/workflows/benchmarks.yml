@@ -2,6 +2,12 @@ name: Benchmarks
 
 on:
   workflow_dispatch:
+    inputs:
+      pr140_json_diagnostic:
+        description: 'Report-only fixed PR140 versus main JSON attribution; no trend publication'
+        type: boolean
+        required: false
+        default: false
   schedule:
     - cron: "0 3 * * 1"
 
@@ -15,6 +21,7 @@ concurrency:
 jobs:
   run-benchmarks:
     name: Run Benchmarks
+    if: github.event_name != 'workflow_dispatch' || !inputs.pr140_json_diagnostic
     runs-on: macos-15
     timeout-minutes: 60
     permissions:
@@ -82,9 +89,39 @@ jobs:
           path: .build/benchmarks/
           if-no-files-found: error
 
+  pr140-json-diagnostic:
+    name: PR140 JSON attribution (report only)
+    if: github.event_name == 'workflow_dispatch' && inputs.pr140_json_diagnostic
+    runs-on: macos-15
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout diagnostic orchestration
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Select the original measurement compiler
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.0.1.app
+          xcodebuild -version
+          xcrun swift --version
+          xcrun swift --version | grep -E '^Apple Swift version 6[.]2([ .]|$)'
+      - name: Compare the fixed candidate with its exact main base once
+        run: bash Scripts/run_pr140_json_attribution.sh
+      - name: Retain separate diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pr140-json-attribution-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .build/pr140-json-attribution/
+          if-no-files-found: error
+          retention-days: 14
+
   append-trend:
     name: Append benchmark trend
-    if: success() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    if: success() && !inputs.pr140_json_diagnostic && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
     needs: run-benchmarks
     runs-on: macos-15
     timeout-minutes: 10
