@@ -156,7 +156,8 @@ func makeUploadHarness(
     emitsInvalidationEvent: Bool = true,
     invalidationTimeout: Duration = .seconds(5),
     beforeListingTasks: (@Sendable () async -> Void)? = nil,
-    startPreparationHook: (@Sendable (String) async -> Void)? = nil
+    startPreparationHook: (@Sendable (String) async -> Void)? = nil,
+    terminalPublicationHook: (@Sendable () async -> Void)? = nil
 ) -> (UploadManager, StubUploadURLSession, UploadDelegateEventChannel) {
     let channel = UploadDelegateEventChannel()
     let session = StubUploadURLSession(
@@ -170,7 +171,8 @@ func makeUploadHarness(
         session: session,
         channel: channel,
         invalidationTimeout: invalidationTimeout,
-        startPreparationHook: startPreparationHook
+        startPreparationHook: startPreparationHook,
+        terminalPublicationHook: terminalPublicationHook
     )
     return (manager, session, channel)
 }

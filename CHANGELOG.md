@@ -7,6 +7,11 @@ Versioning.
 
 ## [Unreleased]
 
+### Fixed
+
+- Settle upload terminal delivery and runtime retirement before admitting an
+  explicit retry; cancelling a queued retry does not start a replacement task.
+
 ### Changed
 
 - Lightweight JSON schema validation prepares ordered required-property names
