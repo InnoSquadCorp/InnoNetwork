@@ -119,7 +119,7 @@ let package = Package(
         // Macros trait is enabled; SwiftPM still resolves manifest dependencies.
         .package(
             url: "https://github.com/swiftlang/swift-syntax.git",
-            .upToNextMinor(from: "603.0.1")
+            .upToNextMinor(from: "604.0.0")
         ),
         // Swift Crypto is used only by the optional cryptographic surfaces:
         // the AWS SigV4 companion product, public-key pinning, and persistent
