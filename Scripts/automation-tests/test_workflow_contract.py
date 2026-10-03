@@ -103,7 +103,7 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertEqual(set(ci), set(plan.JOBS) | {'ci-plan', 'ci-required'})
         self.assertEqual(set(ci['ci-required']['needs']), set(plan.JOBS) | {'ci-plan'})
         self.assertEqual(ci['ci-plan']['if'], "${{ !(github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base))) }}")
-        self.assertEqual(ci['ci-required']['if'], "${{ always() && !(github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base))) }}")
+        self.assertEqual(ci['ci-required']['if'], '${{ always() }}')
         for name in plan.JOBS:
             if name == 'policy': continue
             guard = ci[name]['if']

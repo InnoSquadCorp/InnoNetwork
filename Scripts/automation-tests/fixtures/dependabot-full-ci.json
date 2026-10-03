@@ -1194,6 +1194,11 @@
       {
         "name": "Require every planned CI result",
         "conclusion": "success"
+      },
+      {
+        "name": "Verify prior validation for metadata",
+        "status": "completed",
+        "conclusion": "skipped"
       }
     ]
   }

@@ -394,13 +394,15 @@ CORE = {'CI Plan': ['Verify actual post-merge main origin',
                                                  'Require SDK',
                                                  'Build package for visionOS',
                                                  'Report cache observations'],
- 'CI Required': ['Checkout', 'Require every planned CI result']}
+ 'CI Required': ['Checkout', 'Require every planned CI result', 'Verify prior validation for metadata']}
 SKIPPED = set()
 STEP_SKIPS = {('CI Plan', 'Verify actual post-merge main origin'),
  ('Upload Core Coverage', 'Report artifact-only Codecov fallback'),
  ('Upload Macro Coverage', 'Report artifact-only Codecov fallback')}
 PROOF_FIELDS = {"schema", "repository_id", "main", "base", "head", "merge", "tree",
                 "pr", "run", "attempt", "workflow", "suite", "reused_jobs"}
+
+STEP_SKIPS.update({('CI Required', 'Verify prior validation for metadata')})
 
 
 class Rejected(ValueError):

@@ -1,4 +1,4 @@
-"""Recognize only native, entirely skipped metadata runs; never create CI proof.
+"""Recognize native metadata rechecks; never substitute them for real CI proof.
 
 A title is a candidate, not evidence. Bind the immutable workflow definition,
 merge parents, complete job/check inventory and latest attempt before excluding
@@ -16,9 +16,9 @@ CALLS = (({'Release Candidate'}, {'Release Candidate / Validate ${{ matrix.runti
 # Match only these exact reviewed expressions, still bound to the workflow blob;
 # a string mentioning a metadata label or a required context is not sufficient.
 METADATA_CONDITION = "(github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base)))"
-AGGREGATES = (({'Consumer Metadata Only'}, {METADATA_CONDITION + " && 'Consumer Metadata Only' || 'Consumer Smoke'"}),({'CI Metadata Only'}, {METADATA_CONDITION + " && 'CI Metadata Only' || 'CI Required'"}),
-             )
-INVENTORIES = [DIRECT.union(*children) for children in itertools.product(*CALLS, *AGGREGATES)]
+GATES = {'CI Required': 'Require every planned CI result'}
+AGGREGATES = (({'Consumer Metadata Only'}, {METADATA_CONDITION + " && 'Consumer Metadata Only' || 'Consumer Smoke'"}),)
+INVENTORIES = [DIRECT.union(GATES, *children) for children in itertools.product(*CALLS, *AGGREGATES)]
 
 
 def partition(api, runs, *, repository, repository_id, workflow_id, number, head, source, require):
@@ -81,14 +81,26 @@ def partition(api, runs, *, repository, repository_id, workflow_id, number, head
                 require(check_id not in observed, 'duplicate metadata job/check association')
                 observed.add(check_id)
                 check = by_id.get(check_id, {})
+                gate = job['name'] in GATES
+                expected = 'success' if gate else 'skipped'
+                if gate:
+                    steps = job.get('steps', [])
+                    verify = [s for s in steps if s.get('name') == 'Verify prior validation for metadata']
+                    normal = [s for s in steps if s.get('name') == GATES[job['name']]]
+                    require(len(verify) == 1 and verify[0].get('conclusion') == 'success' and
+                            len(normal) == 1 and normal[0].get('conclusion') == 'skipped' and
+                            all(s.get('status') == 'completed' and s.get('conclusion') in {'success', 'skipped'}
+                                for s in steps), 'metadata gate did not verify prior validation')
+                else:
+                    require(job.get('steps') == [], 'metadata run executed validation work')
                 require(type(job.get('id')) is int and job['id'] > 0 and
                         job.get('run_id') == run['id'] and job.get('run_attempt') == attempt and
                         job.get('head_sha') == head and job.get('status') == 'completed' and
-                        job.get('conclusion') == 'skipped' and job.get('steps') == [] and
+                        job.get('conclusion') == expected and
                         check.get('name') == job['name'] and check.get('app', {}).get('id') == 15368 and
                         check.get('check_suite', {}).get('id') == run['check_suite_id'] and
                         check.get('head_sha') in {head, definition} and check.get('status') == 'completed' and
-                        check.get('conclusion') == 'skipped' and check.get('details_url') ==
+                        check.get('conclusion') == expected and check.get('details_url') ==
                         f"https://github.com/{repository}/actions/runs/{run['id']}/job/{job['id']}",
                         'metadata run executed work or has unverified native checks')
         require(set(by_id) == observed, 'unassociated metadata checks')

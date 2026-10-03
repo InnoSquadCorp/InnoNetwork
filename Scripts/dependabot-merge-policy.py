@@ -396,11 +396,13 @@ CORE = {'CI Plan': ['Verify actual post-merge main origin',
                                                  'Require SDK',
                                                  'Build package for visionOS',
                                                  'Report cache observations'],
- 'CI Required': ['Checkout', 'Require every planned CI result']}
+ 'CI Required': ['Checkout', 'Require every planned CI result', 'Verify prior validation for metadata']}
 FULL_SKIPPED = set()
 ALLOWED_STEP_SKIP = {('CI Plan', 'Verify actual post-merge main origin'),
  ('Upload Core Coverage', 'Report artifact-only Codecov fallback'),
  ('Upload Macro Coverage', 'Report artifact-only Codecov fallback')}
+ALLOWED_STEP_SKIP.update({('CI Required', 'Verify prior validation for metadata')})
+
 
 class Rejected(ValueError):
     pass

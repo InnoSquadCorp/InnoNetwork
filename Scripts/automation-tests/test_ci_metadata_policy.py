@@ -39,6 +39,12 @@ class MetadataAPI:
             self.checks.append(dict(id=30000+i, name=name, app=dict(id=15368), check_suite=dict(id=SUITE),
                                     head_sha=head, status='completed', conclusion='skipped',
                                     details_url=f'https://github.com/{bot.p.REPOSITORY}/actions/runs/{META}/job/{job["id"]}'))
+        for job, check in zip(self.jobs, self.checks):
+            if job['name'] in m.GATES:
+                job.update(conclusion='success', steps=[
+                    dict(name=m.GATES[job['name']], conclusion='skipped', status='completed'),
+                    dict(name='Verify prior validation for metadata', conclusion='success', status='completed')])
+                check['conclusion'] = 'success'
         self.base.runs.append(self.run)
         self.jobs_by_attempt = {1: self.jobs}
         self.finish_mutation = None
@@ -149,12 +155,12 @@ class MetadataProofTests(unittest.TestCase):
             lambda a: a.jobs.pop(), lambda a: a.jobs.append(copy.deepcopy(a.jobs[0])),
             lambda a: a.jobs[0].update(name='CI Required'),
             lambda a: a.jobs[0].update(name=m.METADATA_CONDITION + " && 'CI Metadata Only' || 'Forged Required'"),
-            lambda a: a.jobs[0].update(conclusion='success'),
+            lambda a: a.jobs[0].update(conclusion='failure'),
             lambda a: a.jobs[0].update(steps=[{'name': 'executed'}]),
             lambda a: a.jobs[0].update(check_run_url='https://example.invalid/123'),
             lambda a: a.jobs[0].update(run_id=0), lambda a: a.jobs[0].update(run_attempt=2),
             lambda a: a.checks[0]['app'].update(id=999), lambda a: a.checks[0].update(head_sha='0'*40),
-            lambda a: a.checks[0].update(conclusion='success'), lambda a: a.checks[0].update(details_url='wrong'),
+            lambda a: a.checks[0].update(conclusion='failure'), lambda a: a.checks[0].update(details_url='wrong'),
             lambda a: a.checks.append(copy.deepcopy(a.checks[0])),
             lambda a: setattr(a, 'finish_mutation', lambda r: r.update(run_attempt=2)),
         ]

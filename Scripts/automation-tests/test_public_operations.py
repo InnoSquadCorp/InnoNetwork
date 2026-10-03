@@ -43,3 +43,16 @@ class PublicOperationsTests(unittest.TestCase):
                 file = root/path; file.parent.mkdir(parents=True, exist_ok=True)
                 file.write_text('steps:\n  - uses: actions/checkout@v7\n')
                 with self.assertRaises(ValueError): p.action_pins(root)
+
+    def test_generated_dependency_manifests_do_not_expand_owned_inventory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / 'repo'
+            shutil.copytree(ROOT, root, ignore=shutil.ignore_patterns('.git', '.build', '__pycache__'))
+            cached = root / 'Examples/Consumer/.build/checkouts/Dependency/Package.swift'
+            cached.parent.mkdir(parents=True)
+            cached.write_text('url: "https://example.invalid/dependency"')
+            p.dependabot(root)
+            owned = root / 'Examples/Consumer/Package.swift'
+            owned.write_text(cached.read_text())
+            with self.assertRaisesRegex(ValueError, 'new remote manifest'):
+                p.dependabot(root)
