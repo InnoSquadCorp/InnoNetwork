@@ -95,3 +95,17 @@ class WorkflowLintTests(unittest.TestCase):
                             original.replace(line,'    '+line)]:
                 candidate.write_text(changed)
                 with self.assertRaises(ValueError):p.check_queue_compatibility(copies)
+
+    def test_column_one_yaml_comment_preserves_queue_job_context(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory)/'example.yml'
+            prefix='jobs:\n  example:\n    concurrency:\n'
+            suffix='      group: example\n      queue: max\n'
+            with patch.object(p, 'QUEUE_LOCATIONS', {('example.yml','example'): '      queue: max'}):
+                path.write_text(prefix+suffix)
+                self.assertEqual(len(p.check_queue_compatibility([path])),1)
+                path.write_text(prefix+'# A valid YAML comment does not end the job.\n'+suffix)
+                self.assertEqual(len(p.check_queue_compatibility([path])),1)
+                path.write_text(prefix+'env:\n'+suffix)
+                with self.assertRaises(ValueError):p.check_queue_compatibility([path])

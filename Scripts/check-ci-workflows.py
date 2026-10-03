@@ -32,7 +32,7 @@ def check_queue_compatibility(workflows):
     for path in workflows:
         job = None
         for number, line in enumerate(path.read_text().splitlines(), 1):
-            if re.match(r'^\S', line):
+            if re.match(r'^[^\s#]', line):
                 job = None
             match = re.fullmatch(r'  ([\w-]+):', line)
             if match:
