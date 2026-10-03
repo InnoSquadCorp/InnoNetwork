@@ -50,6 +50,21 @@ class SubmissionTests(unittest.TestCase):
                                       source_branch='main', title='CI / Dependabot merge #123'))
         self.assertFalse(main_eligible(condition, 'push', ref='refs/heads/topic'))
 
+    def test_initial_notification_is_deduplicated_but_reruns_are_kept(self):
+        from test_ci_event_routing import evaluate
+        condition = self.docs['pr-dependency-submission.yml']['jobs']['submit']['if'].replace('null', 'None')
+        for action in ['requested', 'in_progress', 'completed']:
+            for attempt in [1, 2, 3]:
+                for metadata in [False, True]:
+                    values = {'github.event.workflow_run.event': 'pull_request',
+                              'github.event.workflow_run.pull_requests[0].number': 137,
+                              'github.event.workflow_run.display_title': 'CI metadata-only v1 pr:137' if metadata else 'CI validation v2 pr:137',
+                              'github.event.action': action, 'github.event.workflow_run.run_attempt': attempt}
+                    self.assertEqual(evaluate(condition, values), not metadata and
+                                     (action == 'requested' or action == 'in_progress' and attempt > 1))
+                    values['github.event.workflow_run.event'] = 'push'
+                    self.assertFalse(evaluate(condition, values))
+
     def test_snapshot_writers_keep_trusted_checkout_and_pr_data_only(self):
         for filename in ['dependency-submission.yml', 'pr-dependency-submission.yml']:
             workflow = self.docs[filename]
