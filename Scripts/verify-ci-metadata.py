@@ -73,6 +73,15 @@ def binding(pr):
     return (pr['number'], pr['head']['sha'], pr['base']['sha'], flags(pr))
 
 
+def belongs_to_other_pr(run, number):
+    # PR associations are native API data. Missing/malformed/ambiguous evidence
+    # stays eligible so an unknown or manual failure cannot disappear.
+    associated = run.get('pull_requests')
+    return (run.get('event') == 'pull_request' and isinstance(associated, list) and bool(associated) and
+            all(isinstance(pr, dict) and type(pr.get('number')) is int and pr['number'] > 0
+                for pr in associated) and all(pr['number'] != number for pr in associated))
+
+
 def prove(api, event, env, check_name='CI Required'):
     repo = CONFIG['repository']
     route = 'repos/' + repo + '/'
@@ -105,7 +114,8 @@ def prove(api, event, env, check_name='CI Required'):
             'checkout does not combine the current base and head')
     runs = api.pages(route + f'actions/workflows/{workflow}/runs?head_sha={head}', 'workflow_runs')
     validations = [r for r in runs if r.get('id') != own_id and
-                   not str(r.get('display_title', '')).startswith(METADATA_PREFIX)]
+                   not str(r.get('display_title', '')).startswith(METADATA_PREFIX) and
+                   not belongs_to_other_pr(r, number)]
     require(validations, 'no real validation exists for this head')
     require(all(type(r.get('run_number')) is int and r['run_number'] > 0 for r in validations), 'invalid run ordering')
     listed = max(validations, key=lambda r: r['run_number'])
@@ -155,7 +165,8 @@ def prove(api, event, env, check_name='CI Required'):
                 'path', 'event', 'display_title', 'status', 'conclusion', 'check_suite_id')), 'validation changed during proof')
     latest = api.pages(route + f'actions/workflows/{workflow}/runs?head_sha={head}', 'workflow_runs')
     require(not any(r.get('run_number', 0) > run['run_number'] and r.get('id') != own_id and
-                    not str(r.get('display_title', '')).startswith(METADATA_PREFIX) for r in latest),
+                    not str(r.get('display_title', '')).startswith(METADATA_PREFIX) and
+                    not belongs_to_other_pr(r, number) for r in latest),
             'newer real validation appeared')
     final_pr = api.get(route + f'pulls/{number}')
     require(final_pr.get('state') == 'open' and binding(final_pr) == binding(pr), 'PR changed during proof')

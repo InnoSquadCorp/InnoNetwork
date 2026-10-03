@@ -54,6 +54,7 @@ class PRMetadataAdmissionTests(unittest.TestCase):
         required = source.split('  ci-required:\n', 1)[1]
         self.assertIn('    name: CI Required\n', required)
         cancel = source.split('  cancel-in-progress: ${{ ', 1)[1].split(' }}', 1)[0]
+        queue = source.split('  queue: ${{ ', 1)[1].split(' }}', 1)[0]
         gate = required.split('      - name: Verify prior validation for metadata\n', 1)[1]
         gate_condition = gate.split('        if: ${{ ', 1)[1].split(' }}', 1)[0]
         for action, label, base, ignored in [
@@ -74,6 +75,7 @@ class PRMetadataAdmissionTests(unittest.TestCase):
                 self.assertTrue(evaluate(condition(source, 'ci-required'), values))
                 self.assertEqual(evaluate(gate_condition, values), ignored)
                 self.assertEqual(evaluate(cancel, values), not ignored)
+                self.assertEqual(expression_value(queue, values), 'max' if ignored else 'single')
                 consumer = condition(source, 'consumer-smoke').replace('fromJSON(needs.ci-plan.outputs.plan).jobs.consumer-smoke', 'True')
                 self.assertEqual(evaluate(consumer, values), not ignored)
                 self.assertEqual(expression_value(title, values).startswith('CI metadata-only v1 '), ignored)
@@ -81,6 +83,8 @@ class PRMetadataAdmissionTests(unittest.TestCase):
         for event in ['push', 'merge_group', 'workflow_dispatch']:
             values.update({'github.event_name': event, 'github.event.action': 'edited', 'github.event.changes.base': ''})
             self.assertTrue(evaluate(condition(source, 'ci-plan'), values))
+            self.assertEqual(expression_value(queue, values), 'single')
+            self.assertTrue(evaluate(cancel, values))
             self.assertTrue(evaluate(condition(source, 'ci-required'), values))
 
     def test_metadata_runs_allocate_no_other_runner(self):

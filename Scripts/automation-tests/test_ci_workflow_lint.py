@@ -50,7 +50,7 @@ class WorkflowLintTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'dependabot-auto-merge.yml'
             path.write_text(original)
-            p.check_queue_compatibility([path, ROOT / '.github/workflows/dependency-submission.yml', ROOT / '.github/workflows/pr-dependency-submission.yml'])
+            p.check_queue_compatibility([ROOT / '.github/workflows/ci.yml', path, ROOT / '.github/workflows/dependency-submission.yml', ROOT / '.github/workflows/pr-dependency-submission.yml'])
             for changed in (
                     original.replace('      queue: max', '      queue: invalid', 1),
                     original.replace('      queue: max\n', '', 1),
@@ -59,7 +59,7 @@ class WorkflowLintTests(unittest.TestCase):
                     original + '\n  unreviewed:\n    concurrency:\n      "queue": max\n'):
                 path.write_text(changed)
                 with self.assertRaises(ValueError):
-                    p.check_queue_compatibility([path, ROOT / '.github/workflows/dependency-submission.yml', ROOT / '.github/workflows/pr-dependency-submission.yml'])
+                    p.check_queue_compatibility([ROOT / '.github/workflows/ci.yml', path, ROOT / '.github/workflows/dependency-submission.yml', ROOT / '.github/workflows/pr-dependency-submission.yml'])
 
     def test_diagnostics_exempt_only_exact_reviewed_queue_locations(self):
         paths = list((ROOT / '.github/workflows').glob('*.yml'))
@@ -80,3 +80,18 @@ class WorkflowLintTests(unittest.TestCase):
                        result(None), result(errors, 2), result(errors, stderr='fatal error')):
             with self.assertRaises(ValueError):
                 p.require_clean_diagnostics(output, allowed, ROOT)
+
+    def test_ci_queue_exception_rejects_condition_or_location_drift(self):
+        with tempfile.TemporaryDirectory() as directory:
+            copies=[]
+            for source in (ROOT / '.github/workflows').glob('*.yml'):
+                path=Path(directory)/source.name;path.write_text(source.read_text());copies.append(path)
+            p.check_queue_compatibility(copies)
+            name, line=next((key[0],line) for key,line in p.QUEUE_LOCATIONS.items() if key[1] is None)
+            candidate=next(x for x in copies if x.name==name);original=candidate.read_text()
+            for changed in [original.replace(line,line.replace("'max'", "'single'")),
+                            original.replace(line+'\n',''),
+                            original.replace(line,line+'\n'+line),
+                            original.replace(line,'    '+line)]:
+                candidate.write_text(changed)
+                with self.assertRaises(ValueError):p.check_queue_compatibility(copies)

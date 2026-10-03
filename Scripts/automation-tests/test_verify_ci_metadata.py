@@ -54,6 +54,8 @@ class Transcript:
             return result
         if '/git/commits/' in path:return copy.deepcopy(self.merge)
         if '/check-runs/' in path:return copy.deepcopy(self.checks[int(path.rsplit('/',1)[1])])
+        if '/actions/runs/' in path:
+            return copy.deepcopy(next(r for r in self.runs if r['id']==int(path.rsplit('/',1)[1])))
         raise AssertionError(path)
 
     def pages(self,path,key):
@@ -139,3 +141,15 @@ class MetadataGateTests(unittest.TestCase):
             with self.subTest(delta=delta),self.assertRaises(ValueError):t.prove()
         t=Transcript();t.jobs[0]['completed_at']='2026-10-03T01:00:00'
         with self.assertRaises(ValueError):t.prove()
+
+    def test_shared_head_is_scoped_to_verified_pr_associations(self):
+        t=Transcript()
+        other={**t.run, 'id':21, 'run_number':21, 'pull_requests':[dict(number=46)],
+               'display_title':t.run['display_title'].replace('pr:45 ', 'pr:46 ')}
+        t.runs.append(other)
+        self.assertEqual(t.prove()['run'],10)
+        t=Transcript();t.list_race=lambda runs:runs.append(other)
+        self.assertEqual(t.prove()['run'],10)
+        for associations in [None,[],[dict(number=45),dict(number=46)],[dict(number='46')]]:
+            t=Transcript();t.runs.append({**other,'pull_requests':associations})
+            with self.subTest(associations=associations),self.assertRaises(ValueError):t.prove()

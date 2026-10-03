@@ -21,6 +21,7 @@ ARCHIVES = {
 }
 QUEUE_LOCATIONS = {('dependabot-auto-merge.yml', job): '      queue: max' for job in ('ready-refresh', 'bot-ready', 'post-merge')}
 QUEUE_LOCATIONS.update({('dependency-submission.yml', 'submit'): '      queue: max', ('pr-dependency-submission.yml', 'submit'): '      queue: max'})
+QUEUE_LOCATIONS[('ci.yml', None)] = "  queue: ${{ (github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base))) && 'max' || 'single' }}"
 QUEUE_DIAGNOSTIC = 'unexpected key "queue" for "concurrency" section. expected one of "cancel-in-progress", "group"'
 
 
