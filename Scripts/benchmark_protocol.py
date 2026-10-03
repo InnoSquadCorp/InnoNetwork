@@ -102,10 +102,19 @@ def system_snapshot():
 def child_group_exists(child):
     # execute creates this session; never signal the collector's own group.
     require(child.pid != os.getpgrp(), "refusing collector process-group cleanup")
+    # Darwin may report EPERM for an exited, unreaped group leader. Reap our
+    # child and retry the group probe; a live/unauthorized group still fails.
+    child.poll()
     try:
         os.killpg(child.pid, 0)
     except ProcessLookupError:
         return False
+    except PermissionError:
+        child.poll()
+        try:
+            os.killpg(child.pid, 0)
+        except ProcessLookupError:
+            return False
     return True
 
 
@@ -176,18 +185,25 @@ def execute(argv, record_path, *, cwd=None, stdout_path=None, timeout_seconds=PR
         # already returned. A successful leader with descendants is incomplete.
         for signum in handlers:
             signal.signal(signum, signal.SIG_IGN)
-        if child is not None:
-            if child_group_exists(child):
-                if record["status"] == "completed":
-                    record["status"] = "unfinished-descendants"
-                    code = 2
-                record["cleanup_leader_reaped"] = terminate_child(child)
-            else:
-                child.poll()
-        if stream:
-            stream.close()
-        for signum, handler in handlers.items():
-            signal.signal(signum, handler)
+        try:
+            if child is not None:
+                if child_group_exists(child):
+                    if record["status"] == "completed":
+                        record["status"] = "unfinished-descendants"
+                        code = 2
+                    record["cleanup_leader_reaped"] = terminate_child(child)
+                else:
+                    child.poll()
+        except OSError as error:
+            record["cleanup_error"] = str(error)
+            if code == 0:
+                code = 2
+                record["status"] = "cleanup-failed"
+        finally:
+            if stream:
+                stream.close()
+            for signum, handler in handlers.items():
+                signal.signal(signum, handler)
         after_usage = resource.getrusage(resource.RUSAGE_CHILDREN)
         record.update(after=system_snapshot(), exit_code=code, process_usage={
             "user_cpu_seconds": after_usage.ru_utime - before_usage.ru_utime,

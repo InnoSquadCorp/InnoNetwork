@@ -9,6 +9,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+import urllib.error
 from unittest import mock
 
 from test_dependabot_merge_policy import Transcript, p, HEAD, BASE, NUMBER, RUN, READY_RUN, NATIVE_RUN, TRUSTED
@@ -296,6 +297,51 @@ class NativeReadyTests(unittest.TestCase):
         with mock.patch.object(self.api, 'get', side_effect=lambda path: dict(status='diverged', merge_base_commit=dict(sha=HEAD)) if '/compare/' in path else original(path)):
             with self.assertRaisesRegex(p.Rejected, 'ancestry'): n.source_compatible(self.api, p, BASE)
         self.assertFalse(self.api.mutations)
+
+    def missing_policy_get(self, *, code=404, entries=None, truncated=False, tree_sha=None):
+        self.api.base = 'e' * 40
+        original = self.api.get
+        tree = '1' * 40
+        def get(route):
+            if route == p.route(f'contents/Scripts/ci-metadata-policy.py?ref={BASE}'):
+                error = urllib.error.HTTPError(route, code, 'missing', None, None)
+                self.addCleanup(error.close)
+                raise error
+            if route == p.route(f'git/commits/{BASE}'):
+                return dict(sha=BASE, tree=dict(sha=tree))
+            if route == p.route(f'git/trees/{tree}?recursive=1'):
+                return dict(sha=tree if tree_sha is None else tree_sha, truncated=truncated,
+                            tree=[] if entries is None else entries)
+            return original(route)
+        return get
+
+    def test_new_policy_file_at_trusted_main_is_a_recoverable_lifecycle_gap(self):
+        with mock.patch.object(self.api, 'get', side_effect=self.missing_policy_get()):
+            targets, blocked = n.refresh_batch(self.api, p, [NUMBER], True)
+        self.assertEqual(targets, [])
+        self.assertEqual(blocked, [dict(pr=NUMBER, head=HEAD, reason='obsolete_reporter_policy')])
+        self.assertFalse(self.api.mutations)
+
+    def test_missing_file_does_not_hide_api_errors_or_incomplete_tree(self):
+        cases = [dict(code=403), dict(code=500), dict(truncated=True), dict(tree_sha='2' * 40),
+                 dict(entries=[dict(path='Scripts/ci-metadata-policy.py')])]
+        for case in cases:
+            with self.subTest(case=case), mock.patch.object(self.api, 'get', side_effect=self.missing_policy_get(**case)):
+                with self.assertRaises((p.Rejected, urllib.error.HTTPError)) as raised:
+                    n.refresh_batch(self.api, p, [NUMBER], True)
+                self.assertNotIsInstance(raised.exception, p.NeedsFreshReporter)
+        self.assertFalse(self.api.mutations)
+
+    def test_missing_old_file_cannot_hide_missing_current_policy(self):
+        get = self.missing_policy_get()
+        def broken(route):
+            if route == p.route(f'contents/Scripts/ci-metadata-policy.py?ref={self.api.base}'):
+                error = urllib.error.HTTPError(route, 404, 'current file missing', None, None)
+                self.addCleanup(error.close)
+                raise error
+            return get(route)
+        with mock.patch.object(self.api, 'get', side_effect=broken):
+            with self.assertRaises(urllib.error.HTTPError): n.refresh_batch(self.api, p, [NUMBER], True)
 
     def test_snapshot_rejects_obsolete_or_cancelled_self_before_success(self):
         self.running()

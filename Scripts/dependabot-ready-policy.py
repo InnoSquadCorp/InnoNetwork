@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 import sys
 import time
+import urllib.error
 import urllib.parse
 
 REPORTER_PATH = ".github/workflows/dependabot-ready.yml"
@@ -131,15 +132,39 @@ def source_ancestor(api, p, source):
     return main
 
 
+def verified_absence(api, p, source, path):
+    """A contents 404 is lifecycle skew only if the immutable tree proves it."""
+    commit = api.get(p.route(f"git/commits/{source}"))
+    tree_sha = commit.get("tree", {}).get("sha")
+    p.require(commit.get("sha") == source and isinstance(tree_sha, str) and p.SHA.fullmatch(tree_sha),
+              "missing/malformed historical commit tree identity")
+    tree = api.get(p.route(f"git/trees/{tree_sha}?recursive=1"))
+    entries = tree.get("tree")
+    p.require(tree.get("sha") == tree_sha and tree.get("truncated") is False and isinstance(entries, list) and
+              all(isinstance(item, dict) and isinstance(item.get("path"), str) for item in entries),
+              "incomplete historical tree cannot prove file absence")
+    p.require(not any(item["path"] == path for item in entries),
+              "contents lookup failed for an existing historical policy file")
+
+
 def source_compatible(api, p, source):
     main = source_ancestor(api, p, source)
     # Re-running preserves the old workflow definition and privileges. Do not
     # rerun an obsolete definition while checking out newer policy code.
     obsolete = False
     for path in (REPORTER_PATH, p.COORDINATOR_PATH, "Scripts/dependabot-ready-policy.py", "Scripts/dependabot-merge-policy.py", "Scripts/ci-metadata-policy.py"):
-        old = api.get(p.route(f"contents/{path}?ref={source}"))
         current = api.get(p.route(f"contents/{path}?ref={main}"))
-        p.require(all(isinstance(item.get("sha"), str) and p.SHA.fullmatch(item["sha"]) for item in (old, current)),
+        p.require(isinstance(current.get("sha"), str) and p.SHA.fullmatch(current["sha"]),
+                  "missing/malformed reporter definition/policy blob identity")
+        try:
+            old = api.get(p.route(f"contents/{path}?ref={source}"))
+        except urllib.error.HTTPError as error:
+            if error.code != 404 or source == main:
+                raise
+            verified_absence(api, p, source, path)
+            obsolete = True
+            continue
+        p.require(isinstance(old.get("sha"), str) and p.SHA.fullmatch(old["sha"]),
                   "missing/malformed reporter definition/policy blob identity")
         obsolete = obsolete or old["sha"] != current["sha"]
     # Validate every identity before classifying normal policy deployment skew.
