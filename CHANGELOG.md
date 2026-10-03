@@ -7,6 +7,13 @@ Versioning.
 
 ## [Unreleased]
 
+### Changed
+
+- Lightweight JSON schema validation prepares ordered required-property names
+  once per schema evaluation instead of sorting them again for every array
+  element and matching alternative. Exact Unicode identity and validation work
+  limits remain enforced.
+
 ## [6.0.0] - 2026-09-28
 
 Approved release contents; the date is intended until publication. Confirm the

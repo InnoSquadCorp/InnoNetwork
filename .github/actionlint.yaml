@@ -1,0 +1,4 @@
+# actionlint catalog compatibility for the GitHub-hosted Xcode 27 label.
+self-hosted-runner:
+  labels:
+    - xcode-27

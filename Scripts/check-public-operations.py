@@ -44,7 +44,7 @@ def dependabot(root):
         if ecosystem == 'swift':
             expected['exclude-patterns'] = ['github.com/swiftlang/swift-syntax']
             require(item.get('directories') == ['/', '/' + SAMPLE] and 'directory' not in item, 'live Swift manifest inventory drift')
-            live = sorted(str(p.parent.relative_to(root)) for p in list((root / 'Examples').rglob('Package.swift')) + list((root / 'Tools').rglob('Package.swift')) if 'url:' in p.read_text())
+            live = sorted(str(p.parent.relative_to(root)) for p in list((root / 'Examples').rglob('Package.swift')) + list((root / 'Tools').rglob('Package.swift')) if '.build' not in p.relative_to(root).parts and 'url:' in p.read_text())
             require(live == [SAMPLE], 'new remote manifest needs explicit policy review')
         else:
             require(item.get('directory') == '/' and 'directories' not in item, 'Actions directory drift')

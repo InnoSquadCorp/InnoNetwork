@@ -288,7 +288,7 @@ class NativeReadyTests(unittest.TestCase):
 
     def test_source_compatibility_compares_exact_trusted_workflow_and_code_blobs(self):
         self.api.base = 'e' * 40
-        for path in [n.REPORTER_PATH, p.COORDINATOR_PATH, 'Scripts/dependabot-ready-policy.py', 'Scripts/dependabot-merge-policy.py']:
+        for path in [n.REPORTER_PATH, p.COORDINATOR_PATH, 'Scripts/dependabot-ready-policy.py', 'Scripts/dependabot-merge-policy.py', 'Scripts/ci-metadata-policy.py']:
             self.api.source_blobs = {f'contents/{path}?ref={self.api.base}': 'f' * 40}
             with self.assertRaisesRegex(p.Rejected, 'obsolete'): n.source_compatible(self.api, p, BASE)
         self.api.source_blobs = {}

@@ -1,6 +1,8 @@
 name: CI
+# Metadata events queue behind validation and recheck its immutable evidence.
+# Stable required check names keep GitHub branch protection actionable.
 run-name: >-
-  ${{ inputs.dependabot_merge_pr != '' && format('CI / Dependabot merge #{0}', inputs.dependabot_merge_pr) || 'CI' }}
+  ${{ (github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base))) && format('CI metadata-only v1 pr:{0} head:{1} base:{2} action:{3} source:{4}', github.event.pull_request.number, github.event.pull_request.head.sha, github.event.pull_request.base.sha, github.event.action, github.workflow_sha) || (github.event_name == 'pull_request' && format('CI validation v2 pr:{0} head:{1} base:{2} source:{3} release:{4} asan:{5} concurrency:{6}', github.event.pull_request.number, github.event.pull_request.head.sha, github.event.pull_request.base.sha, github.sha, contains(github.event.pull_request.labels.*.name, 'release-validation'), false, contains(github.event.pull_request.labels.*.name, 'concurrency-review')) || (inputs.dependabot_merge_pr && format('CI / Dependabot merge #{0}', inputs.dependabot_merge_pr) || format('CI validation / {0} / {1}', github.event_name, github.ref))) }}
 
 on:
   pull_request:
@@ -19,7 +21,8 @@ on:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ inputs.dependabot_merge_pr != '' && format('dependabot-{0}', inputs.dependabot_merge_pr) || 'validation' }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ !(github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base))) }}
+  queue: ${{ (github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base))) && 'max' || 'single' }}
 
 permissions:
   contents: read
@@ -27,7 +30,7 @@ permissions:
 jobs:
   ci-plan:
     name: CI Plan
-    if: always()
+    if: ${{ !(github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base))) }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -94,6 +97,7 @@ jobs:
           python3 -B Scripts/tests/test_compare_benchmark_runs.py
           python3 -B Scripts/tests/test_ci_cache.py
           python3 -B Scripts/tests/test_consumer_ci.py
+          python3 -B Scripts/check-ci-workflows.py
           python3 -B Scripts/check-public-operations.py
           python3 -B Scripts/check_required_status_checks.py
           ruby Scripts/check_consumer_ci_contract.rb
@@ -786,11 +790,11 @@ jobs:
         run: python3 -B Scripts/ci-cache.py report --profile apple-platform-build-smoke --variant '${{ matrix.runtime }}'
 
   consumer-smoke:
-    name: Consumer Smoke
+    name: ${{ (github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base))) && 'Consumer Metadata Only' || 'Consumer Smoke' }}
     # Preserve the protected check name. A skipped/cancelled/failed child is
     # never a successful aggregate (including when an upstream job fails).
     needs: [ci-plan, consumer-examples, consumer-macros, consumer-openapi]
-    if: always() && fromJSON(needs.ci-plan.outputs.plan).jobs.consumer-smoke
+    if: ${{ always() && !(github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base))) && fromJSON(needs.ci-plan.outputs.plan).jobs.consumer-smoke }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
@@ -1313,7 +1317,7 @@ jobs:
 
   ci-required:
     name: CI Required
-    if: always()
+    if: ${{ always() }}
     needs: [ci-plan, policy, dependency-review, lint, dead-code, build-and-test, upload-core-coverage, parallel-tests, docs-contract-sync, apple-platform-build-smoke, consumer-smoke, consumer-examples, consumer-macros, consumer-openapi, upload-macro-coverage, benchmark-smoke, codeql, thread-sanitizer, benchmarks, documentation, release-candidate]
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -1328,9 +1332,15 @@ jobs:
         with:
           persist-credentials: false
       - name: Require every planned CI result
+        if: ${{ !(github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base))) }}
         env:
           GH_TOKEN: ${{ github.token }}
           CI_REUSE: ${{ needs.ci-plan.outputs.reuse }}
           CI_PLAN: ${{ needs.ci-plan.outputs.plan }}
           CI_NEEDS: ${{ toJSON(needs) }}
         run: python3 -B Scripts/ci-policy.py evaluate
+      - name: Verify prior validation for metadata
+        if: ${{ (github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base))) }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -B Scripts/verify-ci-metadata.py --check 'CI Required'

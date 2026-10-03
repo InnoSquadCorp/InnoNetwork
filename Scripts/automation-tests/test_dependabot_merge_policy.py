@@ -842,6 +842,8 @@ def workflow_inventory():
     def expand(document, prefix=''):
         for key, job in document['jobs'].items():
             name = job.get('name', key)
+            if key == 'ci-required': name = 'CI Required'
+            if key == 'consumer-smoke': name = 'Consumer Smoke'
             if 'uses' in job:
                 expand(docs[job['uses'].rsplit('/', 1)[1]], prefix + name + ' / ')
                 continue

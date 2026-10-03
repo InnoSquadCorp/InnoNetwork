@@ -26,7 +26,9 @@ class WorkflowContractTests(unittest.TestCase):
         for name, contract in old.items():
             current = self.docs['ci.yml']['jobs'][name]
             for key, value in contract.items():
-                if key != 'steps': self.assertEqual(current.get(key), value, (name, key))
+                if name == 'consumer-smoke' and key == 'name':
+                    self.assertTrue(current[key].endswith("'Consumer Smoke' }}"))
+                elif key != 'steps': self.assertEqual(current.get(key), value, (name, key))
             for expected in contract['steps']:
                 matching = [s for s in current['steps'] if s.get('name') == expected['name']]
                 self.assertEqual(len(matching), 1)
@@ -69,6 +71,8 @@ class WorkflowContractTests(unittest.TestCase):
         def expand(document, prefix=''):
             for key, job in document['jobs'].items():
                 name = job.get('name', key)
+                if key == 'ci-required': name = 'CI Required'
+                if key == 'consumer-smoke': name = 'Consumer Smoke'
                 if 'uses' in job:
                     expand(self.docs[job['uses'].rsplit('/',1)[1]], prefix+name+' / ')
                     continue
@@ -98,8 +102,8 @@ class WorkflowContractTests(unittest.TestCase):
         ci = self.docs['ci.yml']['jobs']
         self.assertEqual(set(ci), set(plan.JOBS) | {'ci-plan', 'ci-required'})
         self.assertEqual(set(ci['ci-required']['needs']), set(plan.JOBS) | {'ci-plan'})
-        self.assertEqual(ci['ci-plan']['if'], 'always()')
-        self.assertEqual(ci['ci-required']['if'], 'always()')
+        self.assertEqual(ci['ci-plan']['if'], "${{ !(github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base))) }}")
+        self.assertEqual(ci['ci-required']['if'], '${{ always() }}')
         for name in plan.JOBS:
             if name == 'policy': continue
             guard = ci[name]['if']
@@ -108,7 +112,7 @@ class WorkflowContractTests(unittest.TestCase):
             if name in reused:
                 self.assertEqual(guard, "needs.ci-plan.outputs." + name + " == 'true'")
             else:
-                self.assertEqual(guard, ('always() && ' if name == 'consumer-smoke' else '') + expected)
+                self.assertEqual(guard, "${{ always() && !(github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base))) && " + expected + ' }}' if name == 'consumer-smoke' else expected)
 
         for name,job in self.docs['ci.yml']['jobs'].items():
             for step in job.get('steps',[]):

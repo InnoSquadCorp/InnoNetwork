@@ -30,8 +30,8 @@ public indirect enum JSONSchema: Sendable {
         try limits.validate()
         let checked = try PreservedJSON(data: document.data, limits: limits)
         var validator = JSONSchemaValidator(limits: limits)
-        try validator.inspect(self, depth: 1)
-        return try validator.matches(self, node: checked.root, depth: 1)
+        let schema = try validator.inspect(self, depth: 1)
+        return try validator.matches(schema, node: checked.root, depth: 1)
     }
 
     /// Validates every alternative and returns all matching zero-based branch indices.
@@ -43,14 +43,27 @@ public indirect enum JSONSchema: Sendable {
         try limits.validate()
         let checked = try PreservedJSON(data: document.data, limits: limits)
         var validator = JSONSchemaValidator(limits: limits)
-        try validator.inspect(.anyOf(alternatives), depth: 1)
+        guard case .anyOf(let inspected) = try validator.inspect(.anyOf(alternatives), depth: 1) else {
+            throw JSONProcessingError.invalidSchema
+        }
         var matches: [Int] = []
-        for (index, schema) in alternatives.enumerated() {
+        for (index, schema) in inspected.enumerated() {
             if try validator.matches(schema, node: checked.root, depth: 1) { matches.append(index) }
         }
         guard !matches.isEmpty else { throw JSONProcessingError.noMatchingSchema }
         return matches
     }
+}
+
+// Prepare schema-owned traversal order once per validation, rather than
+// allocating and sorting the same required-name set for every array element.
+// Exact Unicode matching and per-node work charges stay in the validator.
+private indirect enum InspectedJSONSchema {
+    case object(properties: [String: InspectedJSONSchema], required: [String], allowsAdditionalProperties: Bool)
+    case array(InspectedJSONSchema)
+    case nullable(InspectedJSONSchema)
+    case anyOf([InspectedJSONSchema])
+    case scalar(JSONSchema)
 }
 
 private struct JSONSchemaValidator {
@@ -64,36 +77,44 @@ private struct JSONSchemaValidator {
         work += count
     }
 
-    mutating func inspect(_ schema: JSONSchema, depth: Int) throws {
+    mutating func inspect(_ schema: JSONSchema, depth: Int) throws -> InspectedJSONSchema {
         try charge(depth: depth)
         switch schema {
-        case .object(let properties, let required, _):
+        case .object(let properties, let required, let additional):
             for name in required { try charge(name.utf8.count + 1, depth: depth) }
+            var inspected: [String: InspectedJSONSchema] = [:]
+            inspected.reserveCapacity(min(properties.count, limits.maximumValidationWork - work))
             for (name, child) in properties {
                 try charge(name.utf8.count + 1, depth: depth)
-                try inspect(child, depth: depth + 1)
+                inspected[name] = try inspect(child, depth: depth + 1)
             }
-        case .array(let item), .nullable(let item):
-            try inspect(item, depth: depth + 1)
+            return .object(properties: inspected, required: required.sorted(), allowsAdditionalProperties: additional)
+        case .array(let item):
+            return .array(try inspect(item, depth: depth + 1))
+        case .nullable(let item):
+            return .nullable(try inspect(item, depth: depth + 1))
         case .anyOf(let alternatives):
             guard !alternatives.isEmpty else { throw JSONProcessingError.noMatchingSchema }
-            for child in alternatives { try inspect(child, depth: depth + 1) }
+            var inspected: [InspectedJSONSchema] = []
+            inspected.reserveCapacity(min(alternatives.count, limits.maximumValidationWork - work))
+            for child in alternatives { inspected.append(try inspect(child, depth: depth + 1)) }
+            return .anyOf(inspected)
         case .string, .number, .integer, .boolean, .null:
-            break
+            return .scalar(schema)
         }
     }
 
-    mutating func matches(_ schema: JSONSchema, node: JSONNode, depth: Int) throws -> Bool {
+    mutating func matches(_ schema: InspectedJSONSchema, node: JSONNode, depth: Int) throws -> Bool {
         try charge(depth: depth)
         switch (schema, node.value) {
-        case (.string, .string), (.number, .number), (.integer, .number(isInteger: true)),
-            (.boolean, .boolean), (.null, .null):
+        case (.scalar(.string), .string), (.scalar(.number), .number), (.scalar(.integer), .number(isInteger: true)),
+            (.scalar(.boolean), .boolean), (.scalar(.null), .null):
             return true
         case (.nullable(let child), _):
             if case .null = node.value { return true }
             return try matches(child, node: node, depth: depth + 1)
         case (.object(let properties, let required, let additional), .object(let members)):
-            for name in required.sorted() {
+            for name in required {
                 try charge(depth: depth)
                 // Swift Dictionary lookup is canonically equivalent. JSON names
                 // instead use exact code points, as in JSONSchemaPlan.
