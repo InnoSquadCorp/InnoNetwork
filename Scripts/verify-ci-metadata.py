@@ -4,6 +4,7 @@ Only the latest real validation of this exact PR head, base, workflow definition
 and validation-label set is accepted. All transport is read-only and bounded.
 """
 import argparse
+from datetime import datetime, timedelta, timezone
 import json
 import os
 from pathlib import Path
@@ -131,6 +132,10 @@ def prove(api, event, env, check_name='CI Required'):
         job = selected[0]
         require(job.get('run_id') == run['id'] and job.get('run_attempt') == attempt and
                 job.get('head_sha') == head and job.get('conclusion') == 'success', 'required job did not succeed')
+        completed = datetime.fromisoformat(job['completed_at'].replace('Z', '+00:00'))
+        require(completed.tzinfo is not None and
+                timedelta(0) <= datetime.now(timezone.utc) - completed <= timedelta(hours=24),
+                'source validation is older than 24 hours or has an invalid completion time')
         steps = job.get('steps', [])
         require(any(s.get('name') == VERIFY_STEP and s.get('conclusion') == 'skipped' for s in steps),
                 'metadata verification cannot replace real validation')

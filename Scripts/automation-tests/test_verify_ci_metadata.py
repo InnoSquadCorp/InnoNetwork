@@ -1,5 +1,6 @@
 """Native proof positive controls, stale/failing evidence and race regressions."""
 import copy
+from datetime import datetime, timedelta, timezone
 import importlib.util
 from pathlib import Path
 import unittest
@@ -30,6 +31,7 @@ class Transcript:
         self.jobs,self.checks = [],{}
         for i,name in enumerate(gate.CONFIG['checks']):
             job = dict(id=300+i, name=name, run_id=10, run_attempt=1, head_sha=HEAD, status='completed', conclusion='success',
+                       completed_at=(datetime.now(timezone.utc)-timedelta(hours=1)).isoformat(),
                        steps=[dict(name='Require all planned results',conclusion='success'),dict(name=gate.VERIFY_STEP,conclusion='skipped')],
                        check_run_url=f'https://api.github.com/repos/{REPO}/check-runs/{400+i}')
             self.jobs.append(job)
@@ -130,3 +132,10 @@ class MetadataGateTests(unittest.TestCase):
         for action in ['labeled','unlabeled']:
             t=Transcript();t.event.update(action=action,label=dict(name='documentation'))
             self.assertEqual(t.prove()['run'],10)
+
+    def test_stale_future_and_unzoned_completion_cannot_refresh_required_ci(self):
+        for delta in [timedelta(hours=-25), timedelta(hours=1)]:
+            t=Transcript();t.jobs[0]['completed_at']=(datetime.now(timezone.utc)+delta).isoformat()
+            with self.subTest(delta=delta),self.assertRaises(ValueError):t.prove()
+        t=Transcript();t.jobs[0]['completed_at']='2026-10-03T01:00:00'
+        with self.assertRaises(ValueError):t.prove()
