@@ -56,6 +56,7 @@ class Transcript:
 
     def pages(self,path,key):
         if key=='workflow_runs':
+            assert 'event=' not in path, 'newer manual validation must not be hidden by an event filter'
             self.pages_read+=1
             result=copy.deepcopy(self.runs)
             if self.pages_read==2 and self.list_race:self.list_race(result)
@@ -96,6 +97,7 @@ class MetadataGateTests(unittest.TestCase):
                    lambda t:t.run.update(display_title=t.run['display_title'].replace('release:false','release:true')),
                    lambda t:t.run.update(display_title=t.run['display_title'].replace(SOURCE,'d'*40)),
                    lambda t:t.run.update(workflow_id=999),lambda t:t.run.update(event='push'),
+                   lambda t:t.run.update(event='workflow_dispatch'),
                    lambda t:t.merge['parents'].reverse(),lambda t:t.jobs.clear(),
                    lambda t:t.jobs.append(copy.deepcopy(t.jobs[0])),lambda t:t.jobs[0].update(conclusion='skipped'),
                    lambda t:t.jobs[0]['steps'][0].update(conclusion='skipped'),

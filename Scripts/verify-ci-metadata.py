@@ -102,7 +102,7 @@ def prove(api, event, env, check_name='CI Required'):
     merge = api.get(route + 'git/commits/' + source)
     require(merge.get('sha') == source and [p['sha'] for p in merge.get('parents', [])] == [base, head],
             'checkout does not combine the current base and head')
-    runs = api.pages(route + f'actions/workflows/{workflow}/runs?event=pull_request&head_sha={head}', 'workflow_runs')
+    runs = api.pages(route + f'actions/workflows/{workflow}/runs?head_sha={head}', 'workflow_runs')
     validations = [r for r in runs if r.get('id') != own_id and
                    not str(r.get('display_title', '')).startswith(METADATA_PREFIX)]
     require(validations, 'no real validation exists for this head')
@@ -148,7 +148,7 @@ def prove(api, event, env, check_name='CI Required'):
     final = api.get(route + f"actions/runs/{run['id']}")
     require(all(final.get(k) == run.get(k) for k in ('id', 'run_number', 'run_attempt', 'head_sha', 'workflow_id',
                 'path', 'event', 'display_title', 'status', 'conclusion', 'check_suite_id')), 'validation changed during proof')
-    latest = api.pages(route + f'actions/workflows/{workflow}/runs?event=pull_request&head_sha={head}', 'workflow_runs')
+    latest = api.pages(route + f'actions/workflows/{workflow}/runs?head_sha={head}', 'workflow_runs')
     require(not any(r.get('run_number', 0) > run['run_number'] and r.get('id') != own_id and
                     not str(r.get('display_title', '')).startswith(METADATA_PREFIX) for r in latest),
             'newer real validation appeared')
