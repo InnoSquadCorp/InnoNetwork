@@ -200,10 +200,17 @@ def execute(argv, record_path, *, cwd=None, stdout_path=None, timeout_seconds=PR
                 code = 2
                 record["status"] = "cleanup-failed"
         finally:
-            if stream:
-                stream.close()
-            for signum, handler in handlers.items():
-                signal.signal(signum, handler)
+            try:
+                if stream:
+                    stream.close()
+            except OSError as error:
+                record["stream_close_error"] = str(error)
+                if code == 0:
+                    code = 2
+                    record["status"] = "cleanup-failed"
+            finally:
+                for signum, handler in handlers.items():
+                    signal.signal(signum, handler)
         after_usage = resource.getrusage(resource.RUSAGE_CHILDREN)
         record.update(after=system_snapshot(), exit_code=code, process_usage={
             "user_cpu_seconds": after_usage.ru_utime - before_usage.ru_utime,

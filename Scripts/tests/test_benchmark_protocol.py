@@ -145,6 +145,28 @@ if {mode!r} != 'exit': time.sleep(30)
             self.assertIn('denied', p.load_report(record)['cleanup_error'])
             self.assertEqual({s: signal.getsignal(s) for s in before}, before)
 
+    def test_stream_close_error_preserves_verdict_record_and_handlers(self):
+        before = {s: signal.getsignal(s) for s in (signal.SIGINT, signal.SIGTERM)}
+        for exit_code in (0, 7):
+            record = self.root / 'close-error.json'
+            stream = mock.Mock()
+            stream.close.side_effect = OSError('close failed')
+            original_open = Path.open
+            output = self.root / 'stdout.txt'
+            def open_path(path, *args, **kwargs):
+                return stream if path == output else original_open(path, *args, **kwargs)
+            with mock.patch.object(Path, 'open', open_path), \
+                    mock.patch.object(p.subprocess, 'Popen') as popen, \
+                    mock.patch.object(p, 'child_group_exists', return_value=False):
+                popen.return_value.wait.return_value = exit_code
+                result = p.execute(['test-child'], record, stdout_path=output)
+            saved = p.load_report(record)
+            self.assertEqual(result, exit_code or 2)
+            self.assertEqual(saved['exit_code'], result)
+            self.assertEqual(saved['status'], 'process-failed' if exit_code else 'cleanup-failed')
+            self.assertEqual(saved['stream_close_error'], 'close failed')
+            self.assertEqual({s: signal.getsignal(s) for s in before}, before)
+
     def test_changed_binary_existing_baseline_or_wrong_event_workload_rejected(self):
         output=self.root/'sample.json';record=self.root/'sample-process.json'
         self.missing.write_text('{}')

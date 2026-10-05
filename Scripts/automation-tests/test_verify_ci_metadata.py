@@ -26,7 +26,8 @@ class Transcript:
                         display_title=f'CI validation v2 pr:45 head:{HEAD} base:{BASE} source:{SOURCE} release:false asan:false concurrency:false')
         self.own = {**self.run, 'id':20, 'run_number':20, 'status':'in_progress', 'conclusion':None,
                     'display_title':gate.METADATA_PREFIX+'current'}
-        self.merge = dict(sha=SOURCE, parents=[dict(sha=BASE),dict(sha=HEAD)])
+        self.merge = dict(sha=SOURCE, tree=dict(sha='e'*40), parents=[dict(sha=BASE),dict(sha=HEAD)])
+        self.validated_merge = None
         self.runs = [self.run,self.own]
         self.jobs,self.checks = [],{}
         for i,name in enumerate(gate.CONFIG['checks']):
@@ -52,7 +53,8 @@ class Transcript:
             if self.reads==1 and getattr(self,'run_read',False) and self.run_race:self.run_race(result)
             self.run_read=True
             return result
-        if '/git/commits/' in path:return copy.deepcopy(self.merge)
+        if '/git/commits/' in path:
+            return copy.deepcopy(self.validated_merge if self.validated_merge and path.endswith(self.validated_merge['sha']) else self.merge)
         if '/check-runs/' in path:return copy.deepcopy(self.checks[int(path.rsplit('/',1)[1])])
         if '/actions/runs/' in path:
             return copy.deepcopy(next(r for r in self.runs if r['id']==int(path.rsplit('/',1)[1])))
@@ -78,6 +80,26 @@ class MetadataGateTests(unittest.TestCase):
         self.assertEqual(proof,dict(run=10,attempt=1,head=HEAD,base=BASE,source=SOURCE,check='CI Required'))
         for name in gate.CONFIG['checks']:
             t=Transcript();self.assertEqual(gate.prove(t,t.event,t.env,name)['check'],name)
+
+    def test_regenerated_merge_requires_exact_tree_and_ordered_parents(self):
+        def regenerated():
+            t = Transcript()
+            old = 'd' * 40
+            t.run['display_title'] = t.run['display_title'].replace(SOURCE, old)
+            t.validated_merge = {**copy.deepcopy(t.merge), 'sha': old}
+            t.checks[400]['head_sha'] = old
+            return t
+        self.assertEqual(regenerated().prove()['run'], 10)
+        mutations = [lambda t: t.validated_merge['tree'].update(sha='f'*40),
+                     lambda t: t.validated_merge['parents'].reverse(),
+                     lambda t: t.validated_merge.update(parents=[]),
+                     lambda t: t.merge.pop('tree'),
+                     lambda t: t.merge['tree'].update(sha=None),
+                     lambda t: t.validated_merge.pop('tree'),
+                     lambda t: t.checks[400].update(head_sha=SOURCE)]
+        for mutate in mutations:
+            t = regenerated(); mutate(t)
+            with self.assertRaises(ValueError): t.prove()
 
     def test_failed_pending_cancelled_or_missing_validation_cannot_turn_green(self):
         for state,result in [('completed','failure'),('completed','cancelled'),('in_progress',None),('queued',None),('completed','skipped')]:
