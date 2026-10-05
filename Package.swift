@@ -114,12 +114,12 @@ let package = Package(
         // Macro expansion formatting and diagnostic locations are part of the
         // generated-code contract and are locked by macro expansion/E2E tests.
         // Keep patch-level compatibility so apps can resolve InnoNetwork beside
-        // another 603.0.x macro package without forcing identical patch pins.
+        // another 604.0.x macro package without forcing identical patch pins.
         // Products and the compiler plug-in remain reachable only when the
         // Macros trait is enabled; SwiftPM still resolves manifest dependencies.
         .package(
             url: "https://github.com/swiftlang/swift-syntax.git",
-            .upToNextMinor(from: "603.0.1")
+            .upToNextMinor(from: "604.0.0")
         ),
         // Swift Crypto is used only by the optional cryptographic surfaces:
         // the AWS SigV4 companion product, public-key pinning, and persistent
@@ -127,7 +127,7 @@ let package = Package(
         // broad cryptographic policy ownership.
         .package(
             url: "https://github.com/apple/swift-crypto",
-            .upToNextMajor(from: "4.0.0")
+            .upToNextMajor(from: "5.0.0")
         ),
     ],
     targets: [
