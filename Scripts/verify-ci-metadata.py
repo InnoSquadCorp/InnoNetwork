@@ -123,8 +123,19 @@ def prove(api, event, env, check_name='CI Required'):
     match = TITLE.fullmatch(run.get('display_title', ''))
     require(match is not None, 'latest validation lacks immutable PR binding')
     n, h, b, definition, *bound_labels = match.groups()
-    require((int(n), h, b, tuple(bound_labels)) == binding(pr) and definition == source,
-            'latest validation used a different head, base, workflow or label set')
+    require((int(n), h, b, tuple(bound_labels)) == binding(pr),
+            'latest validation used a different head, base or label set')
+    if definition != source:
+        # GitHub can regenerate its synthetic merge commit without changing the
+        # inputs or any checked-out byte. Prove complete tree identity, not just
+        # the workflow file, while retaining exact ordered base/head parents.
+        validated_merge = api.get(route + 'git/commits/' + definition)
+        tree = merge.get('tree', {}).get('sha')
+        require(isinstance(tree, str) and re.fullmatch('[0-9a-f]{40}', tree) and
+                validated_merge.get('sha') == definition and
+                [p['sha'] for p in validated_merge.get('parents', [])] == [base, head] and
+                validated_merge.get('tree', {}).get('sha') == tree,
+                'latest validation used a different source tree or merge parents')
     require(run.get('id') == listed['id'] and run.get('run_number') == listed['run_number'] and
             run.get('workflow_id') == workflow and run.get('path') == CONFIG['workflow'] and
             run.get('event') == 'pull_request' and run.get('head_sha') == head and
@@ -157,7 +168,7 @@ def prove(api, event, env, check_name='CI Required'):
         check = api.get(route + 'check-runs/' + url[len(prefix):])
         require(check.get('name') == name and check.get('app', {}).get('id') == 15368 and
                 check.get('check_suite', {}).get('id') == run['check_suite_id'] and
-                check.get('head_sha') in {head, source} and check.get('status') == 'completed' and
+                check.get('head_sha') in {head, definition} and check.get('status') == 'completed' and
                 check.get('conclusion') == 'success' and check.get('details_url') ==
                 f"https://github.com/{repo}/actions/runs/{run['id']}/job/{job['id']}", 'unverified native check')
     final = api.get(route + f"actions/runs/{run['id']}")

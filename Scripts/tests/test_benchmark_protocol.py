@@ -20,7 +20,7 @@ class ProtocolTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()
         self.missing = self.root / "intentionally-missing.json"
         self.binaries = {}
         for side, ops in (("base", 300000000), ("head", 210000000)):
@@ -126,6 +126,46 @@ if {mode!r} != 'exit': time.sleep(30)
         result=p.execute([sys.executable,'-c','import os,signal,time; os.kill(os.getppid(),signal.SIGTERM); time.sleep(5)'],record,timeout_seconds=2)
         self.assertEqual(result,143)
         self.assertEqual(p.load_report(record)['status'],'interrupted')
+
+    def test_exited_group_permission_race_retries_after_reaping(self):
+        child = mock.Mock(pid=os.getpgrp() + 100000)
+        with mock.patch.object(p.os, 'killpg', side_effect=[PermissionError(), ProcessLookupError()]):
+            self.assertFalse(p.child_group_exists(child))
+        self.assertEqual(child.poll.call_count, 2)
+        with mock.patch.object(p.os, 'killpg', side_effect=PermissionError()):
+            with self.assertRaises(PermissionError): p.child_group_exists(child)
+
+    def test_cleanup_error_preserves_verdict_record_and_signal_handlers(self):
+        before = {s: signal.getsignal(s) for s in (signal.SIGINT, signal.SIGTERM)}
+        for exit_code in (0, 7):
+            record = self.root / 'cleanup-error.json'
+            with mock.patch.object(p, 'child_group_exists', side_effect=PermissionError('denied')):
+                result = p.execute([sys.executable, '-c', f'raise SystemExit({exit_code})'], record)
+            self.assertEqual(result, exit_code or 2)
+            self.assertIn('denied', p.load_report(record)['cleanup_error'])
+            self.assertEqual({s: signal.getsignal(s) for s in before}, before)
+
+    def test_stream_close_error_preserves_verdict_record_and_handlers(self):
+        before = {s: signal.getsignal(s) for s in (signal.SIGINT, signal.SIGTERM)}
+        for exit_code in (0, 7):
+            record = self.root / 'close-error.json'
+            stream = mock.Mock()
+            stream.close.side_effect = OSError('close failed')
+            original_open = Path.open
+            output = self.root / 'stdout.txt'
+            def open_path(path, *args, **kwargs):
+                return stream if path == output else original_open(path, *args, **kwargs)
+            with mock.patch.object(Path, 'open', open_path), \
+                    mock.patch.object(p.subprocess, 'Popen') as popen, \
+                    mock.patch.object(p, 'child_group_exists', return_value=False):
+                popen.return_value.wait.return_value = exit_code
+                result = p.execute(['test-child'], record, stdout_path=output)
+            saved = p.load_report(record)
+            self.assertEqual(result, exit_code or 2)
+            self.assertEqual(saved['exit_code'], result)
+            self.assertEqual(saved['status'], 'process-failed' if exit_code else 'cleanup-failed')
+            self.assertEqual(saved['stream_close_error'], 'close failed')
+            self.assertEqual({s: signal.getsignal(s) for s in before}, before)
 
     def test_changed_binary_existing_baseline_or_wrong_event_workload_rejected(self):
         output=self.root/'sample.json';record=self.root/'sample-process.json'
