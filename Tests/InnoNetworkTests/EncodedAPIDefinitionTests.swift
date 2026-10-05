@@ -34,6 +34,70 @@ struct EncodedAPIDefinitionTests {
         }
     }
 
+    struct UnsupportedCredentialDefinition: EncodedAPIDefinition, RequestSecurityProviding {
+        let base: Definition
+        let requestSecurity: RequestSecurity
+        var method: HTTPMethod { base.method }
+        var path: String { base.path }
+        var sessionAuthentication: SessionAuthentication { base.sessionAuthentication }
+        func makeEncodedRequest() throws(NetworkError) -> EncodedRequest<Data> {
+            try base.makeEncodedRequest()
+        }
+    }
+
+    struct UnusedCredentialProvider: RequestCredentialProvider {
+        func select(
+            alternatives: [[RequestSecurity.Scheme]], origin: URL
+        ) async throws -> RequestSecurity.Selection {
+            Issue.record("Unsupported encoded credentials must not select a provider")
+            throw RequestSecurityFailure.unsupportedExecution
+        }
+        func credential(
+            for scheme: RequestSecurity.Scheme, selection: RequestSecurity.Selection, origin: URL
+        ) async throws -> RequestSecurity.Credential {
+            Issue.record("Unsupported encoded credentials must not acquire credentials")
+            throw RequestSecurityFailure.unsupportedExecution
+        }
+    }
+
+    @Test(arguments: [false, true])
+    func unsupportedNamedCredentialsFailBeforeFactoryAndTransport(operationRoute: Bool) async throws {
+        let url = try #require(URL(string: "https://example.com"))
+        let session = MockURLSession()
+        session.setMockResponse(statusCode: 200, data: Data([42]))
+        let client = DefaultNetworkClient(configuration: .safeDefaults(baseURL: url), session: session)
+        let count = OSAllocatedUnfairLock(initialState: 0)
+        let endpoint = UnsupportedCredentialDefinition(
+            base: Definition(count: count),
+            requestSecurity: try RequestSecurity(
+                origin: url, alternatives: [[.bearer(id: "named")]], provider: UnusedCredentialProvider()))
+        if operationRoute {
+            do {
+                _ = try await OperationNetworkClient(client: client).start(endpoint).value()
+                Issue.record("Unsupported named credentials unexpectedly succeeded")
+            } catch let failure {
+                #expect(failure.kind == .configuration)
+                #expect(failure.recovery == .doNotRetry)
+                #expect(failure.code == NetworkFailure(
+                    migratingV5: RequestSecurityFailure.unsupportedExecution.networkError).code)
+            }
+        } else {
+            do {
+                _ = try await client.request(endpoint)
+                Issue.record("Unsupported named credentials unexpectedly succeeded")
+            } catch {
+                guard case .underlying(let failure, _) = error else {
+                    Issue.record("Unexpected credential failure: \(error)")
+                    return
+                }
+                #expect(failure.domain == "InnoNetwork.RequestSecurity")
+                #expect(failure.code == RequestSecurityFailure.unsupportedExecution.rawValue)
+            }
+        }
+        #expect(count.withLock { $0 } == 0)
+        #expect(session.capturedRequestsInOrder.isEmpty)
+    }
+
     @Test func directAndOperationUseOneFactoryEach() async throws {
         let session = MockURLSession()
         session.setMockResponse(statusCode: 200, data: Data([42]))

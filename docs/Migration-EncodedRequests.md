@@ -28,6 +28,12 @@ Provisionally Stable migrations are called out below.
 - Escaped property names match unescaped path placeholders (for example, the
   Swift property named `class` matches `/{class}`). Generated references are
   qualified with `self`, so internal helper names cannot shadow endpoint values.
+- Encoded endpoints support session bearer authentication and request signers.
+  Named `RequestSecurityProviding` credentials are not supported by this boundary.
+  A named `EncodedAPIDefinition` declaring that conformance fails with
+  `RequestSecurityFailure.unsupportedExecution` before its request factory or
+  transport runs, through both the client and operation routes. Use the existing
+  `APIDefinition` or `MultipartAPIDefinition` credential integration when required.
 - Coalescing shares only equivalent effective response limits. Different limits
   may cause separate physical requests; individual success/failure must not depend
   on which caller starts first. Client-wide response caps still apply.

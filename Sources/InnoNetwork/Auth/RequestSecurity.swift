@@ -3,8 +3,9 @@ import Foundation
 /// Opt-in credential requirements for buffered and multipart endpoints.
 ///
 /// Conform alongside `APIDefinition` or `MultipartAPIDefinition` and use
-/// `sessionAuthentication = .anonymous`. Streaming does not yet support this
-/// contract and fails before sending. Existing session bearer auth is unchanged.
+/// `sessionAuthentication = .anonymous`. Streaming and named encoded endpoints
+/// do not yet support this contract and fail before sending. Encoded endpoints
+/// reject it before their request factory runs. Existing session bearer auth is unchanged.
 public protocol RequestSecurityProviding: Sendable {
     /// Origin-bound, non-secret requirements and the application-owned provider.
     var requestSecurity: RequestSecurity { get }

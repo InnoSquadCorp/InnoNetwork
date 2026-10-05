@@ -26,6 +26,8 @@ Versioning.
 
 ### Fixed
 
+- Reject unsupported named credentials on encoded endpoints before factory or
+  transport execution instead of silently discarding the declared policy.
 - Settle upload terminal delivery and runtime retirement before admitting an
   explicit retry; cancelling a queued retry does not start a replacement task.
 - Response interceptors receive the response's signed/refreshed request envelope

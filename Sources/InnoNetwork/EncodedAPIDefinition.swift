@@ -4,6 +4,8 @@ import Foundation
 /// Prefer a companion's macro to synthesise this conformance. Manual conformers
 /// must keep their method, path and authentication equal to the returned request.
 /// Building the request must only prepare deferred encoders, never perform I/O.
+/// Session bearer authentication and request signers are supported; named
+/// `RequestSecurityProviding` credentials are rejected before factory execution.
 public protocol EncodedAPIDefinition: Sendable {
     associatedtype APIResponse: Sendable
     var method: HTTPMethod { get }
@@ -41,6 +43,9 @@ struct EncodedDefinitionMetadata: Sendable {
         _ definition: Definition
     ) throws(NetworkError) -> EncodedRequest<Definition.APIResponse> {
         guard !Task.isCancelled else { throw .cancelled }
+        guard !(definition is any RequestSecurityProviding) else {
+            throw RequestSecurityFailure.unsupportedExecution.networkError
+        }
         let request = try definition.makeEncodedRequest()
         guard !Task.isCancelled else { throw .cancelled }
         guard request.method == method, request.path == path,
