@@ -24,6 +24,7 @@ class PublicOperationsTests(unittest.TestCase):
                    ('Package.resolved', '"1.8.0"', '"1.5.0"'),
                    ('.spi.yml', 'https://innosquadcorp.github.io/InnoNetwork/', 'https://invalid.example/'),
                    ('docs/public-docc-products.txt', 'InnoNetworkTrust\n', ''),
+                   ('docs/site/index.html', './InnoNetworkMacroSupport/documentation/innonetworkmacrosupport', './missing-macro-support'),
                    ('.github/workflows/dependabot-auto-merge.yml', 'ref: refs/heads/main', 'ref: ${{ github.event.pull_request.head.sha }}'),
                    ('.github/workflows/dependabot-auto-merge.yml', 'persist-credentials: false', 'persist-credentials: true'),
                    ('.github/workflows/dependabot-auto-merge.yml', '      checks: read', '      checks: write'),

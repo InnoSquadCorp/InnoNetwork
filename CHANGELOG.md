@@ -22,10 +22,15 @@ Versioning.
 - Add named `EncodedAPIDefinition` endpoints and query appending for macro-first
   companions; JSON clients and macros keep their existing contracts.
 - Export compiler-host-only `InnoNetworkMacroSupport` with a separate, minor-bound
-  twelve-declaration inventory and unchanged SwiftSyntax 603.0.x dependency.
+  twelve-declaration inventory and current-main SwiftSyntax 604.0.x dependency.
 
 ### Fixed
 
+- Settle upload terminal delivery and runtime retirement before admitting an
+  explicit retry; cancelling a queued retry does not start a replacement task.
+- Response interceptors receive the response's signed/refreshed request envelope
+  instead of the pre-attempt envelope; synthetic responses without provenance
+  continue using the prepared request. Credential redaction remains in force.
 - Preserve bounded error-snapshot metadata when snapshots are wrapped again.
 - Preserve cancellation through JSON, encoded and streaming codecs without
   changing direct custom-decoder error contracts.
@@ -59,20 +64,12 @@ Versioning.
 See [encoded-request migration notes](docs/Migration-EncodedRequests.md) for
 the unpublished candidate's source-compatibility changes.
 
-### Fixed
-
-- Settle upload terminal delivery and runtime retirement before admitting an
-  explicit retry; cancelling a queued retry does not start a replacement task.
-
 ### Changed
 
 - Lightweight JSON schema validation prepares ordered required-property names
   once per schema evaluation instead of sorting them again for every array
   element and matching alternative. Exact Unicode identity and validation work
   limits remain enforced.
-- Response interceptors receive the response's signed/refreshed request envelope
-  instead of the pre-attempt envelope; synthetic responses without provenance
-  continue using the prepared request. Credential redaction remains in force.
 
 ## [6.0.0] - 2026-09-28
 

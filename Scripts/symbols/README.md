@@ -55,7 +55,7 @@ candidates): the named endpoint protocol and witnesses, plus query appending.
 Client/operation overloads share symbol paths with existing overloads; actual
 external compiler fixtures additionally lock their generic signatures.
 `macro-support.tsv` separately freezes twelve compiler-host-only declarations.
-This tenth product uses SwiftSyntax 603.0.x and minor-bound compatibility; it is
+This tenth product uses SwiftSyntax 604.0.x and minor-bound compatibility; it is
 not a runtime import and is absent from trait-disabled runtime build artifacts.
 
 The awaited multipart delivery overload adds one Provisionally Stable declaration;

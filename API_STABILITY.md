@@ -87,7 +87,7 @@ inventory rows plus the typed client/operation overloads are additive in 6.1.
 The package now exports nine runtime products plus `InnoNetworkMacroSupport`,
 a compiler-host-only product. Its twelve public declarations are separately
 checked in `Scripts/symbols/macro-support.tsv`; they are not Stable runtime API.
-They are Provisionally Stable within the 6.1 minor and SwiftSyntax 603.0.x.
+They are Provisionally Stable within the 6.1 minor and SwiftSyntax 604.0.x.
 Companion macro packages should pin that minor; future support API changes require
 an explicit minor migration. Applications must not link this product directly.
 
