@@ -22,6 +22,7 @@ six_release_state_validator="$repo_root/Scripts/validate_6_release_state.sh"
 ruby "$repo_root/Scripts/check_post_release_docs.rb"
 docs_release_state="ready"
 bash "$six_release_state_validator"
+codec_ledger="$(python3 "$repo_root/Scripts/validate_6_1_release_state.py" --print-codec-ledger)"
 
 # Per-module public-symbol allowlists. Keeping one
 # `Scripts/symbols/*.allowlist` file per shipping module keeps PR diffs
@@ -112,7 +113,7 @@ fi
 
 expected_stable=(
 '`APIDefinition`'
-'`EncodedRequest`, `EncodedRequestBody`, `EncodedRequestOptions`, `EncodedRequestClient`, `EncodedCodecMeasurement`, `EncodedPayloadFailure` (new in the unpublished 6.1 candidate)'
+"$codec_ledger"
 '`@APIDefinition(method:path:auth:)` and the default-enabled `Macros` package trait (promoted to Stable in 6.0.0; `traits: []` remains the supported opt-out)'
 '`CancellationTag`'
 '`Endpoint`'
@@ -1376,7 +1377,7 @@ documented_provisionally_sorted="$(printf '%s\n' "${documented_provisionally[@]:
 
 for symbol in "${expected_stable[@]}"; do
   case "$symbol" in
-    '`EncodedRequest`, `EncodedRequestBody`, `EncodedRequestOptions`, `EncodedRequestClient`, `EncodedCodecMeasurement`, `EncodedPayloadFailure` (new in the unpublished 6.1 candidate)')
+    "$codec_ledger")
       target="$repo_root/Sources/InnoNetwork/EncodedRequest.swift"
       for name in EncodedRequest EncodedRequestBody EncodedRequestOptions EncodedRequestClient EncodedCodecMeasurement EncodedPayloadFailure; do
         grep -Eq "public (struct|protocol|enum) $name([< :]|$)" "$target" || fail "missing stable codec boundary: $name"

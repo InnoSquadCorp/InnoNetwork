@@ -100,7 +100,7 @@ class SubmissionTests(unittest.TestCase):
         self.assertEqual(publish['type'], 'boolean')
         self.assertIs(publish['default'], False)
         publication = workflow['jobs']['publish-release']
-        self.assertEqual(set(publication['needs']), {'validate-release', 'validate-platform-builds'})
+        self.assertEqual(set(publication['needs']), {'validate-release', 'validate-platform-builds', 'validate-tagged-consumer'})
         condition = publication['if']
         for event in ['push', 'workflow_dispatch', 'pull_request']:
             for tag in [False, True]:

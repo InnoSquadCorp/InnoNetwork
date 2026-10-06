@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import importlib.util
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -112,6 +113,36 @@ def main() -> None:
         "".join(workflow.rsplit("            .release-artifacts/benchmarks-json-codec.json\n", 1)),
         "must retain the JSON codec",
     )
+
+    for old, new, reason in [
+        ("      - validate-tagged-consumer", "", "every validation gate"),
+        ("bash Scripts/run_local_release_preflight.sh --full", "bash Scripts/run_local_release_preflight.sh --fast", "full gate set"),
+        ('test "$GITHUB_REF" = refs/heads/main', 'true', "main-only gate"),
+        ('bash Scripts/verify_published_consumer.sh "$RELEASE_VERSION" "$RELEASE_COMMIT"',
+         'bash Scripts/verify_published_consumer.sh --candidate "$RELEASE_COMMIT"', "never a candidate override"),
+        ('full-preflight-${{ github.sha }}-${{ github.run_attempt }}', 'full-preflight-latest', "exact-source diagnostic evidence"),
+        ('PERIPHERY_SHA256: "07d4e286e31dd79164df39097e0b59f533c94badbe18158464a455ea88a166d7"',
+         'PERIPHERY_SHA256: "unverified"', "checksum-verified Periphery"),
+    ]:
+        expect_failure(validator, workflow.replace(old, new, 1), reason)
+    for name in ("full-preflight", "validate-tagged-consumer"):
+        section = validator.job_section(workflow, name)
+        for old, new, reason in [
+            ("      contents: read", "      contents: write", "contents-read-only"),
+            ("          ref: ${{ github.sha }}", "          ref: main", "immutable source"),
+            ("          persist-credentials: false", "          persist-credentials: true", "unsafe release verification"),
+        ]:
+            expect_failure(validator, workflow.replace(section, section.replace(old, new, 1)), reason)
+    preflight = validator.job_section(workflow, "full-preflight")
+    broken = preflight.replace("bash Scripts/validate_release_candidate.sh", "true", 1)
+    expect_failure(validator, workflow.replace(preflight, broken), "before and after")
+    broken = preflight.replace(
+        "      - name: Run all fifteen full preflight gates\n        run: |\n          set -euo pipefail",
+        "      - name: Run all fifteen full preflight gates\n        run: |\n          set -eu",
+    )
+    expect_failure(validator, workflow.replace(preflight, broken), "failures must propagate")
+
+    subprocess.run([sys.executable, "-B", str(REPOSITORY / "Scripts/tests/test_verify_published_consumer.py")], check=True)
 
     print("Release workflow contract fixture tests passed.")
 

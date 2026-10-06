@@ -40,7 +40,11 @@ gate is not approval to mark the new 6.1 candidate Ready.
    timestamp, signatures, and artifacts provide separate publication evidence.
 3. Before tagging, run the `Release` workflow manually from `main`. A manual
    dispatch executes the full validation and five-platform matrix, produces
-   candidate artifacts, and structurally skips the signing/publication job.
+   candidate artifacts, and structurally skips signing/publication. Its separate
+   `Full Release Preflight` job executes the unchanged fifteen-gate local script
+   on the official Xcode 27 runner, with fresh main identity checks before and
+   after execution and retained logs/artifacts. This provides the supported
+   remote execution route for step 8 when a developer Mac is unavailable.
    `Scripts/validate_release_candidate.sh` fetches canonical `origin/main` and
    rejects a stale, detached, or side-branch candidate.
 4. Push an unprefixed annotated SemVer tag such as `5.0.0` only from a commit
@@ -66,6 +70,9 @@ gate is not approval to mark the new 6.1 candidate Ready.
    - resolved CycloneDX SBOM generation for the default-trait root graph and
      the core-only (`traits: []`) profile
    - Package.swift-aligned macOS, iOS, tvOS, watchOS, and visionOS build tuples
+   - clean public-tag consumer resolution and release-mode execution with both
+     default traits and `traits: []`, requiring the exact version and revision
+     from the canonical repository before publication
    - sigstore signing and GitHub Release creation with the benchmark,
      `sbom.cdx.json`, and `sbom-core-only.cdx.json` artifact sets
 6. Re-check `API_STABILITY.md` and `Scripts/symbols/*.allowlist`
@@ -75,7 +82,14 @@ gate is not approval to mark the new 6.1 candidate Ready.
 8. Run `bash Scripts/run_local_release_preflight.sh --full` before changing the
    release status to ready. It reproduces root-package pre-tag validation,
    coverage, benchmark, SBOM, DocC, and five-platform builds locally on the
-   required Xcode 27 toolchain. InnoStream separately owns AVPlayer runtime,
+   required Xcode 27 toolchain. The manual, non-publishing Release workflow
+   runs this exact script on its official Xcode 27 runner; a successful
+   `Full Release Preflight` job on the intended current-main revision supplies
+   the same fifteen-gate evidence without using the developer's Mac. Existing
+   CI/release fixture tests or the ordinary Validate Release job alone do not
+   replace it. After the preflight, the same job prevalidates the public
+   consumer source using the candidate revision, explicitly recording that this
+   is not yet a public-tag verification. InnoStream separately owns AVPlayer runtime,
    Apple HLS conformance, FairPlay, and HLS-module release gates after the 6.0
    split. Tag identity, signing, and publication remain GitHub-only
    responsibilities.
