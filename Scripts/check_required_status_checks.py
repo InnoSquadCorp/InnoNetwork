@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Validate the version-controlled and live GitHub required-check contracts."""
+"""Audit logical CI coverage and native aggregate checks without changing GitHub.
+
+The current non-strict ruleset permits manual integration, not autonomous native
+auto-merge. The latter still requires strict base protection in the coordinator.
+Neither ruleset profile proves that a candidate's exact head/base CI succeeded.
+"""
 
 from __future__ import annotations
 
@@ -26,6 +31,9 @@ MANDATORY_CONTEXTS = {
     "Apple Platform Build Smoke (arm64-apple-xros1.0, visionOS, xros, swiftpm-cross)",
     "CodeQL / Swift (swift)",
 }
+AGGREGATE_CONTEXTS = {"CI Required", "Dependabot Merge Ready"}
+REPOSITORY = "InnoSquadCorp/InnoNetwork"
+GITHUB_ACTIONS_APP = 15368
 
 
 def fail(message: str) -> None:
@@ -39,9 +47,10 @@ def load_json(path: Path) -> Any:
         fail(f"cannot read {path}: {error}")
 
 
-def validate_policy(path: Path) -> list[dict[str, Any]]:
+def validate_policy(path: Path, mandatory: set[str] = MANDATORY_CONTEXTS) -> list[dict[str, Any]]:
     document = load_json(path)
-    if not isinstance(document, dict) or document.get("schema_version") != 1:
+    if (not isinstance(document, dict) or type(document.get("schema_version")) is not int
+            or document["schema_version"] != 1):
         fail(f"{path} must use schema_version 1")
     if set(document) != {"schema_version", "checks"}:
         fail(f"{path} contains unknown top-level fields")
@@ -58,26 +67,53 @@ def validate_policy(path: Path) -> list[dict[str, Any]]:
         integration_id = check.get("integration_id")
         if not isinstance(context, str) or not context.strip():
             fail(f"checks[{index}].context must be a non-empty string")
-        if not isinstance(integration_id, int) or isinstance(integration_id, bool) or integration_id <= 0:
-            fail(f"checks[{index}].integration_id must be a positive integer")
+        if type(integration_id) is not int or integration_id != GITHUB_ACTIONS_APP:
+            fail(f"checks[{index}].integration_id must be GitHub Actions app {GITHUB_ACTIONS_APP}")
         contexts.append(context)
         normalized.append({"context": context, "integration_id": integration_id})
 
     if len(contexts) != len(set(contexts)):
         fail("policy contains duplicate check contexts")
-    missing = sorted(MANDATORY_CONTEXTS - set(contexts))
+    missing = sorted(mandatory - set(contexts))
     if missing:
         fail(f"policy omits mandatory contexts: {', '.join(missing)}")
+    if mandatory == AGGREGATE_CONTEXTS and set(contexts) != mandatory:
+        fail("aggregate policy must contain exactly CI Required and Dependabot Merge Ready")
     return normalized
 
 
-def validate_ruleset(path: Path, expected: list[dict[str, Any]]) -> None:
+def validate_ruleset(path: Path, expected: list[dict[str, Any]], require_auto_merge: bool = False) -> None:
     document = load_json(path)
     if not isinstance(document, dict):
         fail(f"{path} must contain a ruleset object")
+    if (document.get("source_type") != "Repository" or document.get("source") != REPOSITORY
+            or document.get("target") != "branch" or document.get("enforcement") != "active"):
+        fail("live ruleset must be active repository-owned branch protection")
+    conditions = document.get("conditions")
+    if not isinstance(conditions, dict) or not isinstance(conditions.get("ref_name"), dict):
+        fail("live ruleset must declare branch conditions")
+    refs = conditions["ref_name"]
+    if refs.get("include") not in (["~DEFAULT_BRANCH"], ["refs/heads/main"]) or refs.get("exclude") != []:
+        fail("live ruleset must cover main without exclusions")
+    # Require an unredacted export. A missing bypass list is not an empty list;
+    # this static audit does not establish the coordinator token's capabilities.
+    if document.get("bypass_actors") != []:
+        fail("live ruleset must expose an empty bypass list")
+    rules = document.get("rules")
+    if not isinstance(rules, list) or not all(isinstance(rule, dict) for rule in rules):
+        fail("live ruleset has malformed rules")
+    review_rules = [rule for rule in rules if rule.get("type") == "pull_request"]
+    if len(review_rules) != 1:
+        fail("live ruleset must contain exactly one pull_request rule")
+    review = review_rules[0].get("parameters")
+    if not isinstance(review, dict) or review.get("required_review_thread_resolution") is not True:
+        fail("live ruleset must require resolved review threads")
+    approval_count = review.get("required_approving_review_count")
+    if type(approval_count) is not int or approval_count < 0:
+        fail("live ruleset must declare a valid approval count")
     matching_rules = [
         rule
-        for rule in document.get("rules", [])
+        for rule in rules
         if isinstance(rule, dict) and rule.get("type") == "required_status_checks"
     ]
     if len(matching_rules) != 1:
@@ -85,13 +121,18 @@ def validate_ruleset(path: Path, expected: list[dict[str, Any]]) -> None:
     parameters = matching_rules[0].get("parameters")
     if not isinstance(parameters, dict):
         fail("live required_status_checks rule has no parameters")
-    if parameters.get("strict_required_status_checks_policy") is not True:
-        fail("live ruleset must require the branch to be up to date")
+    if parameters.get("strict_required_status_checks_policy") is not require_auto_merge:
+        if require_auto_merge:
+            fail("autonomous auto-merge requires strict up-to-date base protection; current manual profile stays in standby")
+        fail("live ruleset differs from the current non-strict manual-integration profile")
 
     actual = parameters.get("required_status_checks")
     if not isinstance(actual, list):
         fail("live ruleset has no required_status_checks array")
-    actual_pairs = {(item.get("context"), item.get("integration_id")) for item in actual if isinstance(item, dict)}
+    if not all(isinstance(item, dict) and isinstance(item.get("context"), str)
+               and type(item.get("integration_id")) is int for item in actual):
+        fail("live ruleset contains malformed required checks")
+    actual_pairs = {(item["context"], item["integration_id"]) for item in actual}
     expected_pairs = {(item["context"], item["integration_id"]) for item in expected}
     if len(actual_pairs) != len(actual):
         fail("live ruleset contains malformed or duplicate required checks")
@@ -115,13 +156,28 @@ def main() -> None:
         default=repo_root / ".github" / "required-status-checks.json",
     )
     parser.add_argument("--ruleset-json", type=Path)
+    parser.add_argument(
+        "--automation-policy", type=Path,
+        default=repo_root / ".github" / "automation-required-status-checks.json",
+    )
+    parser.add_argument(
+        "--require-auto-merge", action="store_true",
+        help="Audit strict native protection as an additional auto-merge prerequisite, never enable it.",
+    )
     args = parser.parse_args()
 
-    expected = validate_policy(args.policy)
+    logical = validate_policy(args.policy)
+    expected = validate_policy(args.automation_policy, AGGREGATE_CONTEXTS)
+    if args.require_auto_merge and args.ruleset_json is None:
+        fail("--require-auto-merge needs a complete --ruleset-json export")
     if args.ruleset_json is not None:
-        validate_ruleset(args.ruleset_json, expected)
+        validate_ruleset(args.ruleset_json, expected, args.require_auto_merge)
     suffix = " and live ruleset" if args.ruleset_json is not None else ""
-    print(f"required-status-checks: OK ({len(expected)} policy checks{suffix})")
+    print(f"required-status-checks: OK ({len(logical)} logical checks, {len(expected)} native aggregate checks{suffix})")
+    if args.ruleset_json is not None:
+        print("Ruleset audit only: exact-head/base CI and release approval remain separate.")
+        if not args.require_auto_merge:
+            print("Current non-strict profile: autonomous native auto-merge remains in standby.")
 
 
 if __name__ == "__main__":

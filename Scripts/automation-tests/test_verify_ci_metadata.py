@@ -16,7 +16,7 @@ REPO = gate.CONFIG['repository']
 class Transcript:
     def __init__(self):
         self.pr = dict(number=45, state='open', labels=[], head=dict(sha=HEAD),
-                       base=dict(sha=BASE, repo=dict(full_name=REPO)))
+                       base=dict(ref='main', sha=BASE, repo=dict(full_name=REPO)))
         self.event = dict(action='edited', pull_request=copy.deepcopy(self.pr), changes={})
         self.env = dict(GITHUB_REPOSITORY=REPO, GITHUB_EVENT_NAME='pull_request', GITHUB_REF='refs/pull/45/merge',
                         GITHUB_RUN_ID='20', GITHUB_RUN_ATTEMPT='1', GITHUB_SHA=SOURCE)
@@ -40,8 +40,15 @@ class Transcript:
                                       status='completed',conclusion='success',details_url=f'https://github.com/{REPO}/actions/runs/10/job/{300+i}')
         self.reads,self.pages_read=0,0
         self.run_race,self.pr_race,self.list_race=None,None,None
+        self.main, self.final_main, self.main_reads = BASE, BASE, 0
+        self.main_error = None
 
     def get(self,path):
+        if path.endswith('git/ref/heads/main'):
+            self.main_reads += 1
+            if self.main_error:
+                raise self.main_error
+            return dict(object=dict(sha=self.main if self.main_reads == 1 else self.final_main))
         if path.endswith('pulls/45'):
             self.reads+=1
             result=copy.deepcopy(self.pr)
@@ -78,6 +85,7 @@ class MetadataGateTests(unittest.TestCase):
     def test_current_success_is_read_only_and_bound(self):
         t=Transcript();proof=t.prove()
         self.assertEqual(proof,dict(run=10,attempt=1,head=HEAD,base=BASE,source=SOURCE,check='CI Required'))
+        self.assertEqual(t.main_reads, 2)
         for name in gate.CONFIG['checks']:
             t=Transcript();self.assertEqual(gate.prove(t,t.event,t.env,name)['check'],name)
 
@@ -142,6 +150,40 @@ class MetadataGateTests(unittest.TestCase):
         for mutate in mutations:
             t=Transcript();mutate(t)
             with self.assertRaises(ValueError):t.prove()
+
+    def test_cached_pr_base_cannot_hide_authoritative_main_drift(self):
+        for field in ('main', 'final_main'):
+            t = Transcript()
+            setattr(t, field, 'd' * 40)
+            # Both PR reads keep returning the old base and head.
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, 'current main moved'):
+                t.prove()
+
+    def test_unavailable_or_malformed_main_fails_closed(self):
+        for field in ('main', 'final_main'):
+            for value in (None, 123, '', 'main', 'a' * 39, 'A' * 40):
+                t = Transcript()
+                setattr(t, field, value)
+                with self.subTest(field=field, value=value), self.assertRaisesRegex(ValueError, 'current main SHA'):
+                    t.prove()
+        t = Transcript()
+        t.main_error = PermissionError('main lookup denied')
+        with self.assertRaises(PermissionError):
+            t.prove()
+
+    def test_equal_sha_retarget_or_foreign_repository_cannot_reuse_validation(self):
+        mutations = (lambda p: p['base'].update(ref='develop'),
+                     lambda p: p['base'].pop('ref'),
+                     lambda p: p['base']['repo'].update(full_name='foreign/repo'))
+        for mutation in mutations:
+            for phase in ('initial', 'final'):
+                t = Transcript()
+                if phase == 'initial':
+                    mutation(t.pr)
+                else:
+                    t.pr_race = mutation
+                with self.subTest(phase=phase, mutation=mutation), self.assertRaisesRegex(ValueError, 'target this repository main'):
+                    t.prove()
 
     def test_only_unrelated_labels_and_description_edits_can_revalidate(self):
         for action in ['opened','synchronize','reopened','closed']:

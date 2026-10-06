@@ -73,6 +73,17 @@ def binding(pr):
     return (pr['number'], pr['head']['sha'], pr['base']['sha'], flags(pr))
 
 
+def require_current_main(api, route, pr, expected):
+    """Bind a PR snapshot to the authoritative branch, not a cached PR base."""
+    require(pr.get('base', {}).get('ref') == 'main' and
+            pr['base'].get('repo', {}).get('full_name') == CONFIG['repository'],
+            'PR must target this repository main branch')
+    main = api.get(route + 'git/ref/heads/main').get('object', {}).get('sha')
+    require(isinstance(main, str) and re.fullmatch('[0-9a-f]{40}', main) is not None,
+            'missing or invalid current main SHA')
+    require(main == expected, 'current main moved beyond the validated base')
+
+
 def belongs_to_other_pr(run, number):
     # PR associations are native API data. Missing/malformed/ambiguous evidence
     # stays eligible so an unknown or manual failure cannot disappear.
@@ -100,7 +111,7 @@ def prove(api, event, env, check_name='CI Required'):
     require(check_name in CONFIG['checks'], 'unknown required check')
     current = api.get(route + f'pulls/{number}')
     require(current.get('state') == 'open' and binding(current) == binding(pr), 'PR changed before validation')
-    require(current['base']['repo']['full_name'] == repo, 'foreign base repository')
+    require_current_main(api, route, current, base)
     own_id = int(env['GITHUB_RUN_ID'])
     own = api.get(route + f'actions/runs/{own_id}')
     source = env['GITHUB_SHA']
@@ -181,6 +192,9 @@ def prove(api, event, env, check_name='CI Required'):
             'newer real validation appeared')
     final_pr = api.get(route + f'pulls/{number}')
     require(final_pr.get('state') == 'open' and binding(final_pr) == binding(pr), 'PR changed during proof')
+    # A PR API response can still contain the previous base after main advances.
+    # Reject observed drift; this does not make the final read and merge atomic.
+    require_current_main(api, route, final_pr, base)
     return dict(run=run['id'], attempt=attempt, head=head, base=base, source=source, check=check_name)
 
 

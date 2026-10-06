@@ -30,8 +30,11 @@ extra jobs all fail.
 - `concurrency-review`: explicitly requests TSAN even for an otherwise narrow PR
 - Main/manual/merge queue: full lane, except PR-only dependency comparison
 
-The old 15 protected display names and `.github/required-status-checks.json` are
-retained. Consumer Smoke still requires all three independent consumer lanes.
+The old 15 display names and `.github/required-status-checks.json` remain the
+logical coverage inventory. The actual native check list is the two app-bound
+aggregates in `.github/automation-required-status-checks.json`; the legacy list
+must not be restored as native requirements for path-selected/metadata runs.
+Consumer Smoke still requires all three independent consumer lanes.
 The baseline fixture asserts all old runner/matrix/test command contracts. Full
 PR validation expands to 32 concrete jobs, including six release candidate jobs.
 Scheduled/manual CodeQL, TSAN and benchmark entry points remain; their former
@@ -211,6 +214,34 @@ approval count changes here. Metadata reconciliation can revoke ineligible bot
 auto-merge approvals. Scheduled discovery includes retargeted open bot PRs;
 normal default-branch `edited` delivery also reaches the cancellation path.
 
+### Current non-strict integration profile
+
+The observed main ruleset uses the two aggregates and `strict=false`. This is a
+supported **manual-integration and release-audit** profile, not authorization for
+unattended bot merging. `check_required_status_checks.py --ruleset-json <export>`
+audits that profile and keeps the logical fifteen-check inventory independently
+enforced. It requires the complete main-scoped, active repository ruleset, the
+GitHub Actions app identity, resolved review threads and an empty bypass list.
+Other applicable/inherited protections still need their own audit.
+
+The coordinator deliberately remains in standby under this profile even if its
+enable flag is true. `expectedHeadOid` binds the PR head but cannot pin main after
+the last read. The repeated exact head/base/test-merge/CI-attempt/Ready checks
+therefore do not replace native strict base protection. Already armed bot requests
+are protectively cancelled; an uncertain cancellation is reported as an error.
+Manual PRs keep their read-only Ready flow and are not automatically merged.
+
+Metadata-only CI now verifies the authoritative `git/ref/heads/main` before and
+after its proof in addition to PR head/base, ordered merge parents, source tree,
+labels, run attempt and native check identity. This rejects a stale cached PR
+base, an observed main advance, and same-SHA retargeting away from main. It does
+not eliminate races after the final read. Fresh exact-main candidate validation
+and explicit maintainer decisions remain required for integration/publication.
+
+`--require-auto-merge` selects the separate strict ruleset audit. It proves only
+that static prerequisite, not CI readiness, all inherited protection, runtime
+token no-bypass, enable-flag state or permission to merge. It changes no settings.
+
 GitHub events cannot form an atomic lock with the merge operation. A review or
 new failing external check can race the final proof and native completion.
 Strict native required checks and the repository's existing native review rules
@@ -286,10 +317,14 @@ merging the automation, maintainers must separately:
 1. Wait for the exact new main full CI, docs and snapshot results. Confirm all
    actual job/step names match the reviewed fixture; a fixture is not live proof
 2. Export the complete current native rulesets and review requirements. Preserve
-   existing review rules and unrelated checks. Add strict GitHub Actions app
+   existing review rules and unrelated checks. Autonomous activation requires
+   strict GitHub Actions app
    `15368`-bound `CI Required` and `Dependabot Merge Ready` checks from
    `.github/automation-required-status-checks.json`. Do not replace the full
-   ruleset with this small checks-only manifest
+   ruleset with this small checks-only manifest.
+   The current `strict=false` profile intentionally stops here: leave automation
+   in standby. Any future protection-setting change needs separate approval;
+   release preparation is not that approval
 3. Audit every applicable repository/inherited ruleset and GitHub Actions bypass
    permission with an appropriately authorized account. Verify the coordinator
    has no bypass. An API-redacted/missing bypass list is not an empty list; do not

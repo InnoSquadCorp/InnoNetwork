@@ -81,10 +81,19 @@ gate is not approval to mark the new 6.1 candidate Ready.
    responsibilities.
 9. Before tagging, export the active repository ruleset and run
    `python3 Scripts/check_required_status_checks.py --ruleset-json <path>`.
-   It must match `.github/required-status-checks.json`. Narrow or remove the
-   temporary organization-administrator direct-push bypass used during the
-   unreleased 5.0 staging cycle; the tag must not be the first point at which
-   merge protection drift is discovered.
+   The complete export must match the current manual-integration profile:
+   active main protection, the two app-bound checks in
+   `.github/automation-required-status-checks.json`, `strict=false`, a PR rule
+   requiring resolved review threads, and an explicit empty bypass list. The
+   legacy fifteen-check inventory remains validated as logical CI coverage; it
+   is not the live native check list. A redacted export is not passing evidence.
+   Audit every other applicable/inherited protection separately; this command
+   does not discover omitted rulesets or prove the runtime token's capabilities.
+   Preserve repository settings. A failed audit requires reconciliation, never
+   an automatic ruleset rewrite or removal of checks. Passing this audit is not
+   exact-main CI, Ready approval, or publication authorization. Autonomous bot
+   merging still requires a separately audited strict profile and remains in
+   standby with current settings; Core release validation does not enable it.
 
 ## Benchmarks
 

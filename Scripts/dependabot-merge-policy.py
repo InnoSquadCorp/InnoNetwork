@@ -540,7 +540,11 @@ def native_rules(api, repo):
     for rule in status:
         verify_source(rule)
         parameters = rule.get("parameters", {})
-        require(parameters.get("strict_required_status_checks_policy") is True, "loose native CI policy")
+        # The current manual-integration profile deliberately uses strict=false.
+        # expectedHeadOid pins only the head, not main after our final proof read.
+        # Repeated reads cannot replace native strict protection for auto-merge.
+        require(parameters.get("strict_required_status_checks_policy") is True,
+                "standby: autonomous auto-merge requires strict up-to-date base protection")
         for check in parameters.get("required_status_checks", []):
             require(check.get("integration_id") == APP, "required check has wrong app or any source")
             contexts.add(check.get("context"))
