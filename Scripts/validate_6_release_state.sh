@@ -57,6 +57,7 @@ required_paths=(
 # roadmap is part of the historical 6.0 scope contract. Immutable old refs still
 # carry that roadmap at its original path and must remain verifiable.
 superseded_notes_path="docs/releases/archive/6.1.0-superseded-roadmap.md"
+current_minor=0
 validation_root="$repo_root"
 temporary_root=""
 cleanup() {
@@ -71,6 +72,9 @@ if [[ -n "$git_ref" ]]; then
   [[ -n "$resolved_ref" ]] || fail "ref '$git_ref' does not resolve to a commit"
   if ! git -C "$repo_root" cat-file -e "${resolved_ref}:${superseded_notes_path}" 2>/dev/null; then
     superseded_notes_path="docs/releases/6.1.0.md"
+  else
+    current_minor=1
+    required_paths+=(docs/releases/6.1.0.md Scripts/published-releases.json)
   fi
   required_paths+=("$superseded_notes_path")
   temporary_root="$(mktemp -d "${TMPDIR:-/tmp}/innonetwork-6-release-state.XXXXXX")"
@@ -84,6 +88,9 @@ if [[ -n "$git_ref" ]]; then
 else
   if [[ ! -f "$validation_root/$superseded_notes_path" ]]; then
     superseded_notes_path="docs/releases/6.1.0.md"
+  else
+    current_minor=1
+    required_paths+=(docs/releases/6.1.0.md Scripts/published-releases.json)
   fi
   required_paths+=("$superseded_notes_path")
   for path in "${required_paths[@]}"; do
@@ -111,6 +118,12 @@ require_line() {
 
 require_contains() {
   grep -Fq "$1" "$2" || fail "missing '$1' in ${2#"$validation_root/"}"
+}
+
+require_budget() {
+  local key="$1" value="$2" file="$3"
+  [[ "$(awk -F '\t' -v key="$key" '$1 == key { if (NF != 2) print "invalid"; else print $2 }' "$file")" == "$value" ]] \
+    || fail "expected exactly one $key budget of $value in ${file#"$validation_root/"}"
 }
 
 forbid_contains() {
@@ -155,31 +168,33 @@ forbid_contains '<!-- release-status: ready -->' "$superseded_notes"
 require_contains '1,702 declarations: 307 Stable,' "$notes"
 require_contains '1,362 Provisionally Stable, and 33 SPI.' "$notes"
 # Keep the immutable 6.0 release-note inventory above separate from the explicitly
-# approved, unpublished 6.1 source inventory. The symbol-graph gate checks actual
+# approved 6.1 source inventory. The symbol-graph gate checks actual
 # declarations against these exact budgets; neither path accepts arbitrary growth.
 total=1702
 stable=307
 provisional=1362
-if grep -Fxq '<!-- encoded-request-candidate: 6.1.0 -->' "$api"; then
+if [[ "$current_minor" == "1" ]]; then
+  # The archived roadmap is immutable; the canonical minor notes have their
+  # own Draft/Ready/published contract. Ready alone never proves publication.
+  python3 "$repo_root/Scripts/validate_6_1_release_state.py" "$validation_root" >/dev/null
   total=1764
   stable=367
   provisional=1364
-  require_contains 'These additions are unpublished; they do not alter 6.0.0.' "$api"
-  require_line '## [Unreleased]' "$changelog"
   require_line '| **Total** | **1,764** |' "$symbols"
   require_line '| Stable consumer API | 367 |' "$symbols"
   require_line '| Provisionally Stable consumer API | 1,364 |' "$symbols"
 else
+  forbid_contains '<!-- encoded-request-' "$api"
   require_line '| **Total** | **1,702** |' "$symbols"
   require_line '| Stable consumer API | 307 |' "$symbols"
   require_line '| Provisionally Stable consumer API | 1,362 |' "$symbols"
 fi
 require_line '| `@_spi(GeneratedClientSupport)` | 33 |' "$symbols"
-require_line "$(printf 'TOTAL\t%s' "$total")" "$budgets"
-require_line "$(printf 'STABLE_CONSUMER\t%s' "$stable")" "$tier_budgets"
-require_line "$(printf 'PROVISIONAL\t%s' "$provisional")" "$tier_budgets"
-require_line $'SPI\t33' "$tier_budgets"
-require_line "$(printf 'TOTAL\t%s' "$total")" "$tier_budgets"
+require_budget TOTAL "$total" "$budgets"
+require_budget STABLE_CONSUMER "$stable" "$tier_budgets"
+require_budget PROVISIONAL "$provisional" "$tier_budgets"
+require_budget SPI 33 "$tier_budgets"
+require_budget TOTAL "$total" "$tier_budgets"
 
 if [[ "$state" == "draft" ]]; then
   require_line "Status: Draft (unreleased)" "$notes"

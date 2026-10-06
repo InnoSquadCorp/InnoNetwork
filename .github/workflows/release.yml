@@ -357,12 +357,136 @@ jobs:
         if: always()
         run: python3 -B Scripts/ci-cache.py report --profile release-platform-builds --variant '${{ matrix.runtime }}'
 
+  full-preflight:
+    name: Full Release Preflight
+    if: github.event_name == 'workflow_dispatch' && !inputs.publish
+    runs-on: xcode-27
+    timeout-minutes: 180
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Validate exact main before full preflight
+        env:
+          RELEASE_CANDIDATE_REF: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/main
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          bash Scripts/validate_release_candidate.sh
+          mkdir -p .build/local-release-preflight
+          printf 'commit=%s\ntree=%s\nattempt=%s\n' \
+            "$GITHUB_SHA" "$(git rev-parse 'HEAD^{tree}')" "$GITHUB_RUN_ATTEMPT" \
+            > .build/local-release-preflight/identity.txt
+
+      - name: Select Xcode 27
+        run: sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Install verified Periphery 3.8.0
+        env:
+          PERIPHERY_VERSION: "3.8.0"
+          PERIPHERY_SHA256: "07d4e286e31dd79164df39097e0b59f533c94badbe18158464a455ea88a166d7"
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/periphery-$PERIPHERY_VERSION.zip"
+          install_dir="$RUNNER_TEMP/periphery-$PERIPHERY_VERSION"
+          curl --fail --location --proto '=https' --tlsv1.2 --retry 3 \
+            --output "$archive" \
+            "https://github.com/peripheryapp/periphery/releases/download/$PERIPHERY_VERSION/periphery-$PERIPHERY_VERSION.zip"
+          printf '%s  %s\n' "$PERIPHERY_SHA256" "$archive" | shasum -a 256 -c -
+          mkdir -p "$install_dir"
+          ditto -x -k "$archive" "$install_dir"
+          codesign --verify --strict "$install_dir/periphery"
+          codesign --verify --strict "$install_dir/libIndexStore.dylib"
+          test "$("$install_dir/periphery" version)" = "$PERIPHERY_VERSION"
+          echo "$install_dir" >> "$GITHUB_PATH"
+
+      - name: Run all fifteen full preflight gates
+        run: |
+          set -euo pipefail
+          bash Scripts/run_local_release_preflight.sh --full 2>&1 \
+            | tee .build/local-release-preflight/run.log
+
+      - name: Prevalidate public consumer source at candidate revision
+        run: bash Scripts/verify_published_consumer.sh --candidate "$GITHUB_SHA"
+
+      - name: Revalidate exact main after full preflight
+        env:
+          RELEASE_CANDIDATE_REF: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          bash Scripts/validate_release_candidate.sh
+          git diff --exit-code
+          printf 'full-preflight=success\ncommit=%s\n' "$GITHUB_SHA" \
+            > .build/local-release-preflight/result.txt
+
+      - name: Retain full preflight evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: full-preflight-${{ github.sha }}-${{ github.run_attempt }}
+          path: |
+            .build/local-release-preflight/identity.txt
+            .build/local-release-preflight/result.txt
+            .build/local-release-preflight/run.log
+            .build/local-release-preflight/coverage-core/
+            .build/local-release-preflight/coverage-macros/
+            .build/local-release-preflight/benchmarks/
+            .build/local-release-preflight/sbom*.json
+            .build/published-consumer/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+
+  validate-tagged-consumer:
+    name: Validate Public Tagged Consumer
+    if: startsWith(github.ref, 'refs/tags/') && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish))
+    runs-on: xcode-27
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact release source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Validate annotated current-main release tag
+        run: bash Scripts/validate_release_ref.sh
+
+      - name: Select Xcode 27
+        run: sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Resolve build and run clean public consumers
+        env:
+          RELEASE_VERSION: ${{ github.ref_name }}
+          RELEASE_COMMIT: ${{ github.sha }}
+        run: bash Scripts/verify_published_consumer.sh "$RELEASE_VERSION" "$RELEASE_COMMIT"
+
+      - name: Retain tagged consumer evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: tagged-consumer-${{ github.sha }}-${{ github.run_attempt }}
+          path: .build/published-consumer/
+          if-no-files-found: error
+          retention-days: 14
+
   publish-release:
     name: Publish Release
     if: startsWith(github.ref, 'refs/tags/') && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish))
     needs:
       - validate-release
       - validate-platform-builds
+      - validate-tagged-consumer
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:

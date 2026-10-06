@@ -33,8 +33,8 @@ paths.uniq.each do |path|
       escaped = Regexp.escape(spelling)
       patterns = [
         /\buntil #{escaped}\b is (?:tagged|published|released)\b/i,
-        /\b#{escaped}\b is (?:not(?: yet)? published|unpublished)\b/i,
-        /\bnot[- ]yet[- ]published #{escaped}\b/i
+        /\b#{escaped}\b(?: candidate| release)? (?:is|was|remains) (?:not(?: yet)? published|unpublished|pending publication)\b/i,
+        /\b(?:unpublished|not[- ]yet[- ]published) (?:core )?#{escaped}\b/i
       ]
       failures << "#{path}: published #{version} still described as pending publication" if patterns.any? { |pattern| text.match?(pattern) }
     end

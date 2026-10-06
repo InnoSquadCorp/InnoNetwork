@@ -33,6 +33,7 @@ for path in \
   Scripts/symbols/README.md \
   Scripts/symbols/budgets.tsv \
   Scripts/symbols/tier-budgets.tsv \
+  Scripts/published-releases.json \
   Sources/InnoNetwork/InnoNetwork.docc/MigrationTo6.md \
   docs/Migration-6.0.0.md \
   docs/ROADMAP.md \
@@ -45,16 +46,24 @@ for path in \
 done
 mkdir -p "$scratch/Scripts"
 cp "$repo_root/Scripts/validate_6_release_state.sh" "$scratch/Scripts/"
+cp "$repo_root/Scripts/validate_6_1_release_state.py" "$scratch/Scripts/"
 git -C "$scratch" add .
 git -C "$scratch" commit --quiet -m fixture
 
 bash "$scratch/Scripts/validate_6_release_state.sh" --expect "$current_state" --ref HEAD
 
-# A later candidate can become Ready without publishing the superseded roadmap
-# or changing the historical 6.0 contract. This edits only the disposable fixture.
-sed 's/release-status: draft/release-status: ready/' \
-  "$repo_root/docs/releases/6.1.0.md" > "$scratch/docs/releases/6.1.0.md"
-bash "$scratch/Scripts/validate_6_release_state.sh" --expect "$current_state"
+# A later candidate has a separate lifecycle, but a marker-only transition
+# must fail. Coherent Draft/Ready/published fixtures are exercised below.
+minor_transition='s/release-status: ready/release-status: draft/'
+if grep -Fxq '<!-- release-status: draft -->' "$repo_root/docs/releases/6.1.0.md"; then
+  minor_transition='s/release-status: draft/release-status: ready/'
+fi
+sed "$minor_transition" "$repo_root/docs/releases/6.1.0.md" > "$scratch/docs/releases/6.1.0.md"
+if bash "$scratch/Scripts/validate_6_release_state.sh" --expect "$current_state" \
+  > "$scratch/rejection.log" 2>&1; then
+  echo "6.1 release-state test: accepted a marker-only transition" >&2
+  exit 1
+fi
 cp "$repo_root/docs/releases/6.1.0.md" "$scratch/docs/releases/6.1.0.md"
 
 # Losing the archive must not silently treat the new candidate as old scope.
@@ -69,11 +78,22 @@ grep -Fq "missing" "$scratch/rejection.log"
 # Existing tags retain the old layout. Validate that committed layout even when
 # the working tree subsequently restores the new canonical candidate/archive.
 cp "$scratch/superseded-record.md" "$scratch/docs/releases/6.1.0.md"
-git -C "$scratch" add docs/releases
+# The actual historical layout predates the encoded-request inventory. Do not
+# create a synthetic old-layout/new-inventory tree and call it historical.
+sed '/<!-- encoded-request-/d' "$repo_root/API_STABILITY.md" > "$scratch/API_STABILITY.md"
+sed 's/1,764/1,702/g;s/| 367 |/| 307 |/g;s/1,364/1,362/g' \
+  "$repo_root/Scripts/symbols/README.md" > "$scratch/Scripts/symbols/README.md"
+sed 's/1764/1702/g' "$repo_root/Scripts/symbols/budgets.tsv" > "$scratch/Scripts/symbols/budgets.tsv"
+sed 's/1764/1702/g;s/367/307/g;s/1364/1362/g' \
+  "$repo_root/Scripts/symbols/tier-budgets.tsv" > "$scratch/Scripts/symbols/tier-budgets.tsv"
+git -C "$scratch" add docs/releases API_STABILITY.md Scripts/symbols
 git -C "$scratch" commit --quiet -m legacy-layout
 bash "$scratch/Scripts/validate_6_release_state.sh" --expect "$current_state" --ref HEAD
 mv "$scratch/superseded-record.md" "$scratch/docs/releases/archive/6.1.0-superseded-roadmap.md"
 cp "$repo_root/docs/releases/6.1.0.md" "$scratch/docs/releases/6.1.0.md"
+for path in API_STABILITY.md Scripts/symbols/README.md Scripts/symbols/budgets.tsv Scripts/symbols/tier-budgets.tsv; do
+  cp "$repo_root/$path" "$scratch/$path"
+done
 
 assert_scope_change_rejected() {
   local relative_path="$1"
@@ -98,6 +118,19 @@ assert_scope_change_rejected Scripts/symbols/budgets.tsv \
   's/1702/1407/g;s/1764/1407/g' 'an outdated API budget'
 assert_scope_change_rejected Scripts/symbols/tier-budgets.tsv \
   's/1362/1068/g;s/1364/1068/g' 'an outdated provisional tier budget'
+assert_scope_change_rejected Scripts/symbols/budgets.tsv \
+  's/1764/1765/g' 'an unapproved runtime inventory increase'
+assert_scope_change_rejected Scripts/symbols/tier-budgets.tsv \
+  's/367/368/g' 'an unapproved Stable inventory increase'
+assert_scope_change_rejected Scripts/symbols/tier-budgets.tsv \
+  's/33/34/g' 'an unapproved SPI inventory increase'
+printf '\nTOTAL\t9999\n' >> "$scratch/Scripts/symbols/budgets.tsv"
+if bash "$scratch/Scripts/validate_6_release_state.sh" > "$scratch/rejection.log" 2>&1; then
+  echo "6.1 release-state test: accepted duplicate runtime inventory budgets" >&2
+  exit 1
+fi
+grep -Fq 'expected exactly one TOTAL budget' "$scratch/rejection.log"
+cp "$repo_root/Scripts/symbols/budgets.tsv" "$scratch/Scripts/symbols/budgets.tsv"
 if grep -Fq 'encoded-request-candidate: 6.1.0' "$repo_root/API_STABILITY.md"; then
   assert_scope_change_rejected API_STABILITY.md \
     '/encoded-request-candidate: 6.1.0/d' 'an implicit new-version inventory'
@@ -145,3 +178,4 @@ fi
 
 bash "$scratch/Scripts/validate_6_release_state.sh" --expect "$current_state"
 echo "6.0 release-state tests: OK"
+python3 "$repo_root/Scripts/tests/test_validate_6_1_release_state.py"
