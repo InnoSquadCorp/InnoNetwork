@@ -1,8 +1,12 @@
 # Core 6.1.0 release preparation — 2026-10-06
 
-Status: Draft preparation, not Ready approval or publication evidence.
-The selected next version is 6.1.0. Only the Core repository is changed; companion
-packages, live repository settings and deployment remain outside this change.
+Status: Ready contents approved after full preflight; not publication evidence.
+The selected next version is 6.1.0. The earlier sections below preserve their
+original preparation snapshots and failures. The completion section records the
+later successful evidence without treating it as validation of future commits.
+Only Core documentation is changed in this Ready transition; companion packages
+and live repository settings remain unchanged. Final Ready-main validation and
+actual tagged publication are separate remaining steps.
 
 ## Starting point and evidence identity
 
@@ -126,3 +130,56 @@ companion repositories in this preparation.
 Device/background/locked-device and dedicated IdP, AWS, exporter or FairPlay
 acceptance remains application-specific. Local mocks and green library CI must
 not be described as live-service certification.
+
+## 4. Successful preparation and Ready decision — 2026-10-06
+
+- PR #144's final head `c02d0a7334cba2881e87b5c7e63374af9495a470`
+  passed [32 CI jobs](https://github.com/InnoSquadCorp/InnoNetwork/actions/runs/37437641109),
+  including all fifteen new encoded regression cases on Xcode 27. It was normally
+  squashed to `5a73a9a90436b31dfd2cb5a95909fcb613c66478`; its
+  [main CI](https://github.com/InnoSquadCorp/InnoNetwork/actions/runs/37456694023)
+  succeeded with 22 successful jobs and six policy-selected skips.
+- PR #145 added the official remote execution of the unchanged fifteen-gate
+  full preflight, candidate/public-tag consumer verification, and coherent 6.1
+  Draft/Ready/published documentation checks. It changed no runtime source,
+  dependency manifest/lockfile, public symbol inventory or repository protection.
+- The first #145 head `8297c35d20ed635c9b87e9b95f469424fb5d2c9f`
+  exposed a Python-version-specific error-message assertion in an invalid-date
+  fixture. Invalid dates were correctly rejected. The final head
+  `628e4a956db70da4ec1c3a2e34e0bedcb2494083` normalizes the diagnostic while
+  preserving strict calendar validation and the original exception; its local
+  Python fixtures passed 133 tests, including 28 lifecycle cases.
+- Its [exact-head CI](https://github.com/InnoSquadCorp/InnoNetwork/actions/runs/37465674436)
+  passed all 32 jobs on attempt 2. Attempt 1's append-log-compaction paired median
+  exceeded the unchanged 20% guard at 21.06%, with 36.0% pair spread. Runtime,
+  benchmark and dependency trees were identical to the PR base. A single same-SHA,
+  same-threshold remeasurement passed at -1.38% (head relative to base); the
+  original logs remain diagnostic evidence, not a passing result. All other
+  thirty jobs passed on the original attempt. The
+  [metadata check](https://github.com/InnoSquadCorp/InnoNetwork/actions/runs/37466003839)
+  subsequently verified the successful current head/base evidence.
+- Normal PR #145 integration produced main
+  `9e0a722a57ce3e74c623b8a6923869fb72a0d98c`, whose tree
+  `e2d96b036f656b0dea9db7a9ded9aa068f5c992e` equals the tested PR head.
+- The [official non-publishing Release run](https://github.com/InnoSquadCorp/InnoNetwork/actions/runs/37493194400)
+  succeeded on that main revision: seven validation jobs succeeded; public-tag
+  verification and publication were structurally skipped. The full-preflight
+  receipt records all fifteen gates, strict Periphery 3.8.0, coverage, guarded
+  benchmarks, SBOMs, DocC and five-platform builds. The explicit streaming soak
+  ran for 30 seconds, separately from shorter ordinary test cases.
+- The [retained full-preflight artifact](https://github.com/InnoSquadCorp/InnoNetwork/actions/runs/37493194400/artifacts/11432405476)
+  records the exact commit/tree and successful post-execution main check. Its
+  consumer receipt resolves the canonical GitHub repository to the same revision
+  with default and core-only traits and runs both in release mode. It explicitly
+  records `mode: candidate-revision`, `version: null` and
+  `public_tag_verified: false`; it does not claim a resolvable 6.1.0 tag.
+- With the authorized release contents and actual full-preflight evidence, the
+  five coordinated lifecycle documents now mark 6.1.0 Ready. README installation
+  and the publication ledger still describe the publicly released 6.0.0.
+
+The new Ready documentation commit still needs exact-head CI, review and normal
+integration. The final Ready main must pass its own CI and official non-publishing
+Release validation, and the intended date and current protection must be audited
+again before creating the annotated tag. Tag identity, public-tag consumer
+resolution, signatures, release assets and publication are separate evidence;
+none is supplied by this Ready marker or by the earlier Draft-main run.

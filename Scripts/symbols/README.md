@@ -21,7 +21,8 @@ Stable compatibility promise.
 
 ## Current sizes (InnoNetwork 6.0.0 release baseline)
 
-This table includes the approved, unpublished 6.1 encoded-request addition with
+This table includes the approved 6.1.0 encoded-request addition; readiness is not publication.
+The inventory contains
 1,764 public runtime declarations and 12 separately inventoried compiler-host declarations.
 Readiness does not prove publication;
 the 5.0.0 baseline remains the compatibility reference for the 5.x line.
