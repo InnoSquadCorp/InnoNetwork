@@ -19,6 +19,7 @@ six_release_state_validator="$repo_root/Scripts/validate_6_release_state.sh"
 # The 5.x documentation contract is historical and remains covered by the
 # validator's fixture tests. Keep the last released 5.x state explicit while
 # the 6.0 validator accepts either a coherent draft or a coherent ready state.
+ruby "$repo_root/Scripts/check_post_release_docs.rb"
 docs_release_state="ready"
 bash "$six_release_state_validator"
 
@@ -58,6 +59,8 @@ required_meta_docs=(
   "$repo_root/docs/releases/4.0.0.md"
   "$repo_root/docs/releases/5.0.0.md"
   "$repo_root/docs/releases/6.0.0.md"
+  "$repo_root/docs/releases/6.1.0.md"
+  "$repo_root/docs/releases/archive/6.1.0-superseded-roadmap.md"
 )
 required_feature_docs=(
   "$repo_root/Sources/InnoNetwork/InnoNetwork.docc/Articles/StreamingGuide.md"
@@ -109,6 +112,7 @@ fi
 
 expected_stable=(
 '`APIDefinition`'
+'`EncodedRequest`, `EncodedRequestBody`, `EncodedRequestOptions`, `EncodedRequestClient`, `EncodedCodecMeasurement`, `EncodedPayloadFailure` (new in the unpublished 6.1 candidate)'
 '`@APIDefinition(method:path:auth:)` and the default-enabled `Macros` package trait (promoted to Stable in 6.0.0; `traits: []` remains the supported opt-out)'
 '`CancellationTag`'
 '`Endpoint`'
@@ -247,6 +251,13 @@ fi
 
 expected_shipping_public_declarations=(
   APIDefinition
+  EncodedAPIDefinition
+  EncodedRequest
+  EncodedRequestBody
+  EncodedRequestOptions
+  EncodedRequestClient
+  EncodedCodecMeasurement
+  EncodedPayloadFailure
   AnyEncodable
   AnyRequestExecutionPolicy
   AnyResponseDecoder
@@ -751,6 +762,7 @@ collect_public_symbols() {
   set -e
 
   python3 "$repo_root/Scripts/collect_public_symbols.py" "$repo_root"
+  ruby "$repo_root/Scripts/check_macro_support_surface.rb" >&2
 
   if [[ "$dump_status" -ne 0 ]]; then
     echo "docs-contract-sync: swift package dump-symbol-graph exited with $dump_status after emitting required library symbol graphs; ignoring non-contract target extraction failure." >&2
@@ -1364,6 +1376,13 @@ documented_provisionally_sorted="$(printf '%s\n' "${documented_provisionally[@]:
 
 for symbol in "${expected_stable[@]}"; do
   case "$symbol" in
+    '`EncodedRequest`, `EncodedRequestBody`, `EncodedRequestOptions`, `EncodedRequestClient`, `EncodedCodecMeasurement`, `EncodedPayloadFailure` (new in the unpublished 6.1 candidate)')
+      target="$repo_root/Sources/InnoNetwork/EncodedRequest.swift"
+      for name in EncodedRequest EncodedRequestBody EncodedRequestOptions EncodedRequestClient EncodedCodecMeasurement EncodedPayloadFailure; do
+        grep -Eq "public (struct|protocol|enum) $name([< :]|$)" "$target" || fail "missing stable codec boundary: $name"
+      done
+      continue
+      ;;
     '`APIDefinition`')
       pattern='public protocol APIDefinition'
       target="$repo_root/Sources/InnoNetwork/APIDefinition.swift"

@@ -6,6 +6,45 @@ import Testing
 @Suite("SendableUnderlyingError chain capture")
 struct SendableUnderlyingErrorTests {
 
+    @Test("Recapturing an existing snapshot retains its transport identity and bounded cause")
+    func recapturesSnapshot() {
+        let source = SendableUnderlyingError(
+            domain: NSURLErrorDomain, code: NSURLErrorTimedOut, message: "timeout",
+            failureReason: "reason", recoverySuggestion: "suggestion",
+            underlyingChain: [.init(domain: NSPOSIXErrorDomain, code: 60, message: "kernel")])
+        let captured = SendableUnderlyingError(source)
+        #expect(captured.domain == source.domain)
+        #expect(captured.code == source.code)
+        #expect(captured.message == source.message)
+        #expect(captured.failureReason == source.failureReason)
+        #expect(captured.recoverySuggestion == source.recoverySuggestion)
+        #expect(captured.underlyingChain == source.underlyingChain)
+        let outer = SendableUnderlyingError(NetworkError.underlying(source, nil))
+        #expect(outer.domain == NetworkError.errorDomain)
+        #expect(outer.underlyingChain.first?.domain == NSURLErrorDomain)
+        #expect(outer.underlyingChain.last?.domain == NSPOSIXErrorDomain)
+        #expect(outer.underlyingChain.first?.message == source.message)
+        #expect(outer.underlyingChain.first?.failureReason == source.failureReason)
+        #expect(outer.underlyingChain.first?.recoverySuggestion == source.recoverySuggestion)
+        #expect(SendableUnderlyingError(captured).message == source.message)
+    }
+
+    @Test("Value snapshots and mixed NSError chains respect the capture depth budget")
+    func recaptureDepthBudget() {
+        let frames = (0..<10).map {
+            SendableUnderlyingError.Frame(domain: "cause-\($0)", code: $0, message: "detail-\($0)")
+        }
+        let source = SendableUnderlyingError(domain: "source", code: 42, message: "root", underlyingChain: frames)
+        let direct = SendableUnderlyingError(source)
+        #expect(direct.underlyingChain == Array(frames.prefix(5)))
+        let wrapper = NSError(domain: "wrapper", code: 1, userInfo: [NSUnderlyingErrorKey: source])
+        let root = NSError(domain: "root", code: 2, userInfo: [NSUnderlyingErrorKey: wrapper])
+        let captured = SendableUnderlyingError(root)
+        #expect(captured.underlyingChain.count == SendableUnderlyingError.maxUnderlyingDepth)
+        #expect(captured.underlyingChain.map(\.domain) == ["wrapper", "source", "cause-0", "cause-1", "cause-2"])
+        #expect(captured.underlyingChain.last?.message == "detail-2")
+    }
+
     @Test("init(_:) captures NSUnderlyingErrorKey chain bounded by maxUnderlyingDepth")
     func capturesUnderlyingChain() async {
         let kernel = NSError(

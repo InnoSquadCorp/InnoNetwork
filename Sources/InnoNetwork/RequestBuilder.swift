@@ -41,6 +41,9 @@ package struct RequestBuilder {
             endpointPath: executable.path,
             allowsInsecureHTTP: configuration.allowsInsecureHTTP
         )
+        if let metadata = executable as? any EncodedExecutableMetadata, !metadata.queryItems.isEmpty {
+            targetURL.append(queryItems: metadata.queryItems)
+        }
         let payload = try executable.makePayload()
         var didTransferPayloadOwnership = false
         defer {

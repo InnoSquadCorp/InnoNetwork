@@ -252,16 +252,23 @@ xcrun swift test --no-parallel
 sudo xcode-select -s /Applications/Xcode.app
 xcodebuild -version
 
-# The default fast mode runs the deterministic
+# The default fast mode runs eight gates: deterministic
 # contracts, all independent consumer packages, the OpenAPI generator suite,
-# and the same bounded root test shards used by CI.
+# the same bounded root test shards used by CI, and strict Periphery 3.8.0
+# with CI's native SwiftPM index layout. Install that exact Periphery version.
 bash Scripts/run_local_release_preflight.sh
 
 # Before approving a release-state commit, replay every locally reproducible
-# release gate: coverage, same-runner guarded benchmarks, both SBOM profiles,
+# release gate (15 total): coverage, same-runner guarded benchmarks, both SBOM profiles,
 # all-product DocC, and macOS/iOS/tvOS/watchOS/visionOS builds. Generated
 # evidence remains under .build/local-release-preflight/ for inspection.
 bash Scripts/run_local_release_preflight.sh --full
+
+# The Periphery gate always rebuilds the index; no stale --skip-build fallback.
+bash Scripts/check_periphery.sh
+# Recorded publication evidence guards current adoption guidance offline.
+# Historical release validation documents are intentionally outside this scan.
+ruby Scripts/check_post_release_docs.rb
 
 # The commands below document the individual gates for diagnosis.
 git ls-files --error-unmatch Package.resolved >/dev/null

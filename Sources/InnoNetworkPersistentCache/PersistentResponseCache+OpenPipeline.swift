@@ -112,6 +112,22 @@ extension PersistentResponseCache {
                 scrubbedOversizedCount += 1
                 scrubbedOversizedBytes += entry.byteCost
                 didMutate = true
+            } else {
+                // The body descriptor and decoded headers, not a persisted
+                // accounting hint, determine the admitted storage cost.
+                var cost = bodySize
+                let counts =
+                    entry.headers.flatMap { [$0.key.utf8.count, $0.value.utf8.count] }
+                    + (entry.varyHeaders?.flatMap { [$0.key.utf8.count, $0.value?.utf8.count ?? 0] } ?? [])
+                for count in counts {
+                    let sum = cost.addingReportingOverflow(count)
+                    guard cost >= 0, !sum.overflow else { throw CocoaError(.coderInvalidValue) }
+                    cost = sum.partialValue
+                }
+                if cost != entry.byteCost {
+                    budgetedIndex.entries[id]?.byteCost = cost
+                    didMutate = true
+                }
             }
         }
 
@@ -121,7 +137,7 @@ extension PersistentResponseCache {
             return lhsDate < rhsDate
         }
         var cursor = sortedIDs.startIndex
-        var runningTotalBytes = totalBytes(in: budgetedIndex)
+        var runningTotalBytes = try totalBytes(in: budgetedIndex)
         while cursor < sortedIDs.endIndex,
             budgetedIndex.entries.count > configuration.maxEntries
                 || runningTotalBytes > configuration.maxBytes
@@ -233,8 +249,14 @@ extension PersistentResponseCache {
         return scrubbedCount
     }
 
-    static func totalBytes(in index: Index) -> Int {
-        index.entries.values.reduce(0) { $0 + $1.byteCost }
+    static func totalBytes(in index: Index) throws -> Int {
+        var total = 0
+        for entry in index.entries.values {
+            let sum = total.addingReportingOverflow(entry.byteCost)
+            guard entry.byteCost >= 0, !sum.overflow else { throw CocoaError(.coderInvalidValue) }
+            total = sum.partialValue
+        }
+        return total
     }
 
     static func loadIndex(
@@ -278,7 +300,8 @@ extension PersistentResponseCache {
         // ordering in the digest input. Version-3 indexes are intentionally
         // cold-reset so raw query material does not survive the upgrade.
         if let index = try? JSONDecoder.persistentCache.decode(Index.self, from: data),
-            index.version == formatVersion
+            index.version == formatVersion,
+            (try? totalBytes(in: index)) != nil
         {
             return OpenResult(index: index, telemetryEvents: [])
         }

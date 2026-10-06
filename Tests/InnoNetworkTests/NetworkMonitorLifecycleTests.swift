@@ -18,6 +18,22 @@ private func eventPipelineOverflowPolicyEquals(
 @Suite("NetworkMonitor lifecycle")
 struct NetworkMonitorLifecycleTests {
 
+    @Test(.timeLimit(.minutes(1)), arguments: [1e308, Double.nan, .infinity, -.infinity])
+    func extremeTimeoutCompletesOrCancelsWithoutTimerConversion(timeout: Double) async {
+        let monitor = NetworkMonitor()
+        let baseline = await monitor.currentSnapshot()
+        await withTaskGroup(of: NetworkSnapshot?.self) { group in
+            group.addTask { await monitor.waitForChange(from: baseline, timeout: timeout) }
+            group.addTask {
+                try? await Task.sleep(for: .milliseconds(5))
+                return nil
+            }
+            _ = await group.next()
+            group.cancelAll()
+        }
+        await monitor.stop()
+    }
+
     @Test("start() then stop() then start() recycles the underlying NWPathMonitor")
     func startStopStart() async throws {
         let monitor = NetworkMonitor()

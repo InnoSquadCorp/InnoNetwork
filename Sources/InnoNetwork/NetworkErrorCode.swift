@@ -17,6 +17,7 @@ public enum NetworkErrorCode: Int, Sendable {
     case configurationInvalidBaseURL = 1001
     case configurationInvalidRequest = 1002
     case configurationOffline = 1003
+    case configurationInvalidPayload = 1004
 
     // 2xxx — decoding failures.
     // 2001 intentionally unused (retired before this enum existed).

@@ -23,6 +23,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 production_paths=(
     "$repo_root/Sources/InnoNetwork"
     "$repo_root/Sources/InnoNetworkMacros"
+    "$repo_root/Sources/InnoNetworkMacroSupport"
     "$repo_root/Sources/InnoNetworkDownload"
     "$repo_root/Sources/InnoNetworkUpload"
     "$repo_root/Sources/InnoNetworkPersistentCache"

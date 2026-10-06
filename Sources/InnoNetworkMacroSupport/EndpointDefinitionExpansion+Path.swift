@@ -1,7 +1,7 @@
 import SwiftDiagnostics
 import SwiftSyntax
 
-extension APIDefinitionMacro {
+extension EndpointDefinitionExpansion {
     static func validatePathLiteral(
         _ path: String,
         anchor: some SyntaxProtocol
@@ -161,7 +161,7 @@ extension APIDefinitionMacro {
                 }
                 usedProperties.insert(name)
                 result +=
-                    "\\(InnoNetwork.EndpointPathEncoding.percentEncodedSegment(_innoNetworkRequirePathValue(\(name))))"
+                    "\\(InnoNetwork.EndpointPathEncoding.percentEncodedSegment(_innoNetworkRequirePathValue(self.\(property.sourceName))))"
                 index = path.index(after: close)
             } else if character == "}" {
                 throw InnoNetworkMacroDiagnostic(

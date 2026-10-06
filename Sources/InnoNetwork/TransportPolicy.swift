@@ -101,7 +101,8 @@ public extension TransportPolicy where Output: Decodable {
     ///
     /// Throwing from `decode` is mapped through the normal
     /// ``NetworkError/decoding(stage:underlying:response:)`` boundary by the
-    /// request executor. Choose ``RequestEncodingPolicy/none`` only when the
+    /// request executor, except supported cancellation errors remain cancellation.
+    /// Choose ``RequestEncodingPolicy/none`` only when the
     /// endpoint truly has no query/body parameters; otherwise the supplied
     /// encoding policy remains responsible for serializing the endpoint
     /// parameter type into the outgoing request.
@@ -114,7 +115,7 @@ public extension TransportPolicy where Output: Decodable {
                 return try decode(data, response)
             } catch let error as NetworkError {
                 throw error
-            } catch is CancellationError {
+            } catch  where NetworkError.isCancellation(error) {
                 throw CancellationError()
             } catch {
                 throw NetworkError.decoding(

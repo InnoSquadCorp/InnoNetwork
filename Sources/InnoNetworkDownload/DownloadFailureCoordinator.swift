@@ -160,13 +160,14 @@ package struct DownloadFailureCoordinator {
                 let timeout: TimeInterval?
                 if let deadline = activePlan.networkWaitDeadline {
                     let remaining = deadline.timeIntervalSince(clock.now())
+                    guard remaining.isFinite else {
+                        await markInvalidRetryDeadline(task)
+                        return
+                    }
                     if remaining <= 0 {
                         timeout = 0
                     } else {
-                        timeout = clampDelay(
-                            remaining,
-                            upperBound: Self.maximumSupportedDelay
-                        )
+                        timeout = remaining
                     }
                 } else {
                     timeout = nil
@@ -209,14 +210,14 @@ package struct DownloadFailureCoordinator {
             let deadline = activePlan.retryNotBefore
         {
             let remaining = deadline.timeIntervalSince(clock.now())
+            guard remaining.isFinite else {
+                await markInvalidRetryDeadline(task)
+                return
+            }
             if remaining > 0 {
-                let boundedRemaining = clampDelay(
-                    remaining,
-                    upperBound: Self.maximumSupportedDelay
-                )
                 let sleepResult = await lifecycleGate.raceWithShutdown {
                     do {
-                        try await clock.sleep(for: .seconds(boundedRemaining))
+                        try await clock.sleep(forSeconds: remaining)
                         return true
                     } catch {
                         return false
@@ -245,13 +246,22 @@ package struct DownloadFailureCoordinator {
         )
     }
 
+    private func markInvalidRetryDeadline(_ task: DownloadTask) async {
+        await markTaskFailed(
+            task,
+            reason: .fileSystemError(
+                SendableUnderlyingError(
+                    domain: "InnoNetwork.DownloadRestoration", code: 1,
+                    message: "The persisted retry deadline is not finite.")))
+    }
+
     /// Computes the sleep interval before the next restart. When
     /// `configuration.exponentialBackoff` is disabled the configured
     /// fixed `retryDelay` is returned directly. When
     /// enabled the base delay grows as `retryDelay * 2^(retryCount - 1)`,
     /// then the returned delay is sampled from `base ± jitter`, clamped to
-    /// `[0, effectiveCap]`. "Uncapped" configurations are still bounded to
-    /// the runtime's maximum representable sleep duration.
+    /// `[0, effectiveCap]`. "Uncapped" generated delays retain the historical
+    /// retry-plan envelope; restored finite deadlines are not shortened to it.
     private func computeRetryDelay(retryCount: Int) -> TimeInterval {
         let maximumSupportedDelay = Self.maximumSupportedDelay
         let fixedDelay = clampDelay(configuration.retryDelay, upperBound: maximumSupportedDelay)

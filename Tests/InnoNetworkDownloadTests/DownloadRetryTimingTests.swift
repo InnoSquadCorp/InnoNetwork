@@ -477,6 +477,55 @@ struct DownloadRetryTimingTests {
 }
 
 
+@Suite("Large restored download timing", .timeLimit(.minutes(1)))
+struct LargeRestoredDownloadTimingTests {
+    @Test(arguments: [Double(Int64.max), 1e308])
+    @MainActor func finiteRestoredDeadlineDoesNotRestartAfterSlice(seconds: Double) async {
+        let clock = TestClock()
+        let (coordinator, task) = await makeCoordinator(configuration: .advanced(), clock: clock)
+        await task.restoreState(.downloading)
+        let restarts = OSAllocatedUnfairLock(initialState: 0)
+        let job = Task {
+            await coordinator.resumePersistedRetry(
+                task: task,
+                plan: .backoff(retryNotBefore: clock.now().addingTimeInterval(seconds)),
+                restart: { _ in restarts.withLock { $0 += 1 } })
+        }
+        await withTaskCancellationHandler {
+            #expect(await clock.waitForEnqueuedCount(atLeast: 1))
+            clock.advance(by: SchedulingTime.maximumSleepSlice)
+            #expect(await clock.waitForEnqueuedCount(atLeast: 2))
+            #expect(restarts.withLock { $0 } == 0)
+            job.cancel()
+            await job.value
+            #expect(clock.waiterCount == 0)
+            #expect(restarts.withLock { $0 } == 0)
+        } onCancel: {
+            job.cancel()
+        }
+    }
+
+    @Test(arguments: [Double.nan, .infinity, -.infinity])
+    @MainActor func invalidRestoredDeadlineHasTerminalFailure(seconds: Double) async {
+        let clock = TestClock()
+        let (coordinator, task) = await makeCoordinator(configuration: .advanced(), clock: clock)
+        await task.restoreState(.downloading)
+        let restarts = OSAllocatedUnfairLock(initialState: 0)
+        await coordinator.resumePersistedRetry(
+            task: task,
+            plan: .backoff(retryNotBefore: Date(timeIntervalSince1970: seconds)),
+            restart: { _ in restarts.withLock { $0 += 1 } })
+        #expect(await task.state == .failed)
+        #expect(restarts.withLock { $0 } == 0)
+        #expect(clock.waiterCount == 0)
+        guard case .fileSystemError(let error) = await task.error else {
+            Issue.record("Expected restoration failure")
+            return
+        }
+        #expect(error.domain == "InnoNetwork.DownloadRestoration")
+    }
+}
+
 // MARK: - Helpers
 
 @MainActor

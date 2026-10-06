@@ -29,7 +29,7 @@ extension AppendLogDownloadTaskStore {
     }
 
     struct Event: Codable, Sendable {
-        let sequence: Int64
+        var sequence: Int64
         let timestamp: Date
         let kind: EventKind
         let taskID: String

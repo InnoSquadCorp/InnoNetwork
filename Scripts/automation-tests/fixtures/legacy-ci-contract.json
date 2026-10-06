@@ -122,7 +122,7 @@
         },
         {
           "name": "Generate runtime coverage report",
-          "run": "set -euo pipefail\n\nruntime_source_roots=()\nwhile IFS= read -r source_root; do\n  runtime_source_roots+=(\"$source_root\")\ndone < <(\n  find Sources -mindepth 1 -maxdepth 1 -type d \\\n    ! -name InnoNetworkMacros -print | sort\n)\n\nbash Scripts/generate_coverage_report.sh \\\n  .build \\\n  .build/coverage \\\n  \"${runtime_source_roots[@]}\"\n",
+          "run": "set -euo pipefail\n\nruntime_source_roots=()\nwhile IFS= read -r source_root; do\n  runtime_source_roots+=(\"$source_root\")\ndone < <(\n  find Sources -mindepth 1 -maxdepth 1 -type d \\\n    ! -name InnoNetworkMacros ! -name InnoNetworkMacroSupport -print | sort\n)\n\nbash Scripts/generate_coverage_report.sh \\\n  .build \\\n  .build/coverage \\\n  \"${runtime_source_roots[@]}\"\n",
           "if": "steps.toolchain-compatibility.outputs.compatible == 'true'"
         },
         {
@@ -254,7 +254,7 @@
         },
         {
           "name": "Verify CHANGELOG Unreleased section",
-          "run": "bash Scripts/check_changelog_sync.sh"
+          "run": "ruby Scripts/tests/test_check_changelog_sync.rb\nbash Scripts/check_changelog_sync.sh\n"
         },
         {
           "name": "Verify provisionally stable enum case ledger",
@@ -399,7 +399,7 @@
         },
         {
           "name": "Generate macro coverage report",
-          "run": "bash Scripts/generate_coverage_report.sh \\\n  .build \\\n  .build/coverage-macros \\\n  Sources/InnoNetworkMacros\n"
+          "run": "bash Scripts/generate_coverage_report.sh \\\n  .build \\\n  .build/coverage-macros \\\n  Sources/InnoNetworkMacros Sources/InnoNetworkMacroSupport\n"
         }
       ]
     },

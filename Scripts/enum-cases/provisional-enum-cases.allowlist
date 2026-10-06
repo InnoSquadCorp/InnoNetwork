@@ -10,6 +10,7 @@ MultipartUploadStrategy.inMemory
 MultipartUploadStrategy.streamingThreshold
 
 NetworkConfigurationFailureReason.invalidBaseURL
+NetworkConfigurationFailureReason.invalidPayload
 NetworkConfigurationFailureReason.invalidRequest
 NetworkConfigurationFailureReason.offline
 
@@ -24,6 +25,7 @@ NetworkError.underlying
 
 NetworkErrorCode.cancelled
 NetworkErrorCode.configurationInvalidBaseURL
+NetworkErrorCode.configurationInvalidPayload
 NetworkErrorCode.configurationInvalidRequest
 NetworkErrorCode.configurationOffline
 NetworkErrorCode.decoding

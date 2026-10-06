@@ -21,13 +21,14 @@ Stable compatibility promise.
 
 ## Current sizes (InnoNetwork 6.0.0 release baseline)
 
-This table is the approved unified 6.0 compatibility baseline with
-1,702 public declarations in the root package. Readiness does not prove publication;
+This table includes the approved, unpublished 6.1 encoded-request addition with
+1,764 public runtime declarations and 12 separately inventoried compiler-host declarations.
+Readiness does not prove publication;
 the 5.0.0 baseline remains the compatibility reference for the 5.x line.
 
 | Product | Public declarations |
 |---|---:|
-| `InnoNetwork` (core) | 1135 |
+| `InnoNetwork` (core) | 1197 |
 | `InnoNetworkWebSocket` | 164 |
 | `InnoNetworkDownload` | 94 |
 | `InnoNetworkUpload` | 111 |
@@ -36,14 +37,26 @@ the 5.0.0 baseline remains the compatibility reference for the 5.x line.
 | `InnoNetworkOpenAPI` | 36 |
 | `InnoNetworkTrust` | 17 |
 | `InnoNetworkAuthAWS` | 10 |
-| **Total** | **1,702** |
+| **Total** | **1,764** |
 
 | Compatibility tier | Public declarations |
 |---|---:|
-| Stable consumer API | 307 |
-| Provisionally Stable consumer API | 1,362 |
+| Stable consumer API | 367 |
+| Provisionally Stable consumer API | 1,364 |
 | `@_spi(GeneratedClientSupport)` | 33 |
-| **Total** | **1,702** |
+| **Total** | **1,764** |
+
+The encoded-request contract intentionally adds 55 declarations: 53 Stable
+codec-boundary declarations and two Provisional configuration-error declarations.
+The published 6.0 baseline remains 1,702; no existing SPI is promoted or removed.
+
+The approved macro-first bridge adds seven further runtime rows (all Stable
+candidates): the named endpoint protocol and witnesses, plus query appending.
+Client/operation overloads share symbol paths with existing overloads; actual
+external compiler fixtures additionally lock their generic signatures.
+`macro-support.tsv` separately freezes twelve compiler-host-only declarations.
+This tenth product uses SwiftSyntax 604.0.x and minor-bound compatibility; it is
+not a runtime import and is absent from trait-disabled runtime build artifacts.
 
 The awaited multipart delivery overload adds one Provisionally Stable declaration;
 its budget increase does not promote the unbounded stream or change Stable APIs.

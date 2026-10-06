@@ -7,10 +7,64 @@ Versioning.
 
 ## [Unreleased]
 
+### Added — encoded request candidate (not published)
+
+- Add the Stable buffered `EncodedRequest` / `EncodedRequestClient` boundary
+  for custom codecs without GeneratedClientSupport SPI or Codable requirements.
+- Share operation deadlines/cancellation with binary-only clients, memoize body
+  bytes per invocation, and tighten response budgets before collection. The
+  Provisionally Stable `OperationNetworkClient` now has a `Base: Sendable` type
+  bound; existing generic JSON extensions/wrappers must explicitly constrain
+  `Base: NetworkClient` (see the compile-checked migration example).
+- Add payload-free `EncodedPayloadFailure` and configuration reason `invalidPayload`;
+  exhaustive switches over configuration reasons must handle the new case.
+- Separate explicit HTTP no-content decoding from empty codec messages.
+- Add named `EncodedAPIDefinition` endpoints and query appending for macro-first
+  companions; JSON clients and macros keep their existing contracts.
+- Export compiler-host-only `InnoNetworkMacroSupport` with a separate, minor-bound
+  twelve-declaration inventory and current-main SwiftSyntax 604.0.x dependency.
+
 ### Fixed
 
+- Reject unsupported named credentials on encoded endpoints before factory or
+  transport execution instead of silently discarding the declared policy.
 - Settle upload terminal delivery and runtime retirement before admitting an
   explicit retry; cancelling a queued retry does not start a replacement task.
+- Response interceptors receive the response's signed/refreshed request envelope
+  instead of the pre-attempt envelope; synthetic responses without provenance
+  continue using the prepared request. Credential redaction remains in force.
+- Preserve bounded error-snapshot metadata when snapshots are wrapped again.
+- Preserve cancellation through JSON, encoded and streaming codecs without
+  changing direct custom-decoder error contracts.
+- Do not start refresh-failure cooldowns for provider cancellation.
+- Keep extreme finite scheduling budgets pending across cancellation-safe timer
+  slices instead of overflowing timers or dispatching early. Reject unsupported
+  non-finite retry inputs at the existing configuration boundary.
+- Keep retry jitter finite and circuit backoff cap-safe without narrow integer
+  millisecond conversion; preserve normal jitter/base caps and circuit probes.
+- Cover companion macro analysis directly and add strict Periphery to both
+  local preflight modes using the same native index layout and 3.8.0 version as CI.
+- Correct current adoption guidance for the published 6.0.0 release and guard
+  against stale publication advice with offline positive/negative fixtures.
+- Bound persistent-cache telemetry by aggregating totals per reason between
+  drains, saturating counters instead of retaining unlimited event batches.
+  Document single-owner directory usage, including App Group extensions.
+- Preserve Stable JSON macro conditional helpers and policy witnesses. Warn on
+  conditional payload declarations without changing 6.0 inference; use a whole
+  endpoint conditional or unconditional manual payload pair for varying input.
+  New encoded companion macros reject conditional members to prevent omitted
+  payloads or policies in their generated factories.
+- Preserve escaped Swift identifiers and qualify generated path property access.
+- Partition request coalescing by effective response collection limit.
+- Preserve trailing and encoded slash boundaries in non-S3 AWS canonical paths.
+- Reject negative or overflowing persistent-cache costs before any accounting,
+  and rebuild admitted costs from body size and headers.
+- Recover invalid download sequence numbers through valid-prefix quarantine;
+  checkpoint and rebase an exhausted sequence range before further writes.
+- Synchronize the invalid-payload error example and enum compatibility ledger.
+
+See [encoded-request migration notes](docs/Migration-EncodedRequests.md) for
+the unpublished candidate's source-compatibility changes.
 
 ### Changed
 
@@ -21,8 +75,9 @@ Versioning.
 
 ## [6.0.0] - 2026-09-28
 
-Approved release contents; the date is intended until publication. Confirm the
-matching tag and GitHub Release separately before adopting this version.
+Contents approved on 2026-09-28; published on 2026-09-29 UTC with the matching
+tag and GitHub Release. The heading retains the approved contents date used by
+the historical Ready-state validation contract.
 The previously planned 6.1 candidates are included in this 6.0 release scope.
 
 ### Fixed — final hardening

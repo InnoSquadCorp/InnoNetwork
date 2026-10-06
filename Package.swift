@@ -34,6 +34,8 @@ let package = Package(
         .visionOS(.v1),
     ],
     products: [
+        // Compiler-host support only. Never link this product into application runtime targets.
+        .library(name: "InnoNetworkMacroSupport", targets: ["InnoNetworkMacroSupport"]),
         .library(
             name: "InnoNetwork",
             targets: ["InnoNetwork"]
@@ -131,9 +133,20 @@ let package = Package(
         ),
     ],
     targets: [
+        .target(
+            name: "InnoNetworkMacroSupport",
+            dependencies: [
+                .product(name: "SwiftSyntax", package: "swift-syntax"),
+                .product(name: "SwiftSyntaxBuilder", package: "swift-syntax"),
+                .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
+                .product(name: "SwiftDiagnostics", package: "swift-syntax"),
+            ],
+            swiftSettings: strictSettings
+        ),
         .macro(
             name: "InnoNetworkMacros",
             dependencies: [
+                "InnoNetworkMacroSupport",
                 .product(name: "SwiftSyntax", package: "swift-syntax"),
                 .product(name: "SwiftSyntaxBuilder", package: "swift-syntax"),
                 .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
@@ -330,6 +343,7 @@ let package = Package(
         .testTarget(
             name: "InnoNetworkMacroTests",
             dependencies: [
+                .target(name: "InnoNetworkMacroSupport", condition: .when(platforms: [.macOS], traits: ["Macros"])),
                 "InnoNetwork",
                 "InnoNetworkTestSupport",
                 .target(
@@ -338,6 +352,16 @@ let package = Package(
                 ),
                 .product(
                     name: "SwiftDiagnostics",
+                    package: "swift-syntax",
+                    condition: .when(platforms: [.macOS], traits: ["Macros"])
+                ),
+                .product(
+                    name: "SwiftParser",
+                    package: "swift-syntax",
+                    condition: .when(platforms: [.macOS], traits: ["Macros"])
+                ),
+                .product(
+                    name: "SwiftSyntax",
                     package: "swift-syntax",
                     condition: .when(platforms: [.macOS], traits: ["Macros"])
                 ),

@@ -215,12 +215,22 @@ public struct ExponentialBackoffRetryPolicy: RetryPolicy {
     }
 
     public func retryDelay(for retryIndex: Int) -> TimeInterval {
+        retryDelay(for: retryIndex, unitJitter: Double.random(in: -1...1))
+    }
+
+    /// Internal deterministic kernel; preserves the base cap and symmetric
+    /// jitter (including finite ratios greater than one). Invalid direct input
+    /// returns zero; the executor rejects non-finite policy configuration.
+    package func retryDelay(for retryIndex: Int, unitJitter: Double) -> TimeInterval {
+        guard retryDelay.isFinite, maxDelay.isFinite, jitterRatio.isFinite else { return 0 }
         let exponent = pow(2.0, Double(max(retryIndex, 0)))
-        let base = min(retryDelay * exponent, maxDelay)
-        let jitter = abs(base * jitterRatio)
-        let range = (-jitter)...(jitter)
-        let randomOffset = Double.random(in: range)
-        return max(0.0, base + randomOffset)
+        let base = min(retryDelay == 0 ? 0 : retryDelay * exponent, maxDelay)
+        guard base.isFinite else { return 0 }
+        // Sample a finite unit range BEFORE scaling. The mathematically valid
+        // jitter magnitude can overflow Double even when both inputs are finite.
+        let offset = (abs(base) * unitJitter) * abs(jitterRatio)
+        let result = base + offset
+        return result.isFinite ? max(0, result) : (result > 0 ? .greatestFiniteMagnitude : 0)
     }
 
     public func shouldResetAttempts(

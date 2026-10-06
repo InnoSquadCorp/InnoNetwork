@@ -15,7 +15,7 @@ module ConsumerCIContract
     'consumer-macros' => [
       'xcrun swift test --disable-experimental-prebuilts --filter InnoNetworkMacroTests --enable-code-coverage',
       'bash Scripts/check_macro_compile_failures.sh',
-      'bash Scripts/generate_coverage_report.sh .build .build/coverage-macros Sources/InnoNetworkMacros'
+      'bash Scripts/generate_coverage_report.sh .build .build/coverage-macros Sources/InnoNetworkMacros Sources/InnoNetworkMacroSupport'
     ],
     'consumer-openapi' => ['xcrun swift build', 'xcrun swift test',
                            'bash Scripts/test_openapi_generated_output.sh']

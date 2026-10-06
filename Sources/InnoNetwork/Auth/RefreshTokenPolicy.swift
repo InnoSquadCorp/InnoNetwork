@@ -378,7 +378,7 @@ package actor RefreshTokenCoordinator {
                 let token = try await refreshTokenProvider(realm, request)
                 await self?.refreshDidSucceed(realm: realm, id: id)
                 return token
-            } catch is CancellationError {
+            } catch  where NetworkError.isCancellation(error) {
                 await self?.refreshDidCancel(realm: realm, id: id)
                 throw CancellationError()
             } catch {

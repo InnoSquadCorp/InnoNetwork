@@ -383,6 +383,11 @@ package struct RequestExecutor {
         configuration: NetworkConfiguration
     ) async throws -> Response {
         var networkResponse = initialResponse
+        // A transport response carries the request after signing/refresh. Using
+        // prepared.request here loses per-attempt changes. Cache/synthetic
+        // responses without request provenance fall back to this invocation's
+        // prepared envelope. Preserve existing credential-redaction boundaries.
+        let responseRequest = initialResponse.request ?? prepared.request
         NetworkOperationDeadlineContext.mark(.responseDecoding)
 
         // Onion unwinds inner→outer: per-request interceptors first,
@@ -391,12 +396,12 @@ package struct RequestExecutor {
         // produce because per-endpoint adapters have already finished.
         for interceptor in executable.responseInterceptors {
             try Task.checkCancellation()
-            networkResponse = try await interceptor.adapt(networkResponse, request: prepared.request)
+            networkResponse = try await interceptor.adapt(networkResponse, request: responseRequest)
             try Task.checkCancellation()
         }
         for interceptor in configuration.responseInterceptors {
             try Task.checkCancellation()
-            networkResponse = try await interceptor.adapt(networkResponse, request: prepared.request)
+            networkResponse = try await interceptor.adapt(networkResponse, request: responseRequest)
             try Task.checkCancellation()
         }
         // After response interceptors settle, give cancellation a chance

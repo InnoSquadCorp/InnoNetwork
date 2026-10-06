@@ -11,6 +11,7 @@ import tempfile
 from copy import deepcopy
 from pathlib import Path
 from types import ModuleType
+from unittest.mock import patch
 
 
 REPOSITORY = Path(__file__).resolve().parents[2]
@@ -118,10 +119,52 @@ def validate_provenance_fixtures(validator: ModuleType) -> None:
         )
 
 
+def validate_measurement_profiles() -> None:
+    specification = importlib.util.spec_from_file_location(
+        "macro_build_measurement", REPOSITORY / "Scripts" / "measure_macro_builds.py"
+    )
+    assert specification is not None and specification.loader is not None
+    module = importlib.util.module_from_spec(specification)
+    sys.modules[specification.name] = module
+    specification.loader.exec_module(module)
+    companion = Path("/fixture/InnoNetwork-Protobuf")
+
+    for kind in ("json", "protobuf", "mixed"):
+        manifest = module.package_manifest(REPOSITORY, True, kind, companion)
+        disabled = module.package_manifest(REPOSITORY, False, kind, companion)
+        assert disabled.count("traits: []") == (1 if kind == "json" else 2)
+        assert manifest.count("traits: []") == (1 if kind == "protobuf" else 0)
+        for count in (0, 10, 50, 200):
+            original = module.source(count, False, kind)
+            edited = module.source(count, True, kind)
+            assert original.count("struct BenchmarkEndpoint") == count
+            expected_protobuf = count if kind == "protobuf" else count // 2 if kind == "mixed" else 0
+            assert original.count("@ProtobufAPIDefinition(") == expected_protobuf
+            assert original.count("@APIDefinition(") == count - expected_protobuf
+            assert edited.count("/benchmark/v2/") == int(count > 0)
+            assert edited.replace("/benchmark/v2/", "/benchmark/") == original
+
+        # Verify repeated phase identity without executing a compiler or network operation.
+        with patch.object(module, "run_build", side_effect=[1.0, 2.0, 3.0] * 5) as build:
+            measurements = module.measure_profile(REPOSITORY, "swiftpm", 10, 5, kind, companion)
+        assert build.call_count == 15
+        assert [item.phase for item in measurements] == ["clean", "noop-incremental", "endpoint-edit"]
+        assert [item.samples_seconds for item in measurements] == [[value] * 5 for value in (1.0, 2.0, 3.0)]
+        assert [item.median_seconds for item in measurements] == [1.0, 2.0, 3.0]
+        assert all(item.profile == ("macros-10" if kind == "json" else f"{kind}-macros-10") for item in measurements)
+        with patch.object(module, "run_build", side_effect=[1.0, 2.0] * 5) as build:
+            disabled_measurements = module.measure_profile(REPOSITORY, "swiftpm", -1, 5, kind, companion)
+        assert build.call_count == 10
+        assert all(item.endpoint_count == 0 for item in disabled_measurements)
+        assert [item.phase for item in disabled_measurements] == ["clean", "noop-incremental"]
+    print("Macro measurement JSON/protobuf/mixed profile fixtures passed.")
+
+
 def main() -> None:
     validator = load_validator()
     validator.main()
     validate_provenance_fixtures(validator)
+    validate_measurement_profiles()
     source = json.loads(SWIFTPM_BASELINE.read_text(encoding="utf-8"))
 
     short_repeat = deepcopy(source)

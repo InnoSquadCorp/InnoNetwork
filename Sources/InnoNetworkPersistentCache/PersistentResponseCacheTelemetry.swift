@@ -79,10 +79,12 @@ public enum PersistentResponseCacheEvictionReason: String, Sendable, Equatable {
     case unreferencedBody
 }
 
-/// Operational event emitted by ``PersistentResponseCache``.
+/// Operational totals emitted by ``PersistentResponseCache``. Snapshots and
+/// drains aggregate matching reasons since the preceding drain. Count and byte
+/// totals saturate at `Int.max`; individual event chronology is not retained.
 public enum PersistentResponseCacheTelemetryEvent: Sendable, Equatable {
     /// One or more entries were scrubbed during cache open, write, or
-    /// budget enforcement.
+    /// budget enforcement, aggregated by reason between drains.
     ///
     /// - Parameters:
     ///   - reason: Why the entries were removed.

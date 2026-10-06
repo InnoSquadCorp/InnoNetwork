@@ -16,8 +16,13 @@ xcrun swift build \
 # target's compiled products reach the clean core-only build.
 compiled_macro_artifact="$(
   find "$scratch_path" \
+    \( -path "$scratch_path/checkouts" -o -path "$scratch_path/repositories" \
+      -o -path "$scratch_path/prebuilts" \) -prune -o \
     \( \
       -name 'InnoNetworkMacros-tool' \
+      -o -name 'InnoNetworkMacros' \
+      -o -name 'InnoNetworkMacroSupport.swiftmodule' \
+      -o -name 'SwiftSyntax.swiftmodule' \
       -o -name 'InnoNetworkMacros.swiftmodule' \
       -o -path '*/InnoNetworkMacros-tool.build/*.o' \
     \) \

@@ -116,6 +116,7 @@ def main() -> None:
 
     expected_host_dependencies = {
         "InnoNetworkMacros",
+        "InnoNetworkMacroSupport",
         "SwiftDiagnostics",
         "SwiftSyntaxMacros",
         "SwiftSyntaxMacrosTestSupport",

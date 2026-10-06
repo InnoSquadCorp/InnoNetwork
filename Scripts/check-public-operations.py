@@ -83,6 +83,10 @@ def coherence(root):
     products = (root / 'docs/public-docc-products.txt').read_text().splitlines()
     exported = re.findall(r'\.library\(\s*name: "([^"]+)"', (root / 'Package.swift').read_text())
     require(set(products) == set(exported) and len(products) == len(set(products)), 'DocC/public product inventory drift')
+    landing = (root / 'docs/site/index.html').read_text()
+    for product in products:
+        route = f'./{product}/documentation/{product.lower()}'
+        require(f'href="{route}"' in landing, 'DocC landing route missing: ' + product)
 
 
 def workflow_boundaries(root):
