@@ -84,9 +84,9 @@ struct EncodedRequestTests {
             #expect(underlying.domain == EncodedPayloadFailure.errorDomain)
             #expect(underlying.code == EncodedPayloadFailure.unexpectedContent.rawValue)
             #expect(response.statusCode == statusCode)
-            // The safe client default strips failure payloads after codec rejection.
+            // Redaction strips bytes while preserving the buffered response kind.
             #expect(response.data.isEmpty)
-            #expect(response.kind == .headersOnly)
+            #expect(response.kind == .body)
         }
         #expect(session.capturedRequestsInOrder.count == 1)
     }

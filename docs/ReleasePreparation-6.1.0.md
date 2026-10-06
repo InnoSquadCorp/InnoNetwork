@@ -102,11 +102,17 @@ serial test lane reported three new assertion failures.
 
 The no-content decoder correctly rejected unexpected bytes. The new test had
 incorrectly expected those bytes to remain on the surfaced error response,
-despite `safeDefaults` redacting failure payloads. The assertion now requires
-empty data and `.headersOnly`, matching the existing redaction contract; runtime
-and security policy are unchanged. The same execution passed the new encoded
-401-refresh replay test. Preserve this failed run as diagnostic evidence and
-validate the corrected head independently; it is not a passing full candidate.
+despite `safeDefaults` redacting failure payloads. The first correction at
+`fac102cc252f9547da56ff400a28e1414bd6b4f5` correctly required empty data but
+incorrectly added a `.headersOnly` expectation. Its
+[Xcode 26 shard run](https://github.com/InnoSquadCorp/InnoNetwork/actions/runs/37435082739/job/112174987993)
+passed byte-redaction assertions and failed that new kind assertion in nine
+cases. `Response.redactingData()` preserves its input kind: buffered responses
+remain `.body`. The test now explicitly requires empty data and `.body`.
+
+Runtime and security policy are unchanged. The first execution passed the new
+encoded 401-refresh replay test. Preserve both failed runs as diagnostic evidence
+and validate the corrected head independently; neither is a passing full candidate.
 
 ## Companion and application boundaries
 
