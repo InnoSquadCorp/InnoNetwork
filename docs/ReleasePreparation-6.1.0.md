@@ -56,8 +56,9 @@ Eight new Swift Testing declarations expand to fifteen cases:
   encoding, identical transmitted bodies, old/new bearer headers, one refresh,
   one final decode and one measurement per codec stage.
 
-These are test additions, not new runtime/public-API behavior. They have not yet
-been compiled or executed in this Linux VM.
+These are test additions, not new runtime/public-API behavior. They cannot be
+compiled or executed in this Linux VM. The first hosted execution and its
+test-expectation correction are recorded below; the corrected head needs fresh CI.
 
 ## 3. VM validation and remaining gates
 
@@ -90,6 +91,22 @@ Blocked or not performed:
 - Final candidate CI, final-main validation, full release preflight, manual
   non-publishing Release validation, Ready approval and publication approval
   remain separate outstanding gates. No previous success substitutes for them.
+
+### First hosted candidate and error-redaction correction
+
+Head `00eb4cc2967eee3cc29cdcb4c1b4af9946bdfaef` was published in Draft PR #144.
+Its [first CI run](https://github.com/InnoSquadCorp/InnoNetwork/actions/runs/37423157260)
+passed policy/dependency checks, swift-format, macro/example consumers, DocC,
+docs contracts, CodeQL and guarded benchmarks before the release-candidate
+serial test lane reported three new assertion failures.
+
+The no-content decoder correctly rejected unexpected bytes. The new test had
+incorrectly expected those bytes to remain on the surfaced error response,
+despite `safeDefaults` redacting failure payloads. The assertion now requires
+empty data and `.headersOnly`, matching the existing redaction contract; runtime
+and security policy are unchanged. The same execution passed the new encoded
+401-refresh replay test. Preserve this failed run as diagnostic evidence and
+validate the corrected head independently; it is not a passing full candidate.
 
 ## Companion and application boundaries
 
