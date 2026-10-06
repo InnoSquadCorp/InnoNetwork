@@ -59,3 +59,19 @@ rebased head. A separately authorized companion change must align SwiftSyntax,
 compile its macro tests and Debug/Release consumers against this exact Core head,
 and retain macro-disabled/JSON coexistence coverage. No such companion edit or
 public 6.1 release is performed by this PR reconciliation.
+
+## First exact-head CI — 2026-10-06
+
+[Run 37387153383](https://github.com/InnoSquadCorp/InnoNetwork/actions/runs/37387153383)
+validated pushed head `e7fe3030febbf627868965a3342b7583229b5066`.
+Xcode 26/27 build/test/coverage, target shards, actual TSAN, Periphery, compiler-host
+macro tests and rejection controls, all five Apple platforms, consumer examples,
+OpenAPI, docs/API contracts, DocC site, both benchmark gates, full read-only release
+validation, dependency review and CodeQL passed. The new credential rejection test
+passed for both direct and operation routes.
+
+The only direct job failure was four swift-format diagnostics in the newly added
+test's multiline expected-code assertion. The follow-up extracts that expected
+value into a short local binding; it changes no runtime code or CI gate. The final
+head must independently pass CI; this first run is retained as historical evidence,
+not substituted for final-head validation. No public release was made.

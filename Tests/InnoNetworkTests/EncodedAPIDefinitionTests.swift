@@ -78,8 +78,9 @@ struct EncodedAPIDefinitionTests {
             } catch let failure {
                 #expect(failure.kind == .configuration)
                 #expect(failure.recovery == .doNotRetry)
-                #expect(failure.code == NetworkFailure(
-                    migratingV5: RequestSecurityFailure.unsupportedExecution.networkError).code)
+                let expected = NetworkFailure(
+                    migratingV5: RequestSecurityFailure.unsupportedExecution.networkError)
+                #expect(failure.code == expected.code)
             }
         } else {
             do {
