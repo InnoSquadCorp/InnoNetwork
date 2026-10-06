@@ -7,7 +7,11 @@ Versioning.
 
 ## [Unreleased]
 
-### Added — encoded request candidate (not published)
+## [6.1.0] - 2026-10-06
+
+Contents approved for release; readiness is not publication.
+
+### Added — encoded requests
 
 - Add the Stable buffered `EncodedRequest` / `EncodedRequestClient` boundary
   for custom codecs without GeneratedClientSupport SPI or Codable requirements.
@@ -71,11 +75,11 @@ Versioning.
 - Synchronize the invalid-payload error example and enum compatibility ledger.
 
 See [encoded-request migration notes](docs/Migration-EncodedRequests.md) for
-the unpublished candidate's source-compatibility changes.
+the 6.1.0 source-compatibility changes.
 
 ### Changed
 
-- Candidate dependency ranges move from SwiftSyntax 603.0.x to 604.0.x and
+- Dependency ranges move from SwiftSyntax 603.0.x to 604.0.x and
   Swift Crypto 4.x to 5.x. Swift tools 6.2 and deployment floors are unchanged;
   consumers must align incompatible dependency constraints, even with macros
   disabled. The 6.1 migration guide records this graph-level boundary.

@@ -24,8 +24,9 @@ persistent cache, OpenAPI, AWS signing, pinning, and test support—is an
 optional product selected only when that capability is required.
 
 > **Current publication:** [6.0.0 is published](https://github.com/InnoSquadCorp/InnoNetwork/releases/tag/6.0.0).
-> The 6.1 candidate on this branch is Draft and unpublished. Production adoption
-> should resolve the published tag, not this moving candidate branch.
+> The 6.1.0 contents are Ready for release; readiness is not publication.
+> Production adoption should continue to resolve the published 6.0.0 tag until
+> the matching 6.1.0 tag and GitHub Release are verified.
 
 The following block is the historical 6.0 Ready-state snapshot retained by its
 validation contract; its pre-publication advice no longer applies to published 6.0.0.

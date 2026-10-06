@@ -2,8 +2,8 @@
 
 This document defines the approved compatibility contract for InnoNetwork 6.
 `6.0.0` is the approved compatibility baseline and was published on 2026-09-29
-UTC with its matching GitHub Release. The 6.1 candidate remains unpublished;
-approval, local validation and a Ready marker are not publication.
+UTC with its matching GitHub Release.
+The 6.1.0 contents are Ready for release; readiness is not publication.
 The Stable ledger inherited from 5.x remains protected unless the 6.0
 migration guide explicitly removes or relocates a package boundary.
 
@@ -62,7 +62,7 @@ a warning without changing the generated unconditional payload contract. Put
 macros reject member-level `#if`, including inactive branches, because their
 generated factories must not silently omit payloads or copied policies.
 
-<!-- encoded-request-candidate: 6.1.0 -->
+<!-- encoded-request-release: 6.1.0 -->
 
 `EncodedRequest`, `EncodedRequestBody`, `EncodedRequestOptions` and
 `EncodedRequestClient` form the new supported binary adapter boundary.
@@ -72,7 +72,7 @@ the payload lock. The synchronous user encoder executes inside the invocation's
 private lock to memoize its result exactly once; keep it nonblocking. This is
 not a promise of reentrant encoding or forced cancellation of synchronous work.
 `AnyResponseDecoder.noContent(statusCodes:)` separates HTTP no-content from an
-empty codec message. These additions are unpublished; they do not alter 6.0.0.
+empty codec message. These additions are approved for 6.1.0; readiness is not publication. They do not alter 6.0.0.
 Body bytes are prepared once per invocation and reused on retry/refresh. Per-request
 response limits only tighten the client cap. Neither post-encoding size checks
 nor synchronous cancellation checkpoints promise bounded intermediate allocation
@@ -93,7 +93,7 @@ an explicit minor migration. Applications must not link this product directly.
 
 
 - `APIDefinition`
-- `EncodedRequest`, `EncodedRequestBody`, `EncodedRequestOptions`, `EncodedRequestClient`, `EncodedCodecMeasurement`, `EncodedPayloadFailure` (new in the unpublished 6.1 candidate)
+- `EncodedRequest`, `EncodedRequestBody`, `EncodedRequestOptions`, `EncodedRequestClient`, `EncodedCodecMeasurement`, `EncodedPayloadFailure` (new in 6.1.0; ready, not yet published)
 - `@APIDefinition(method:path:auth:)` and the default-enabled `Macros` package trait (promoted to Stable in 6.0.0; `traits: []` remains the supported opt-out)
 - `CancellationTag`
 - `Endpoint`
