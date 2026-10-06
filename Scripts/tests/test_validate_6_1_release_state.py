@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -187,11 +188,30 @@ class MinorReleaseStateTests(unittest.TestCase):
         self.rejected("changelog date")
 
     def test_ready_requires_real_date(self):
-        for date in ("TBD", "2020-02-30", "2020-1-2"):
+        for date in ("TBD", "2020-02-30", "2020-1-2", "2021-02-29", "2020-13-01", "0000-01-01"):
             with self.subTest(date=date):
                 self.fixture("ready")
                 self.replace("docs/releases/6.1.0.md", "2020-01-02", date)
-                self.rejected("release date|day is out of range")
+                self.rejected("release date")
+
+    def test_invalid_calendar_date_diagnostic_is_python_version_independent(self):
+        self.fixture("ready")
+        self.replace("docs/releases/6.1.0.md", "2020-01-02", "2020-02-30")
+        for message in ("day is out of range for month",
+                        "day 30 must be in range 1..29 for month 2 in year 2020"):
+            with self.subTest(message=message), patch.object(MODULE, "date") as calendar:
+                error = ValueError(message)
+                calendar.fromisoformat.side_effect = error
+                with self.assertRaisesRegex(ValueError, "^invalid 6.1 release date$") as raised:
+                    MODULE.validate(self.root)
+                self.assertIs(raised.exception.__cause__, error)
+                calendar.fromisoformat.assert_called_once_with("2020-02-30")
+
+    def test_ready_accepts_a_real_leap_day(self):
+        self.fixture("ready")
+        for path in ("docs/releases/6.1.0.md", "CHANGELOG.md"):
+            self.replace(path, "2020-01-02", "2020-02-29")
+        self.assertEqual(MODULE.validate(self.root), "ready")
 
     def test_ready_requires_adoption_boundary(self):
         self.fixture("ready")

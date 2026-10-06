@@ -111,7 +111,12 @@ def validate(root):
         require("The 6.1 candidate on this branch is Draft and unpublished." in documents["readme"], "missing Draft README boundary")
     else:
         require(len(dates) == 1 and re.fullmatch(r"\d{4}-\d{2}-\d{2}", dates[0]), "6.1 release notes require exactly one release date")
-        date.fromisoformat(dates[0])
+        try:
+            date.fromisoformat(dates[0])
+        except ValueError as error:
+            # CPython's calendar-error wording varies between runner versions.
+            # Keep this gate's diagnostic stable without accepting invalid dates.
+            raise ValueError("invalid 6.1 release date") from error
         require(headings.count(f"## [6.1.0] - {dates[0]}") == 1
                 and sum(heading.startswith("## [6.1.0]") for heading in headings) == 1,
                 "6.1 changelog date must match canonical notes")
