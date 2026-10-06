@@ -1,8 +1,9 @@
 # Encoded-request candidate migration
 
 These notes describe the unpublished core 6.1 candidate, not a new publication
-or a change to the released 6.0 tag. The macro-first Protobuf companion uses this
-candidate; local consumer validation does not prove public dependency resolution.
+or a change to the released 6.0 tag. The macro-first Protobuf companion targets
+this boundary, but its dependency graph must be aligned before adoption; local
+consumer validation does not prove public dependency resolution.
 The [candidate release notes](releases/6.1.0.md) are separate from the
 [archived roadmap record](releases/archive/6.1.0-superseded-roadmap.md) that was
 absorbed into core 6.0. Stable source compatibility is retained for this minor;
@@ -53,6 +54,28 @@ Provisionally Stable migrations are called out below.
   transaction. An exhausted valid range is checkpointed durably and rebased
   before appending; no public task ID or lifecycle contract changes.
 
+## Dependency graph compatibility
+
+The selected 6.1.0 candidate requires SwiftSyntax `604.0.0..<604.1.0` and
+Swift Crypto `5.0.0..<6.0.0`. The published 6.0.0 manifest allows SwiftSyntax
+`603.0.1..<603.1.0` and Crypto `4.0.0..<5.0.0`. These ranges do not overlap.
+Resolve a clean consumer graph before adoption, including every other package
+that constrains these dependencies. `traits: []` removes compiled Core macros,
+not SwiftPM's manifest dependency resolution. A local Core path override does
+not remove another package's incompatible SwiftSyntax constraint either.
+
+The Swift tools 6.2 and deployment-floor contract stays unchanged; the dependency
+updates still require both supported compiler lanes and minimum-platform builds.
+The current MacroSupport surface is minor-bound to Core 6.1 and SwiftSyntax
+604.0.x. Companion macros must align that range and revalidate Debug/Release,
+macro-disabled and JSON-coexistence consumers against the exact intended Core
+revision. Do not infer that a retained Crypto 4 lock is an independent companion
+manifest constraint: inspect the manifest and perform resolution first.
+
+See [the dependency update evidence](DependencyIntegration-2026-10-02.md).
+Core-only consumers do not need to adopt Protobuf or Stream. Those packages'
+release and application-specific gates remain separate from Core publication.
+
 ## Operation client generic wrappers
 
 `OperationNetworkClient` is Provisionally Stable. Its type-level `Base` bound
@@ -88,5 +111,5 @@ Likewise, spell `Base: NetworkClient` on generic JSON forwarding functions.
 For new binary-only wrappers use `Base: EncodedRequestClient`; do not require
 JSON conformance merely to execute an encoded request.
 
-No new dependency version, release tag, deployment permission or remote CI result
-is implied by these local corrections.
+These notes describe candidate constraints; they do not establish a published
+release tag, deployment permission or final-candidate remote CI result.

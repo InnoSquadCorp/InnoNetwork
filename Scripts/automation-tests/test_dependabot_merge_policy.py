@@ -308,6 +308,30 @@ class DependabotPolicyTests(unittest.TestCase):
         self.assertFalse(any(m[0] == 'graphql' for m in self.api.mutations))
         self.assertFalse(any(m[0] in {'POST', 'PATCH'} for m in self.api.mutations))
 
+    def test_current_non_strict_profile_cannot_arm_even_with_full_green_ci(self):
+        for strict in [False, None, 0, 1, 'true', 'false']:
+            for armed in [False, True]:
+                api = Transcript()
+                api.rules[0]['parameters']['strict_required_status_checks_policy'] = strict
+                if armed:
+                    api.pr['auto_merge'] = dict(enabled_by=dict(p.BOT))
+                result = p.coordinate(api, NUMBER, True)
+                with self.subTest(strict=strict, armed=armed):
+                    self.assertIn('standby: autonomous auto-merge requires strict', result)
+                    self.assertIsNone(api.pr['auto_merge'])
+                    self.assertEqual(len(api.mutations), int(armed))
+                    if armed:
+                        self.assertIn('disablePullRequestAutoMerge', api.mutations[0][1])
+
+    def test_non_strict_profile_reports_unconfirmed_protective_cancellation(self):
+        self.api.rules[0]['parameters']['strict_required_status_checks_policy'] = False
+        self.api.pr['auto_merge'] = dict(enabled_by=dict(p.BOT))
+        self.api.graph_fail = True
+        with self.assertRaisesRegex(p.Rejected, 'cancellation unconfirmed'):
+            p.coordinate(self.api, NUMBER, True)
+        self.assertEqual(len(self.api.mutations), 1)
+        self.assertIn('disablePullRequestAutoMerge', self.api.mutations[0][1])
+
     def test_success_enables_native_expected_head_and_reuses_gate(self):
         self.assertIn('armed', p.coordinate(self.api, NUMBER, True))
         native = [m for m in self.api.mutations if m[0] == 'graphql']
@@ -320,12 +344,24 @@ class DependabotPolicyTests(unittest.TestCase):
         self.assertEqual(len([m for m in self.api.mutations if m[0] == 'graphql']), 1)
 
     def test_head_base_or_attempt_race_prevents_enable(self):
-        for field in ['head', 'base', 'attempt']:
-            proof = p.proof(self.api, NUMBER)
-            changed = dict(proof, **{field: 'd' * 40 if field != 'attempt' else 2})
-            with mock.patch.object(p, 'proof', side_effect=[proof, changed]):
-                self.assertIn('blocked', p.coordinate(self.api, NUMBER, True))
-            self.assertFalse(any(m[0] == 'graphql' for m in self.api.mutations))
+        for field in ['head', 'base', 'merge', 'run', 'attempt', 'node']:
+            for phase in [2, 3]:
+                api = Transcript()
+                proof = p.proof(api, NUMBER)
+                changed = dict(proof, **{field: 2 if field in {'run', 'attempt'} else 'd' * 40})
+                evidence = [proof] * (phase - 1) + [changed]
+                with self.subTest(field=field, phase=phase), mock.patch.object(p, 'proof', side_effect=evidence):
+                    self.assertIn('blocked', p.coordinate(api, NUMBER, True))
+                self.assertFalse(api.mutations)
+
+    def test_changed_or_failed_final_native_ready_cannot_arm(self):
+        readiness = p.ready_policy()
+        for verdict in [('changed',), p.Rejected('final Ready failed')]:
+            api = Transcript()
+            with mock.patch.object(p, 'ready_policy', return_value=readiness), \
+                    mock.patch.object(readiness, 'require_success', side_effect=[('same',), ('same',), verdict]):
+                self.assertIn('blocked', p.coordinate(api, NUMBER, True))
+            self.assertFalse(api.mutations)
 
     def test_third_proof_failure_precedes_native_enable(self):
         proof = p.proof(self.api, NUMBER)

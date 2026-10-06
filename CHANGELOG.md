@@ -26,6 +26,13 @@ Versioning.
 
 ### Fixed
 
+- Metadata-only CI verifies the authoritative main ref before and after exact
+  head/base evidence reuse, rejecting cached PR bases after main advances.
+- Release ruleset audits distinguish the retained fifteen logical checks from
+  the two native aggregates. The current non-strict manual profile is explicit;
+  autonomous bot merging retains its strict base-protection and no-bypass gates.
+- Add no-content status/body and encoded 401-refresh replay regression cases
+  without changing the public codec or authentication runtime contracts.
 - Reject unsupported named credentials on encoded endpoints before factory or
   transport execution instead of silently discarding the declared policy.
 - Settle upload terminal delivery and runtime retirement before admitting an
@@ -68,6 +75,10 @@ the unpublished candidate's source-compatibility changes.
 
 ### Changed
 
+- Candidate dependency ranges move from SwiftSyntax 603.0.x to 604.0.x and
+  Swift Crypto 4.x to 5.x. Swift tools 6.2 and deployment floors are unchanged;
+  consumers must align incompatible dependency constraints, even with macros
+  disabled. The 6.1 migration guide records this graph-level boundary.
 - Lightweight JSON schema validation prepares ordered required-property names
   once per schema evaluation instead of sorting them again for every array
   element and matching alternative. Exact Unicode identity and validation work

@@ -7,6 +7,88 @@ import os
 
 @Suite("Stable encoded requests")
 struct EncodedRequestTests {
+    @Test("No-content decoder accepts empty 204 and 205 responses", arguments: [204, 205])
+    func noContentAcceptsDefaultStatuses(statusCode: Int) async throws {
+        let session = MockURLSession()
+        session.setMockResponse(statusCode: statusCode)
+        let client = DefaultNetworkClient(
+            configuration: .safeDefaults(baseURL: URL(string: "https://example.com")!), session: session)
+        let value = EncodedRequest<EmptyResponse>(
+            method: .get, path: "/empty", auth: .anonymous, responseDecoder: .noContent())
+
+        _ = try await client.request(value)
+
+        #expect(session.capturedRequestsInOrder.count == 1)
+    }
+
+    @Test("No-content decoder rejects bytes even for 204 and 205", arguments: [204, 205])
+    func noContentRejectsNonemptyBodies(statusCode: Int) async throws {
+        try await expectNoContentFailure(statusCode: statusCode, data: Data([0]))
+    }
+
+    @Test("No-content decoder rejects an empty 200 by default")
+    func noContentRejectsDefault200() async throws {
+        try await expectNoContentFailure(statusCode: 200)
+    }
+
+    @Test("No-content decoder accepts explicitly configured empty responses", arguments: [200, 202, 418])
+    func noContentAcceptsCustomStatuses(statusCode: Int) async throws {
+        let session = MockURLSession()
+        session.setMockResponse(statusCode: statusCode)
+        let client = DefaultNetworkClient(
+            configuration: .safeDefaults(baseURL: URL(string: "https://example.com")!), session: session)
+        let value = EncodedRequest<EmptyResponse>(
+            method: .get, path: "/empty", auth: .anonymous,
+            options: .init(acceptableStatusCodes: [statusCode]),
+            responseDecoder: .noContent(statusCodes: [statusCode]))
+
+        _ = try await client.request(value)
+
+        #expect(session.capturedRequestsInOrder.count == 1)
+    }
+
+    @Test("Custom no-content statuses still require an empty body")
+    func noContentCustomStatusRejectsNonemptyBody() async throws {
+        try await expectNoContentFailure(statusCode: 200, data: Data([0]), decoder: .noContent(statusCodes: [200]))
+    }
+
+    @Test("Custom no-content statuses replace the defaults", arguments: [204, 205])
+    func noContentCustomStatusesReplaceDefaults(statusCode: Int) async throws {
+        try await expectNoContentFailure(statusCode: statusCode, decoder: .noContent(statusCodes: [200]))
+    }
+
+    @Test("An empty no-content status set rejects every response", arguments: [200, 204, 205])
+    func noContentRejectsEmptyStatusSet(statusCode: Int) async throws {
+        try await expectNoContentFailure(statusCode: statusCode, decoder: .noContent(statusCodes: []))
+    }
+
+    private func expectNoContentFailure(
+        statusCode: Int, data: Data = Data(), decoder: AnyResponseDecoder<EmptyResponse> = .noContent()
+    ) async throws {
+        let session = MockURLSession()
+        session.setMockResponse(statusCode: statusCode, data: data)
+        let client = DefaultNetworkClient(
+            configuration: .safeDefaults(baseURL: URL(string: "https://example.com")!), session: session)
+        let value = EncodedRequest<EmptyResponse>(
+            method: .get, path: "/empty", auth: .anonymous, responseDecoder: decoder)
+
+        do {
+            _ = try await client.request(value)
+            Issue.record("Expected no-content decoding failure for status \(statusCode)")
+        } catch {
+            guard case .decoding(let stage, let underlying, let response) = error else {
+                Issue.record("Wrong no-content error: \(error)")
+                return
+            }
+            #expect(stage == .responseBody)
+            #expect(underlying.domain == EncodedPayloadFailure.errorDomain)
+            #expect(underlying.code == EncodedPayloadFailure.unexpectedContent.rawValue)
+            #expect(response.statusCode == statusCode)
+            #expect(response.data == data)
+        }
+        #expect(session.capturedRequestsInOrder.count == 1)
+    }
+
     @Test("Response codec cancellation is not decoding failure or a retryable transport error")
     func responseCodecCancellation() async throws {
         let errors: [any Error] = [CancellationError(), URLError(.cancelled), NetworkError.cancelled]
@@ -186,6 +268,60 @@ struct EncodedRequestTests {
         #expect(samples.allSatisfy { $0.succeeded && $0.duration >= .zero })
         #expect(samples.map(\.byteCount) == [1, 1, 1, 0])
         #expect(session.capturedRequest?.url?.absoluteString == "https://example.com/binary")
+    }
+
+    @Test("401 refresh reuses encoded bytes and decodes only the final response")
+    func preparesBodyOnceAcrossAuthenticationRefresh() async throws {
+        let encodingCount = OSAllocatedUnfairLock(initialState: 0)
+        let decodingCount = OSAllocatedUnfairLock(initialState: 0)
+        let refreshCount = OSAllocatedUnfairLock(initialState: 0)
+        let measurements = OSAllocatedUnfairLock(initialState: [EncodedCodecMeasurement]())
+        let session = MockURLSession()
+        session.setScriptedResponses([
+            .http(statusCode: 401, data: Data([0])),
+            .http(statusCode: 200, data: Data([42])),
+        ])
+        let policy = RefreshTokenPolicy(
+            currentToken: { "old-token" },
+            refreshToken: {
+                refreshCount.withLock { $0 += 1 }
+                return "new-token"
+            })
+        let client = DefaultNetworkClient(
+            configuration: .advanced(
+                baseURL: URL(string: "https://example.com")!, auth: .init(refreshToken: policy)),
+            session: session)
+        let value = EncodedRequest<Data>(
+            method: .post, path: "/binary", auth: .required,
+            body: .init(contentType: "application/octet-stream") {
+                encodingCount.withLock {
+                    $0 += 1
+                    return Data([UInt8($0)])
+                }
+            },
+            options: .init(codecObserver: { sample in measurements.withLock { $0.append(sample) } }),
+            responseDecoder: .init { data, response in
+                decodingCount.withLock { $0 += 1 }
+                #expect(response.statusCode == 200)
+                #expect(data == Data([42]))
+                return data
+            })
+
+        #expect(try await client.request(value) == Data([42]))
+
+        #expect(encodingCount.withLock { $0 } == 1)
+        #expect(refreshCount.withLock { $0 } == 1)
+        #expect(decodingCount.withLock { $0 } == 1)
+        let sent = session.capturedRequestsInOrder
+        #expect(sent.count == 2)
+        #expect(sent.map(\.httpBody) == [Data([1]), Data([1])])
+        #expect(sent.map { $0.value(forHTTPHeaderField: "Authorization") } == ["Bearer old-token", "Bearer new-token"])
+        #expect(sent.allSatisfy { $0.httpMethod == "POST" && $0.url?.path == "/binary" })
+        #expect(sent.allSatisfy { $0.value(forHTTPHeaderField: "Content-Type") == "application/octet-stream" })
+        let samples = measurements.withLock { $0 }
+        #expect(samples.map(\.stage) == [.encoding, .decoding])
+        #expect(samples.map(\.byteCount) == [1, 1])
+        #expect(samples.allSatisfy { $0.succeeded && $0.duration >= .zero })
     }
 
     @Test func rejectsInvalidInputBeforeEncoding() async throws {

@@ -10,15 +10,31 @@ This document defines the minimum completion criteria (DoC) for pull requests in
 
 ## Required CI Checks
 
-`.github/required-status-checks.json` is the machine-readable merge-gate
-contract. It requires dependency review, formatting and dead-code checks, the
-pinned Xcode 26 compatibility build/test and bounded-shard lanes, the Xcode 27
-full-surface build/test lane, docs and consumer smoke,
-benchmark smoke, all five declared Apple platform builds, and CodeQL.
-`Scripts/check_required_status_checks.py` validates both this policy and an
-exported live GitHub ruleset so remote protection cannot quietly fall back to a
-single check. Coverage upload jobs remain post-merge evidence rather than
-merge gates because they depend on an external service.
+`.github/required-status-checks.json` preserves the fifteen logical validation
+contracts: dependency review, formatting/dead-code checks, both supported Xcode
+build/test lanes, bounded shards, docs/consumers, benchmarks, five Apple platform
+builds and CodeQL. It is not the current native branch-protection check list.
+`.github/automation-required-status-checks.json` defines the two native aggregates,
+`CI Required` and `Dependabot Merge Ready`, bound to GitHub Actions app `15368`.
+The aggregate planner and immutable evidence verifiers retain the underlying
+checks; replacing fifteen display names with two aggregates does not waive them.
+
+`Scripts/check_required_status_checks.py` validates both inventories. With
+`--ruleset-json`, it audits a complete active main ruleset against the current
+non-strict manual-integration profile, including both aggregates, resolved review
+threads and an explicit empty bypass list. This audit neither proves candidate
+CI success nor authorizes merge/publication. Metadata reuse rechecks the actual
+main ref before and after proving exact head/base/source evidence; a cached PR
+base cannot stand in for current main. A maintainer still rechecks fresh evidence
+before manual integration because a read cannot lock a later merge.
+
+Autonomous Dependabot arming remains in standby under `strict=false`, even with
+green CI and the enable flag set. Its stricter native base-protection requirement
+and runtime-token no-bypass proof are unchanged. `--require-auto-merge` audits
+that separate strict ruleset prerequisite only; it never changes settings or
+enables merging. See [the automation safety boundary](CIAutomation.md).
+Coverage upload jobs remain post-merge evidence rather than native merge gates
+because they depend on an external service.
 
 The `CI` workflow must pass all of the following:
 
