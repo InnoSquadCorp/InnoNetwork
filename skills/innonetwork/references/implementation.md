@@ -25,6 +25,11 @@ struct GetUser {
 when a concrete policy requires configuration; do not recreate stored internals.
 `try await client.request(GetUser(id: 7))` throws `NetworkError`.
 
+The built-in JSON body encoder sets `Content-Type` to
+`application/json; charset=UTF-8`. Tests that assert the exact released header
+must include that parameter; tests concerned only with media type should parse
+and compare the media type instead of requiring the bare string `application/json`.
+
 Use a stored `body` or `query` with an Encodable, Sendable type for supported
 macro payload inference. Member-level conditional payloads are not inferred;
 use a whole-endpoint conditional or a complete unconditional `Parameter` and

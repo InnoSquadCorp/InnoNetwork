@@ -44,6 +44,7 @@ struct ConsumerTests {
         #expect(try JSONDecoder().decode([String: String].self, from: data) == ["name": "Grace"])
         #expect(user.id == 8)
         #expect(session.capturedRequest?.httpMethod == "POST")
+        #expect(session.capturedRequest?.value(forHTTPHeaderField: "Content-Type") == "application/json; charset=UTF-8")
         await client.shutdown()
     }
 

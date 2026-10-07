@@ -19,7 +19,11 @@ library dependency declarations changed.
 Toolchain and fixture SHA-256 values are recorded in
 [consumer-evidence.json](validation/consumer-evidence.json). The root suite and
 docs checker were run on the unchanged runtime source at the release baseline.
-The consumer helper was rerun after its final implementation change.
+The consumer helper was rerun after its final implementation and JSON-header
+assertion changes. An initial AI-generated test incorrectly expected bare
+`application/json`; the released encoder emits `application/json; charset=UTF-8`.
+That exact contract is now explicit in the reference and fixture. The first AI
+failure and the fresh reevaluation are recorded by the central plugin repository.
 
 The 13 consumer tests cover macro JSON GET/POST, non-Codable encoded output,
 per-invocation encoding and retry byte reuse, auth before encoding, sanitized

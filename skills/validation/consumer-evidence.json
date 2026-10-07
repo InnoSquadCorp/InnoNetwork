@@ -1,13 +1,13 @@
 {
   "status": "passed",
-  "started_at": "2026-10-07T00:50:26.064235+00:00",
+  "started_at": "2026-10-07T00:57:14.057397+00:00",
   "swift": "swift-driver version: 1.168.6 Apple Swift version 6.4 (swiftlang-6.4.0.34.1 clang-2100.3.34.1)\nTarget: arm64-apple-macosx27.0.0",
   "xcode": "Xcode 27.0\nBuild version 27A266a",
   "source_sha256": {
     "Package.resolved": "2f65dc503626e6f62a6351ac246588502c765601d8bcae13bfcd2da4ffc5f54d",
     "Package.swift": "24b81da071dec5c46a08419f444722429868353c960f4dea7f4e58bbe3e984a1",
     "Sources/NetworkSkillExample/Endpoints.swift": "8a46de9a82d502fc2d3e855281c8a31857805a535784a05476980eaa26c66aad",
-    "Tests/NetworkSkillExampleTests/ConsumerTests.swift": "3d6aa0148132dcda8dd198b5d3cfe4d2d4549bc2613351d678c8b6aae102a803"
+    "Tests/NetworkSkillExampleTests/ConsumerTests.swift": "7da56643db7b1c176f6d95f54e048549bc2ded322219a137d25f1f432ed28164"
   },
   "dependencies": {
     "innonetwork": {
@@ -54,7 +54,7 @@
     "strict_concurrency": "complete",
     "warnings_as_errors": true
   },
-  "finished_at": "2026-10-07T00:50:49.141275+00:00",
+  "finished_at": "2026-10-07T00:57:34.722292+00:00",
   "scope": "Exact remote 6.1.0; macOS mock transport; default Macros trait. SwiftSyntax prebuilt selected by SwiftPM.",
   "reproduce": "python3 skills/innonetwork/scripts/validate_consumer.py --scratch-path /tmp/innonetwork-skill-validation",
   "negative_control": {
