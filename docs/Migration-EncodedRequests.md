@@ -1,10 +1,11 @@
-# Encoded-request candidate migration
+# Encoded-request migration for Core 6.1.0
 
-These notes describe the unpublished core 6.1 candidate, not a new publication
-or a change to the released 6.0 tag. The macro-first Protobuf companion targets
-this boundary, but its dependency graph must be aligned before adoption; local
-consumer validation does not prove public dependency resolution.
-The [candidate release notes](releases/6.1.0.md) are separate from the
+These notes describe [published Core 6.1.0](https://github.com/InnoSquadCorp/InnoNetwork/releases/tag/6.1.0),
+released on 2026-10-07 UTC, without changing the released 6.0 tag. The macro-first
+Protobuf companion targets this boundary, but its own publication and compatible
+dependency graph must be verified before adoption; local consumer validation
+does not prove public dependency resolution for that companion.
+The [6.1.0 release notes](releases/6.1.0.md) are separate from the
 [archived roadmap record](releases/archive/6.1.0-superseded-roadmap.md) that was
 absorbed into core 6.0. Stable source compatibility is retained for this minor;
 Provisionally Stable migrations are called out below.
@@ -56,7 +57,7 @@ Provisionally Stable migrations are called out below.
 
 ## Dependency graph compatibility
 
-The selected 6.1.0 candidate requires SwiftSyntax `604.0.0..<604.1.0` and
+Core 6.1.0 requires SwiftSyntax `604.0.0..<604.1.0` and
 Swift Crypto `5.0.0..<6.0.0`. The published 6.0.0 manifest allows SwiftSyntax
 `603.0.1..<603.1.0` and Crypto `4.0.0..<5.0.0`. These ranges do not overlap.
 Resolve a clean consumer graph before adoption, including every other package
@@ -94,7 +95,7 @@ extension OperationNetworkClient {
 }
 ```
 
-After (compiles with both 6.0 and this 6.1 candidate):
+After (compiles with both 6.0 and 6.1):
 
 <!-- compile-check -->
 ```swift
@@ -111,5 +112,5 @@ Likewise, spell `Base: NetworkClient` on generic JSON forwarding functions.
 For new binary-only wrappers use `Base: EncodedRequestClient`; do not require
 JSON conformance merely to execute an encoded request.
 
-These notes describe candidate constraints; they do not establish a published
-release tag, deployment permission or final-candidate remote CI result.
+The Core public-tag consumer evidence is recorded in the release notes. It does
+not replace companion release gates or application-specific deployment checks.

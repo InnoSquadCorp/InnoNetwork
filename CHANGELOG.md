@@ -7,9 +7,11 @@ Versioning.
 
 ## [Unreleased]
 
-## [6.1.0] - 2026-10-06
+## [6.1.0] - 2026-10-07
 
-Contents approved for release; readiness is not publication.
+[Published on 2026-10-07 UTC](https://github.com/InnoSquadCorp/InnoNetwork/releases/tag/6.1.0)
+at 00:15:19Z. The annotated tag was created on 2026-10-06 UTC; its original
+Ready snapshot retains that intended date. This heading records actual publication.
 
 ### Added — encoded requests
 

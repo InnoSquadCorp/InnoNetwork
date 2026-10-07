@@ -21,10 +21,10 @@ Stable compatibility promise.
 
 ## Current sizes (InnoNetwork 6.0.0 release baseline)
 
-This table includes the approved 6.1.0 encoded-request addition; readiness is not publication.
+This table includes the published 6.1.0 encoded-request addition.
 The inventory contains
 1,764 public runtime declarations and 12 separately inventoried compiler-host declarations.
-Readiness does not prove publication;
+The heading retains the historical 6.0 baseline contract;
 the 5.0.0 baseline remains the compatibility reference for the 5.x line.
 
 | Product | Public declarations |
@@ -51,8 +51,8 @@ The encoded-request contract intentionally adds 55 declarations: 53 Stable
 codec-boundary declarations and two Provisional configuration-error declarations.
 The published 6.0 baseline remains 1,702; no existing SPI is promoted or removed.
 
-The approved macro-first bridge adds seven further runtime rows (all Stable
-candidates): the named endpoint protocol and witnesses, plus query appending.
+The published macro-first bridge adds seven further runtime rows (all Stable):
+the named endpoint protocol and witnesses, plus query appending.
 Client/operation overloads share symbol paths with existing overloads; actual
 external compiler fixtures additionally lock their generic signatures.
 `macro-support.tsv` separately freezes twelve compiler-host-only declarations.

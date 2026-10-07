@@ -23,10 +23,10 @@ Everything else—including Download, Upload, WebSocket,
 persistent cache, OpenAPI, AWS signing, pinning, and test support—is an
 optional product selected only when that capability is required.
 
-> **Current publication:** [6.0.0 is published](https://github.com/InnoSquadCorp/InnoNetwork/releases/tag/6.0.0).
-> The 6.1.0 contents are Ready for release; readiness is not publication.
-> Production adoption should continue to resolve the published 6.0.0 tag until
-> the matching 6.1.0 tag and GitHub Release are verified.
+> **Current publication:** [6.1.0 is published](https://github.com/InnoSquadCorp/InnoNetwork/releases/tag/6.1.0)
+> as of 2026-10-07 UTC. APIs added in 6.1, including encoded requests, require
+> a resolved Core version of 6.1.0 or later. Companion releases and their
+> dependency-graph validation remain separate.
 
 The following block is the historical 6.0 Ready-state snapshot retained by its
 validation contract; its pre-publication advice no longer applies to published 6.0.0.
@@ -187,7 +187,7 @@ Does this endpoint belong in the application's named API catalog?
 
 ### Install
 
-After confirming that the `6.0.0` tag and GitHub Release are published, use:
+The following declaration retains the published 6.0 compatibility baseline:
 
 ```swift
 dependencies: [
@@ -198,9 +198,11 @@ dependencies: [
 ]
 ```
 
-Use the declaration above only after `6.0.0` is published. Before that, use a
-local checkout for explicit migration validation and retain the existing
-tagged dependency in production.
+For APIs introduced in 6.1, set the minimum to `6.1.0` and confirm the resolved
+version is at least 6.1.0; an existing lockfile may otherwise retain 6.0.0.
+Use a minor-bound range for Provisionally Stable APIs, or pin the exact published
+version when reproducibility is required. The historical 6.0 example above
+does not make 6.1 additions available in a consumer still resolved to 6.0.0.
 
 > InnoNetwork also intentionally requires Swift 6.2+ and current Apple OS
 > baselines (iOS 16, macOS 14, tvOS 16, watchOS 9, visionOS 1). That keeps
@@ -887,7 +889,7 @@ The package intentionally targets current Apple platform releases. That lets the
 
 Protocol Buffers support lives in the separate `InnoNetwork-Protobuf` package
 (Swift module `InnoNetworkProtobuf`). Its redesigned 6.0 development line uses
-the public `EncodedRequest` contract planned for InnoNetwork 6.1, without SPI.
+the public `EncodedRequest` contract shipped in InnoNetwork 6.1.0, without SPI.
 Its default declaration is `@ProtobufAPIDefinition`: generated-message body/query
 inputs feed the same client and operation pipeline through `EncodedAPIDefinition`.
 Manual factories remain available with both `Macros` traits disabled. Core's
@@ -901,10 +903,12 @@ dependencies: [
 ]
 ```
 
-This is the intended post-publication pair, not an assertion that either new
-tag exists. Use the adapter's explicit local-core override for coordinated
-development until both releases are published. Existing adapter 3.x belongs
-with its documented 3.x core; do not combine it with core 6.x.
+Core 6.1.0 is published; the companion 6.0 line in this intended pair still
+requires its own publication, dependency-graph alignment and exact-pair checks.
+Use the adapter's explicit local-core override only for coordinated development
+until the companion release and tagged consumer validation are complete.
+Existing adapter 3.x belongs with its documented 3.x core; do not combine it
+with core 6.x. Stream adoption likewise retains its separate release gates.
 
 ## Configuration
 
