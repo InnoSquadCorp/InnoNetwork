@@ -1,9 +1,13 @@
 # InnoNetwork agent skill
 
 The canonical skill lives in [`innonetwork/`](innonetwork/SKILL.md), alongside
-its library. It targets the published **6.1.0** release at
+its library. It supports stable **6.1.x** (`>=6.1.0, <6.2.0`), with the published
+**6.1.0** release as its validated baseline at
 `79ff9f535a0a15ad8b52ce49cb5a4b1ea1dfec16`. It covers Core JSON APIs,
 buffered encoded requests, operation ownership, auth, retry, and resource limits.
+Other 6.1.x patches, including 6.1.1 once published, use the consumer's resolved
+version with patch-specific source checks and consumer tests. The bundled exact
+6.1.0 pin is retained for reproducibility; it is not an application downgrade rule.
 
 ## Install a standalone skill
 

@@ -1,6 +1,6 @@
 {
   "status": "passed",
-  "started_at": "2026-10-07T00:57:14.057397+00:00",
+  "started_at": "2026-10-07T01:11:18.266529+00:00",
   "swift": "swift-driver version: 1.168.6 Apple Swift version 6.4 (swiftlang-6.4.0.34.1 clang-2100.3.34.1)\nTarget: arm64-apple-macosx27.0.0",
   "xcode": "Xcode 27.0\nBuild version 27A266a",
   "source_sha256": {
@@ -54,7 +54,7 @@
     "strict_concurrency": "complete",
     "warnings_as_errors": true
   },
-  "finished_at": "2026-10-07T00:57:34.722292+00:00",
+  "finished_at": "2026-10-07T01:11:38.231471+00:00",
   "scope": "Exact remote 6.1.0; macOS mock transport; default Macros trait. SwiftSyntax prebuilt selected by SwiftPM.",
   "reproduce": "python3 skills/innonetwork/scripts/validate_consumer.py --scratch-path /tmp/innonetwork-skill-validation",
   "negative_control": {
@@ -62,5 +62,6 @@
     "expected_error": "swift-crypto fixture pin differs from support record",
     "exit_code": 1,
     "before_build": true
-  }
+  },
+  "support_range_note": "The stable 6.1.x support declaration is broader than this exact 6.1.0 baseline run; no 6.1.1 validation is claimed."
 }

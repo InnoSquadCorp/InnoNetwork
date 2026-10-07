@@ -2,6 +2,9 @@
   "schema_version": 1,
   "checked_on": "2026-10-07",
   "library": "InnoNetwork",
+  "supported_release_line": "6.1.x",
+  "supported_range": ">=6.1.0 <6.2.0",
+  "include_prereleases": false,
   "repository": "https://github.com/InnoSquadCorp/InnoNetwork.git",
   "version": "6.1.0",
   "revision": "79ff9f535a0a15ad8b52ce49cb5a4b1ea1dfec16",
@@ -47,5 +50,5 @@
       "version": "604.0.0"
     }
   },
-  "scope": "Core JSON and buffered encoded requests; default Macros trait; standalone macOS consumer. Optional product lifecycle, combined libraries, real service/device behavior and AI host qualification require separate validation."
+  "scope": "version/revision and resolved_dependencies identify the validated 6.1.0 baseline, not every supported 6.1.x patch. Core JSON and buffered encoded requests; default Macros trait; standalone macOS consumer. Other patch releases, optional product lifecycle, combined libraries, real service/device behavior and AI host qualification require separate validation."
 }

@@ -5,9 +5,11 @@ description: Implement, test, diagnose, or migrate Swift HTTP requests with Inno
 
 # InnoNetwork
 
-Help the consumer use its resolved InnoNetwork API. This skill's baseline is
-public **6.1.0**, not arbitrary `main` or every 6.x release. The reusable example
-validates Core JSON and buffered encoded requests on macOS with Swift 6.4.
+Help the consumer use its resolved InnoNetwork API. This skill supports stable
+**6.1.x** releases (`>=6.1.0, <6.2.0`). Its validated baseline is public
+**6.1.0**; the reusable example validates Core JSON and buffered encoded requests
+on macOS with Swift 6.4. A supported release line does not imply that every patch
+has already been tested.
 
 ## Establish the consumer version
 
@@ -16,11 +18,20 @@ version, revision, linked products, traits, and toolchain. For path dependencies
 inspect that checkout and identify it as local. Do not upgrade, downgrade, or
 substitute a local source without the user's task calling for that change.
 
-- For 6.1.0, use [support.json](references/support.json) and the references below.
-- For another version, read its exact source and migration notes before applying
-  these examples. In particular, 6.0 does not provide the new encoded boundary.
+- For 6.1.0, use the validated baseline in [support.json](references/support.json).
+- For another stable 6.1.x patch, including 6.1.1, retain the consumer's resolved
+  version. Check that patch's source and release notes for changes to the APIs,
+  products and dependency constraints relevant to the task, then build and test
+  the changed consumer. Do not downgrade to 6.1.0 to match the bundled fixture or
+  describe the patch as already validated by this skill.
+- For 6.0, 6.2+, prereleases or unreleased `main`, establish the exact API before
+  applying these examples; they are outside the declared stable 6.1.x range.
+  In particular, 6.0 does not provide the new encoded boundary.
 - For new adoption, check [dependencies and products](references/compatibility-products.md).
   Macro and Crypto version constraints still resolve when `Macros` is disabled.
+- Before selecting a new patch for adoption, verify its public tag and release.
+  A planned 6.1.1 release is not publication evidence. Follow the application's
+  dependency policy; the fixture's exact 6.1.0 pin is for reproducible validation.
 - Some documents inside the release retain pre-publication wording. The verified
   public tag and GitHub Release in the support record establish this baseline;
   neither a historical Ready statement nor this record certifies a newer release.

@@ -1,15 +1,26 @@
 # Version, dependency and product boundaries
 
-The baseline is public InnoNetwork **6.1.0**, commit
+The supported release line is stable **6.1.x** (`>=6.1.0, <6.2.0`). The validated
+baseline is public InnoNetwork **6.1.0**, commit
 `79ff9f535a0a15ad8b52ce49cb5a4b1ea1dfec16`, with Swift tools 6.2 and Swift 6
 language mode. Deployment floors are iOS/tvOS 16, macOS 14, watchOS 9 and
 visionOS 1. This is Apple-platform Swift guidance, not Android/Web guidance.
 
-The 6.1 manifest requires SwiftSyntax `604.0.0..<604.1.0`, Swift Crypto
+The 6.1.0 manifest requires SwiftSyntax `604.0.0..<604.1.0`, Swift Crypto
 `5.0.0..<6.0.0`, HTTP Types `1.6.0..<2.0.0`, and OpenAPI Runtime `1.0.0..<2.0.0`.
 The fixture lock and [support record](support.json) preserve the actual resolved
 revisions, including transitive ASN.1. Disabling `Macros` avoids compiling
 Core macros; it does not remove dependency resolution.
+
+For a different stable 6.1.x patch, compare the consumer's exact source/release
+notes with this baseline for the APIs and products in use, including manifest
+constraints and relevant behavior fixes. Preserve its resolved patch and validate
+the changed consumer. The support record's `version` and `revision` identify
+the tested baseline, while `supported_release_line` and `supported_range` declare
+the intended scope. A planned or newly published 6.1.1 is in that scope once
+stable and published, but receives its own validation evidence only after tests.
+Adding a new validated baseline requires updating the exact fixture pins and
+evidence together; a version-range declaration alone does not update them.
 
 The previous 6.0 manifest used SwiftSyntax `603.0.1..<603.1.0` and Crypto
 `4.0.0..<5.0.0`. A graph with another package requiring those old-only ranges

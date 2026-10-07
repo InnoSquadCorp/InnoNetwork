@@ -41,8 +41,9 @@ validation contract; its pre-publication advice no longer applies to published 6
 
 ## AI agent skill
 
-The library-owned [Codex and Claude Code skill](skills/README.md) targets the
-verified public **6.1.0** release, including the new encoded request boundary.
+The library-owned [Codex and Claude Code skill](skills/README.md) supports stable
+**6.1.x**, with verified public **6.1.0** as its tested baseline, including the
+encoded request boundary.
 It includes exact-release consumer tests and installation instructions.
 
 ## Product Selection Guide

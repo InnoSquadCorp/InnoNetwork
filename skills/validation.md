@@ -7,6 +7,11 @@ The public 6.1.0 tag and GitHub Release resolve to
 on that baseline, not part of the already-published tag. No runtime source or
 library dependency declarations changed.
 
+The declared support range is stable **6.1.x** (`>=6.1.0, <6.2.0`); this evidence
+validates **6.1.0** only. The range update preserves the exact fixture, lock and
+validation helper. Other patches such as 6.1.1 require their own consumer checks;
+the planned release is not recorded as published or tested here.
+
 | Check | Result |
 | --- | --- |
 | Independent exact-release consumer | 13 Swift Testing tests, 1 suite, zero failures; strict concurrency complete and warnings as errors |

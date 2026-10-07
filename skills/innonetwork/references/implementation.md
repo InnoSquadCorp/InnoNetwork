@@ -1,8 +1,10 @@
 # Core JSON integration — 6.1.0
 
-Start with only the `InnoNetwork` product in application targets. A SwiftPM
-consumer can declare `.package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git",
-exact: "6.1.0")`; the fixture shows the complete manifest. Default traits enable
+Start with only the `InnoNetwork` product in application targets. The reproducible
+fixture declares `.package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git",
+exact: "6.1.0")`. Application consumers keep their chosen stable 6.1.x patch and
+dependency policy; do not copy this test pin over an existing 6.1.1 dependency.
+Default traits enable
 `@APIDefinition`. Manual conformance is available when the consumer intentionally
 disables macros, but disabling a trait does not remove manifest resolution.
 
