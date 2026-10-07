@@ -1442,6 +1442,10 @@ InnoNetwork follows a lightweight maintainer model.
 - Changelog: [CHANGELOG.md](CHANGELOG.md)
 - Code of Conduct: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
 
+## Sponsorship
+
+Support InnoNetwork development through [GitHub Sponsors](https://github.com/sponsors/InnoSquadCorp) or [Patreon](https://www.patreon.com/15188938/join).
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
