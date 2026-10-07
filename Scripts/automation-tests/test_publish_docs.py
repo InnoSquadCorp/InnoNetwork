@@ -18,27 +18,31 @@ NEW_INTERMEDIATE_STATES = ['syncing_files', 'finished_file_sync', 'updating_page
 
 
 class Transcript:
-    def __init__(self, name='CI', event='push', branch='main'):
+    def __init__(self, name=None, event='push', branch='main'):
         self.repo = dict(id=100, full_name=p.REPOSITORY, default_branch='main')
-        self.run = dict(id=RUN, run_attempt=ATTEMPT, name=name, path=p.WORKFLOWS[name],
+        title = 'CI / Dependabot merge #45' if event == 'workflow_dispatch' else f'CI validation / {event} / refs/heads/{branch}'
+        self.run = dict(id=RUN, run_attempt=ATTEMPT, name=title if name is None else name, path=p.CI_WORKFLOW,
                         workflow_id=10, check_suite_id=20, head_sha=HEAD, head_branch=branch,
                         event=event, status='completed', conclusion='success',
                         repository=self.repo, head_repository=self.repo,
-                        display_title='CI / Dependabot merge #45' if event == 'workflow_dispatch' else name)
+                        display_title=title)
         self.notice = dict(repository=self.repo, workflow_run=copy.deepcopy(self.run))
-        self.workflow = dict(id=10, path=self.run['path'], name=name, state='active')
+        self.workflow = dict(id=10, path=p.CI_WORKFLOW, name='CI', state='active')
         self.main = dict(object=dict(type='commit', sha=HEAD))
         self.tag = dict(object=dict(type='commit', sha=HEAD))
         self.tag_object = dict(object=dict(type='commit', sha=HEAD))
         self.pr = dict(number=45, state='closed', merged=True, merge_commit_sha=HEAD,
                        user=dict(p.BOT), base=dict(ref='main', repo=self.repo), head=dict(repo=self.repo))
         self.jobs, self.checks = [], {}
-        if name == 'CI':
-            self.add_job('CI Plan', ['Checkout', 'Verify actual post-merge main origin', 'Plan exact changed paths', 'Preserve change selection evidence'])
-            if event == 'push':
-                self.jobs[0]['steps'][1]['conclusion'] = 'skipped'
-            self.add_job('CI Required', ['Require every planned CI result'])
-        self.add_job('Build DocC Site' if name == 'CI' else 'Build DocC archives',
+        self.add_job('CI Plan', ['Checkout', 'Verify actual post-merge main origin', 'Plan exact changed paths', 'Preserve change selection evidence'])
+        if event == 'push':
+            self.jobs[0]['steps'][1]['conclusion'] = 'skipped'
+        # A real main CI run uses the dynamic title above and skips the PR-only
+        # metadata branch, while the ordinary CI aggregate must succeed.
+        self.add_job('CI Required', ['Set up job', 'Checkout', 'Require every planned CI result',
+                                    'Verify prior validation for metadata', 'Post Checkout', 'Complete job'])
+        self.jobs[1]['steps'][3]['conclusion'] = 'skipped'
+        self.add_job('Build DocC Site',
                      ['Checkout', 'Build DocC archives', 'Verify public DocC archives', 'Transform DocC archives for static hosting', 'Validate DocC site files', 'Upload Documentation Artifact'])
         self.artifact = dict(id=30, name=f'github-pages-{RUN}-{ATTEMPT}-{HEAD}', expired=False,
                              size_in_bytes=256, digest='sha256:' + 'c' * 64,
@@ -70,7 +74,7 @@ class Transcript:
         elif suffix == f'actions/runs/{RUN}':
             self.proof_run_reads += 1
             value = self.run
-        elif suffix.startswith('actions/workflows/'): value = self.workflow
+        elif suffix == 'actions/workflows/ci.yml': value = self.workflow
         elif suffix.startswith('check-runs/'): value = self.checks[suffix.rsplit('/', 1)[1]]
         elif suffix == 'git/ref/heads/main': value = self.main
         elif suffix.startswith('git/ref/tags/'): value = self.tag
@@ -124,11 +128,63 @@ class PublisherProofTests(unittest.TestCase):
             self.assertEqual(data['pages_build_version'], HEAD)
             self.assertEqual(api.reads.count(p.route('git/ref/heads/main')), 3)
             self.assertEqual(api.proof_run_reads, 2)
+            self.assertEqual(api.reads.count(p.route('actions/workflows/ci.yml')), 2)
+            self.assertNotEqual(api.run['name'], api.workflow['name'])
+            self.assertEqual(api.jobs[1]['steps'][2]['conclusion'], 'success')
+            self.assertEqual(api.jobs[1]['steps'][3]['conclusion'], 'skipped')
             self.assertFalse(any('/zip' in path or '/download' in path for path in api.reads))
 
-    def test_non_ci_source_rejected(self):
+    def test_stale_notice_run_name_and_path_rejected(self):
         self.reject(lambda a: a.run.update(name='Documentation'))
         self.reject(lambda a: a.run.update(path='.github/workflows/docc-pages.yml'))
+
+    def test_run_name_is_not_workflow_identity(self):
+        for name in ['CI', 'CI validation / push / refs/heads/main', 'A renamed CI run']:
+            with self.subTest(name=name):
+                api = Transcript(name=name)
+                self.assertEqual(p.publish(api, api.notice), api.page['html_url'])
+                self.assertEqual(len(api.mutations), 1)
+                self.assertEqual(api.reads.count(p.route('actions/workflows/ci.yml')), 2)
+
+    def test_forged_definition_or_agreeing_notice_cannot_substitute_another_workflow(self):
+        def changed_run_and_notice(api, **fields):
+            api.run.update(fields)
+            api.notice['workflow_run'].update(fields)
+        changes = [lambda a: changed_run_and_notice(a, path='.github/workflows/docc-pages.yml'),
+                   lambda a: changed_run_and_notice(a, path='.github/workflows/ci.yml@refs/heads/main'),
+                   lambda a: changed_run_and_notice(a, workflow_id=11),
+                   lambda a: changed_run_and_notice(a, workflow_id=0),
+                   lambda a: changed_run_and_notice(a, workflow_id=True),
+                   lambda a: a.workflow.update(path='.github/workflows/docc-pages.yml'),
+                   lambda a: a.workflow.update(id=11),
+                   lambda a: a.workflow.update(name='CI validation / push / refs/heads/main'),
+                   lambda a: a.workflow.update(name='Documentation'),
+                   lambda a: a.workflow.update(state='disabled_manually')]
+        for change in changes:
+            with self.subTest(change=change): self.reject(change)
+
+    def test_only_exact_metadata_step_may_skip_in_authenticated_main_aggregate(self):
+        changes = [lambda a: a.jobs[1]['steps'][3].update(conclusion='failure'),
+                   lambda a: a.jobs[1]['steps'][3].update(conclusion='cancelled'),
+                   lambda a: a.jobs[1]['steps'][3].update(status='in_progress'),
+                   lambda a: a.jobs[1]['steps'][3].update(name='Verify prior validation for metadata extra'),
+                   lambda a: a.jobs[1]['steps'][2].update(conclusion='skipped'),
+                   lambda a: a.jobs[1]['steps'][2].update(conclusion='failure'),
+                   lambda a: a.jobs[1]['steps'][2].update(name='Other aggregate'),
+                   lambda a: a.jobs[1]['steps'][1].update(conclusion='skipped'),
+                   lambda a: a.jobs[1]['steps'].append(dict(name='Other optional step', status='completed', conclusion='skipped')),
+                   lambda a: a.jobs[1]['steps'].append(copy.deepcopy(a.jobs[1]['steps'][3])),
+                   lambda a: a.jobs[-1]['steps'].append(copy.deepcopy(a.jobs[1]['steps'][3]))]
+        for event in ['push', 'workflow_dispatch']:
+            for change in changes:
+                with self.subTest(event=event, change=change): self.reject(change, event=event)
+
+    def test_metadata_only_pr_cannot_publish_even_with_canonical_ci_identity(self):
+        def metadata_only(api):
+            api.jobs[1]['steps'][2]['conclusion'] = 'skipped'
+            api.jobs[1]['steps'][3]['conclusion'] = 'success'
+        for event in ['pull_request', 'pull_request_target']:
+            self.reject(metadata_only, event=event)
 
     def test_publisher_requires_trusted_default_branch_execution(self):
         env = dict(GITHUB_REPOSITORY=p.REPOSITORY, GITHUB_EVENT_NAME='workflow_run', GITHUB_REF='refs/heads/main',
@@ -209,6 +265,15 @@ class PublisherProofTests(unittest.TestCase):
         for hook in [lambda a: a.main['object'].update(sha=OLD),
                      lambda a: a.run.update(run_attempt=3),
                      lambda a: a.artifact.update(id=31),
+                     lambda a: a.artifact.update(digest='sha256:' + 'd' * 64),
+                     lambda a: a.workflow.update(id=11),
+                     lambda a: a.workflow.update(path='.github/workflows/docc-pages.yml'),
+                     lambda a: a.workflow.update(name='Documentation'),
+                     lambda a: a.workflow.update(state='disabled_manually'),
+                     lambda a: a.run.update(name='Changed after notification'),
+                     lambda a: a.notice['workflow_run'].update(run_attempt=1),
+                     lambda a: a.jobs[1]['steps'][2].update(conclusion='skipped'),
+                     lambda a: a.jobs[1]['steps'][3].update(conclusion='failure'),
                      lambda a: a.jobs[-1]['steps'][2].update(conclusion='failure')]:
             self.reject(lambda a: setattr(a, 'oidc_hook', hook))
         self.reject(lambda a: a.page.update(build_type='legacy'))
@@ -356,6 +421,8 @@ class PublisherProofTests(unittest.TestCase):
         self.assertIn('github-pages-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}', build)
         self.assertIn('bash Scripts/check_docc_archives.sh .build/DocC', build)
         self.assertIn('    workflows: [CI]', publish)
+        self.assertIn("github.event.workflow_run.path == '.github/workflows/ci.yml'", publish)
+        self.assertNotIn('github.event.workflow_run.name', publish)
         self.assertIn("github.workflow_ref == 'InnoSquadCorp/InnoNetwork/.github/workflows/docs-publish.yml@refs/heads/main'", publish)
         self.assertIn('ref: ${{ github.workflow_sha }}', publish)
         self.assertIn('sparse-checkout: Scripts/publish-docs.py', publish)

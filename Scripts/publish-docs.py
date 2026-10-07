@@ -2,8 +2,8 @@
 """Publish inert Pages artifacts after API-only origin and current-main checks.
 
 Executed only from the default-branch workflow revision. Never downloads source
-or artifact contents, and never changes repository/Pages settings. A release tag
-must still point at current main: the single site must not roll back to old docs.
+or artifact contents, and never changes repository/Pages settings. The verified
+CI source must still be current main: the site must not roll back to old docs.
 """
 import json
 import os
@@ -18,9 +18,8 @@ REPOSITORY = "InnoSquadCorp/InnoNetwork"
 APP = 15368  # GitHub Actions, not an arbitrary check with the same display name.
 BOT = {"login": "dependabot[bot]", "id": 49699333, "type": "Bot"}
 SHA = re.compile(r"[0-9a-f]{40}")
-TAG = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
 RECOVERY = re.compile(r"CI / Dependabot merge #([1-9][0-9]*)")
-WORKFLOWS = {"CI": ".github/workflows/ci.yml"}
+CI_WORKFLOW = ".github/workflows/ci.yml"
 
 
 class Rejected(ValueError):
@@ -139,18 +138,7 @@ def verify_recovery(api, run, repository):
 
 
 def verify_ref(api, run):
-    branch = run["head_branch"]
-    if branch != "main":
-        require(run["name"] == "Documentation" and TAG.fullmatch(branch), "unsupported documentation ref")
-        target = api.get(route("git/ref/tags/" + branch))["object"]
-        # Both lightweight and annotated release tags are supported; no tag code runs here.
-        for _ in range(8):
-            require(SHA.fullmatch(target.get("sha", "")), "invalid tag object")
-            if target.get("type") == "commit":
-                break
-            require(target.get("type") == "tag", "unsupported tag object")
-            target = api.get(route("git/tags/" + target["sha"]))["object"]
-        require(target.get("type") == "commit" and target.get("sha") == run["head_sha"], "tag moved or did not resolve to source SHA")
+    require(run.get("head_branch") == "main", "CI source is not main")
     current = api.get(route("git/ref/heads/main"))["object"]
     require(current.get("type") == "commit" and current.get("sha") == run["head_sha"], "refusing stale documentation: source is not current main")
 
@@ -169,30 +157,30 @@ def proof(api, event):
             same_repo(run.get("repository"), repository) and same_repo(run.get("head_repository"), repository) and
             same_repo(notice.get("repository"), repository) and same_repo(notice.get("head_repository"), repository) and
             SHA.fullmatch(run.get("head_sha", "")) and positive(run.get("check_suite_id")), "unsuccessful or foreign source run")
-    name = run.get("name")
-    require(name in WORKFLOWS and run.get("path") == WORKFLOWS[name] and
+    # run.name is a dynamic run-name, not the workflow definition's identity.
+    # Keep it in the notification/API equality check above, but authenticate the
+    # fixed canonical workflow endpoint and its immutable ID instead.
+    require(run.get("path") == CI_WORKFLOW and positive(run.get("workflow_id")) and
             run.get("event") in {"push", "workflow_dispatch"}, "unsupported source workflow/event")
-    workflow = api.get(route("actions/workflows/" + WORKFLOWS[name].rsplit("/", 1)[1]))
-    require(workflow.get("id") == run.get("workflow_id") and workflow.get("path") == WORKFLOWS[name] and
-            workflow.get("name") == name and workflow.get("state") == "active", "wrong source workflow identity")
+    workflow = api.get(route("actions/workflows/ci.yml"))
+    require(positive(workflow.get("id")) and workflow.get("id") == run.get("workflow_id") and
+            workflow.get("path") == CI_WORKFLOW and workflow.get("name") == "CI" and
+            workflow.get("state") == "active", "wrong source workflow identity")
     jobs = api.pages(route(f"actions/runs/{run['id']}/attempts/{run['run_attempt']}/jobs"), "jobs")
     require(len({job.get("id") for job in jobs}) == len(jobs), "duplicate source jobs")
-    if name == "CI":
-        require(run.get("head_branch") == "main", "CI source is not main")
-        plan_steps = ["Plan exact changed paths"]
-        skips = ["Verify actual post-merge main origin"]
-        if run["event"] == "workflow_dispatch":
-            verify_recovery(api, run, repository)
-            plan_steps.append("Verify actual post-merge main origin")
-            skips = []
-        check_job(api, run, jobs, "CI Plan", plan_steps, skips)
-        check_job(api, run, jobs, "CI Required", ["Require every planned CI result"])
-        docs_job = "Build DocC Site"
-    else:
-        require(run["event"] == "workflow_dispatch" or TAG.fullmatch(run.get("head_branch", "")),
-                "standalone branch pushes must be built by CI")
-        docs_job = "Build Documentation"
-    check_job(api, run, jobs, docs_job, ["Checkout", "Build DocC archives", "Verify public DocC archives", "Transform DocC archives for static hosting", "Validate DocC site files", "Upload Documentation Artifact"])
+    require(run.get("head_branch") == "main", "CI source is not main")
+    plan_steps = ["Plan exact changed paths"]
+    skips = ["Verify actual post-merge main origin"]
+    if run["event"] == "workflow_dispatch":
+        verify_recovery(api, run, repository)
+        plan_steps.append("Verify actual post-merge main origin")
+        skips = []
+    check_job(api, run, jobs, "CI Plan", plan_steps, skips)
+    # This PR-metadata-only step is normally skipped in a verified main push or
+    # authenticated recovery. The real aggregate step must still succeed.
+    check_job(api, run, jobs, "CI Required", ["Require every planned CI result"],
+              ["Verify prior validation for metadata"])
+    check_job(api, run, jobs, "Build DocC Site", ["Checkout", "Build DocC archives", "Verify public DocC archives", "Transform DocC archives for static hosting", "Validate DocC site files", "Upload Documentation Artifact"])
     verify_ref(api, run)
     artifacts = api.pages(route(f"actions/runs/{run['id']}/artifacts"), "artifacts")
     artifact_name = f"github-pages-{run['id']}-{run['run_attempt']}-{run['head_sha']}"
@@ -220,7 +208,7 @@ def publish(api, event, sleep=time.sleep):
     # Pages queue and obtaining OIDC. Never deploy a replaced attempt or moved ref.
     latest = proof(api, event)
     require(latest == verified, "source proof changed before publication")
-    verify_ref(api, run)  # Final main/tag read immediately before the only create.
+    verify_ref(api, run)  # Final main read immediately before the only create.
     deployment = api.mutate(route("pages/deployments"), {
         "artifact_id": artifact["id"], "pages_build_version": run["head_sha"],
         "oidc_token": token, "environment": "github-pages",

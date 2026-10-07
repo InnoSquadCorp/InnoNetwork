@@ -3,7 +3,8 @@
 This document defines the approved compatibility contract for InnoNetwork 6.
 `6.0.0` is the approved compatibility baseline and was published on 2026-09-29
 UTC with its matching GitHub Release.
-The 6.1.0 contents are Ready for release; readiness is not publication.
+[6.1.0 is published](https://github.com/InnoSquadCorp/InnoNetwork/releases/tag/6.1.0)
+as of 2026-10-07 UTC; its additions retain the classifications below.
 The Stable ledger inherited from 5.x remains protected unless the 6.0
 migration guide explicitly removes or relocates a package boundary.
 
@@ -52,7 +53,7 @@ codec and schema types remain Provisionally Stable.
 
 ## Stable
 
-### Next minor: buffered custom codecs
+### 6.1.0: buffered custom codecs
 
 The Stable JSON macro preserves 6.0 conditional helpers and explicit policy
 witnesses. Conditional payload declarations are not inferred: they now produce
@@ -72,7 +73,7 @@ the payload lock. The synchronous user encoder executes inside the invocation's
 private lock to memoize its result exactly once; keep it nonblocking. This is
 not a promise of reentrant encoding or forced cancellation of synchronous work.
 `AnyResponseDecoder.noContent(statusCodes:)` separates HTTP no-content from an
-empty codec message. These additions are approved for 6.1.0; readiness is not publication. They do not alter 6.0.0.
+empty codec message. These additions shipped in 6.1.0; they do not alter 6.0.0.
 Body bytes are prepared once per invocation and reused on retry/refresh. Per-request
 response limits only tighten the client cap. Neither post-encoding size checks
 nor synchronous cancellation checkpoints promise bounded intermediate allocation
@@ -93,7 +94,7 @@ an explicit minor migration. Applications must not link this product directly.
 
 
 - `APIDefinition`
-- `EncodedRequest`, `EncodedRequestBody`, `EncodedRequestOptions`, `EncodedRequestClient`, `EncodedCodecMeasurement`, `EncodedPayloadFailure` (new in 6.1.0; ready, not yet published)
+- `EncodedRequest`, `EncodedRequestBody`, `EncodedRequestOptions`, `EncodedRequestClient`, `EncodedCodecMeasurement`, `EncodedPayloadFailure` (new in 6.1.0)
 - `@APIDefinition(method:path:auth:)` and the default-enabled `Macros` package trait (promoted to Stable in 6.0.0; `traits: []` remains the supported opt-out)
 - `CancellationTag`
 - `Endpoint`
@@ -619,20 +620,22 @@ adopt the new major with:
 .package(url: "https://github.com/InnoSquadCorp/InnoNetwork", .upToNextMajor(from: "6.0.0"))
 ```
 
-Applications using Provisionally Stable 6.x API should prefer a minor-bound
-range:
+Applications using Provisionally Stable 6.1 API should prefer a minor-bound
+range starting at the published 6.1.0 release:
 
 ```swift
-.package(url: "https://github.com/InnoSquadCorp/InnoNetwork", .upToNextMinor(from: "6.0.0"))
+.package(url: "https://github.com/InnoSquadCorp/InnoNetwork", .upToNextMinor(from: "6.1.0"))
 ```
 
 Pin the exact published version when a reproducible release build must not accept
 any dependency update.
 
-The 6.1 candidate is not published. Neither a Ready marker nor a green
-candidate workflow makes an unpublished version resolvable from SwiftPM.
+APIs added in 6.1 require a resolved Core version of 6.1.0 or later. A retained
+6.0.0 lockfile does not expose these additions even when the major-bound range
+permits newer versions. Companion packages need their own compatible published
+versions and clean tagged resolution; Core publication does not certify them.
 
-### Scheduling input boundaries in the 6.1 candidate
+### Scheduling input boundaries in 6.1.0
 
 Finite long deadlines, quota windows, server cooldowns, retry delays and
 restored download deadlines retain their full requested wait. Internally a

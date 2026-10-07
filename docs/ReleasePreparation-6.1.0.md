@@ -1,12 +1,15 @@
 # Core 6.1.0 release preparation — 2026-10-06
 
-Status: Ready contents approved after full preflight; not publication evidence.
-The selected next version is 6.1.0. The earlier sections below preserve their
-original preparation snapshots and failures. The completion section records the
-later successful evidence without treating it as validation of future commits.
-Only Core documentation is changed in this Ready transition; companion packages
-and live repository settings remain unchanged. Final Ready-main validation and
-actual tagged publication are separate remaining steps.
+Status: Core 6.1.0 published on 2026-10-07 UTC.
+The earlier sections below preserve their original preparation and Ready
+snapshots, including failed runs. The publication section records later evidence
+without treating it as validation of future commits. Release assets have been
+downloaded and checked as detailed below. At the time this publication record
+was prepared, before the DocC correction was integrated, its actual Pages
+deployment was still outstanding. This is a historical snapshot; see the
+[publisher workflow](https://github.com/InnoSquadCorp/InnoNetwork/actions/workflows/docs-publish.yml)
+for subsequent results. Companion releases retain separate checks; no repository
+setting is changed here.
 
 ## Starting point and evidence identity
 
@@ -183,3 +186,69 @@ Release validation, and the intended date and current protection must be audited
 again before creating the annotated tag. Tag identity, public-tag consumer
 resolution, signatures, release assets and publication are separate evidence;
 none is supplied by this Ready marker or by the earlier Draft-main run.
+
+## 5. Final-main validation and publication — 2026-10-07
+
+- The final Ready main was `79ff9f535a0a15ad8b52ce49cb5a4b1ea1dfec16`.
+  Its [CI run](https://github.com/InnoSquadCorp/InnoNetwork/actions/runs/37520827852)
+  succeeded with 22 successful jobs and six policy-selected skips.
+- The final [non-publishing Release run](https://github.com/InnoSquadCorp/InnoNetwork/actions/runs/37520863017)
+  initially failed the full-preflight restore benchmark. The reported performance
+  delta was -21.1758% against the unchanged 20% guard, with 25.24% pair spread.
+  The [failed attempt artifact](https://github.com/InnoSquadCorp/InnoNetwork/actions/runs/37520863017/artifacts/11445216308)
+  remains diagnostic evidence, not a passing result.
+- One complete-job retry used the same configured `xcode-27` runner profile,
+  revision `79ff9f53`, code and threshold in the same workflow. Runner ID changed
+  from `1000029002` to `1000029021`; this does not assert an identical machine
+  or execution environment. Attempt 2 passed with a restore delta of -6.5376%. The
+  [successful full-preflight artifact](https://github.com/InnoSquadCorp/InnoNetwork/actions/runs/37520863017/artifacts/11449172229)
+  is retained alongside the failed attempt. No threshold or benchmark change
+  was used to turn the failure into a pass.
+- Annotated tag `6.1.0`, object
+  `b4589582d5e9e2de30ad07357b32e30834b13f93`, points to that final main commit.
+  It was created on 2026-10-06 UTC and is not moved by this documentation update.
+  The tagged release notes retain their original Ready status and intended date.
+  The tag has no GPG signature; the existing policy requires an annotated tag
+  at current main. The separate Sigstore signature/certificate assets cover
+  the four JSON release artifacts, not the Git tag.
+- [Release run 37543447300](https://github.com/InnoSquadCorp/InnoNetwork/actions/runs/37543447300)
+  succeeded with seven validation jobs and one publication job. Only the
+  previously completed manual full-preflight job was skipped for the tag event.
+- The [public-tag consumer artifact](https://github.com/InnoSquadCorp/InnoNetwork/actions/runs/37543447300/artifacts/11451431444)
+  was inspected directly: `mode: published-tag`, `version: 6.1.0`, revision
+  `79ff9f535a0a15ad8b52ce49cb5a4b1ea1dfec16`, default and core-only traits,
+  release-mode execution, and `public_tag_verified: true`. This is actual tagged
+  resolution evidence, distinct from the earlier candidate-revision receipt.
+- [GitHub Release 6.1.0](https://github.com/InnoSquadCorp/InnoNetwork/releases/tag/6.1.0),
+  release ID `405238737`, has `published_at: 2026-10-07T00:15:19Z`,
+  `draft: false` and `prerelease: false`. All twelve release assets were downloaded;
+  each byte length and SHA-256 matches its GitHub Release API size/digest record.
+- Both SBOMs use CycloneDX 1.5 and identify root version `6.1.0`, revision
+  `79ff9f535a0a15ad8b52ce49cb5a4b1ea1dfec16`, and their respective default and
+  core-only profiles. The four primary JSON digests are:
+  - `benchmarks.json`: `d02e265532a673baecde5561e3e35ef639bfbed458c5aad12a212df914e38ac1`
+  - `benchmarks-json-codec.json`: `d7991fdbdbaab05555c1f18cc51683abbd3303704490fd9a26ef29fddc5bcb7d`
+  - `sbom.cdx.json`: `0b3796f9f6328fff3c2aba76d039902d0f7ddf67520bc1c506f3688db619ee8d`
+  - `sbom-core-only.cdx.json`: `ed2f89c0a0b7f636a7d97f0ec3c81a57cf71f684e9532d4ea7d08e2dd212c676`
+- After decoding the base64-PEM certificates, OpenSSL verified all four detached
+  signatures using the included public keys. The certificate SAN is
+  `https://github.com/InnoSquadCorp/InnoNetwork/.github/workflows/release.yml@refs/tags/6.1.0`.
+  This verifies the signature bytes against those certificates; full Sigstore
+  trust-chain and Rekor verification was not performed and is not claimed.
+
+Outstanding when this publication record was prepared, before DocC correction
+integration (historical snapshot):
+
+- [ ] Validate and normally integrate the publication-documentation and DocC
+  publisher corrections, then confirm the actual Pages deployment and all ten
+  product routes. The publisher must recognize the canonical CI workflow even
+  with its dynamic run title, and permit only the authenticated main aggregate's
+  exact PR-metadata step to skip. A local fixture pass is not a live deployment.
+  See the [publisher workflow](https://github.com/InnoSquadCorp/InnoNetwork/actions/workflows/docs-publish.yml)
+  for later deployment and route-smoke results.
+- [ ] Reconcile the GitHub Release body with actual publication metadata. The
+  publication workflow copied the original tagged Ready notes; changing current
+  repository documentation alone does not update that external Release body.
+- [ ] For optional Protobuf/Stream adoption, align their manifests and complete
+  their own published-tag and exact-pair checks. Core publication does not publish
+  or certify those companion releases.
