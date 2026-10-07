@@ -7,6 +7,10 @@ Versioning.
 
 ## [Unreleased]
 
+## [6.1.1] - 2026-10-07
+
+Ready for the intended release date; publication remains pending.
+
 ### Added
 
 - Add the library-owned InnoNetwork agent skill for stable 6.1.x, independent
@@ -19,7 +23,7 @@ Versioning.
 - Unify GitHub Sponsors and Patreon links.
 
 No runtime implementation, public API, root manifest, or dependency-lock change
-is included in the planned 6.1.1 patch.
+is included in the 6.1.1 patch.
 
 ## [6.1.0] - 2026-10-07
 
