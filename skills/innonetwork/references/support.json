@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "checked_on": "2026-10-07",
+  "library": "InnoNetwork",
+  "supported_release_line": "6.1.x",
+  "supported_range": ">=6.1.0 <6.2.0",
+  "include_prereleases": false,
+  "repository": "https://github.com/InnoSquadCorp/InnoNetwork.git",
+  "version": "6.1.0",
+  "revision": "79ff9f535a0a15ad8b52ce49cb5a4b1ea1dfec16",
+  "release_url": "https://github.com/InnoSquadCorp/InnoNetwork/releases/tag/6.1.0",
+  "release_published_at": "2026-10-07T00:15:19Z",
+  "swift_tools_version": "6.2",
+  "declared_platform_minimums": {
+    "iOS": "16",
+    "macOS": "14",
+    "tvOS": "16",
+    "watchOS": "9",
+    "visionOS": "1"
+  },
+  "resolved_dependencies": {
+    "innonetwork": {
+      "repository": "https://github.com/InnoSquadCorp/InnoNetwork.git",
+      "revision": "79ff9f535a0a15ad8b52ce49cb5a4b1ea1dfec16",
+      "version": "6.1.0"
+    },
+    "swift-asn1": {
+      "repository": "https://github.com/apple/swift-asn1.git",
+      "revision": "3b6410f7dee09eb33cdd26260c5fd47fda19b0e2",
+      "version": "1.7.3"
+    },
+    "swift-crypto": {
+      "repository": "https://github.com/apple/swift-crypto",
+      "revision": "a9d1d5ab8951ada40cafff8c8e2b551dfde4f390",
+      "version": "5.0.0"
+    },
+    "swift-http-types": {
+      "repository": "https://github.com/apple/swift-http-types",
+      "revision": "bff4b6903cdc99dda49649dd52f46c11cfd3ed50",
+      "version": "1.8.0"
+    },
+    "swift-openapi-runtime": {
+      "repository": "https://github.com/apple/swift-openapi-runtime",
+      "revision": "50ad7976f18fec6c09466d2aebf7be3dc9476cfb",
+      "version": "1.13.0"
+    },
+    "swift-syntax": {
+      "repository": "https://github.com/swiftlang/swift-syntax.git",
+      "revision": "050f1a346fbbac0ca2cfb15a95274f7bd1cf0ccf",
+      "version": "604.0.0"
+    }
+  },
+  "scope": "version/revision and resolved_dependencies identify the validated 6.1.0 baseline, not every supported 6.1.x patch. Core JSON and buffered encoded requests; default Macros trait; standalone macOS consumer. Other patch releases, optional product lifecycle, combined libraries, real service/device behavior and AI host qualification require separate validation."
+}

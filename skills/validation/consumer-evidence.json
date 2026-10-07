@@ -1,0 +1,67 @@
+{
+  "status": "passed",
+  "started_at": "2026-10-07T01:11:18.266529+00:00",
+  "swift": "swift-driver version: 1.168.6 Apple Swift version 6.4 (swiftlang-6.4.0.34.1 clang-2100.3.34.1)\nTarget: arm64-apple-macosx27.0.0",
+  "xcode": "Xcode 27.0\nBuild version 27A266a",
+  "source_sha256": {
+    "Package.resolved": "2f65dc503626e6f62a6351ac246588502c765601d8bcae13bfcd2da4ffc5f54d",
+    "Package.swift": "24b81da071dec5c46a08419f444722429868353c960f4dea7f4e58bbe3e984a1",
+    "Sources/NetworkSkillExample/Endpoints.swift": "8a46de9a82d502fc2d3e855281c8a31857805a535784a05476980eaa26c66aad",
+    "Tests/NetworkSkillExampleTests/ConsumerTests.swift": "7da56643db7b1c176f6d95f54e048549bc2ded322219a137d25f1f432ed28164"
+  },
+  "dependencies": {
+    "innonetwork": {
+      "version": "6.1.0",
+      "revision": "79ff9f535a0a15ad8b52ce49cb5a4b1ea1dfec16",
+      "clean": true,
+      "prebuilt_selected": false
+    },
+    "swift-asn1": {
+      "version": "1.7.3",
+      "revision": "3b6410f7dee09eb33cdd26260c5fd47fda19b0e2",
+      "clean": true,
+      "prebuilt_selected": false
+    },
+    "swift-crypto": {
+      "version": "5.0.0",
+      "revision": "a9d1d5ab8951ada40cafff8c8e2b551dfde4f390",
+      "clean": true,
+      "prebuilt_selected": false
+    },
+    "swift-http-types": {
+      "version": "1.8.0",
+      "revision": "bff4b6903cdc99dda49649dd52f46c11cfd3ed50",
+      "clean": true,
+      "prebuilt_selected": false
+    },
+    "swift-openapi-runtime": {
+      "version": "1.13.0",
+      "revision": "50ad7976f18fec6c09466d2aebf7be3dc9476cfb",
+      "clean": true,
+      "prebuilt_selected": false
+    },
+    "swift-syntax": {
+      "version": "604.0.0",
+      "revision": "050f1a346fbbac0ca2cfb15a95274f7bd1cf0ccf",
+      "clean": true,
+      "prebuilt_selected": true
+    }
+  },
+  "swift_test_result": {
+    "tests": 13,
+    "suites": 1,
+    "failures": 0,
+    "strict_concurrency": "complete",
+    "warnings_as_errors": true
+  },
+  "finished_at": "2026-10-07T01:11:38.231471+00:00",
+  "scope": "Exact remote 6.1.0; macOS mock transport; default Macros trait. SwiftSyntax prebuilt selected by SwiftPM.",
+  "reproduce": "python3 skills/innonetwork/scripts/validate_consumer.py --scratch-path /tmp/innonetwork-skill-validation",
+  "negative_control": {
+    "changed": "swift-crypto revision in disposable support.json only",
+    "expected_error": "swift-crypto fixture pin differs from support record",
+    "exit_code": 1,
+    "before_build": true
+  },
+  "support_range_note": "The stable 6.1.x support declaration is broader than this exact 6.1.0 baseline run; no 6.1.1 validation is claimed."
+}

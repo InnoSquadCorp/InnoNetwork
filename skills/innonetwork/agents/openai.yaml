@@ -1,0 +1,6 @@
+interface:
+  display_name: "InnoNetwork"
+  short_description: "Version-aware Swift HTTP and encoded request integration"
+  default_prompt: "Use $innonetwork to check the resolved version and implement a typed HTTP endpoint with focused consumer tests."
+policy:
+  allow_implicit_invocation: true
