@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "repository": "InnoSquadCorp/InnoNetwork",
-  "status": "reviewed-local-proposal-not-active",
+  "status": "reviewed-cleanup-policy-v1",
   "merged_pr_pull_request_workflow_allowlist": [
     ".github/workflows/ci.yml"
   ],
@@ -22,5 +22,5 @@
     ".github/workflows/tsan.yml"
   ],
   "event_filter": "pull_request only; never select by SHA alone",
-  "permission_activation": "requires separately authorized trusted handler"
+  "permission_activation": "trusted default-branch handler; default on; disabled override is read-only"
 }

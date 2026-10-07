@@ -19,7 +19,7 @@ jobs:
       github.repository == 'InnoSquadCorp/InnoNetwork' &&
       github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
       github.workflow_ref == format('{0}/.github/workflows/merged-pr-cleanup.yml@refs/heads/{1}', github.repository, github.event.repository.default_branch) &&
-      vars.INNO_MERGED_PR_CLEANUP != 'enabled'
+      !(vars.INNO_MERGED_PR_CLEANUP == '' || vars.INNO_MERGED_PR_CLEANUP == 'enabled')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -41,7 +41,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CLEANUP_SOURCE_SHA: ${{ github.workflow_sha }}
-          # Unset/default is dry-run. Enabling writes needs separate rollout approval.
+          # The disabled override retains read-only inspection.
           CLEANUP_ENABLE_WRITES: ''
         run: |
           set -euo pipefail
@@ -55,7 +55,7 @@ jobs:
       github.repository == 'InnoSquadCorp/InnoNetwork' &&
       github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
       github.workflow_ref == format('{0}/.github/workflows/merged-pr-cleanup.yml@refs/heads/{1}', github.repository, github.event.repository.default_branch) &&
-      vars.INNO_MERGED_PR_CLEANUP == 'enabled'
+      (vars.INNO_MERGED_PR_CLEANUP == '' || vars.INNO_MERGED_PR_CLEANUP == 'enabled')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -77,8 +77,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CLEANUP_SOURCE_SHA: ${{ github.workflow_sha }}
-          # Unset/default is dry-run. Enabling writes needs separate rollout approval.
-          CLEANUP_ENABLE_WRITES: ${{ vars.INNO_MERGED_PR_CLEANUP == 'enabled' && 'enabled' || '' }}
+          # The trusted merged-PR handler applies cleanup by default.
+          CLEANUP_ENABLE_WRITES: ${{ (vars.INNO_MERGED_PR_CLEANUP == '' || vars.INNO_MERGED_PR_CLEANUP == 'enabled') && 'enabled' || 'disabled' }}
         run: |
           set -euo pipefail
           args=()

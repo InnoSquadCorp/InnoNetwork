@@ -44,7 +44,7 @@ class MergedPRCleanupTests(unittest.TestCase):
   import json
   scripts=Path(__file__).resolve().parents[1];root=scripts.parent
   config=json.loads((scripts/'ci-cleanup-workflows.json').read_text())
-  self.assertEqual(config['status'],'reviewed-local-proposal-not-active')
+  self.assertEqual(config['status'],'reviewed-cleanup-policy-v1')
   allowed=config['merged_pr_pull_request_workflow_allowlist']
   self.assertTrue(allowed);self.assertEqual(allowed,sorted(set(allowed)))
   for path in allowed:self.assertTrue((root/path).is_file());self.assertIsNone(p.PROTECTED.search(path))

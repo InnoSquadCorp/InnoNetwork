@@ -1,6 +1,6 @@
 # CI impact preparation
 
-Status: draft PR for review, rebased onto main `44e4ca28c50c03f817231a077c0f3bdfdbc859c8`. Repository protection, variables and release settings are outside this change. Product selection, scoped job cancellation and byte-identical main-moved reuse are enabled by default. Explicit disable overrides remain available; unknown values fail closed. Merged-PR cleanup writes remain opt-in pending specific approval of the default `actions: write` permission.
+Status: draft PR for review, rebased onto main `44e4ca28c50c03f817231a077c0f3bdfdbc859c8`. Repository protection, variables and release settings are outside this change. Product selection, scoped job cancellation, trusted merged-PR cleanup and byte-identical main-moved reuse are enabled by default. Explicit disable overrides remain available; unknown values fail closed.
 
 ## Implemented PR path
 
@@ -44,10 +44,10 @@ The existing Ruby 3.3.8 runtime under flow-review-tools/bin can run Ruby-depende
 
 ## Draft validation on 2026-10-07
 
-The publication candidate on the base above passes 336 automation tests, 133 Python script tests, the real Ruby 3.3.8 consumer contract suite (12 tests / 44 assertions), the changelog, Periphery and post-release documentation fixtures, static documentation/public-operations checks, and checksum-pinned actionlint 1.7.12 for 16 workflows. Mocked Swift/API fixtures establish command selection and failure propagation only.
+The publication candidate on the base above passes 337 automation tests, 133 Python script tests, the real Ruby 3.3.8 consumer contract suite (12 tests / 44 assertions), the changelog, Periphery and post-release documentation fixtures, static documentation/public-operations checks, and checksum-pinned actionlint 1.7.12 for 16 workflows. Mocked Swift/API fixtures establish command selection and failure propagation only.
 
 Full Mac runtime validation is incomplete. Earlier MIME (16) and trust (16) failures were reproduced on the exact original base `057a2f92239c1d88abae24a9ac28017275aa313d`. Cache (4), connection (10) and Download (162) results remain unresolved, with execution-permission blockers. These results do not establish a passing full test suite for this PR or its new base. This publication VM has no Swift/Xcode; actual SwiftPM dump/target builds, full discovery/runtime, consumer and release validation remain required.
 
 ## Default overrides
 
-No repository-level override was present for the four new variables when read on 2026-10-07. This PR does not write repository settings. Unset/empty values enable product selection, job cancellation and main-moved reuse. Cleanup still requires `INNO_MERGED_PR_CLEANUP=enabled` until its default write permission is approved. `INNONETWORK_PRODUCT_CI=false` selects the original full build; `INNO_JOB_CANCELLATION=disabled` restores previous workflow admission; `INNO_MAIN_MOVED_REUSE=disabled` preserves the old exact-base guard; An unset/disabled `INNO_MERGED_PR_CLEANUP` selects read-only inspection. Unknown values disable the corresponding feature. Product selection still requires ordinary-PR and complete input proof. Main, merge queue, release, full tests, coverage and consumer gates retain their full validation contracts.
+No repository-level override was present for the four new variables when read on 2026-10-07. This PR does not write repository settings. Unset/empty values enable all four features. `INNONETWORK_PRODUCT_CI=false` selects the original full build; `INNO_JOB_CANCELLATION=disabled` restores previous workflow admission; `INNO_MAIN_MOVED_REUSE=disabled` preserves the old exact-base guard; `INNO_MERGED_PR_CLEANUP=disabled` selects read-only inspection. Unknown values disable the corresponding feature. Product selection still requires ordinary-PR and complete input proof. Main, merge queue, release, full tests, coverage and consumer gates retain their full validation contracts.

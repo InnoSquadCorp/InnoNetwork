@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Trusted merged-PR cleanup executor. Defaults to read-only dry-run.
 
-Only the separately enabled trusted default-branch workflow may request writes.
+The trusted default-branch workflow explicitly requests writes by default.
 Every candidate is authoritatively rechecked immediately before POST /cancel.
 """
 import argparse
@@ -55,7 +55,7 @@ def validate_context(event,context,config):
     sha=context.get('source_sha')
     if not isinstance(sha,str) or not re.fullmatch('[0-9a-f]{40}',sha) or context.get('checkout_sha')!=sha:
         raise ValueError('checkout must equal immutable trusted workflow source')
-    if config.get('schema')!=1 or config.get('status')!='reviewed-local-proposal-not-active':raise ValueError('reviewed cleanup config required')
+    if config.get('schema')!=1 or config.get('status')!='reviewed-cleanup-policy-v1':raise ValueError('reviewed cleanup config required')
     return repo
 
 
