@@ -373,6 +373,10 @@ InnoNetwork 기반 클라이언트를 출시하기 전에 점검해야 할 운�
 - 5.0 릴리즈 노트: [../releases/5.0.0.md](../releases/5.0.0.md)
 - 로드맵: [../ROADMAP.md](../ROADMAP.md)
 
+## 후원
+
+[GitHub Sponsors](https://github.com/sponsors/InnoSquadCorp) 또는 [Patreon](https://www.patreon.com/c/InnoSquad)을 통해 InnoNetwork 개발을 후원할 수 있습니다.
+
 ## 라이선스
 
 MIT. 자세한 내용은 [LICENSE](../../LICENSE) 를 참고하세요.
