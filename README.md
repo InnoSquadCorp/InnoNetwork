@@ -39,6 +39,12 @@ validation contract; its pre-publication advice no longer applies to published 6
 > The approved baseline contains 1,700 public declarations; advanced additions
 > remain Provisionally Stable unless the stability ledger explicitly says otherwise.
 
+## AI agent skill
+
+The library-owned [Codex and Claude Code skill](skills/README.md) targets the
+verified public **6.1.0** release, including the new encoded request boundary.
+It includes exact-release consumer tests and installation instructions.
+
 ## Product Selection Guide
 
 | Product | Use When |

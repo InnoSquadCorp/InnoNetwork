@@ -47,6 +47,12 @@ Swift Concurrency, 명시적인 transport 정책, 운영 가시성을 중심으�
 
 ---
 
+## AI 에이전트 스킬
+
+[Codex·Claude Code 스킬](../../skills/README.md)의 원본을 이 저장소에서 관리합니다.
+공개된 **6.1.0** 태그를 기준으로 JSON·encoded 요청 지침, 독립 소비자 테스트와
+설치 방법을 제공합니다. Swift 패키지를 추가하는 것만으로 스킬이 설치되지는 않습니다.
+
 ## Quick Start
 
 ### 설치
