@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Execute opt-in native product builds with full fallback and exact skip receipts.
+"""Execute default-on native product builds with full fallback and exact skip receipts.
 
 Only ordinary PRs may narrow builds. Tests, release workflows and manifests are
-never rewritten. Default/missing/uncertain admission runs original full commands.
+never rewritten. Missing or uncertain proof runs original full commands; explicit false disables selection.
 """
 import argparse
 import hashlib
@@ -60,7 +60,7 @@ def admit(root, env, check_output=subprocess.check_output):
     base = {'mode': 'full', 'reason': 'product rollout disabled or non-PR event', 'sha': sha,
             'base': None, 'head': None, 'products': [], 'targets': [], 'affected_targets': [], 'graph_sha256': None,
             'manifest_sha256': hashlib.sha256((root/'Package.swift').read_bytes()).hexdigest()}
-    if env.get('PRODUCT_SCOPE_ENABLED') != 'true' or env.get('GITHUB_EVENT_NAME') != 'pull_request':
+    if env.get('PRODUCT_SCOPE_ENABLED', '').lower() not in ('', 'true') or env.get('GITHUB_EVENT_NAME') != 'pull_request':
         return base
     try:
         event = json.loads(Path(env['GITHUB_EVENT_PATH']).read_text())

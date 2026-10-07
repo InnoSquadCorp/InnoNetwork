@@ -1,6 +1,6 @@
-# Main-moved evidence reuse: executable opt-in proof
+# Main-moved evidence reuse: default-on proof
 
-The existing metadata verifier now calls `Scripts/main_moved_equivalence.py` only with `INNO_MAIN_MOVED_REUSE=enabled`. This draft PR proposes the implementation; activating the repository variable is separate. An actual main movement is accepted only after the proof below succeeds.
+The metadata verifier calls `Scripts/main_moved_equivalence.py` by default. Unset/empty `INNO_MAIN_MOVED_REUSE` or `enabled` enables the proof; `disabled` or unknown values keep the old exact-base guard. The workflow normalizes the case-insensitive variable before the Python verifier reads it. An actual main movement is accepted only after the proof below succeeds.
 
 A changed base SHA may be accepted only when the current authoritative synthetic merge and the previously validated synthetic merge have byte-identical complete Git input inventories, including every documentation file. Parent SHAs, base ancestry, current main and PR head must match their authoritative roles. Added/deleted/renamed/mode-changed inputs or any changed blob require fresh validation. A harmless empty commit can qualify; a plain paragraph change currently cannot. Literal documentation contracts and DocC consume prose, so unchanged code fences alone are insufficient. Safe changed-doc reuse requires fresh affected docs/DocC proof and remains deferred rather than being marked green.
 
@@ -8,4 +8,4 @@ The verifier preserves the native source-run success, current latest attempt, Ac
 
 Artifact transport authenticates only to the GitHub API. The initial redirect must target a narrowly allowed HTTPS storage host; the bearer credential is never forwarded. Untrusted redirects, missing digest or oversized/ambiguous ZIPs fail closed. The verifier re-fetches PR/current base/merge, artifact and source run/attempt/latest status immediately before acceptance; races require validation.
 
-The older `main_moved_reuse_design.py` remains an offline closure-design model, not an authorization route. The operational helper deliberately uses the stricter complete-input comparison until affected-gate proof exists. Default feature-off behavior and exact final-SHA clean full release/consumer gates remain intact. Local fixture and mocked transport/provenance tests pass; no live artifact, Apple compiler or hosted green-check reuse has been exercised.
+The older `main_moved_reuse_design.py` remains an offline closure-design model, not an authorization route. The operational helper deliberately uses the stricter complete-input comparison until affected-gate proof exists. The explicit disabled override and exact final-SHA clean full release/consumer gates remain intact. Local fixture and mocked transport/provenance tests pass; no live artifact, Apple compiler or hosted green-check reuse has been exercised.

@@ -1,8 +1,9 @@
-# Opt-in stale validation cancellation
+# Default-on stale validation cancellation
 
-Status: executable workflow wiring proposed in a draft PR; activation is separate.
-This change does not set the repository variable `INNO_JOB_CANCELLATION`.
-Only the exact value `enabled` activates the new PR behavior.
+Status: scoped cancellation is enabled for PR validation by default.
+Unset/empty `INNO_JOB_CANCELLATION` or `enabled` uses the new behavior;
+`disabled` or unknown values restore prior admission. Workflow expressions
+normalize the variable before forwarding it to the Python metadata observer.
 
 ## Admission and immutable workload scopes
 
@@ -62,7 +63,7 @@ provenance readers reject cancelled metadata runs, so adding cancellation alone
 could leave a later valid candidate blocked. Coalescing requires a separate proof
 that a cancelled observer was superseded by a newer exact successful observer.
 Do not claim this preparation coalesces metadata or has measured queue savings.
-The rollout remains off by default, with the 360-minute per-observer limit above.
+The observer is enabled by default, with the 360-minute per-observer limit above.
 
 ## Validation and remaining limits
 
@@ -75,7 +76,7 @@ an older run with delayed prerequisites can enter a group after a newer one.
 The exact-candidate gates prevent accepting stale evidence, but this design does
 not claim atomic newest-commit scheduling. See the official [concurrency rules](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
 
-Before activation, separately approve a hosted overlap test covering same-product,
+Hosted overlap validation still needs to cover same-product,
 different-product, matrix/lane, metadata, cancelled-source and excluded stateful
 paths. GitHub native scheduling and Apple compiler/runtime behavior remain
 unverified in this cloud VM.

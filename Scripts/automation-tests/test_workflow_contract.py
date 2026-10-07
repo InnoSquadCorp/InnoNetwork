@@ -41,7 +41,7 @@ class WorkflowContractTests(unittest.TestCase):
                     self.assertEqual(adapter.recipe(ROOT, {'mode':'full'}, 'network-build', 'package', 'macOS', ROOT / '.build')['commands'], [['xcrun','swift','build']])
                     self.assertIn('ci_product_execution.py build --kind network-build', actual['run'])
                     self.assertIn('ci_product_execution.py verify --kind network-build', actual['run'])
-                    self.assertEqual(matching[0]['env'], {'PRODUCT_SCOPE_ENABLED': '${{ vars.INNONETWORK_PRODUCT_CI }}'})
+                    self.assertEqual(matching[0]['env'], {'PRODUCT_SCOPE_ENABLED': "${{ (vars.INNONETWORK_PRODUCT_CI == '' || vars.INNONETWORK_PRODUCT_CI == 'true') && 'true' || 'false' }}"})
                     self.assertEqual({k:v for k,v in actual.items() if k != 'run'}, {k:v for k,v in expected.items() if k != 'run'})
                 else:
                     self.assertEqual(actual, expected)

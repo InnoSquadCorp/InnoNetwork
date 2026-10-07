@@ -16,6 +16,17 @@ class ProductExecutionTests(unittest.TestCase):
   return json.dumps({'targets':[{'name':n,'type':v['kind'],'path':v['inputs'][0].rstrip('/'),'dependencies':[{'target':[d,None]} for d in v['dependencies']]} for n,v in GRAPH['targets'].items()],'products':[{'name':n,'targets':v} for n,v in GRAPH['products'].items()]})
  def runner(self,cmd,**kwargs):self.calls.append(cmd);self.assertTrue(kwargs['check'])
  def mode(self):return ('di-example','SampleApp') if DI else ('network-build','package')
+ def test_default_on_and_explicit_disable_still_require_exact_admission(self):
+  for value in [None,'','true','TRUE']:
+   env={k:v for k,v in self.env.items() if k!='PRODUCT_SCOPE_ENABLED'}
+   if value is not None:env['PRODUCT_SCOPE_ENABLED']=value
+   with self.subTest(value=value):
+    self.assertEqual(x.admit(self.root,env,self.dump)['mode'],'scoped')
+    for event in ['push','merge_group','workflow_dispatch']:
+     self.assertEqual(x.admit(self.root,{**env,'GITHUB_EVENT_NAME':event},self.dump)['mode'],'full')
+    self.assertEqual(x.admit(self.root,env,lambda *a,**k:'{}')['mode'],'full')
+  for value in ['false','FALSE','disabled','unknown']:
+   with self.subTest(value=value):self.assertEqual(x.admit(self.root,{**self.env,'PRODUCT_SCOPE_ENABLED':value},self.dump)['mode'],'full')
  def test_exact_admission_and_native_or_unaffected_execution(self):
   plan=x.admit(self.root,self.env,self.dump);self.assertEqual(plan['mode'],'scoped');self.assertEqual(plan['products'],[TARGET]);kind,unit=self.mode();receipt=x.execute(self.root,self.env,kind,unit,'macOS',self.root/'tmp',self.root/'receipts',self.runner,self.dump)
   if DI:self.assertEqual(receipt['decision'],'skip-unaffected');self.assertEqual(self.calls,[])

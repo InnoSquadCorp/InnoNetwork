@@ -1,7 +1,7 @@
-"""Pure reviewed workflow expressions for opt-in per-job stale PR cancellation."""
+"""Pure reviewed workflow expressions for default-on per-job stale PR cancellation."""
 import json
 
-FLAG = "vars.INNO_JOB_CANCELLATION == 'enabled' && github.event_name == 'pull_request'"
+FLAG = "(vars.INNO_JOB_CANCELLATION == '' || vars.INNO_JOB_CANCELLATION == 'enabled') && github.event_name == 'pull_request'"
 
 
 def outer_group(original):
@@ -21,7 +21,7 @@ def outer_cancel(original):
 def active(metadata, products=(), product_key=None):
     expression = FLAG + ' && !(' + metadata + ')'
     if products:
-        scoped = '(' + ' || '.join("vars." + variable + " == 'true'" for variable in products) + ')'
+        scoped = '(' + ' || '.join("(vars." + variable + " == '' || vars." + variable + " == 'true')" for variable in products) + ')'
         expression += ' && (!' + scoped + " || " + (product_key or "''") + " != '')"
     return expression
 
@@ -35,7 +35,7 @@ def job_fields(workflow, job, metadata, axes=(), products=(), product_key=None, 
     for axis in axes:
         group += '-${{ ' + axis + ' }}'
     if products:
-        scoped = '(' + ' || '.join("vars." + variable + " == 'true'" for variable in products) + ')'
+        scoped = '(' + ' || '.join("(vars." + variable + " == '' || vars." + variable + " == 'true')" for variable in products) + ')'
         group += '-${{ ' + scoped + ' && ' + (product_key or "''") + " || 'full-package' }}"
     group += "-${{ (" + enabled + ") && 'active' || format('off-{0}-{1}', github.run_id, github.run_attempt) }}"
     return {'group': group, 'cancel-in-progress': '${{ ' + enabled + ' }}'}
@@ -82,5 +82,5 @@ def validate_workflow(document, entry, config, filename):
         steps=[s for s in job['steps'] if s.get('name')=='Verify prior validation for metadata']
         if len(steps)!=1 or steps[0]['run']!=wrapped_command(metadata['command'],config['scripts']):
             raise ValueError('authoritative metadata command changed or bypassed')
-        if steps[0].get('env',{}).get('INNO_JOB_CANCELLATION')!="${{ vars.INNO_JOB_CANCELLATION == 'enabled' && 'enabled' || '' }}":
+        if steps[0].get('env',{}).get('INNO_JOB_CANCELLATION')!="${{ (vars.INNO_JOB_CANCELLATION == '' || vars.INNO_JOB_CANCELLATION == 'enabled') && 'enabled' || 'disabled' }}":
             raise ValueError('metadata rollout flag not propagated')

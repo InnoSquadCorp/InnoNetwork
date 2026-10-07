@@ -36,15 +36,26 @@ class MovedTranscript(original.Transcript):
   if not path.endswith('actions/artifacts/501/zip'):raise AssertionError(path)
   return self.archive_data
 class MainMovedEquivalenceTests(unittest.TestCase):
+ def test_unset_and_blank_default_enable_only_complete_input_identity(self):
+  for value in [None,'','ENABLED']:
+   t=MovedTranscript();t.env.pop('INNO_MAIN_MOVED_REUSE')
+   if value is not None:t.env['INNO_MAIN_MOVED_REUSE']=value
+   t.env['CI_INPUT_VARIABLES']='{}';t.config=equiv.configuration('{}');t.make_archive()
+   self.assertEqual(t.prove()['main_moved_equivalence']['current_main'],t.main)
+   t.current_tree['tree'][0]['sha']='8'*40
+   with self.assertRaises(ValueError):t.prove()
+  for value in ['disabled','false','unknown']:
+   t=MovedTranscript();t.env['INNO_MAIN_MOVED_REUSE']=value
+   with self.assertRaisesRegex(ValueError,'main moved'):t.prove()
  def test_complete_input_identity_across_main_advance_uses_native_success_and_hashed_artifact(self):
   t=MovedTranscript();result=t.prove();self.assertEqual(result['run'],10);proof=result['main_moved_equivalence'];self.assertEqual(proof['current_main'],t.main);self.assertEqual(proof['ignored_prose_paths'],[]);self.assertEqual(result['source_artifact']['artifact_id'],501)
  def test_updated_event_base_reuses_old_validation_only_with_effective_input_proof(self):
   t=MovedTranscript();t.pr['base']['sha']=t.main;t.event['pull_request']['base']['sha']=t.main;t.env['GITHUB_SHA']=t.new_source
   result=t.prove();self.assertEqual(result['main_moved_equivalence']['base'],original.BASE);self.assertEqual(result['main_moved_equivalence']['current_main'],t.main)
-  t=MovedTranscript();t.pr['base']['sha']=t.main;t.event['pull_request']['base']['sha']=t.main;t.env['GITHUB_SHA']=t.new_source;t.env['INNO_MAIN_MOVED_REUSE']=''
+  t=MovedTranscript();t.pr['base']['sha']=t.main;t.event['pull_request']['base']['sha']=t.main;t.env['GITHUB_SHA']=t.new_source;t.env['INNO_MAIN_MOVED_REUSE']='disabled'
   with self.assertRaises(ValueError):t.prove()
- def test_disabled_default_retains_old_main_guard(self):
-  t=MovedTranscript();t.env['INNO_MAIN_MOVED_REUSE']=''
+ def test_explicit_disable_retains_old_main_guard(self):
+  t=MovedTranscript();t.env['INNO_MAIN_MOVED_REUSE']='disabled'
   with self.assertRaisesRegex(ValueError,'main moved'):t.prove()
  def test_source_lock_workflow_or_policy_change_rejects(self):
   for index in [1,2,3,4]:

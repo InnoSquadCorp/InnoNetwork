@@ -1,4 +1,4 @@
-"""Read-only, opt-in proof for complete-input-equivalent main advancement.
+"""Read-only, default-on proof for complete-input-equivalent main advancement.
 
 Every Git validation input, including documentation contracts, must remain
 byte-identical. A different commit/base identity alone is not an input change.

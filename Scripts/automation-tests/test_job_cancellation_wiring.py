@@ -20,6 +20,27 @@ def yaml(path):return json.loads(subprocess.check_output(['ruby','-ryaml','-rjso
 from test_ci_event_routing import expression_value
 
 class JobCancellationWiringTests(unittest.TestCase):
+    def test_default_on_and_disable_flags_match_actual_workflow_environment(self):
+        source=yaml(ROOT/'.github/workflows/ci.yml')
+        values={'github.event_name':'pull_request','github.event.action':'synchronize','github.event.label.name':'','github.event.changes.base':''}
+        for value in ['', 'enabled', 'ENABLED', 'disabled', 'unknown']:
+            current={**values,'vars.INNO_JOB_CANCELLATION':value}
+            expected=value.lower() in ('','enabled')
+            self.assertEqual(bool(expression_value(w.active(CONFIG['metadata']),current)),expected)
+            for event in ['push','merge_group','workflow_dispatch']:
+                self.assertFalse(expression_value(w.active(CONFIG['metadata']),{**current,'github.event_name':event}))
+            step=next(s for s in source['jobs']['ci-required']['steps'] if s.get('name')=='Verify prior validation for metadata')
+            self.assertEqual(expression_value(w.inner(step['env']['INNO_JOB_CANCELLATION']),current),'enabled' if expected else 'disabled')
+        scoped=w.active(CONFIG['metadata'],['INNONETWORK_PRODUCT_CI'],'needs.ci-plan.outputs.product-key')
+        for value in ['', 'true', 'TRUE', 'false', 'unknown']:
+            current={**values,'vars.INNO_JOB_CANCELLATION':'','vars.INNONETWORK_PRODUCT_CI':value,'needs.ci-plan.outputs.product-key':''}
+            self.assertEqual(bool(expression_value(scoped,current)),value.lower() not in ('','true'))
+            self.assertTrue(expression_value(scoped,{**current,'needs.ci-plan.outputs.product-key':'p-proof'}))
+            step=next(s for s in source['jobs']['build-and-test']['steps'] if s.get('name')=='Build (Swift 6 language mode)')
+            self.assertEqual(expression_value(w.inner(step['env']['PRODUCT_SCOPE_ENABLED']),current).lower(),'true' if value.lower() in ('','true') else 'false')
+        for value in ['', 'enabled', 'ENABLED', 'disabled', 'unknown']:
+            step=next(s for s in source['jobs']['ci-required']['steps'] if s.get('name')=='Verify prior validation for metadata')
+            self.assertEqual(expression_value(w.inner(step['env']['INNO_MAIN_MOVED_REUSE']),{'vars.INNO_MAIN_MOVED_REUSE':value}),'enabled' if value.lower() in ('','enabled') else 'disabled')
     def test_actual_workflows_match_reviewed_job_scopes_and_matrix(self):
         for path,entry in CONFIG['workflows'].items():
             with self.subTest(workflow=path):w.validate_workflow(yaml(ROOT/path),entry,CONFIG,Path(path).name)
@@ -37,7 +58,7 @@ class JobCancellationWiringTests(unittest.TestCase):
                 bad=copy.deepcopy(data);bad['jobs'][job]['concurrency']={'group':'unsafe','cancel-in-progress':True}
                 with self.assertRaises(ValueError):w.validate_workflow(bad,entry,CONFIG,Path(path).name)
     def test_outer_feature_off_is_exact_previous_admission(self):
-        values={'vars.INNO_JOB_CANCELLATION':'','github.event_name':'pull_request','github.run_id':42,'github.run_attempt':1,
+        values={'vars.INNO_JOB_CANCELLATION':'disabled','github.event_name':'pull_request','github.run_id':42,'github.run_attempt':1,
                 'github.event.action':'synchronize','github.event.label.name':'','github.event.changes.base':''}
         for entry in CONFIG['workflows'].values():
             old=entry['original_concurrency']

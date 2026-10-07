@@ -1,7 +1,7 @@
-"""Reference cancellation-key model; executable opt-in headers are now wired.
+"""Reference cancellation-key model; executable default-on headers are now wired.
 
-A job-level key alone cannot override workflow-level cancellation. Activate only
-with a reviewed metadata/proof coordination migration and scoped CI rollout.
+The workflow wiring preserves metadata proof coordination and excludes
+stateful/release writers while enabling scoped PR job cancellation by default.
 """
 import hashlib
 import json
@@ -34,4 +34,4 @@ def plan(repository, workflow, subject_kind, subject, product, lane, matrix=None
     digest=hashlib.sha256(canonical.encode()).hexdigest()
     label=re.sub('[^a-z0-9_-]+','-',(repository+'-'+workflow+'-'+product+'-'+lane).lower())[:120]
     return {'group':'scoped-ci-v1-'+label+'-'+digest,'cancel_in_progress':purpose=='validation',
-            'identity':identity,'activation':'opt-in workflow wiring in ci-job-concurrency.json; disabled until separately activated'}
+            'identity':identity,'activation':'default-on workflow wiring in ci-job-concurrency.json; explicit disabled override'}

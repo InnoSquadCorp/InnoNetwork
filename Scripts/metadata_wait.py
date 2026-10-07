@@ -11,7 +11,11 @@ import sys
 import time
 
 
-def run(command,enabled=False,timeout=21000,interval=30,invoke=subprocess.run,clock=time.monotonic,sleep=time.sleep):
+def enabled_for(env):
+    return env.get('INNO_JOB_CANCELLATION', '').lower() in ('', 'enabled') and env.get('GITHUB_EVENT_NAME') == 'pull_request'
+
+
+def run(command,enabled=True,timeout=21000,interval=30,invoke=subprocess.run,clock=time.monotonic,sleep=time.sleep):
     if not command or timeout<0 or interval<=0:raise ValueError('bounded command and positive interval required')
     deadline=clock()+timeout
     while True:
@@ -27,6 +31,6 @@ def run(command,enabled=False,timeout=21000,interval=30,invoke=subprocess.run,cl
 def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('command',nargs=argparse.REMAINDER);args=parser.parse_args()
     command=args.command[1:] if args.command and args.command[0]=='--' else args.command
-    enabled=os.environ.get('INNO_JOB_CANCELLATION')=='enabled' and os.environ.get('GITHUB_EVENT_NAME')=='pull_request'
+    enabled=enabled_for(os.environ)
     sys.exit(run(command,enabled))
 if __name__=='__main__':main()

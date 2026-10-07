@@ -4,6 +4,11 @@ import subprocess
 import unittest
 spec=importlib.util.spec_from_file_location('metadata_wait_test',Path(__file__).resolve().parents[1]/'metadata_wait.py');m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 class MetadataWaitTests(unittest.TestCase):
+ def test_default_on_remains_pr_only_and_unknown_override_disables(self):
+  for value in [None,'','enabled','ENABLED','disabled','unknown']:
+   env={} if value is None else {'INNO_JOB_CANCELLATION':value}
+   for event in ['pull_request','push','merge_group','workflow_dispatch']:
+    self.assertEqual(m.enabled_for({**env,'GITHUB_EVENT_NAME':event}),event=='pull_request' and (value is None or value.lower() in ('','enabled')))
  def setUp(self):self.time=0;self.calls=[];self.codes=[]
  def invoke(self,cmd,check=False):self.calls.append(cmd);return subprocess.CompletedProcess(cmd,self.codes.pop(0))
  def sleep(self,seconds):self.time+=seconds

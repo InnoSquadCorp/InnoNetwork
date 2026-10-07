@@ -140,7 +140,7 @@ def prove(api, event, env, check_name='CI Required'):
     require(check_name in CONFIG['checks'], 'unknown required check')
     current = api.get(route + f'pulls/{number}')
     require(current.get('state') == 'open' and binding(current) == binding(pr), 'PR changed before validation')
-    observed_main = require_current_main(api, route, current, base, env.get('INNO_MAIN_MOVED_REUSE') == 'enabled')
+    observed_main = require_current_main(api, route, current, base, env.get('INNO_MAIN_MOVED_REUSE', '').lower() in ('', 'enabled'))
     own_id = int(env['GITHUB_RUN_ID'])
     own = api.get(route + f'actions/runs/{own_id}')
     source = env['GITHUB_SHA']
@@ -154,7 +154,7 @@ def prove(api, event, env, check_name='CI Required'):
             'checkout does not combine the current base and head')
     equivalence = None
     moved = None
-    if env.get('INNO_MAIN_MOVED_REUSE') == 'enabled':
+    if env.get('INNO_MAIN_MOVED_REUSE', '').lower() in ('', 'enabled'):
         spec = importlib.util.spec_from_file_location('main_moved_equivalence', Path(__file__).with_name('main_moved_equivalence.py'))
         equivalence = importlib.util.module_from_spec(spec); spec.loader.exec_module(equivalence)
     if observed_main != base:

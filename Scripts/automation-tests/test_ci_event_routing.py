@@ -67,7 +67,7 @@ class PRMetadataAdmissionTests(unittest.TestCase):
                 ('labeled', 'documentation', '', True), ('unlabeled', 'bug', '', True),
                 ('labeled', '', '', False), ('edited', '', '', True),
                 ('edited', '', {'ref': {'from': 'develop'}}, False)]:
-            values = {'github.event_name': 'pull_request', 'github.event.action': action,
+            values = {'vars.INNO_JOB_CANCELLATION': 'disabled', 'github.event_name': 'pull_request', 'github.event.action': action,
                       'github.event.label.name': label, 'github.event.changes.base': base,
                       'github.event.pull_request.number': 45, 'github.event.pull_request.head.sha': 'a' * 40,
                       'github.event.pull_request.base.sha': 'b' * 40, 'github.workflow_sha': 'c' * 40,
