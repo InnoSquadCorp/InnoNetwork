@@ -7,6 +7,20 @@ Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- Add the library-owned InnoNetwork agent skill for stable 6.1.x, independent
+  exact-6.1.0 consumer examples, validation helper, and documented support scope.
+
+### Fixed
+
+- Correct DocC publishing eligibility and reconcile the published 6.1.0
+  documentation and observability exporter guidance with verified evidence.
+- Unify GitHub Sponsors and Patreon links.
+
+No runtime implementation, public API, root manifest, or dependency-lock change
+is included in the planned 6.1.1 patch.
+
 ## [6.1.0] - 2026-10-07
 
 [Published on 2026-10-07 UTC](https://github.com/InnoSquadCorp/InnoNetwork/releases/tag/6.1.0)
