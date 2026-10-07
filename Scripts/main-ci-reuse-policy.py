@@ -396,6 +396,9 @@ CORE = {'CI Plan': ['Verify actual post-merge main origin',
                                                  'Report cache observations'],
  'CI Required': ['Checkout', 'Require every planned CI result', 'Verify prior validation for metadata']}
 SKIPPED = set()
+CORE['CI and public operations policy'][1:1] = ['Validate native parallel schema negative controls', 'Validate public operations policy']
+CORE['CI and public operations policy'].append('Validate prose-only documentation')
+
 STEP_SKIPS = {('CI Plan', 'Verify actual post-merge main origin'),
  ('Upload Core Coverage', 'Report artifact-only Codecov fallback'),
  ('Upload Macro Coverage', 'Report artifact-only Codecov fallback')}
@@ -403,6 +406,7 @@ PROOF_FIELDS = {"schema", "repository_id", "main", "base", "head", "merge", "tre
                 "pr", "run", "attempt", "workflow", "suite", "reused_jobs"}
 
 STEP_SKIPS.update({('CI Required', 'Verify prior validation for metadata')})
+STEP_SKIPS.add(('CI and public operations policy', 'Validate prose-only documentation'))
 
 
 class Rejected(ValueError):

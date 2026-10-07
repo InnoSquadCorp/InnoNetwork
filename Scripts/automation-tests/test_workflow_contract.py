@@ -32,7 +32,19 @@ class WorkflowContractTests(unittest.TestCase):
             for expected in contract['steps']:
                 matching = [s for s in current['steps'] if s.get('name') == expected['name']]
                 self.assertEqual(len(matching), 1)
-                self.assertEqual({k:v for k,v in matching[0].items() if k in ['name','run','if','continue-on-error','working-directory']}, expected)
+                actual = {k:v for k,v in matching[0].items() if k in ['name','run','if','continue-on-error','working-directory']}
+                if name == 'build-and-test' and expected['name'] == 'Build (Swift 6 language mode)':
+                    # Preserve the original default build; only this reviewed
+                    # adapter may replace its shell body, and full tests stay exact.
+                    spec = importlib.util.spec_from_file_location('product_execution_contract', ROOT / 'Scripts/ci_product_execution.py')
+                    adapter = importlib.util.module_from_spec(spec); spec.loader.exec_module(adapter)
+                    self.assertEqual(adapter.recipe(ROOT, {'mode':'full'}, 'network-build', 'package', 'macOS', ROOT / '.build')['commands'], [['xcrun','swift','build']])
+                    self.assertIn('ci_product_execution.py build --kind network-build', actual['run'])
+                    self.assertIn('ci_product_execution.py verify --kind network-build', actual['run'])
+                    self.assertEqual(matching[0]['env'], {'PRODUCT_SCOPE_ENABLED': '${{ vars.INNONETWORK_PRODUCT_CI }}'})
+                    self.assertEqual({k:v for k,v in actual.items() if k != 'run'}, {k:v for k,v in expected.items() if k != 'run'})
+                else:
+                    self.assertEqual(actual, expected)
 
     def test_codeql_stays_uncached_with_every_native_validation_gate(self):
         job = self.docs['ci.yml']['jobs']['codeql']
@@ -94,7 +106,8 @@ class WorkflowContractTests(unittest.TestCase):
                     label=prefix+render(name)
                     if row and '${{ matrix.' not in name: label+=' ('+', '.join(str(v) for v in row.values())+')'
                     self.assertNotIn(label,actual)
-                    actual[label]=[render(s['name']) for s in job['steps'] if 'name' in s]
+                    steps=[child for step in job['steps'] for child in (step['parallel'] if 'parallel' in step else [step])]
+                    actual[label]=[render(s['name']) for s in steps if 'name' in s]
         expand(self.docs['ci.yml'])
         self.assertEqual(actual,p.CORE)
         plan_spec = importlib.util.spec_from_file_location('plan', ROOT / 'Scripts/ci-policy.py')

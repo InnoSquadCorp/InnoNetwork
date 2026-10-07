@@ -20,8 +20,8 @@ on:
         default: ''
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ inputs.dependabot_merge_pr != '' && format('dependabot-{0}', inputs.dependabot_merge_pr) || 'validation' }}
-  cancel-in-progress: ${{ !(github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base))) }}
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ inputs.dependabot_merge_pr != '' && format('dependabot-{0}', inputs.dependabot_merge_pr) || 'validation' }}${{ (vars.INNO_JOB_CANCELLATION == 'enabled' && github.event_name == 'pull_request') && format('-jobs-{0}-{1}', github.run_id, github.run_attempt) || '' }}
+  cancel-in-progress: ${{ !(vars.INNO_JOB_CANCELLATION == 'enabled' && github.event_name == 'pull_request') && (!(github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base)))) }}
   queue: ${{ (github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base))) && 'max' || 'single' }}
 
 permissions:
@@ -39,6 +39,7 @@ jobs:
       actions: read
       checks: read
     outputs:
+      product-key: ${{ steps.plan.outputs.product-key }}
       plan: ${{ steps.plan.outputs.plan }}
       reuse: ${{ steps.reuse.outputs.proof }}
       lint: ${{ steps.plan.outputs.lint }}
@@ -70,16 +71,25 @@ jobs:
         id: plan
         env:
           CI_REUSE: ${{ steps.reuse.outputs.proof }}
-        run: python3 -B Scripts/ci-policy.py plan --event "$GITHUB_EVENT_PATH" --output .build/ci-plan.json
+          CI_INPUT_VARIABLES: ${{ toJSON(vars) }}
+        run: |
+          python3 -B Scripts/ci-policy.py plan --event "$GITHUB_EVENT_PATH" --output .build/ci-plan.json
+          python3 -B Scripts/main_moved_equivalence.py record-config --output .build/ci-evidence-config.json
+          python3 -B Scripts/ci_product_key.py --event "$GITHUB_EVENT_PATH"
       - name: Preserve change selection evidence
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ci-plan-${{ github.sha }}-${{ github.run_attempt }}
-          path: .build/ci-plan.json
+          path: |
+            .build/ci-plan.json
+            .build/ci-evidence-config.json
           if-no-files-found: error
 
 
   policy:
+    concurrency:
+      group: scoped-job-v1-${{ github.repository }}-${{ github.workflow }}-ci.yml-policy-pr-${{ github.event.pull_request.number }}-base-${{ github.event.pull_request.base.ref }}-${{ contains(github.event.pull_request.labels.*.name, 'release-validation') && 'release-validation' || 'no-release-validation' }}-${{ contains(github.event.pull_request.labels.*.name, 'concurrency-review') && 'concurrency-review' || 'no-concurrency-review' }}-${{ (vars.INNO_JOB_CANCELLATION == 'enabled' && github.event_name == 'pull_request' && !((github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base))))) && 'active' || format('off-{0}-{1}', github.run_id, github.run_attempt) }}
+      cancel-in-progress: ${{ vars.INNO_JOB_CANCELLATION == 'enabled' && github.event_name == 'pull_request' && !((github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base)))) }}
     name: CI and public operations policy
     needs: ci-plan
     runs-on: ubuntu-latest
@@ -89,7 +99,14 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+      # Both checks read repository metadata only and use independent temporaries.
+      - parallel:
+          - name: Validate native parallel schema negative controls
+            run: python3 -B Scripts/automation-tests/test_native_parallel.py
+          - name: Validate public operations policy
+            run: python3 -B Scripts/check-public-operations.py
       - name: Verify CI selection and public operations
+        if: ${{ !fromJSON(needs.ci-plan.outputs.plan).prose_only }}
         run: |
           python3 -B -m unittest discover -s Scripts/automation-tests -p 'test_*.py'
           python3 -B Scripts/tests/test_benchmark_protocol.py
@@ -98,14 +115,24 @@ jobs:
           python3 -B Scripts/tests/test_ci_cache.py
           python3 -B Scripts/tests/test_consumer_ci.py
           python3 -B Scripts/check-ci-workflows.py
-          python3 -B Scripts/check-public-operations.py
           python3 -B Scripts/check_required_status_checks.py
           ruby Scripts/check_consumer_ci_contract.rb
           ruby Scripts/tests/test_consumer_ci_contract.rb
           python3 -B Scripts/check_release_workflow_contract.py
           python3 -B Scripts/tests/test_check_release_workflow_contract.py
 
+      - name: Validate prose-only documentation
+        if: ${{ fromJSON(needs.ci-plan.outputs.plan).prose_only }}
+        env:
+          CI_PLAN: ${{ needs.ci-plan.outputs.plan }}
+        run: |
+          python3 -B Scripts/ci_prose.py --plan-json "$CI_PLAN"
+          bash Scripts/check_docs_contract_sync.sh --static-only
+
   dependency-review:
+    concurrency:
+      group: scoped-job-v1-${{ github.repository }}-${{ github.workflow }}-ci.yml-dependency-review-pr-${{ github.event.pull_request.number }}-base-${{ github.event.pull_request.base.ref }}-${{ contains(github.event.pull_request.labels.*.name, 'release-validation') && 'release-validation' || 'no-release-validation' }}-${{ contains(github.event.pull_request.labels.*.name, 'concurrency-review') && 'concurrency-review' || 'no-concurrency-review' }}-${{ (vars.INNO_JOB_CANCELLATION == 'enabled' && github.event_name == 'pull_request' && !((github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base))))) && 'active' || format('off-{0}-{1}', github.run_id, github.run_attempt) }}
+      cancel-in-progress: ${{ vars.INNO_JOB_CANCELLATION == 'enabled' && github.event_name == 'pull_request' && !((github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base)))) }}
     needs: ci-plan
     name: Dependency Review
     if: fromJSON(needs.ci-plan.outputs.plan).jobs.dependency-review
@@ -226,6 +253,9 @@ jobs:
 
 
   lint:
+    concurrency:
+      group: scoped-job-v1-${{ github.repository }}-${{ github.workflow }}-ci.yml-lint-pr-${{ github.event.pull_request.number }}-base-${{ github.event.pull_request.base.ref }}-${{ contains(github.event.pull_request.labels.*.name, 'release-validation') && 'release-validation' || 'no-release-validation' }}-${{ contains(github.event.pull_request.labels.*.name, 'concurrency-review') && 'concurrency-review' || 'no-concurrency-review' }}-${{ (vars.INNO_JOB_CANCELLATION == 'enabled' && github.event_name == 'pull_request' && !((github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base))))) && 'active' || format('off-{0}-{1}', github.run_id, github.run_attempt) }}
+      cancel-in-progress: ${{ vars.INNO_JOB_CANCELLATION == 'enabled' && github.event_name == 'pull_request' && !((github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base)))) }}
     needs: ci-plan
     name: Lint (swift-format)
     if: needs.ci-plan.outputs.lint == 'true'
@@ -250,6 +280,9 @@ jobs:
 
 
   dead-code:
+    concurrency:
+      group: scoped-job-v1-${{ github.repository }}-${{ github.workflow }}-ci.yml-dead-code-pr-${{ github.event.pull_request.number }}-base-${{ github.event.pull_request.base.ref }}-${{ contains(github.event.pull_request.labels.*.name, 'release-validation') && 'release-validation' || 'no-release-validation' }}-${{ contains(github.event.pull_request.labels.*.name, 'concurrency-review') && 'concurrency-review' || 'no-concurrency-review' }}-${{ (vars.INNO_JOB_CANCELLATION == 'enabled' && github.event_name == 'pull_request' && !((github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base))))) && 'active' || format('off-{0}-{1}', github.run_id, github.run_attempt) }}
+      cancel-in-progress: ${{ vars.INNO_JOB_CANCELLATION == 'enabled' && github.event_name == 'pull_request' && !((github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base)))) }}
     needs: ci-plan
     name: Lint (Periphery)
     if: needs.ci-plan.outputs.dead-code == 'true'
@@ -314,6 +347,9 @@ jobs:
         run: python3 -B Scripts/ci-cache.py report --profile dead-code
 
   build-and-test:
+    concurrency:
+      group: scoped-job-v1-${{ github.repository }}-${{ github.workflow }}-ci.yml-build-and-test-pr-${{ github.event.pull_request.number }}-base-${{ github.event.pull_request.base.ref }}-${{ contains(github.event.pull_request.labels.*.name, 'release-validation') && 'release-validation' || 'no-release-validation' }}-${{ contains(github.event.pull_request.labels.*.name, 'concurrency-review') && 'concurrency-review' || 'no-concurrency-review' }}-${{ matrix.xcode.label }}-${{ matrix.xcode.runner }}-${{ matrix.xcode.path }}-${{ (vars.INNONETWORK_PRODUCT_CI == 'true') && needs.ci-plan.outputs.product-key || 'full-package' }}-${{ (vars.INNO_JOB_CANCELLATION == 'enabled' && github.event_name == 'pull_request' && !((github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base)))) && (!(vars.INNONETWORK_PRODUCT_CI == 'true') || needs.ci-plan.outputs.product-key != '')) && 'active' || format('off-{0}-{1}', github.run_id, github.run_attempt) }}
+      cancel-in-progress: ${{ vars.INNO_JOB_CANCELLATION == 'enabled' && github.event_name == 'pull_request' && !((github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base)))) && (!(vars.INNONETWORK_PRODUCT_CI == 'true') || needs.ci-plan.outputs.product-key != '') }}
     needs: ci-plan
     name: Build and Test (SwiftPM) — Xcode ${{ matrix.xcode.label }}
     if: fromJSON(needs.ci-plan.outputs.plan).jobs.build-and-test
@@ -345,6 +381,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
 
       - name: Select Xcode
         run: |
@@ -415,14 +452,12 @@ jobs:
 
       - name: Build (Swift 6 language mode)
         if: steps.toolchain-compatibility.outputs.compatible == 'true'
+        env:
+          PRODUCT_SCOPE_ENABLED: ${{ vars.INNONETWORK_PRODUCT_CI }}
         run: |
-          set -eo pipefail
-          echo "🔨 Building InnoNetwork..."
-          xcrun swift --version
-          # Swift 6 language mode is enabled per-target in Package.swift, so
-          # strict concurrency is always in effect without an explicit flag.
-          xcrun swift build
-          echo "✅ Build completed successfully!"
+          set -euo pipefail
+          python3 -B Scripts/ci_product_execution.py build --kind network-build --units package --platform macOS --temporary "$RUNNER_TEMP/product-build" --receipts "$RUNNER_TEMP/product-build-receipts"
+          python3 -B Scripts/ci_product_execution.py verify --kind network-build --units package --platform macOS --temporary "$RUNNER_TEMP/product-build" --receipts "$RUNNER_TEMP/product-build-receipts"
 
       - name: Test (with code coverage)
         if: steps.toolchain-compatibility.outputs.compatible == 'true'
@@ -548,6 +583,9 @@ jobs:
 
 
   parallel-tests:
+    concurrency:
+      group: scoped-job-v1-${{ github.repository }}-${{ github.workflow }}-ci.yml-parallel-tests-pr-${{ github.event.pull_request.number }}-base-${{ github.event.pull_request.base.ref }}-${{ contains(github.event.pull_request.labels.*.name, 'release-validation') && 'release-validation' || 'no-release-validation' }}-${{ contains(github.event.pull_request.labels.*.name, 'concurrency-review') && 'concurrency-review' || 'no-concurrency-review' }}-${{ (vars.INNO_JOB_CANCELLATION == 'enabled' && github.event_name == 'pull_request' && !((github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base))))) && 'active' || format('off-{0}-{1}', github.run_id, github.run_attempt) }}
+      cancel-in-progress: ${{ vars.INNO_JOB_CANCELLATION == 'enabled' && github.event_name == 'pull_request' && !((github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base)))) }}
     needs: ci-plan
     name: Test (Bounded Target Shards) — Xcode 26.0.1
     if: needs.ci-plan.outputs.parallel-tests == 'true'
@@ -590,6 +628,9 @@ jobs:
         run: python3 -B Scripts/ci-cache.py report --profile parallel-tests
 
   docs-contract-sync:
+    concurrency:
+      group: scoped-job-v1-${{ github.repository }}-${{ github.workflow }}-ci.yml-docs-contract-sync-pr-${{ github.event.pull_request.number }}-base-${{ github.event.pull_request.base.ref }}-${{ contains(github.event.pull_request.labels.*.name, 'release-validation') && 'release-validation' || 'no-release-validation' }}-${{ contains(github.event.pull_request.labels.*.name, 'concurrency-review') && 'concurrency-review' || 'no-concurrency-review' }}-${{ (vars.INNO_JOB_CANCELLATION == 'enabled' && github.event_name == 'pull_request' && !((github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base))))) && 'active' || format('off-{0}-{1}', github.run_id, github.run_attempt) }}
+      cancel-in-progress: ${{ vars.INNO_JOB_CANCELLATION == 'enabled' && github.event_name == 'pull_request' && !((github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base)))) }}
     needs: ci-plan
     name: Docs / Contract Sync
     if: fromJSON(needs.ci-plan.outputs.plan).jobs.docs-contract-sync
@@ -701,6 +742,9 @@ jobs:
         run: python3 -B Scripts/ci-cache.py report --profile docs-contract-sync
 
   apple-platform-build-smoke:
+    concurrency:
+      group: scoped-job-v1-${{ github.repository }}-${{ github.workflow }}-ci.yml-apple-platform-build-smoke-pr-${{ github.event.pull_request.number }}-base-${{ github.event.pull_request.base.ref }}-${{ contains(github.event.pull_request.labels.*.name, 'release-validation') && 'release-validation' || 'no-release-validation' }}-${{ contains(github.event.pull_request.labels.*.name, 'concurrency-review') && 'concurrency-review' || 'no-concurrency-review' }}-${{ matrix.runtime }}-${{ matrix.builder }}-${{ matrix.triple || matrix.destination }}-${{ (vars.INNO_JOB_CANCELLATION == 'enabled' && github.event_name == 'pull_request' && !((github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base))))) && 'active' || format('off-{0}-{1}', github.run_id, github.run_attempt) }}
+      cancel-in-progress: ${{ vars.INNO_JOB_CANCELLATION == 'enabled' && github.event_name == 'pull_request' && !((github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base)))) }}
     needs: ci-plan
     name: Apple Platform Build Smoke
     if: needs.ci-plan.outputs.apple-platform-build-smoke == 'true'
@@ -814,6 +858,9 @@ jobs:
 
 
   consumer-examples:
+    concurrency:
+      group: scoped-job-v1-${{ github.repository }}-${{ github.workflow }}-ci.yml-consumer-examples-pr-${{ github.event.pull_request.number }}-base-${{ github.event.pull_request.base.ref }}-${{ contains(github.event.pull_request.labels.*.name, 'release-validation') && 'release-validation' || 'no-release-validation' }}-${{ contains(github.event.pull_request.labels.*.name, 'concurrency-review') && 'concurrency-review' || 'no-concurrency-review' }}-${{ (vars.INNO_JOB_CANCELLATION == 'enabled' && github.event_name == 'pull_request' && !((github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base))))) && 'active' || format('off-{0}-{1}', github.run_id, github.run_attempt) }}
+      cancel-in-progress: ${{ vars.INNO_JOB_CANCELLATION == 'enabled' && github.event_name == 'pull_request' && !((github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base)))) }}
     needs: ci-plan
     name: Consumer Examples
     if: fromJSON(needs.ci-plan.outputs.plan).jobs.consumer-examples
@@ -860,6 +907,9 @@ jobs:
         run: python3 -B Scripts/ci-cache.py report --profile consumer-examples
 
   consumer-macros:
+    concurrency:
+      group: scoped-job-v1-${{ github.repository }}-${{ github.workflow }}-ci.yml-consumer-macros-pr-${{ github.event.pull_request.number }}-base-${{ github.event.pull_request.base.ref }}-${{ contains(github.event.pull_request.labels.*.name, 'release-validation') && 'release-validation' || 'no-release-validation' }}-${{ contains(github.event.pull_request.labels.*.name, 'concurrency-review') && 'concurrency-review' || 'no-concurrency-review' }}-${{ (vars.INNO_JOB_CANCELLATION == 'enabled' && github.event_name == 'pull_request' && !((github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base))))) && 'active' || format('off-{0}-{1}', github.run_id, github.run_attempt) }}
+      cancel-in-progress: ${{ vars.INNO_JOB_CANCELLATION == 'enabled' && github.event_name == 'pull_request' && !((github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base)))) }}
     needs: ci-plan
     name: Consumer Macros
     if: fromJSON(needs.ci-plan.outputs.plan).jobs.consumer-macros
@@ -910,6 +960,9 @@ jobs:
         run: python3 -B Scripts/ci-cache.py report --profile consumer-macros
 
   consumer-openapi:
+    concurrency:
+      group: scoped-job-v1-${{ github.repository }}-${{ github.workflow }}-ci.yml-consumer-openapi-pr-${{ github.event.pull_request.number }}-base-${{ github.event.pull_request.base.ref }}-${{ contains(github.event.pull_request.labels.*.name, 'release-validation') && 'release-validation' || 'no-release-validation' }}-${{ contains(github.event.pull_request.labels.*.name, 'concurrency-review') && 'concurrency-review' || 'no-concurrency-review' }}-${{ (vars.INNO_JOB_CANCELLATION == 'enabled' && github.event_name == 'pull_request' && !((github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base))))) && 'active' || format('off-{0}-{1}', github.run_id, github.run_attempt) }}
+      cancel-in-progress: ${{ vars.INNO_JOB_CANCELLATION == 'enabled' && github.event_name == 'pull_request' && !((github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base)))) }}
     needs: ci-plan
     name: Consumer OpenAPI
     if: fromJSON(needs.ci-plan.outputs.plan).jobs.consumer-openapi
@@ -1003,6 +1056,9 @@ jobs:
 
 
   benchmark-smoke:
+    concurrency:
+      group: scoped-job-v1-${{ github.repository }}-${{ github.workflow }}-ci.yml-benchmark-smoke-pr-${{ github.event.pull_request.number }}-base-${{ github.event.pull_request.base.ref }}-${{ contains(github.event.pull_request.labels.*.name, 'release-validation') && 'release-validation' || 'no-release-validation' }}-${{ contains(github.event.pull_request.labels.*.name, 'concurrency-review') && 'concurrency-review' || 'no-concurrency-review' }}-${{ (vars.INNO_JOB_CANCELLATION == 'enabled' && github.event_name == 'pull_request' && !((github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base))))) && 'active' || format('off-{0}-{1}', github.run_id, github.run_attempt) }}
+      cancel-in-progress: ${{ vars.INNO_JOB_CANCELLATION == 'enabled' && github.event_name == 'pull_request' && !((github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base)))) }}
     needs: ci-plan
     name: Benchmark Smoke
     if: fromJSON(needs.ci-plan.outputs.plan).jobs.benchmark-smoke
@@ -1101,6 +1157,9 @@ jobs:
           category: "/language:${{ matrix.language }}"
 
   thread-sanitizer:
+    concurrency:
+      group: scoped-job-v1-${{ github.repository }}-${{ github.workflow }}-ci.yml-thread-sanitizer-pr-${{ github.event.pull_request.number }}-base-${{ github.event.pull_request.base.ref }}-${{ contains(github.event.pull_request.labels.*.name, 'release-validation') && 'release-validation' || 'no-release-validation' }}-${{ contains(github.event.pull_request.labels.*.name, 'concurrency-review') && 'concurrency-review' || 'no-concurrency-review' }}-${{ (vars.INNO_JOB_CANCELLATION == 'enabled' && github.event_name == 'pull_request' && !((github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base))))) && 'active' || format('off-{0}-{1}', github.run_id, github.run_attempt) }}
+      cancel-in-progress: ${{ vars.INNO_JOB_CANCELLATION == 'enabled' && github.event_name == 'pull_request' && !((github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base)))) }}
     name: Tests under ThreadSanitizer
     needs: ci-plan
     if: needs.ci-plan.outputs.thread-sanitizer == 'true'
@@ -1144,6 +1203,9 @@ jobs:
         run: python3 -B Scripts/ci-cache.py report --profile thread-sanitizer
 
   benchmarks:
+    concurrency:
+      group: scoped-job-v1-${{ github.repository }}-${{ github.workflow }}-ci.yml-benchmarks-pr-${{ github.event.pull_request.number }}-base-${{ github.event.pull_request.base.ref }}-${{ contains(github.event.pull_request.labels.*.name, 'release-validation') && 'release-validation' || 'no-release-validation' }}-${{ contains(github.event.pull_request.labels.*.name, 'concurrency-review') && 'concurrency-review' || 'no-concurrency-review' }}-${{ (vars.INNO_JOB_CANCELLATION == 'enabled' && github.event_name == 'pull_request' && !((github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base))))) && 'active' || format('off-{0}-{1}', github.run_id, github.run_attempt) }}
+      cancel-in-progress: ${{ vars.INNO_JOB_CANCELLATION == 'enabled' && github.event_name == 'pull_request' && !((github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base)))) }}
     name: Run Benchmarks
     needs: ci-plan
     if: fromJSON(needs.ci-plan.outputs.plan).jobs.benchmarks
@@ -1213,6 +1275,9 @@ jobs:
         run: python3 -B Scripts/ci-cache.py report --profile benchmarks
 
   documentation:
+    concurrency:
+      group: scoped-job-v1-${{ github.repository }}-${{ github.workflow }}-ci.yml-documentation-pr-${{ github.event.pull_request.number }}-base-${{ github.event.pull_request.base.ref }}-${{ contains(github.event.pull_request.labels.*.name, 'release-validation') && 'release-validation' || 'no-release-validation' }}-${{ contains(github.event.pull_request.labels.*.name, 'concurrency-review') && 'concurrency-review' || 'no-concurrency-review' }}-${{ (vars.INNO_JOB_CANCELLATION == 'enabled' && github.event_name == 'pull_request' && !((github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base))))) && 'active' || format('off-{0}-{1}', github.run_id, github.run_attempt) }}
+      cancel-in-progress: ${{ vars.INNO_JOB_CANCELLATION == 'enabled' && github.event_name == 'pull_request' && !((github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base)))) }}
     name: Build DocC Site
     needs: ci-plan
     if: fromJSON(needs.ci-plan.outputs.plan).jobs.documentation
@@ -1322,7 +1387,7 @@ jobs:
     if: ${{ always() }}
     needs: [ci-plan, policy, dependency-review, lint, dead-code, build-and-test, upload-core-coverage, parallel-tests, docs-contract-sync, apple-platform-build-smoke, consumer-smoke, consumer-examples, consumer-macros, consumer-openapi, upload-macro-coverage, benchmark-smoke, codeql, thread-sanitizer, benchmarks, documentation, release-candidate]
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: ${{ (vars.INNO_JOB_CANCELLATION == 'enabled' && github.event_name == 'pull_request') && ((github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base)))) && 360 || (5) }}
     permissions:
       contents: read
       actions: read
@@ -1333,6 +1398,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+          fetch-depth: 0
       - name: Require every planned CI result
         if: ${{ !(github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base))) }}
         env:
@@ -1344,5 +1410,8 @@ jobs:
       - name: Verify prior validation for metadata
         if: ${{ (github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base))) }}
         env:
+          INNO_JOB_CANCELLATION: ${{ vars.INNO_JOB_CANCELLATION == 'enabled' && 'enabled' || '' }}
           GH_TOKEN: ${{ github.token }}
-        run: python3 -B Scripts/verify-ci-metadata.py --check 'CI Required'
+          INNO_MAIN_MOVED_REUSE: ${{ vars.INNO_MAIN_MOVED_REUSE }}
+          CI_INPUT_VARIABLES: ${{ toJSON(vars) }}
+        run: python3 -B Scripts/metadata_wait.py -- python3 -B Scripts/verify-ci-metadata.py --check 'CI Required'

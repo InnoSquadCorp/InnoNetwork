@@ -48,11 +48,38 @@ def reused_jobs(plan, proof):
     return set(reuse.REUSED_JOBS)
 
 
+
+def prose_module():
+    spec = importlib.util.spec_from_file_location("ci_prose", Path(__file__).with_name("ci_prose.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def apply_prose(plan, root, event, paths):
+    if plan["lane"] != "fast" or plan.get("requested"):
+        return plan
+    pr = event.get("pull_request", {})
+    proof = prose_module().inspect(root, pr.get("base", {}).get("sha"), pr.get("head", {}).get("sha"), paths)
+    if not proof:
+        if paths and all(prose_module().candidate(path) for path in paths):
+            # Code fences, file modes, missing blobs, and deletions are not prose evidence.
+            return make_plan("pull_request", event, paths + ["__unproven_documentation_full_fallback__"])
+        return plan
+    plan["prose_only"] = proof
+    plan["jobs"] = {job: job == "policy" for job in JOBS}
+    if "examples_full" in plan:
+        plan["examples_full"] = False
+    return plan
+
+
 def path_impact(path):
     if not isinstance(path, str) or not path or any(ord(c) < 32 or ord(c) == 127 for c in path):
         raise ValueError("invalid changed path")
     if path.startswith("/") or any(p in ("..", ".", "") for p in path.split("/")) or "\\" in path:
         raise ValueError("changed path must be a repository-relative POSIX path")
+    if prose_module().RELEASE.search(path):
+        return set(JOBS), "release metadata (full fallback)"
     # Source/test/example changes preserve all former gates, even nested docs.
     if path.startswith(("Sources/", "Tests/", "Examples/", "SmokeTests/", "Benchmarks/", "Tools/openapi-to-innonetwork/")):
         return set(JOBS), "source/test/example/performance (all Network gates)"
@@ -165,8 +192,15 @@ def make_plan(event_name, event, paths):
 
 
 def validate_plan(plan):
-    if not isinstance(plan, dict) or set(plan) != {"schema", "lane", "event", "requested", "jobs", "changes"}:
+    if not isinstance(plan, dict) or (set(plan) - {"prose_only"}) != {"schema", "lane", "event", "requested", "jobs", "changes"}:
         raise ValueError("missing or unknown plan fields")
+    prose = plan.get("prose_only")
+    if "prose_only" in plan:
+        if not isinstance(plan.get("changes"), list):
+            raise ValueError("invalid prose changes")
+        prose_module().validate(prose, [change.get("path") for change in plan["changes"] if isinstance(change, dict)])
+        if plan.get("lane") != "fast" or plan.get("requested") or plan.get("jobs") != {job: job == "policy" for job in JOBS}:
+            raise ValueError("prose-only lane must require exactly static policy")
     if type(plan["schema"]) is not int or plan["schema"] != 1 or plan["lane"] not in ("fast", "full", "release-validation"):
         raise ValueError("unsupported plan schema/lane")
     if not isinstance(plan["jobs"], dict) or set(plan["jobs"]) != set(JOBS) or any(type(v) is not bool for v in plan["jobs"].values()):
@@ -190,12 +224,18 @@ def validate_plan(plan):
         raise ValueError("invalid plan event")
     if plan["event"] != "pull_request":
         expected.discard("dependency-review")
+    if prose:
+        expected = {"policy"}
     if plan["jobs"] != {job: job in expected for job in JOBS}:
         raise ValueError("plan does not match required changed-path and dependency selection")
 
 
-def evaluate(plan, needs, proof=None):
+def evaluate(plan, needs, proof=None, root=None, event=None):
     validate_plan(plan)
+    if "prose_only" in plan:
+        if root is None or not isinstance(event, dict):
+            raise ValueError("prose-only result requires immutable Git revalidation")
+        prose_module().revalidate(root, event, plan["prose_only"], [change["path"] for change in plan["changes"]])
     reused = reused_jobs(plan, proof or {})
     if not isinstance(needs, dict) or set(needs) != set(JOBS) | {"ci-plan"}:
         raise ValueError("missing or unexpected CI result")
@@ -238,8 +278,12 @@ def main():
             paths = []
             if event_name == "pull_request":
                 pr = event["pull_request"]
-                paths = changed_paths(args.root, pr["base"]["sha"], pr["head"]["sha"])
-            plan = make_plan(event_name, event, paths)
+                try:
+                    paths = changed_paths(args.root, pr["base"]["sha"], pr["head"]["sha"])
+                except (ValueError, KeyError, OSError, subprocess.CalledProcessError) as error:
+                    print(f"Changed-file evidence unavailable; selecting full validation: {error}", file=sys.stderr)
+                    paths = ["__diff_unavailable_full_fallback__"]
+            plan = apply_prose(make_plan(event_name, event, paths), args.root, event, paths)
             validate_plan(plan)
             proof = load_json(args.reuse_proof_json)
             reused = reused_jobs(plan, proof)
@@ -261,7 +305,9 @@ def main():
             if proof:
                 event = load_json(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
                 reuse.revalidate(proof, event, os.environ)
-            evaluate(load_json(args.plan_json), load_json(args.needs_json), proof)
+            plan = load_json(args.plan_json)
+            event = load_json(Path(os.environ["GITHUB_EVENT_PATH"]).read_text()) if "prose_only" in plan else None
+            evaluate(plan, load_json(args.needs_json), proof, Path("."), event)
             print("CI Required: every logical contract has fresh success or revalidated exact-tree PR evidence; no unexplained skips.")
     except (ValueError, KeyError, TypeError, OSError, subprocess.CalledProcessError) as error:
         print(f"CI policy rejected: {error}", file=sys.stderr)

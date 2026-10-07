@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Run the pinned workflow linter without optional, host-dependent linters."""
 import hashlib
+import importlib.util
 import io
 import json
 from pathlib import Path
@@ -10,6 +11,11 @@ import subprocess
 import tarfile
 import tempfile
 import urllib.request
+
+_native_spec = importlib.util.spec_from_file_location('native_parallel', Path(__file__).with_name('native_parallel.py'))
+_native = importlib.util.module_from_spec(_native_spec)
+_native_spec.loader.exec_module(_native)
+
 
 VERSION = '1.7.12'
 # Digests published with the upstream release, reviewed with this version.
@@ -98,9 +104,15 @@ def main():
         raise ValueError('actionlint archive exceeds the download limit')
     with tempfile.TemporaryDirectory(prefix='innonetwork-actionlint-') as directory:
         executable = unpack_verified(archive, digest, Path(directory))
-        result = subprocess.run([str(executable), '-shellcheck=', '-pyflakes=', '-format', '{{json .}}',
-                                 *map(str, workflows)], cwd=root, capture_output=True, text=True)
-        require_clean_diagnostics(result, allowed, root)
+        # Validate native syntax before projecting it for the pinned old linter.
+        # A temporary directory under the repository preserves actionlint's
+        # local-action/config discovery; original workflows are never changed.
+        with tempfile.TemporaryDirectory(prefix='.native-parallel-lint-', dir=root / '.github') as lint_directory:
+            lint_files, source_map = _native.lint_projection(workflows, Path(lint_directory))
+            result = subprocess.run([str(executable), '-shellcheck=', '-pyflakes=', '-format', '{{json .}}',
+                                     *map(str, lint_files)], cwd=root, capture_output=True, text=True)
+            result = _native.restore_diagnostics(result, source_map, root)
+            require_clean_diagnostics(result, allowed, root)
     print(f'actionlint {VERSION}: checked {len(workflows)} workflows')
 
 

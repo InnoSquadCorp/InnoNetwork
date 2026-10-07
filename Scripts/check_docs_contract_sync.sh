@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Compiler-free checks are an explicit mode for verified prose-only CI.
+# Full/local/release invocations remain compiler-backed by default.
+static_only=0
+if [[ $# -eq 1 && "$1" == '--static-only' ]]; then
+  static_only=1
+elif [[ $# -ne 0 ]]; then
+  echo 'Usage: check_docs_contract_sync.sh [--static-only]' >&2
+  exit 64
+fi
+
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 export LC_ALL=C
@@ -635,6 +645,7 @@ validate_openapi_companion_product() {
   require_contains '.upToNextMajor(from: "1.6.0")' "$repo_root/Package.swift"
   require_contains 'https://github.com/apple/swift-openapi-runtime' "$repo_root/Package.swift"
 
+  if [[ "$static_only" -eq 0 ]]; then
   local package_dump
   package_dump="$(xcrun swift package dump-package)" \
     || fail "unable to inspect Package.swift dependency ownership"
@@ -672,6 +683,8 @@ if missing:
 PYEOF
   then
     fail "InnoNetworkOpenAPI must directly own its HTTPTypes and OpenAPIRuntime imports"
+  fi
+
   fi
 
   require_contains 'public protocol OpenAPIRestOperation' \
@@ -953,6 +966,7 @@ validate_public_surface_ledger() {
   require_line $'InnoNetwork\tswift.type.method\tNetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:)' "$public_symbols_allowlist"
   require_line $'InnoNetwork\tswift.struct\tAuthPack' "$public_symbols_allowlist"
 
+  if [[ "$static_only" -eq 0 ]]; then
   local expected_file
   local actual_file
   local expected_spi_file
@@ -986,6 +1000,8 @@ validate_public_surface_ledger() {
   fi
 
   rm -f "$expected_file" "$actual_file" "$expected_spi_file" "$actual_spi_file"
+
+  fi
 
   for declaration in "${expected_shipping_public_declarations[@]}" "${expected_spi_public_declarations[@]}" \
     "${expected_test_support_public_declarations[@]}"; do
@@ -2077,4 +2093,8 @@ forbidden_pattern 'wraps everything that follows|wraps the core retry/refresh/tr
 bash "$repo_root/Scripts/check_public_api_budget.sh"
 bash "$six_release_state_validator"
 
-echo "docs-contract-sync: OK"
+if [[ "$static_only" -eq 1 ]]; then
+  echo "docs-contract-sync: static checks OK (compiler/symbol-graph checks not run)"
+else
+  echo "docs-contract-sync: OK"
+fi

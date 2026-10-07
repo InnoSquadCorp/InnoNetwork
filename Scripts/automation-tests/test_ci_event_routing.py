@@ -30,11 +30,13 @@ class GitHubString(str):
 
 
 def expression_value(expression, values):
+    values = {'vars.INNO_JOB_CANCELLATION': '', 'github.run_attempt': 1, **values}
     for key in sorted(values, key=len, reverse=True):
         value = repr(values[key])
         expression = expression.replace(key, 'string(' + value + ')' if isinstance(values[key], str) else value)
     expression = expression.replace('&&', ' and ').replace('||', ' or ')
     expression = re.sub(r'\bfalse\b', 'False', expression)
+    expression = re.sub(r'\btrue\b', 'True', expression)
     expression = re.sub(r'!(?!=)', ' not ', expression).replace('always()', 'True')
     return eval(expression.strip(), {'__builtins__': {}, 'string': GitHubString,
                                     'format': lambda value, *args: value.format(*args),
