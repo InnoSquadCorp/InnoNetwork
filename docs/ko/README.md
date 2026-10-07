@@ -375,7 +375,7 @@ InnoNetwork 기반 클라이언트를 출시하기 전에 점검해야 할 운�
 
 ## 후원
 
-[GitHub Sponsors](https://github.com/sponsors/InnoSquadCorp) 또는 [Patreon](https://www.patreon.com/c/InnoSquad)을 통해 InnoNetwork 개발을 후원할 수 있습니다.
+[GitHub Sponsors](https://github.com/sponsors/InnoSquadCorp) 또는 [Patreon](https://www.patreon.com/15188938/join)을 통해 InnoNetwork 개발을 후원할 수 있습니다.
 
 ## 라이선스
 

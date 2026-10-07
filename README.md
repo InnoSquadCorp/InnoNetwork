@@ -1440,7 +1440,7 @@ InnoNetwork follows a lightweight maintainer model.
 
 ## Sponsorship
 
-Support InnoNetwork development through [GitHub Sponsors](https://github.com/sponsors/InnoSquadCorp) or [Patreon](https://www.patreon.com/c/InnoSquad).
+Support InnoNetwork development through [GitHub Sponsors](https://github.com/sponsors/InnoSquadCorp) or [Patreon](https://www.patreon.com/15188938/join).
 
 ## License
 
