@@ -34,7 +34,7 @@ class CleanupExecutorTests(unittest.TestCase):
     self.assertFalse(expression_value(condition(text,'cleanup'),bad))
  def setUp(self):
   self.repo={'full_name':'Org/Repo','id':1,'default_branch':'main'};self.sha='a'*40;source='b'*40
-  self.pr={'number':42,'state':'closed','merged':True,'created_at':'2026-01-01T00:00:00Z','merged_at':'2026-01-02T00:00:00Z','head':{'sha':self.sha},'base':{'repo':{'id':1}}}
+  self.pr={'number':42,'state':'closed','merged':True,'created_at':'2026-01-01T00:00:00Z','merged_at':'2026-01-02T00:00:00Z','head':{'sha':self.sha,'ref':'feature/scoped-ci'},'base':{'repo':{'id':1}}}
   self.event={'action':'closed','number':42,'repository':self.repo,'pull_request':copy.deepcopy(self.pr)}
   self.context={'event_name':'pull_request_target','repository':'Org/Repo','ref':'refs/heads/main','workflow_ref':'Org/Repo/.github/workflows/merged-pr-cleanup.yml@refs/heads/main','source_sha':source,'checkout_sha':source,'enable_writes':'enabled'}
   self.config={'schema':1,'repository':'Org/Repo','status':'reviewed-cleanup-policy-v1','merged_pr_pull_request_workflow_allowlist':['.github/workflows/ci.yml']}
@@ -74,6 +74,24 @@ class CleanupExecutorTests(unittest.TestCase):
   self.assertEqual(self.api.posts,0)
  def test_closed_unmerged_and_foreign_repo_reject(self):
   self.api.pr['merged']=False
+  with self.assertRaises(ValueError):self.execute(True)
+  self.assertEqual(self.api.posts,0)
+ def test_inventory_is_scoped_to_allowlisted_workflow_and_pr_branch(self):
+  self.execute(True)
+  queries=[path for method,path in self.api.calls if '?' in path]
+  self.assertEqual(len(queries),1)
+  self.assertIn('/actions/workflows/ci.yml/runs?',queries[0])
+  self.assertIn('branch=feature%2Fscoped-ci&',queries[0])
+  self.assertNotIn('head_sha=',queries[0])
+ def test_unrelated_repository_run_volume_cannot_block_scoped_cleanup(self):
+  original=self.api.request
+  def busy(method,path):
+   if '/actions/runs?' in path:return {'total_count':1001,'workflow_runs':[]}
+   return original(method,path)
+  self.api.request=busy
+  self.assertEqual(self.execute(True)['cancellation_requested'],[100])
+ def test_missing_authoritative_branch_rejects_before_cancel(self):
+  del self.api.pr['head']['ref']
   with self.assertRaises(ValueError):self.execute(True)
   self.assertEqual(self.api.posts,0)
  def test_pagination_is_collected_before_any_write(self):

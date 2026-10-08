@@ -18,8 +18,15 @@ def enabled_for(env):
 def run(command,enabled=True,timeout=21000,interval=30,invoke=subprocess.run,clock=time.monotonic,sleep=time.sleep):
     if not command or timeout<0 or interval<=0:raise ValueError('bounded command and positive interval required')
     deadline=clock()+timeout
+    last_failure=124
     while True:
-        result=invoke(command,check=False)
+        remaining=deadline-clock()
+        if enabled and remaining<=0:return last_failure
+        try:
+            result=invoke(command,check=False,**({'timeout':remaining} if enabled else {}))
+        except subprocess.TimeoutExpired:
+            return 124
+        last_failure=result.returncode
         if result.returncode==0 or not enabled:return result.returncode
         if result.returncode<0:return result.returncode
         remaining=deadline-clock()

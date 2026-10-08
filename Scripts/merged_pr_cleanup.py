@@ -59,18 +59,27 @@ def validate_context(event,context,config):
     return repo
 
 
-def inventory(api,repo,created_at,merged_at):
+def inventory(api,repo,created_at,merged_at,allowed_workflows,head_branch):
+    if not isinstance(head_branch,str) or not head_branch:raise ValueError('authoritative PR head branch required')
     interval=urllib.parse.quote(created_at+'..'+merged_at,safe='')
-    all_runs=[];total=None
-    for page in range(1,12):
-        data=api.request('GET',f'repos/{repo}/actions/runs?event=pull_request&created={interval}&per_page=100&page={page}')
-        count=data.get('total_count');runs=data.get('workflow_runs')
-        if type(count) is not int or count<0 or count>1000 or not isinstance(runs,list):raise ValueError('incomplete or capped workflow inventory')
-        if total is not None and total!=count:raise ValueError('workflow inventory changed during pagination')
-        total=count;all_runs.extend(runs)
-        if len(all_runs)==count:return all_runs
-        if not runs or len(all_runs)>count:raise ValueError('truncated workflow inventory')
-    raise ValueError('workflow pagination limit exceeded')
+    branch=urllib.parse.quote(head_branch,safe='')
+    all_runs=[]
+    for workflow in sorted(allowed_workflows):
+        if not re.fullmatch(r'\.github/workflows/[A-Za-z0-9_.-]+\.ya?ml',workflow):
+            raise ValueError('reviewed workflow filename required')
+        filename=urllib.parse.quote(workflow.rsplit('/',1)[1],safe='')
+        workflow_runs=[];total=None
+        for page in range(1,12):
+            data=api.request('GET',f'repos/{repo}/actions/workflows/{filename}/runs?event=pull_request&branch={branch}&created={interval}&per_page=100&page={page}')
+            count=data.get('total_count');runs=data.get('workflow_runs')
+            if type(count) is not int or count<0 or count>1000 or not isinstance(runs,list):raise ValueError('incomplete or capped workflow inventory')
+            if total is not None and total!=count:raise ValueError('workflow inventory changed during pagination')
+            total=count;workflow_runs.extend(runs)
+            if len(workflow_runs)==count:break
+            if not runs or len(workflow_runs)>count:raise ValueError('truncated workflow inventory')
+        else:raise ValueError('workflow pagination limit exceeded')
+        all_runs.extend(workflow_runs)
+    return all_runs
 
 
 def execute(event,context,config,api,apply=False):
@@ -89,7 +98,7 @@ def execute(event,context,config,api,apply=False):
     selector().select(trusted,[],repo,repo_id,allowed,True,True)
     if current.get('head',{}).get('sha')!=event.get('pull_request',{}).get('head',{}).get('sha'):
         raise ValueError('closed event head no longer matches authoritative PR')
-    runs=inventory(api,repo,current['created_at'],current['merged_at'])
+    runs=inventory(api,repo,current['created_at'],current['merged_at'],allowed,current.get('head',{}).get('ref'))
     plan=selector().select(trusted,runs,repo,repo_id,allowed,True,True)
     report={'dry_run':not apply,'repository':repo,'pr':number,'candidates':plan['candidates'],'cancellation_requested':[],'already_finished_or_changed':[]}
     if not apply:return report

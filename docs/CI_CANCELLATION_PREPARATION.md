@@ -14,8 +14,8 @@ normalize the variable before forwarding it to the Python metadata observer.
   cancellation. Only reviewed validation jobs get a stable active job key
 - Keys distinguish repository, caller workflow, workflow file, job workload,
   PR/base branch, validation label lane and reviewed matrix cell. Release-validation
-  never collides with ordinary validation; run-asan/concurrency-review are included
-  where those labels affect the repository contract
+  never collides with ordinary validation; concurrency-review is included
+  because it affects this repository contract
 - Planners, final aggregators, metadata observers, state/history writers and
   permission-bearing external upload/security jobs are excluded. Reusable callers
   containing unthreaded child aggregates/writers remain a documented safe fallback
@@ -40,7 +40,8 @@ Fixed full-package test jobs use their fixed job workload, not a source subset.
 
 The aggregate's original read-only authoritative metadata verifier is wrapped by
 `metadata_wait.py`. Feature-off calls it exactly once with the original arguments.
-Feature-on retries the unchanged fail-closed verifier for at most 21,000 seconds;
+Feature-on retries the unchanged fail-closed verifier for at most 21,000 seconds,
+with each invocation limited to the remaining deadline;
 only a genuine successful proof returns success. Failure/timeout/cancellation is
 never translated into a green result. Metadata cannot share an active cancellation
 key with validation.
