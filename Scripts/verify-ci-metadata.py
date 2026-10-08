@@ -4,6 +4,9 @@ Only the latest real validation of this exact PR head, base, workflow definition
 and validation-label set is accepted. All transport is read-only and bounded.
 """
 import argparse
+import importlib.util
+import urllib.error
+import urllib.parse
 from datetime import datetime, timedelta, timezone
 import json
 import os
@@ -48,6 +51,31 @@ class API:
         require(len(payload) <= 8_000_000, 'oversized GitHub response')
         return json.loads(payload)
 
+    def archive(self, route):
+        require(route.startswith(self.prefix + 'actions/artifacts/') and re.fullmatch(re.escape(self.prefix) + r'actions/artifacts/[1-9][0-9]*/zip', route), 'foreign artifact route')
+        class CaptureRedirect(HTTPRedirectHandler):
+            def redirect_request(self, *args, **kwargs): return None
+        request = Request('https://api.github.com/' + route, headers={'Authorization': 'Bearer ' + self.token, 'Accept': 'application/vnd.github+json', 'X-GitHub-Api-Version': '2026-03-10'})
+        try:
+            response = build_opener(CaptureRedirect).open(request, timeout=30)
+        except urllib.error.HTTPError as error:
+            require(error.code in (301, 302, 303, 307, 308), 'artifact API download failed')
+            location = error.headers.get('Location', '')
+            parsed = urllib.parse.urlparse(location)
+            host = parsed.hostname or ''
+            require(parsed.scheme == 'https' and not parsed.username and not parsed.password and parsed.port in (None, 443) and
+                    (host.endswith('.blob.core.windows.net') or host.endswith('.actions.githubusercontent.com') or host.endswith('.s3.amazonaws.com')),
+                    'unrecognized artifact storage destination')
+            # Never forward GitHub authorization to the signed storage URL.
+            try:
+                response = build_opener(NoRedirect).open(Request(location), timeout=30)
+            except urllib.error.HTTPError as failure:
+                raise ValueError('artifact storage download failed: HTTP ' + str(failure.code)) from None
+        with response:
+            payload = response.read(8_000_001)
+        require(len(payload) <= 8_000_000, 'oversized artifact archive')
+        return payload
+
     def pages(self, route, key):
         result = []
         for page in range(1, 21):
@@ -73,7 +101,7 @@ def binding(pr):
     return (pr['number'], pr['head']['sha'], pr['base']['sha'], flags(pr))
 
 
-def require_current_main(api, route, pr, expected):
+def require_current_main(api, route, pr, expected, allow_moved=False):
     """Bind a PR snapshot to the authoritative branch, not a cached PR base."""
     require(pr.get('base', {}).get('ref') == 'main' and
             pr['base'].get('repo', {}).get('full_name') == CONFIG['repository'],
@@ -81,7 +109,8 @@ def require_current_main(api, route, pr, expected):
     main = api.get(route + 'git/ref/heads/main').get('object', {}).get('sha')
     require(isinstance(main, str) and re.fullmatch('[0-9a-f]{40}', main) is not None,
             'missing or invalid current main SHA')
-    require(main == expected, 'current main moved beyond the validated base')
+    require(main == expected or allow_moved, 'current main moved beyond the validated base')
+    return main
 
 
 def belongs_to_other_pr(run, number):
@@ -111,7 +140,7 @@ def prove(api, event, env, check_name='CI Required'):
     require(check_name in CONFIG['checks'], 'unknown required check')
     current = api.get(route + f'pulls/{number}')
     require(current.get('state') == 'open' and binding(current) == binding(pr), 'PR changed before validation')
-    require_current_main(api, route, current, base)
+    observed_main = require_current_main(api, route, current, base, env.get('INNO_MAIN_MOVED_REUSE', '').lower() in ('', 'enabled'))
     own_id = int(env['GITHUB_RUN_ID'])
     own = api.get(route + f'actions/runs/{own_id}')
     source = env['GITHUB_SHA']
@@ -123,6 +152,13 @@ def prove(api, event, env, check_name='CI Required'):
     merge = api.get(route + 'git/commits/' + source)
     require(merge.get('sha') == source and [p['sha'] for p in merge.get('parents', [])] == [base, head],
             'checkout does not combine the current base and head')
+    equivalence = None
+    moved = None
+    if env.get('INNO_MAIN_MOVED_REUSE', '').lower() in ('', 'enabled'):
+        spec = importlib.util.spec_from_file_location('main_moved_equivalence', Path(__file__).with_name('main_moved_equivalence.py'))
+        equivalence = importlib.util.module_from_spec(spec); spec.loader.exec_module(equivalence)
+    if observed_main != base:
+        moved = equivalence.prove(api, route, number, base, head, source, observed_main)
     runs = api.pages(route + f'actions/workflows/{workflow}/runs?head_sha={head}', 'workflow_runs')
     validations = [r for r in runs if r.get('id') != own_id and
                    not str(r.get('display_title', '')).startswith(METADATA_PREFIX) and
@@ -134,9 +170,19 @@ def prove(api, event, env, check_name='CI Required'):
     match = TITLE.fullmatch(run.get('display_title', ''))
     require(match is not None, 'latest validation lacks immutable PR binding')
     n, h, b, definition, *bound_labels = match.groups()
-    require((int(n), h, b, tuple(bound_labels)) == binding(pr),
-            'latest validation used a different head, base or label set')
-    if definition != source:
+    require((int(n), h, tuple(bound_labels)) == (number, head, labels),
+            'latest validation used a different head or label set')
+    if b != base:
+        require(equivalence is not None, 'latest validation used a different validated base')
+        prior = moved
+        moved = equivalence.prove(api, route, number, b, head, definition, observed_main)
+        if prior:
+            require(prior['current_merge'] == moved['current_merge'], 'merge changed between input proofs')
+        else:
+            latest_merge = api.get(route + 'git/commits/' + moved['current_merge'])
+            require(latest_merge.get('tree', {}).get('sha') == merge.get('tree', {}).get('sha'),
+                    'metadata checkout differs from current synthetic merge')
+    if definition != source and b == base:
         # GitHub can regenerate its synthetic merge commit without changing the
         # inputs or any checked-out byte. Prove complete tree identity, not just
         # the workflow file, while retaining exact ordered base/head parents.
@@ -182,6 +228,7 @@ def prove(api, event, env, check_name='CI Required'):
                 check.get('head_sha') in {head, definition} and check.get('status') == 'completed' and
                 check.get('conclusion') == 'success' and check.get('details_url') ==
                 f"https://github.com/{repo}/actions/runs/{run['id']}/job/{job['id']}", 'unverified native check')
+    artifact_proof = equivalence.artifact(api, route, run, definition, env.get('CI_INPUT_VARIABLES', '')) if moved else None
     final = api.get(route + f"actions/runs/{run['id']}")
     require(all(final.get(k) == run.get(k) for k in ('id', 'run_number', 'run_attempt', 'head_sha', 'workflow_id',
                 'path', 'event', 'display_title', 'status', 'conclusion', 'check_suite_id')), 'validation changed during proof')
@@ -194,8 +241,15 @@ def prove(api, event, env, check_name='CI Required'):
     require(final_pr.get('state') == 'open' and binding(final_pr) == binding(pr), 'PR changed during proof')
     # A PR API response can still contain the previous base after main advances.
     # Reject observed drift; this does not make the final read and merge atomic.
-    require_current_main(api, route, final_pr, base)
-    return dict(run=run['id'], attempt=attempt, head=head, base=base, source=source, check=check_name)
+    if moved:
+        equivalence.recheck(api, route, number, moved)
+        final_artifact = api.get(route + 'actions/artifacts/' + str(artifact_proof['artifact_id']))
+        require(final_artifact.get('expired') is False and final_artifact.get('digest') == artifact_proof['artifact_digest'], 'artifact changed during equivalence proof')
+    else:
+        require_current_main(api, route, final_pr, base)
+    result = dict(run=run['id'], attempt=attempt, head=head, base=base, source=source, check=check_name)
+    if moved: result.update(main_moved_equivalence=moved, source_artifact=artifact_proof)
+    return result
 
 
 def main():

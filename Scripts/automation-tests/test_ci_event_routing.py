@@ -30,11 +30,13 @@ class GitHubString(str):
 
 
 def expression_value(expression, values):
+    values = {'vars.INNO_JOB_CANCELLATION': '', 'github.run_attempt': 1, **values}
     for key in sorted(values, key=len, reverse=True):
         value = repr(values[key])
         expression = expression.replace(key, 'string(' + value + ')' if isinstance(values[key], str) else value)
     expression = expression.replace('&&', ' and ').replace('||', ' or ')
     expression = re.sub(r'\bfalse\b', 'False', expression)
+    expression = re.sub(r'\btrue\b', 'True', expression)
     expression = re.sub(r'!(?!=)', ' not ', expression).replace('always()', 'True')
     return eval(expression.strip(), {'__builtins__': {}, 'string': GitHubString,
                                     'format': lambda value, *args: value.format(*args),
@@ -65,7 +67,7 @@ class PRMetadataAdmissionTests(unittest.TestCase):
                 ('labeled', 'documentation', '', True), ('unlabeled', 'bug', '', True),
                 ('labeled', '', '', False), ('edited', '', '', True),
                 ('edited', '', {'ref': {'from': 'develop'}}, False)]:
-            values = {'github.event_name': 'pull_request', 'github.event.action': action,
+            values = {'vars.INNO_JOB_CANCELLATION': 'disabled', 'github.event_name': 'pull_request', 'github.event.action': action,
                       'github.event.label.name': label, 'github.event.changes.base': base,
                       'github.event.pull_request.number': 45, 'github.event.pull_request.head.sha': 'a' * 40,
                       'github.event.pull_request.base.sha': 'b' * 40, 'github.workflow_sha': 'c' * 40,

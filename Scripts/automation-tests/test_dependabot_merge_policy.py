@@ -901,7 +901,8 @@ def workflow_inventory():
                 label = prefix + render(name)
                 if row and '${{ matrix.' not in name: label += ' (' + ', '.join(str(v) for v in row.values()) + ')'
                 if label in inventory: raise AssertionError('duplicate job name: ' + label)
-                inventory[label] = [render(step['name']) for step in job['steps'] if 'name' in step]
+                steps = [child for step in job['steps'] for child in (step['parallel'] if 'parallel' in step else [step])]
+                inventory[label] = [render(step['name']) for step in steps if 'name' in step]
     expand(docs['ci.yml'])
     return inventory
 

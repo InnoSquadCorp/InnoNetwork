@@ -397,11 +397,15 @@ CORE = {'CI Plan': ['Verify actual post-merge main origin',
                                                  'Build package for visionOS',
                                                  'Report cache observations'],
  'CI Required': ['Checkout', 'Require every planned CI result', 'Verify prior validation for metadata']}
+CORE['CI and public operations policy'][1:1] = ['Validate native parallel schema negative controls', 'Validate public operations policy']
+CORE['CI and public operations policy'].append('Validate prose-only documentation')
+
 FULL_SKIPPED = set()
 ALLOWED_STEP_SKIP = {('CI Plan', 'Verify actual post-merge main origin'),
  ('Upload Core Coverage', 'Report artifact-only Codecov fallback'),
  ('Upload Macro Coverage', 'Report artifact-only Codecov fallback')}
 ALLOWED_STEP_SKIP.update({('CI Required', 'Verify prior validation for metadata')})
+ALLOWED_STEP_SKIP.add(('CI and public operations policy', 'Validate prose-only documentation'))
 
 
 class Rejected(ValueError):

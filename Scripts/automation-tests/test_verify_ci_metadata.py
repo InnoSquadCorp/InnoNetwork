@@ -19,7 +19,7 @@ class Transcript:
                        base=dict(ref='main', sha=BASE, repo=dict(full_name=REPO)))
         self.event = dict(action='edited', pull_request=copy.deepcopy(self.pr), changes={})
         self.env = dict(GITHUB_REPOSITORY=REPO, GITHUB_EVENT_NAME='pull_request', GITHUB_REF='refs/pull/45/merge',
-                        GITHUB_RUN_ID='20', GITHUB_RUN_ATTEMPT='1', GITHUB_SHA=SOURCE)
+                        GITHUB_RUN_ID='20', GITHUB_RUN_ATTEMPT='1', GITHUB_SHA=SOURCE, INNO_MAIN_MOVED_REUSE='disabled')
         self.run = dict(id=10, run_number=10, workflow_id=100, path=gate.CONFIG['workflow'], event='pull_request',
                         head_sha=HEAD, repository=dict(full_name=REPO), status='completed', conclusion='success',
                         run_attempt=1, check_suite_id=200,

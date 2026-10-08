@@ -1,0 +1,420 @@
+{
+  "schema": 1,
+  "manifest_sha256": "f0474b86aa78e9d87e503af90f79eec5227fdddecce604ee85848b92f0825fec",
+  "targets": {
+    "InnoNetworkMacroSupport": {
+      "inputs": [
+        "Sources/InnoNetworkMacroSupport/"
+      ],
+      "kind": "regular",
+      "dependencies": []
+    },
+    "InnoNetworkMacros": {
+      "inputs": [
+        "Sources/InnoNetworkMacros/"
+      ],
+      "kind": "macro",
+      "dependencies": [
+        "InnoNetworkMacroSupport"
+      ]
+    },
+    "InnoNetwork": {
+      "inputs": [
+        "Sources/InnoNetwork/"
+      ],
+      "kind": "regular",
+      "dependencies": [
+        "InnoNetworkMacros"
+      ]
+    },
+    "InnoNetworkAuthAWS": {
+      "inputs": [
+        "Sources/InnoNetworkAuthAWS/"
+      ],
+      "kind": "regular",
+      "dependencies": [
+        "InnoNetwork"
+      ]
+    },
+    "InnoNetworkDownload": {
+      "inputs": [
+        "Sources/InnoNetworkDownload/"
+      ],
+      "kind": "regular",
+      "dependencies": [
+        "InnoNetwork"
+      ]
+    },
+    "InnoNetworkUpload": {
+      "inputs": [
+        "Sources/InnoNetworkUpload/"
+      ],
+      "kind": "regular",
+      "dependencies": [
+        "InnoNetwork"
+      ]
+    },
+    "InnoNetworkWebSocket": {
+      "inputs": [
+        "Sources/InnoNetworkWebSocket/"
+      ],
+      "kind": "regular",
+      "dependencies": [
+        "InnoNetwork"
+      ]
+    },
+    "InnoNetworkPersistentCache": {
+      "inputs": [
+        "Sources/InnoNetworkPersistentCache/"
+      ],
+      "kind": "regular",
+      "dependencies": [
+        "InnoNetwork"
+      ]
+    },
+    "InnoNetworkOpenAPI": {
+      "inputs": [
+        "Sources/InnoNetworkOpenAPI/"
+      ],
+      "kind": "regular",
+      "dependencies": [
+        "InnoNetwork"
+      ]
+    },
+    "InnoNetworkTrust": {
+      "inputs": [
+        "Sources/InnoNetworkTrust/"
+      ],
+      "kind": "regular",
+      "dependencies": [
+        "InnoNetwork"
+      ]
+    },
+    "InnoNetworkTestSupport": {
+      "inputs": [
+        "Sources/InnoNetworkTestSupport/"
+      ],
+      "kind": "regular",
+      "dependencies": [
+        "InnoNetwork",
+        "InnoNetworkDownload",
+        "InnoNetworkPersistentCache",
+        "InnoNetworkWebSocket"
+      ]
+    },
+    "InnoNetworkBenchmarks": {
+      "inputs": [
+        "Benchmarks/InnoNetworkBenchmarks/"
+      ],
+      "kind": "executable",
+      "dependencies": [
+        "InnoNetwork",
+        "InnoNetworkDownload",
+        "InnoNetworkWebSocket"
+      ]
+    },
+    "InnoNetworkDocSmoke": {
+      "inputs": [
+        "SmokeTests/InnoNetworkDocSmoke/"
+      ],
+      "kind": "executable",
+      "dependencies": [
+        "InnoNetwork",
+        "InnoNetworkAuthAWS",
+        "InnoNetworkDownload",
+        "InnoNetworkOpenAPI",
+        "InnoNetworkPersistentCache",
+        "InnoNetworkUpload",
+        "InnoNetworkWebSocket"
+      ]
+    },
+    "InnoNetworkDownloadSmoke": {
+      "inputs": [
+        "SmokeTests/InnoNetworkDownloadSmoke/"
+      ],
+      "kind": "executable",
+      "dependencies": [
+        "InnoNetwork",
+        "InnoNetworkDownload"
+      ]
+    },
+    "InnoNetworkWebSocketSmoke": {
+      "inputs": [
+        "SmokeTests/InnoNetworkWebSocketSmoke/"
+      ],
+      "kind": "executable",
+      "dependencies": [
+        "InnoNetwork",
+        "InnoNetworkWebSocket"
+      ]
+    },
+    "InnoNetworkCacheSmoke": {
+      "inputs": [
+        "SmokeTests/InnoNetworkCacheSmoke/"
+      ],
+      "kind": "executable",
+      "dependencies": [
+        "InnoNetwork",
+        "InnoNetworkPersistentCache"
+      ]
+    },
+    "InnoNetworkOpenAPISmoke": {
+      "inputs": [
+        "SmokeTests/InnoNetworkOpenAPISmoke/"
+      ],
+      "kind": "executable",
+      "dependencies": [
+        "InnoNetwork",
+        "InnoNetworkOpenAPI"
+      ]
+    },
+    "InnoNetworkResumableRecoverySmoke": {
+      "inputs": [
+        "SmokeTests/InnoNetworkResumableRecoverySmoke/"
+      ],
+      "kind": "executable",
+      "dependencies": [
+        "InnoNetworkUpload"
+      ]
+    },
+    "InnoNetworkTests": {
+      "inputs": [
+        "Tests/InnoNetworkTests/"
+      ],
+      "kind": "test",
+      "dependencies": [
+        "InnoNetwork",
+        "InnoNetworkOpenAPI",
+        "InnoNetworkTestSupport",
+        "InnoNetworkTrust"
+      ]
+    },
+    "InnoNetworkMacroTests": {
+      "inputs": [
+        "Tests/InnoNetworkMacroTests/"
+      ],
+      "kind": "test",
+      "dependencies": [
+        "InnoNetwork",
+        "InnoNetworkMacroSupport",
+        "InnoNetworkMacros",
+        "InnoNetworkTestSupport"
+      ]
+    },
+    "InnoNetworkAuthAWSTests": {
+      "inputs": [
+        "Tests/InnoNetworkAuthAWSTests/"
+      ],
+      "kind": "test",
+      "dependencies": [
+        "InnoNetwork",
+        "InnoNetworkAuthAWS"
+      ]
+    },
+    "InnoNetworkDownloadTests": {
+      "inputs": [
+        "Tests/InnoNetworkDownloadTests/"
+      ],
+      "kind": "test",
+      "dependencies": [
+        "InnoNetworkDownload",
+        "InnoNetworkTestSupport"
+      ]
+    },
+    "InnoNetworkUploadTests": {
+      "inputs": [
+        "Tests/InnoNetworkUploadTests/"
+      ],
+      "kind": "test",
+      "dependencies": [
+        "InnoNetwork",
+        "InnoNetworkTestSupport",
+        "InnoNetworkUpload"
+      ]
+    },
+    "InnoNetworkWebSocketTests": {
+      "inputs": [
+        "Tests/InnoNetworkWebSocketTests/"
+      ],
+      "kind": "test",
+      "dependencies": [
+        "InnoNetworkTestSupport",
+        "InnoNetworkWebSocket"
+      ]
+    },
+    "InnoNetworkPersistentCacheTests": {
+      "inputs": [
+        "Tests/InnoNetworkPersistentCacheTests/"
+      ],
+      "kind": "test",
+      "dependencies": [
+        "InnoNetwork",
+        "InnoNetworkPersistentCache"
+      ]
+    },
+    "InnoNetworkLiveTests": {
+      "inputs": [
+        "Tests/InnoNetworkLiveTests/"
+      ],
+      "kind": "test",
+      "dependencies": [
+        "InnoNetwork",
+        "InnoNetworkDownload",
+        "InnoNetworkTestSupport",
+        "InnoNetworkWebSocket"
+      ]
+    }
+  },
+  "products": {
+    "InnoNetworkMacroSupport": [
+      "InnoNetworkMacroSupport"
+    ],
+    "InnoNetwork": [
+      "InnoNetwork"
+    ],
+    "InnoNetworkAuthAWS": [
+      "InnoNetworkAuthAWS"
+    ],
+    "InnoNetworkDownload": [
+      "InnoNetworkDownload"
+    ],
+    "InnoNetworkUpload": [
+      "InnoNetworkUpload"
+    ],
+    "InnoNetworkWebSocket": [
+      "InnoNetworkWebSocket"
+    ],
+    "InnoNetworkPersistentCache": [
+      "InnoNetworkPersistentCache"
+    ],
+    "InnoNetworkOpenAPI": [
+      "InnoNetworkOpenAPI"
+    ],
+    "InnoNetworkTrust": [
+      "InnoNetworkTrust"
+    ],
+    "InnoNetworkTestSupport": [
+      "InnoNetworkTestSupport"
+    ]
+  },
+  "full_targets": [
+    "InnoNetwork",
+    "InnoNetworkMacroSupport",
+    "InnoNetworkMacros",
+    "InnoNetworkTestSupport"
+  ],
+  "consumers": {
+    "Examples/ConsumerSmoke": {
+      "path": "Examples/ConsumerSmoke",
+      "products": [
+        "InnoNetwork",
+        "InnoNetworkDownload",
+        "InnoNetworkWebSocket"
+      ]
+    },
+    "Examples/CoreSmoke": {
+      "path": "Examples/CoreSmoke",
+      "products": [
+        "InnoNetwork"
+      ]
+    },
+    "Examples/DownloadManager": {
+      "path": "Examples/DownloadManager",
+      "products": [
+        "InnoNetwork",
+        "InnoNetworkDownload"
+      ]
+    },
+    "Examples/EventPolicyObserver": {
+      "path": "Examples/EventPolicyObserver",
+      "products": [
+        "InnoNetwork",
+        "InnoNetworkDownload",
+        "InnoNetworkWebSocket"
+      ]
+    },
+    "Examples/GeneratedClientRecipe": {
+      "path": "Examples/GeneratedClientRecipe",
+      "products": [
+        "InnoNetwork"
+      ]
+    },
+    "Examples/MacroAdopterSmoke": {
+      "path": "Examples/MacroAdopterSmoke",
+      "products": [
+        "InnoNetwork",
+        "InnoNetworkTestSupport"
+      ]
+    },
+    "Examples/MacroUsage": {
+      "path": "Examples/MacroUsage",
+      "products": [
+        "InnoNetwork"
+      ]
+    },
+    "Examples/OpenAPIAdopterSmoke": {
+      "path": "Examples/OpenAPIAdopterSmoke",
+      "products": [
+        "InnoNetwork",
+        "InnoNetworkOpenAPI",
+        "InnoNetworkTestSupport"
+      ]
+    },
+    "Examples/TestSupportSmoke": {
+      "path": "Examples/TestSupportSmoke",
+      "products": [
+        "InnoNetwork",
+        "InnoNetworkTestSupport"
+      ]
+    },
+    "Examples/WebSocketChat": {
+      "path": "Examples/WebSocketChat",
+      "products": [
+        "InnoNetwork",
+        "InnoNetworkWebSocket"
+      ]
+    },
+    "Examples/WrapperSmoke": {
+      "path": "Examples/WrapperSmoke",
+      "products": [
+        "InnoNetwork"
+      ]
+    },
+    "Tests/MacroCompileFailureFixtures/CustomMethodSimpleInference": {
+      "path": "Tests/MacroCompileFailureFixtures/CustomMethodSimpleInference",
+      "products": [
+        "InnoNetwork"
+      ]
+    },
+    "Tests/MacroCompileFailureFixtures/MissingAPIDefinitionAnnotation": {
+      "path": "Tests/MacroCompileFailureFixtures/MissingAPIDefinitionAnnotation",
+      "products": [
+        "InnoNetwork"
+      ]
+    },
+    "Tests/MacroCompileFailureFixtures/OptionalPathAlias": {
+      "path": "Tests/MacroCompileFailureFixtures/OptionalPathAlias",
+      "products": [
+        "InnoNetwork"
+      ]
+    },
+    "Tests/MacroCompileFailureFixtures/QualifiedAuthAlias": {
+      "path": "Tests/MacroCompileFailureFixtures/QualifiedAuthAlias",
+      "products": [
+        "InnoNetwork"
+      ]
+    },
+    "Tests/MacroCompileFailureFixtures/QualifiedMethodAlias": {
+      "path": "Tests/MacroCompileFailureFixtures/QualifiedMethodAlias",
+      "products": [
+        "InnoNetwork"
+      ]
+    },
+    "Tools/openapi-to-innonetwork": {
+      "path": "Tools/openapi-to-innonetwork",
+      "products": [
+        "InnoNetwork"
+      ]
+    }
+  }
+}

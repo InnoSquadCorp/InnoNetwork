@@ -1,0 +1,193 @@
+{
+  "schema": 1,
+  "feature": "INNO_JOB_CANCELLATION",
+  "scripts": "Scripts",
+  "metadata": "(github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base)))",
+  "workflows": {
+    ".github/workflows/ci.yml": {
+      "original_concurrency": {
+        "group": "ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ inputs.dependabot_merge_pr != '' && format('dependabot-{0}', inputs.dependabot_merge_pr) || 'validation' }}",
+        "cancel-in-progress": "${{ !(github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base))) }}",
+        "queue": "${{ (github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base))) && 'max' || 'single' }}"
+      },
+      "jobs": {
+        "policy": {
+          "axes": [],
+          "matrix": {},
+          "product_flags": [],
+          "product_key": "needs.ci-plan.outputs.product-key"
+        },
+        "dependency-review": {
+          "axes": [],
+          "matrix": {},
+          "product_flags": [],
+          "product_key": "needs.ci-plan.outputs.product-key"
+        },
+        "lint": {
+          "axes": [],
+          "matrix": {},
+          "product_flags": [],
+          "product_key": "needs.ci-plan.outputs.product-key"
+        },
+        "dead-code": {
+          "axes": [],
+          "matrix": {},
+          "product_flags": [],
+          "product_key": "needs.ci-plan.outputs.product-key"
+        },
+        "build-and-test": {
+          "axes": [
+            "matrix.xcode.label",
+            "matrix.xcode.runner",
+            "matrix.xcode.path"
+          ],
+          "matrix": {
+            "xcode": [
+              {
+                "label": "26.0.1",
+                "runner": "macos-15",
+                "path": "/Applications/Xcode_26.0.1.app",
+                "required": true
+              },
+              {
+                "label": "27.0",
+                "runner": "xcode-27",
+                "path": "/Applications/Xcode.app",
+                "required": true
+              }
+            ]
+          },
+          "product_flags": [
+            "INNONETWORK_PRODUCT_CI"
+          ],
+          "product_key": "needs.ci-plan.outputs.product-key"
+        },
+        "parallel-tests": {
+          "axes": [],
+          "matrix": {},
+          "product_flags": [],
+          "product_key": "needs.ci-plan.outputs.product-key"
+        },
+        "docs-contract-sync": {
+          "axes": [],
+          "matrix": {},
+          "product_flags": [],
+          "product_key": "needs.ci-plan.outputs.product-key"
+        },
+        "apple-platform-build-smoke": {
+          "axes": [
+            "matrix.runtime",
+            "matrix.builder",
+            "matrix.triple || matrix.destination"
+          ],
+          "matrix": {
+            "include": [
+              {
+                "destination": "platform=macOS",
+                "runtime": "macOS",
+                "sdk": "macosx",
+                "builder": "xcodebuild"
+              },
+              {
+                "destination": "generic/platform=iOS Simulator",
+                "runtime": "iOS",
+                "sdk": "iphonesimulator",
+                "builder": "xcodebuild"
+              },
+              {
+                "triple": "arm64-apple-tvos16.0",
+                "runtime": "tvOS",
+                "sdk": "appletvos",
+                "builder": "swiftpm-cross"
+              },
+              {
+                "triple": "arm64_32-apple-watchos9.0",
+                "runtime": "watchOS",
+                "sdk": "watchos",
+                "builder": "swiftpm-cross"
+              },
+              {
+                "triple": "arm64-apple-xros1.0",
+                "runtime": "visionOS",
+                "sdk": "xros",
+                "builder": "swiftpm-cross"
+              }
+            ]
+          },
+          "product_flags": [],
+          "product_key": "needs.ci-plan.outputs.product-key"
+        },
+        "consumer-examples": {
+          "axes": [],
+          "matrix": {},
+          "product_flags": [],
+          "product_key": "needs.ci-plan.outputs.product-key"
+        },
+        "consumer-macros": {
+          "axes": [],
+          "matrix": {},
+          "product_flags": [],
+          "product_key": "needs.ci-plan.outputs.product-key"
+        },
+        "consumer-openapi": {
+          "axes": [],
+          "matrix": {},
+          "product_flags": [],
+          "product_key": "needs.ci-plan.outputs.product-key"
+        },
+        "benchmark-smoke": {
+          "axes": [],
+          "matrix": {},
+          "product_flags": [],
+          "product_key": "needs.ci-plan.outputs.product-key"
+        },
+        "thread-sanitizer": {
+          "axes": [],
+          "matrix": {},
+          "product_flags": [],
+          "product_key": "needs.ci-plan.outputs.product-key"
+        },
+        "benchmarks": {
+          "axes": [],
+          "matrix": {},
+          "product_flags": [],
+          "product_key": "needs.ci-plan.outputs.product-key"
+        },
+        "documentation": {
+          "axes": [],
+          "matrix": {},
+          "product_flags": [],
+          "product_key": "needs.ci-plan.outputs.product-key"
+        }
+      },
+      "excluded_jobs": {
+        "ci-plan": "planner/final aggregate or metadata observer",
+        "upload-core-coverage": "external upload/security/stateful writer permissions",
+        "consumer-smoke": "planner/final aggregate or metadata observer",
+        "upload-macro-coverage": "external upload/security/stateful writer permissions",
+        "codeql": "external upload/security/stateful writer permissions",
+        "release-candidate": "reusable call may own child aggregates/writers; caller cancellation left unchanged",
+        "ci-required": "planner/final aggregate or metadata observer"
+      },
+      "metadata_gates": {
+        "ci-required": {
+          "timeout": 5,
+          "command": "python3 -B Scripts/verify-ci-metadata.py --check 'CI Required'"
+        }
+      },
+      "excluded_concurrency": {
+        "ci-plan": null,
+        "upload-core-coverage": null,
+        "consumer-smoke": null,
+        "upload-macro-coverage": null,
+        "codeql": null,
+        "release-candidate": null,
+        "ci-required": null
+      }
+    }
+  },
+  "lane_labels": [
+    "release-validation",
+    "concurrency-review"
+  ]
+}

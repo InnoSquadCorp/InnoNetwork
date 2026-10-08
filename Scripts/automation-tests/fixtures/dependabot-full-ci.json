@@ -24,8 +24,20 @@
         "conclusion": "success"
       },
       {
+        "name": "Validate native parallel schema negative controls",
+        "conclusion": "success"
+      },
+      {
+        "name": "Validate public operations policy",
+        "conclusion": "success"
+      },
+      {
         "name": "Verify CI selection and public operations",
         "conclusion": "success"
+      },
+      {
+        "name": "Validate prose-only documentation",
+        "conclusion": "skipped"
       }
     ],
     "Dependency Review": [

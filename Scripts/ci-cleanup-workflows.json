@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "repository": "InnoSquadCorp/InnoNetwork",
+  "status": "reviewed-cleanup-policy-v1",
+  "merged_pr_pull_request_workflow_allowlist": [
+    ".github/workflows/ci.yml"
+  ],
+  "always_preserved_workflows": [
+    ".github/workflows/benchmarks.yml",
+    ".github/workflows/codeql.yml",
+    ".github/workflows/dependabot-auto-merge.yml",
+    ".github/workflows/dependabot-ready.yml",
+    ".github/workflows/dependabot-review-notice.yml",
+    ".github/workflows/dependency-submission.yml",
+    ".github/workflows/docc-pages.yml",
+    ".github/workflows/docs-publish.yml",
+    ".github/workflows/nightly-live.yml",
+    ".github/workflows/pr-dependency-submission.yml",
+    ".github/workflows/release-validation.yml",
+    ".github/workflows/release.yml",
+    ".github/workflows/scorecard.yml",
+    ".github/workflows/tsan.yml"
+  ],
+  "event_filter": "pull_request only; never select by SHA alone",
+  "permission_activation": "trusted default-branch handler; default on; disabled override is read-only"
+}
