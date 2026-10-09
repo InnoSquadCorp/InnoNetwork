@@ -53,3 +53,11 @@ Read [validation.md](validation.md) for the tested scope and limitations. Host
 installation and AI selection/generation evidence belongs in the central plugin
 repository. A consumer passing locally is not proof of AI behavior or device
 and real-service acceptance.
+
+## Consumer command diagnostics
+
+The validator parses dependency-graph JSON from stdout only. SwiftPM warnings
+are retained in `graph.stderr.log`,
+linked by each command's `stderr_log` evidence field. Malformed or empty stdout
+and nonzero command exits still fail validation. Other commands retain combined
+text logs, including Swift Testing summaries written to stderr.
