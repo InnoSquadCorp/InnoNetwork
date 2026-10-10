@@ -21,9 +21,9 @@ class CurrentReadmeTests(unittest.TestCase):
 
     def mutate(self, name, before, after):
         path = self.root / name
-        text = path.read_text()
+        text = path.read_text(encoding='utf-8')
         self.assertIn(before, text)
-        path.write_text(text.replace(before, after))
+        path.write_text(text.replace(before, after), encoding='utf-8')
 
     def test_current_guides_pass(self):
         self.assertEqual(MODULE.validate(self.root), [])
