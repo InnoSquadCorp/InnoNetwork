@@ -1,7 +1,7 @@
 # Client Architecture
 
 InnoNetwork's public request API remains `DefaultNetworkClient.request(_:)`.
-The released 5.x contract preserves the resilience stages while making request
+The released 6.1.1 contract preserves the resilience stages while making request
 identity and late, body-aware signing explicit around the raw transport
 attempt.
 
@@ -51,7 +51,7 @@ Built-in policies occupy the preflight and post-transport slots:
 
 ## Public Surface Policy
 
-The 5.x contract exposes ``RequestExecutionPolicy`` as a request-identity-preserving
+The 6.1.1 contract exposes ``RequestExecutionPolicy`` as a request-identity-preserving
 extension point, while keeping the built-in retry, refresh, coalescing, cache,
 and circuit-breaker policies as first-class configuration values on
 `NetworkConfiguration`.

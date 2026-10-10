@@ -1,3 +1,5 @@
+> **역사 문서 / Historical:** 이전 릴리즈 당시의 한국어 README를 보존합니다. 현재 6.1.1 설치·API 안내는 [한국어 README](../../README.ko.md)를 사용하세요. 아래 버전·패키지명은 현재 권고가 아닙니다.
+
 # InnoNetwork (한국어)
 
 [![DocC](https://img.shields.io/badge/docs-DocC-blue)](https://innosquadcorp.github.io/InnoNetwork/)

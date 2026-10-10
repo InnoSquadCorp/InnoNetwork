@@ -7,9 +7,8 @@
 > 한국어 번역본 (영문 원본 → <doc:GettingStarted>) 입니다. 두 문서의 내용이
 > 일치하지 않을 때는 영문 원본의 정의를 우선합니다.
 
-> 이 문서는 `main`의 미출시 5.0 프리뷰를 기준으로 합니다. 태그된 최신 안정 버전은
-> `4.0.0`입니다. 프리뷰를 평가할 때는 검토한 revision으로 고정하고, 프로덕션에서
-> 움직이는 `main` branch를 직접 의존하지 마세요.
+> 이 문서는 공개된 안정 버전 `6.1.1`을 기준으로 합니다. `6.1.1` 태그 또는 검토한
+> 6.1 패치 범위를 사용하고 실제 의존성 해석 결과를 확인하세요.
 
 ## 클라이언트 만들기
 
@@ -102,8 +101,8 @@ trait 는 graph 전체에서 package 단위로 합쳐져 다른 dependency 가 �
 일반 요청은 ``NetworkClient/request(_:)``, multipart 업로드는
 ``UploadNetworkClient/upload(_:)`` 를 사용하세요. 두 작업을 모두 수행하는 경계에서만
 두 프로토콜을 함께 요구하세요. 저수준 generated-client 훅은
-`@_spi(GeneratedClientSupport)` 이며 5.0 공개 계약 초안 밖에 있습니다. 프리뷰 기간에는
-언제든지, 5.0 태그 이후에도 minor release 에서 변경될 수 있으므로 exact source pin 과
+`@_spi(GeneratedClientSupport)` 이며 6.1.1 공개 계약 밖에 있습니다.
+minor release 에서도 변경될 수 있으므로 exact source pin 과
 migration budget 을 소유한 wrapper 만 사용하세요.
 root macro 는 이 SPI 를 노출하거나 bridge 하지 않습니다.
 

@@ -86,12 +86,17 @@ sed 's/1,764/1,702/g;s/| 367 |/| 307 |/g;s/1,364/1,362/g' \
 sed 's/1764/1702/g' "$repo_root/Scripts/symbols/budgets.tsv" > "$scratch/Scripts/symbols/budgets.tsv"
 sed 's/1764/1702/g;s/367/307/g;s/1364/1362/g' \
   "$repo_root/Scripts/symbols/tier-budgets.tsv" > "$scratch/Scripts/symbols/tier-budgets.tsv"
-git -C "$scratch" add docs/releases API_STABILITY.md Scripts/symbols
+# Historical fixture must also retain the pre-rename companion owner/version.
+for path in docs/Migration-6.0.0.md Sources/InnoNetwork/InnoNetwork.docc/MigrationTo6.md; do
+  sed 's/package: "InnoNetwork-Stream"/package: "InnoStream"/g;s/\.exact("6.1.1")/.upToNextMajor(from: "1.0.0")/g' \
+    "$repo_root/$path" > "$scratch/$path"
+done
+git -C "$scratch" add docs/releases API_STABILITY.md Scripts/symbols docs/Migration-6.0.0.md Sources/InnoNetwork/InnoNetwork.docc/MigrationTo6.md
 git -C "$scratch" commit --quiet -m legacy-layout
 bash "$scratch/Scripts/validate_6_release_state.sh" --expect "$current_state" --ref HEAD
 mv "$scratch/superseded-record.md" "$scratch/docs/releases/archive/6.1.0-superseded-roadmap.md"
 cp "$repo_root/docs/releases/6.1.0.md" "$scratch/docs/releases/6.1.0.md"
-for path in API_STABILITY.md Scripts/symbols/README.md Scripts/symbols/budgets.tsv Scripts/symbols/tier-budgets.tsv; do
+for path in API_STABILITY.md Scripts/symbols/README.md Scripts/symbols/budgets.tsv Scripts/symbols/tier-budgets.tsv docs/Migration-6.0.0.md Sources/InnoNetwork/InnoNetwork.docc/MigrationTo6.md; do
   cp "$repo_root/$path" "$scratch/$path"
 done
 

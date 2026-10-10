@@ -79,7 +79,7 @@ The `CI` workflow must pass all of the following:
    lock; the script also proves that every discovered test belongs to exactly
    one shard.
    The extensions shard includes the AWS auth, persistent cache, upload, live
-   endpoint, and macro test modules. HLS quality gates now run in InnoStream.
+   endpoint, and macro test modules. HLS quality gates now run in InnoNetwork-Stream.
 6. `rg -n "@unchecked Sendable"` across production targets, including
    `Sources/InnoNetworkMacros`, returns no matches.
 7. `bash Scripts/check_shared_coders_mutation.sh` confirms the shared default
@@ -262,7 +262,7 @@ xcrun swift build
 xcrun swift test --no-parallel
 
 # Release preflight validates the complete InnoNetwork 6 root surface and
-# requires Xcode 27 / Swift 6.4. InnoStream owns the separate HLS runtime and
+# requires Xcode 27 / Swift 6.4. InnoNetwork-Stream owns the separate HLS runtime and
 # conformance gates. On the xcode-27 runner and standard local installs,
 # /Applications/Xcode.app resolves to that toolchain.
 sudo xcode-select -s /Applications/Xcode.app

@@ -2,9 +2,9 @@
 
 ## 6.0.0 Release Boundary
 
-`6.0.0` is still an unreleased draft. The approved scope combines the
+This section records the historical 6.0 scope; 6.1.1 is now published. The approved scope combines the
 compatibility reset and all previously planned 6.1 candidates in one release.
-The operation-first contract moves into `InnoNetwork`, HLS moves to InnoStream,
+The operation-first contract moves into `InnoNetwork`, HLS moves to InnoNetwork-Stream,
 and recovery decisions gain explicit HTTP, authentication, and replay-safety
 context. Deadlines, bounded admission, advanced rate limiting, streaming
 controls, span export, cache controls, and resumable uploads are all part of
@@ -18,7 +18,7 @@ promotion criteria. Including the advanced features in 6.0 does not promote
 them to Stable; their ledger classifications and adoption gates remain.
 
 The 6.0 exit gate is evidence, not another feature pass: the API allowlists,
-package preflight, non-HLS consumers, InnoStream local integration, companion
+package preflight, non-HLS consumers, InnoNetwork-Stream local integration, companion
 packages, and finally clean remote-tag consumers must all agree with the
 published contract.
 
@@ -129,7 +129,7 @@ permanent gate. Stable promotion remains a separate evidence-based decision.
 ### Explicitly outside 6.0
 
 - HLS parsing, playback, download, FairPlay, and live DVR remain owned by
-  InnoStream.
+  InnoNetwork-Stream.
 - gRPC, HTTP/3 ownership, WebTransport, a SwiftNIO transport, and WebSocket
   `permessage-deflate` are separate products or major design efforts.
 - Renaming configuration packs, reshaping `NetworkError`, or removing

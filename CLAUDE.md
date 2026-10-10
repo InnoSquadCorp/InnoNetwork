@@ -43,8 +43,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project Overview
 
 InnoNetwork is a type-safe Swift network library with **9 runtime products** and
-the compiler-host-only **InnoNetworkMacroSupport** product (6.1 candidate).
-The former HLS products live in the sibling InnoStream package.
+the compiler-host-only **InnoNetworkMacroSupport** product (published 6.1.1).
+The former HLS products live in the sibling InnoNetwork-Stream package.
 
 **InnoNetwork (Core):**
 - Async/await + `typed throws` (`async throws(NetworkError)`)
@@ -64,20 +64,20 @@ The former HLS products live in the sibling InnoStream package.
 - Pause/resume + atomic file move + inactivity watchdog
 - AsyncSequence event streams + actor-based persistence
 
-**Sibling InnoStream / InnoNetworkHLS:**
+**Sibling InnoNetwork-Stream / InnoNetworkHLS:**
 - Bounded HLS playlist resolution + deterministic variant selection
 - Browser-free VOD segment download and TS/fMP4 assembly
 - AsyncSequence progress, completion, failure, and cancellation events
 
-**Sibling InnoStream / InnoNetworkHLSLive:**
+**Sibling InnoNetwork-Stream / InnoNetworkHLSLive:**
 - Blocking and delta live-playlist reloads with bounded snapshot delivery
 - Deterministic multivariant selection, Content Steering recovery, and DVR capture
 
-**Sibling InnoStream / InnoNetworkHLSAVFoundation:**
+**Sibling InnoNetwork-Stream / InnoNetworkHLSAVFoundation:**
 - System-managed asset downloads, playback configuration, and metrics
 - Interstitial observation and application-owned FairPlay workflows
 
-**Sibling InnoStream / InnoNetworkHLSAudio:**
+**Sibling InnoNetwork-Stream / InnoNetworkHLSAudio:**
 - Xcode 27 / Swift 6.4 decoded-PCM delivery and paced sample consumption
 - Optional full-mix processing tap on supported version 27 platforms
 
@@ -166,24 +166,24 @@ swift test --list-tests
 - `NetworkFailure.swift` — payload를 보존하지 않는 value-only 실패·복구 분류
 - `NetworkClientConfiguration.swift` — secure/production configuration façade와 migration bridge
 
-### Sibling InnoStream/Sources/InnoNetworkHLS
+### Sibling InnoNetwork-Stream/Sources/InnoNetworkHLS
 - `PlaylistResolver.swift` — bounded UTF-8 playlist fetch + parser
 - `VariantSelector.swift` — deterministic configurable variant selection
 - `HLSHTTPClient.swift` — shared bounded chunk transport + request policy bridge
 - `HLSDownloader.swift` — per-resource-bounded VOD download + ordered assembly
 - `HLSModels.swift` — playlist, variant, progress, event, and stable error contracts
 
-### Sibling InnoStream/Sources/InnoNetworkHLSLive
+### Sibling InnoNetwork-Stream/Sources/InnoNetworkHLSLive
 - `HLSLivePlaylistClient.swift` — blocking/delta reload와 bounded snapshot stream
 - `HLSLivePlaylistMerger.swift` — media-sequence 기반 delta reconstruction
 - `HLSLiveDVRRecorder.swift` — bounded live-window VOD package capture
 
-### Sibling InnoStream/Sources/InnoNetworkHLSAVFoundation
+### Sibling InnoNetwork-Stream/Sources/InnoNetworkHLSAVFoundation
 - `HLSAssetDownloadSession.swift` — system-managed background asset downloads
 - `HLSPlaybackConfigurator.swift` / `HLSPlaybackMetrics.swift` — caller-owned playback bridge
 - `HLSFairPlaySession.swift` / `HLSFairPlayPersistentKeyWorkflow.swift` — app-owned FairPlay integration
 
-### Sibling InnoStream/Sources/InnoNetworkHLSAudio
+### Sibling InnoNetwork-Stream/Sources/InnoNetworkHLSAudio
 - `HLSDecodedAudioOutput.swift` / `HLSDecodedAudioPacedSequence.swift` — demand-driven and paced decoded PCM
 - `HLSAudioMixProcessingTap.swift` — opt-in full-mix real-time processing on supported version 27 platforms
 

@@ -89,7 +89,7 @@ gate is not approval to mark the new 6.1 candidate Ready.
    CI/release fixture tests or the ordinary Validate Release job alone do not
    replace it. After the preflight, the same job prevalidates the public
    consumer source using the candidate revision, explicitly recording that this
-   is not yet a public-tag verification. InnoStream separately owns AVPlayer runtime,
+   is not yet a public-tag verification. InnoNetwork-Stream separately owns AVPlayer runtime,
    Apple HLS conformance, FairPlay, and HLS-module release gates after the 6.0
    split. Tag identity, signing, and publication remain GitHub-only
    responsibilities.
@@ -122,13 +122,17 @@ gate is not approval to mark the new 6.1 candidate Ready.
 - Release quality is expected for Stable API.
 - Response time remains best-effort under the lightweight maintainer model.
 
-## InnoNetwork 6 and InnoStream publication order
+## InnoNetwork and companion publication order
+
+Core, InnoNetwork-Stream and InnoNetwork-Protobuf 6.1.1 are published. For
+future coordinated releases, preserve this dependency-first validation order;
+local-path evidence does not replace clean remote-tag consumer validation.
 
 1. Complete the InnoNetwork 6 root contract, consumer, and full preflight
    gates.
-2. Publish and verify InnoNetwork `6.0.0`.
-3. Resolve InnoStream without `INNONETWORK_LOCAL_PATH`, complete its HLS and
-   five-platform release gates, then publish `1.0.0`.
+2. Publish and verify the intended InnoNetwork version first.
+3. Resolve InnoNetwork-Stream without `INNONETWORK_LOCAL_PATH`, complete its HLS and
+   five-platform release gates, then publish its matching approved version.
 4. Migrate HLS consumers only after both tags resolve from a clean checkout.
 5. Publish dependent companion packages after their clean tagged-dependency
    smoke passes.

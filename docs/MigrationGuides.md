@@ -3,8 +3,14 @@
 This page is a practical map for moving existing Apple-client networking code
 onto InnoNetwork without rewriting every endpoint at once.
 
-> **Release status:** This page describes the released 5.x contract. Use the
-> 5.0 migration guide when upgrading from 4.x.
+## Current 6.1.1 baseline
+
+Install published 6.1.1. From 5.x, follow [the 6.0 compatibility migration](Migration-6.0.0.md),
+then [the 6.1 encoded-request migration](Migration-EncodedRequests.md). 6.1.1 has
+no runtime API changes from 6.1.0. From older versions, apply each major migration
+in order and compile your application after each step. HLS now belongs to
+InnoNetwork-Stream; Protobuf belongs to InnoNetwork-Protobuf. Their 6.1.1 releases
+pin Core 6.1.1 exactly; do not infer compatibility from matching major numbers.
 
 ## From InnoNetwork 4.x
 

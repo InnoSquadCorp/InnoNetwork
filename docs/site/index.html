@@ -279,12 +279,12 @@
       <p>
         Type-safe request execution and focused companion modules for authentication, downloads,
         realtime flows, caching, OpenAPI, trust, and testing on current Apple platforms. HLS media
-        moves to InnoStream in InnoNetwork 6.
+        is provided by the separate InnoNetwork-Stream package. Current stable Core: 6.1.1.
       </p>
       <div class="hero-actions">
         <a class="button button-primary" href="./InnoNetwork/documentation/innonetwork/gettingstarted">Get Started</a>
         <a class="button button-secondary" href="https://github.com/InnoSquadCorp/InnoNetwork">View Repository</a>
-        <a class="button button-secondary" href="https://github.com/InnoSquadCorp/InnoNetwork/blob/main/docs/releases/6.0.0.md">6.0 Release Notes</a>
+        <a class="button button-secondary" href="https://github.com/InnoSquadCorp/InnoNetwork/blob/main/docs/releases/6.1.1.md">6.1.1 Release Notes</a>
       </div>
       <div class="metrics">
         <div class="metric">
@@ -313,7 +313,7 @@
           </p>
           <ul>
             <li>Type-safe <code>APIDefinition</code> modeling</li>
-            <li>JSON, form-url-encoded, multipart, and protobuf request paths</li>
+            <li>JSON, form-url-encoded and multipart; Protobuf through its separate companion</li>
             <li>Safe defaults and advanced tuning surfaces</li>
           </ul>
           <div class="link-row">
@@ -387,7 +387,7 @@
         </article>
 
         <article class="card">
-          <h3>InnoStream (HLS)</h3>
+          <h3>InnoNetwork-Stream (HLS)</h3>
           <p>
             The four HLS products retain their module names in an independently
             versioned package after the InnoNetwork 6 split.
@@ -399,7 +399,7 @@
             <li>Separate public API, runtime, conformance, and release gates</li>
           </ul>
           <div class="link-row">
-            <a class="pill" href="https://github.com/InnoSquadCorp/InnoStream">View InnoStream</a>
+            <a class="pill" href="https://github.com/InnoSquadCorp/InnoNetwork-Stream">View InnoNetwork-Stream</a>
           </div>
         </article>
 
@@ -490,7 +490,7 @@
         <h2>InnoNetworkMacroSupport</h2>
         <p>Compiler-host support for companion endpoint macros, including shared encoded endpoint
           validation and expansion. Link this product only into macro implementation targets,
-          never application runtime targets. Part of the unpublished 6.1 candidate.</p>
+          never application runtime targets. Available in published 6.1.1.</p>
         <div class="link-row">
           <a class="pill" href="./InnoNetworkMacroSupport/documentation/innonetworkmacrosupport">Compiler-host Docs</a>
         </div>
@@ -507,7 +507,7 @@
           </a>
           <a class="list-item" href="https://github.com/InnoSquadCorp/InnoNetwork/blob/main/API_STABILITY.md">
             <strong>API Stability</strong>
-            Stable, provisional, and internal boundaries for the released 5.x line.
+            Stable, provisional, and internal boundaries for the released 6.1.1 line.
           </a>
           <a class="list-item" href="https://github.com/InnoSquadCorp/InnoNetwork/blob/main/Benchmarks/README.md">
             <strong>Benchmark Governance</strong>
@@ -517,7 +517,7 @@
       </article>
 
       <article class="card">
-        <h2>Adopting the 5.x Line</h2>
+        <h2>Adopting 6.1.1</h2>
         <div class="list">
           <div class="list-item">
             <strong>Safe Defaults First</strong>
@@ -539,11 +539,15 @@
     </section>
 
     <p class="footer">
-      The 6.0 release contents are approved; readiness is not publication.
-      Confirm the matching tag and GitHub Release; use a tagged dependency rather than
-      moving <code>main</code> in production. For support, issues, and release
-      notes, use the repository links above.
+      Stable 6.1.1 was published on 2026-10-07 UTC. Use a tagged dependency rather
+      than moving <code>main</code> in production, and verify the resolved graph.
+      For support, issues and release notes, use the repository links above.
     </p>
+    <details class="footer">
+      <summary>Historical 6.0 readiness snapshot</summary>
+      The 6.0 release contents are approved; readiness is not publication.
+      This dated statement is preserved for historical validation, not current adoption.
+    </details>
   </div>
 </body>
 </html>
