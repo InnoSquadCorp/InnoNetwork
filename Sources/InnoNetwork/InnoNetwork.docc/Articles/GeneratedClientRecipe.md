@@ -5,7 +5,7 @@ specific OpenAPI or RPC generator.
 
 > Important: prefer the stable ``APIDefinition`` and
 > ``RequestExecutionPolicy`` paths first. The low-level execution path remains
-> SPI and is not part of the 5.x public contract. Pin an exact released tag
+> SPI and is not part of the 6.1.1 public contract. Pin an exact released tag
 > when evaluating it.
 
 ## Choose the integration path
@@ -137,7 +137,7 @@ path:
 - a generated REST-style operation adapted onto ``APIDefinition``
 - a richer generated operation adapted onto SPI `SingleRequestExecutable`
 
-Use the `APIDefinition` and ``RequestExecutionPolicy`` portions as 5.x
+Use the `APIDefinition` and ``RequestExecutionPolicy`` portions as 6.1.1
 guidance. Treat the richer wrapper portion as revision-pinned SPI material.
 
 Generated OpenAPI Runtime clients should use the optional

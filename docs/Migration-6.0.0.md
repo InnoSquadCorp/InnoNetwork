@@ -1,8 +1,9 @@
 # Migration Guide: 6.0.0
 
 This guide describes the approved InnoNetwork 6.0 compatibility reset.
-Readiness does not prove publication. Keep production applications on the
-tagged 5.x line until the `6.0.0` tag and GitHub Release are published.
+The historical readiness record is preserved separately; 6.1.1 is now published.
+Use current [installation guidance](../README.md#quick-start), then apply these
+source migrations and the [6.1 additions](Migration-EncodedRequests.md).
 
 The previously planned 6.1 candidates are included in this 6.0 release scope.
 The unified baseline contains 1,700 public declarations. `@APIDefinition`
@@ -54,7 +55,7 @@ See [request credentials](../Sources/InnoNetwork/InnoNetwork.docc/Articles/Reque
 
 InnoNetwork 6 removes the temporary `InnoNetworkNext` preview product and the
 four HLS products. Operation-first APIs move into the root `InnoNetwork`
-module, while HLS moves to the independently versioned InnoStream package.
+module, while HLS moves to the independently versioned InnoNetwork-Stream package.
 
 Before:
 
@@ -76,17 +77,17 @@ targets: [
 ]
 ```
 
-After both release tags exist:
+Current published 6.1.1 pair:
 
 ```swift
 dependencies: [
     .package(
         url: "https://github.com/InnoSquadCorp/InnoNetwork.git",
-        .upToNextMajor(from: "6.0.0")
+        .exact("6.1.1")
     ),
     .package(
-        url: "https://github.com/InnoSquadCorp/InnoStream.git",
-        .upToNextMajor(from: "1.0.0")
+        url: "https://github.com/InnoSquadCorp/InnoNetwork-Stream.git",
+        .exact("6.1.1")
     ),
 ],
 targets: [
@@ -94,7 +95,7 @@ targets: [
         name: "MediaFeature",
         dependencies: [
             .product(name: "InnoNetwork", package: "InnoNetwork"),
-            .product(name: "InnoNetworkHLS", package: "InnoStream"),
+            .product(name: "InnoNetworkHLS", package: "InnoNetwork-Stream"),
         ]
     )
 ]
@@ -194,15 +195,14 @@ credentials to distinguish requests. Response bodies still require review.
 
 ## Validation order
 
-1. Build InnoNetwork and InnoStream together with `INNONETWORK_LOCAL_PATH`.
-2. Build non-HLS consumers against the local InnoNetwork 6 candidate.
-3. Publish and verify InnoNetwork `6.0.0`.
-4. Resolve InnoStream without a local override, then publish and verify
-   InnoStream `1.0.0`.
-5. Resolve migrated HLS consumers from a clean checkout using only the two
-   published tags.
-6. Publish companion packages only after their clean tagged-dependency smoke
-   passes.
+1. Resolve Core 6.1.1 and InnoNetwork-Stream 6.1.1 from their published tags.
+2. Remove local override environment variables for consumer validation.
+3. Compile non-HLS consumers and migrated HLS consumers from a clean graph.
+4. Run application tests covering cancellation, replay safety, restoration and
+   the particular HLS features your application adopts.
+5. For Protobuf, use its separately published 6.1.1 package and public encoded
+   request boundary; its exact Core pin must agree with every dependency path.
 
-Local-path builds prove source compatibility but do not prove remote package
-identity, tag availability, or a clean resolver graph.
+Local-path builds prove only source compatibility for that checkout. They do
+not prove remote package identity, tag availability, or a clean resolver graph.
+Historical pre-publication ordering is retained in the dated release records.

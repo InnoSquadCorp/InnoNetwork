@@ -1,5 +1,9 @@
 # InnoNetwork
 
+[English](README.md) · [한국어](README.ko.md) · [Español](README.es.md) · [Deutsch](README.de.md) · [简体中文](README.zh-Hans.md) · [日本語](README.ja.md) · [Русский](README.ru.md)
+
+Current adoption guides share the 6.1.1 baseline, installation, request and operation examples, product boundaries, lifecycle, migration, and validation scope. The detailed reference below expands these topics in English. [Historical Korean README](docs/ko/README.md) is preserved for reference, not current installation advice.
+
 [![CI](https://github.com/InnoSquadCorp/InnoNetwork/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/InnoSquadCorp/InnoNetwork/actions/workflows/ci.yml)
 [![TSAN Nightly](https://github.com/InnoSquadCorp/InnoNetwork/actions/workflows/tsan.yml/badge.svg?branch=main)](https://github.com/InnoSquadCorp/InnoNetwork/actions/workflows/tsan.yml)
 [![Nightly Live Smoke](https://github.com/InnoSquadCorp/InnoNetwork/actions/workflows/nightly-live.yml/badge.svg?branch=main)](https://github.com/InnoSquadCorp/InnoNetwork/actions/workflows/nightly-live.yml)
@@ -23,21 +27,24 @@ Everything else—including Download, Upload, WebSocket,
 persistent cache, OpenAPI, AWS signing, pinning, and test support—is an
 optional product selected only when that capability is required.
 
-> **Current publication:** [6.1.0 is published](https://github.com/InnoSquadCorp/InnoNetwork/releases/tag/6.1.0)
-> as of 2026-10-07 UTC. APIs added in 6.1, including encoded requests, require
-> a resolved Core version of 6.1.0 or later. Companion releases and their
-> dependency-graph validation remain separate.
+## Current release
 
-The following block is the historical 6.0 Ready-state snapshot retained by its
-validation contract; its pre-publication advice no longer applies to published 6.0.0.
+**6.1.1** is the latest stable release, [published 2026-10-07 UTC](https://github.com/InnoSquadCorp/InnoNetwork/releases/tag/6.1.1).
+The annotated tag resolves to `44e4ca28c50c03f817231a077c0f3bdfdbc859c8`.
+6.1.1 is a documentation/tooling patch with no runtime or public API changes from
+6.1.0. [6.1.0 is published](https://github.com/InnoSquadCorp/InnoNetwork/releases/tag/6.1.0)
+and introduced the encoded-request boundary. Use a released tag rather than moving `main`.
+
+<details>
+<summary>Historical 6.0 readiness record (not current adoption guidance)</summary>
 
 > **Release readiness:** `6.0.0` is approved for release; readiness is not publication.
-> Confirm the matching tag and GitHub Release before adopting the version below.
-> Until then, retain the tagged 5.x dependency; do not use moving `main` in
-> production. These examples describe 6.0 and may not compile against 5.x.
 > The previously planned 6.1 candidates are included in this 6.0 release scope.
-> The approved baseline contains 1,700 public declarations; advanced additions
-> remain Provisionally Stable unless the stability ledger explicitly says otherwise.
+
+The old `.upToNextMajor(from: "6.0.0")` example represented the 6.0 baseline;
+it does not guarantee that a retained lockfile resolves the newer 6.1 APIs.
+
+</details>
 
 ## AI agent skill
 
@@ -100,12 +107,14 @@ coarse stage that exhausted the budget. Existing calls without a deadline keep
 their behavior without an operation-wide deadline.
 
 The four HLS products moved to the independently versioned
-[InnoStream](https://github.com/InnoSquadCorp/InnoStream) package. Their product
+[InnoNetwork-Stream](https://github.com/InnoSquadCorp/InnoNetwork-Stream) package. Their product
 and module names are unchanged, so migration consists of changing the SwiftPM
 package dependency while keeping existing imports.
 
 See the [6.0 migration guide](docs/Migration-6.0.0.md) for the exact package
-manifest diff, replay-safety rules, and tag validation order.
+manifest diff, replay-safety rules, and tag validation order. Then apply the
+[6.1 encoded-request migration](docs/Migration-EncodedRequests.md) if needed.
+6.1.1 adds no source migration from 6.1.0.
 
 ## Why InnoNetwork
 
@@ -194,22 +203,30 @@ Does this endpoint belong in the application's named API catalog?
 
 ### Install
 
-The following declaration retains the published 6.0 compatibility baseline:
+Add the published 6.1.1 package and link only the products your target uses:
 
 ```swift
 dependencies: [
     .package(
         url: "https://github.com/InnoSquadCorp/InnoNetwork.git",
-        .upToNextMajor(from: "6.0.0")
+        .upToNextMinor(from: "6.1.1")
     )
 ]
 ```
 
-For APIs introduced in 6.1, set the minimum to `6.1.0` and confirm the resolved
-version is at least 6.1.0; an existing lockfile may otherwise retain 6.0.0.
-Use a minor-bound range for Provisionally Stable APIs, or pin the exact published
-version when reproducibility is required. The historical 6.0 example above
-does not make 6.1 additions available in a consumer still resolved to 6.0.0.
+```swift
+.target(
+    name: "MyApp",
+    dependencies: [.product(name: "InnoNetwork", package: "InnoNetwork")]
+)
+```
+
+Use `.exact("6.1.1")` when reproducibility is required. The minor-bound range
+above avoids adopting a new minor's Provisionally Stable changes accidentally.
+Review `Package.resolved`; changing a range alone does not prove the resolved graph.
+The root manifest includes SwiftSyntax 604.0.x, Swift Crypto 5.x, HTTPTypes and
+OpenAPI Runtime dependencies. Selecting only Core is not a promise of zero
+package-resolution dependencies.
 
 > InnoNetwork also intentionally requires Swift 6.2+ and current Apple OS
 > baselines (iOS 16, macOS 14, tvOS 16, watchOS 9, visionOS 1). That keeps
@@ -219,7 +236,7 @@ does not make 6.1 additions available in a consumer still resolved to 6.0.0.
 
 ### First 30 Minutes: Explicit Endpoints, Macro-Assisted
 
-The following examples use the approved 6.0 contract. For the previous 5.x or
+The following examples use the published 6.1.1 contract. For the previous 5.x or
 4.x API, consult the corresponding tag and migration documents instead.
 
 ```swift
@@ -317,7 +334,9 @@ struct UpdateUser {
     var parameters: Parameter? { patch }
 
     var transport: TransportPolicy<User> {
-        .json(decoder: snakeCaseDecoder)
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return .json(decoder: decoder)
     }
 }
 ```
@@ -467,361 +486,17 @@ for await event in await manager.events(for: task) {
 - HTTPS-only admission, foreground redirect checks, and background rejection
   of redirect-sensitive authorization or cookie headers
 
-### InnoStream: `InnoNetworkHLS`
+### Separate HLS package: `InnoNetwork-Stream`
 
-- bounded UTF-8 HLS playlist fetch and parsing through the shared transport
-  policy
-- value-redacted structured playlist inspection with deterministic severity,
-  operation scope, one-based source lines, and separate single-file/offline
-  capability flags
-- bounded presentation-graph inspection that fetches referenced variants and
-  renditions with deterministic indices, then diagnoses draft-22 target,
-  playlist type, timeline, program-date-time, Date Range, discontinuity, and
-  server-control consistency without loading media segments
-- opt-in Apple-oriented authoring guidance for target duration, independent
-  segments, TLS, variant ordering, codecs, average bandwidth, resolution,
-  frame rate, mixed dynamic range, score consistency, caption language,
-  Content Steering identity, LL-HLS timeline/hold-back, and feature-compatible
-  protocol versions without changing runtime capability
-- HLS 2nd Edition `EXT-X-DEFINE` substitution for local values, explicit
-  multivariant-to-media imports, and final-redirect URL query parameters,
-  with compatibility-version and expanded-size validation
-- typed multivariant `EXT-X-SESSION-DATA` and `EXT-X-SESSION-KEY` inspection,
-  including resolved resource URLs, language variants, key formats and IVs,
-  without fetching or persisting key bytes
-- HLS 2nd Edition draft-22 inspection for media target, media/discontinuity
-  sequences, playlist mutability, per-segment `EXT-X-BITRATE`, plus typed
-  variant `HDCP-LEVEL`, `ALLOWED-CPC`, and specialized
-  `REQ-VIDEO-LAYOUT`; unsupported video ranges/layouts make only the affected
-  variant ineligible
-- typed Low-Latency HLS server control, partial-segment targets and ranges,
-  preload hints, rendition reports, and delta-update metadata with
-  relationship validation and operation-scoped persistence diagnostics
-- bounded HLS Content Steering manifest resolution with TTL/reload caching,
-  declared and cloned pathway priority, host/query/stable-ID URI replacement,
-  deterministic playlist-resolution failover, conservative transfer-time
-  failover for stable-ID/resource-plan-equivalent pathways, session-scoped
-  failure penalty/cooldown recovery, value-redacted pathway health and typed
-  selection-reason events, and explicit opt-outs
-- relative variant URL resolution and explicit highest-quality,
-  lowest-bandwidth, resolution-cap, bandwidth-cap, or declared playback-
-  capability selection
-- typed audio/video/subtitle/closed-caption rendition metadata and
-  deterministic default, name, or BCP 47 language selection; HLS 2nd Edition
-  stable IDs, associated languages, accessibility characteristics, audio
-  format hints, author score, supplemental codecs, pathway metadata, and a
-  separate I-frame trick-play variant collection; generated and translated
-  characteristics are typed, with an opt-in subtitle exclusion/preference
-  policy that composes with explicit language and name selection
-- bounded-parallel MPEG transport-stream or fragmented-MP4 prefetch with
-  playlist-ordered assembly
-- per-resource and whole-download byte budgets, required/best-effort/disabled
-  destination-volume capacity policy with write-time reservation, and
-  determinate/indeterminate progress
-- automatic, destination-scoped resume checkpoints at durable media-resource
-  boundaries, with stale-plan invalidation and opt-out
-- core `RetryPolicy`-driven transient media-resource retry, backoff, and retry
-  event delivery through `NetworkRequestContext`
-- caller-injected sessions plus purpose-aware request policy for entry/media
-  playlists, live reloads, media payloads, AES keys, Steering manifests,
-  Session Data, localized rendition names, chapter documents, interstitial
-  asset lists, Date Range preloads, and schedules; typed HLS
-  request events are value-redacted by construction, while the existing
-  untyped authentication adapter remains source-compatible
-- opt-in `HLSExternalResourceResolver` for inline or bounded JSON/raw Session
-  Data, typed localized rendition names, Apple JSON chapters, and ordered
-  Apple interstitial asset lists, with explicit byte,
-  localization/chapter/asset-entry, timeout, schema, and HTTP-status failures;
-  rendition-name lookup follows ordered locale preferences and authored-name
-  fallback, while chapter image references resolve from the final JSON
-  response URL without HTTPS downgrade or URL credentials and chapter
-  catalogs expose preferred-language titles, image-category lookup, available
-  title languages, and overlap-aware active chapters for custom player UI
-- typed interstitial coordinated-playback variability, timeline
-  occupancy/style, navigation restrictions, and skip-control presentation
-  metadata, including bounded asset-list overrides for custom player UI
-- in-process and OS-backed cross-process destination admission, with atomic
-  final-file or offline-package commit
-- strict byte-range/CMAF response validation and contiguous-range coalescing
-- identity-format AES-128-CBC/PKCS#7 decryption with exact 16-byte key
-  validation, explicit or media-sequence IVs, post-adapter `no-store`
-  memory-only key handling, and key-fingerprint-bound resume invalidation;
-  parallel `KEYFORMAT` declarations stay isolated across complete and LL-HLS
-  resource contexts, and a usable identity alternative wins independent of
-  declaration order; an opt-in `HLSTransferPack` policy overlaps at most four
-  identity `EXT-X-SESSION-KEY` requests with media-playlist resolution, reuses
-  only selected-media keys, and leaves `prepare()` free of key I/O
-- typed rejection for live, SAMPLE-AES/FairPlay, separate-audio,
-  discontinuous, gapped, I-frame-only, or multiple-initialization layouts
-  during raw single-file assembly
-- AVFoundation-readable MPEG-TS and fragmented-MP4 assembly fixtures, pinned
-  by SHA-256 and container/packet structure checks
-- deterministic parser mutations, sub-quadratic large-playlist scaling,
-  concurrent live-stream isolation, and AVFoundation event terminal-race
-  gates, plus an actual loopback HTTP `AVPlayer` decoded-PCM smoke on macOS 27
-  or newer; run them independently from an InnoStream checkout with
-  `bash Scripts/run_hls_quality_gates.sh`. Older hosts report the runtime smoke
-  as `NOT RUN`
-- opt-in Apple Media Stream Validator and HLS Report validation for the pinned
-  MPEG-TS, video fragmented-MP4, and audio fragmented-MP4 fixtures. Install
-  Apple's separate HTTP Live Streaming Tools download, then run from the
-  InnoStream checkout
-  `bash Scripts/run_hls_quality_gates.sh --require-apple-tools`; ordinary runs
-  print `NOT RUN` when the tools are absent, while the full local release
-  preflight requires both Apple conformance and the supported runtime smoke
-- stable `HLSDownloadErrorCode`/`CustomNSError` telemetry and preserved
-  `SendableUnderlyingError` transport context
-- advisory `prepare` metadata before destination selection, event-stream
-  downloads for progress, committed receipts, and `downloadFile` for URL-only
-  one-shot callers
-- atomic offline package directories for a selected primary stream plus
-  opt-in external video and I-frame trick-play streams alongside audio and
-  subtitle renditions, with local media/master playlists, exact byte-range
-  localization, a URL-free schema 3 manifest, preserved rendition
-  accessibility/audio-format metadata, and per-file SHA-256 records
-- stateless offline-package reopening and validation through
-  `HLSOfflinePackageStore`; current packages verify structure, local playlist
-  closure, exact file membership, and checksums while schema 1/2 packages
-  receive legacy structural validation
-- Content-Steered offline planning requires stable variant and external-
-  rendition IDs across every eligible pathway before media transfer; retained
-  I-frame variants receive the same cloning, failover, and stable-ID checks
-- explicit plural rendition policy (`defaultOrFirst`, preferred languages,
-  names, all, or disabled), generated/translated subtitle filtering, typed
-  provenance retained in the manifest, and package-level preparation,
-  progress, and receipt surfaces
-- destination-scoped offline-package resume checkpoints at durable individual-
-  resource boundaries; stale playlist, rendition, resource, validator, or
-  AES-key plans are discarded, while partial state remains implementation-
-  private and final directory commit stays atomic
-- local package receipts expose a typed playback source for the companion's
-  loopback-only `HLSLocalPlaybackAsset`; arbitrary `file://` HLS trees remain
-  unsupported, while system-managed downloads remain available for native
-  background persistence
-
-### InnoStream: `InnoNetworkHLSLive`
-
-- direct media or multivariant live entry with deterministic variant
-  selection, selected-pathway/rendition metadata, one-shot snapshots, and a
-  bounded-memory `AsyncThrowingStream`
-- negotiated `_HLS_msn`, `_HLS_part`, and `_HLS_skip` requests based on typed
-  `EXT-X-SERVER-CONTROL` capabilities
-- freshness-aware LL-HLS CDN tune-in: an initial cached `Age` response drives
-  bounded `_HLS_msn`/`_HLS_part` estimation from target and part durations;
-  the full entry request removes prior `_HLS_*` reload directives while
-  preserving other caller query items;
-  malformed or failed optional responses retain the latest valid snapshot,
-  while `HLSLiveCDNTuneInPack` can tune or disable the behavior
-- media-sequence reconstruction of skipped complete segments and active Date
-  Ranges, with one query-clean full-reload recovery when history is missing
-- per-snapshot reload-mode attribution plus a pure, caller-clocked live-health
-  analyzer for edge regression, stagnation, hold-back latency, repeated delta
-  recovery, pathway instability, typed HTTP freshness, and live-window loss
-  risk; raw header strings stay private and recovery/UI policy remain
-  application-owned
-- polling fallback with finite timing bounds when blocking reload is not
-  advertised
-- uncached reload transport, typed `livePlaylistReload` request purpose, and
-  inherited URL admission, redirect, request-policy, and playlist body limits
-- final `EXT-X-ENDLIST` snapshot delivery followed by deterministic stream
-  completion
-- compatible Content Steering recovery for reload failures, requiring stable
-  variant identity and using matching rendition reports for low-latency
-  tune-in, retaining compatible candidates for cooldown re-entry without
-  exposing signed request values in pathway events
-- bounded record-from-now or current-window DVR capture for complete TS and
-  fMP4 segments, with exact byte-range validation, URL-free local VOD
-  playlists, progress events, cross-process destination leases, and atomic
-  directory commit
-- opt-in LL-HLS DVR part staging from an independent part zero, with count and
-  byte bounds, exact range validation, temporary-progress metadata, parent-
-  duration proof before promotion, and complete-segment fallback without
-  exposing partial files in the committed package
-- opt-in clear-media `PART` and `MAP` hint preloading with per-resource and
-  aggregate byte bounds, open-ended range validation, exact discontinuity,
-  initialization-map, and encryption-context confirmation, cancellation-safe
-  temporary storage, and ordinary-request fallback on every mismatch or
-  transfer failure; progress and receipts expose separate value-redacted
-  request, completion, confirmation, reuse, miss, failure, cancellation,
-  discard, and byte counters for parts and initialization maps
-- recording-scoped, memory-only identity AES-128 key reuse and rotation,
-  explicit or media-sequence IV decryption, encrypted fMP4 maps, and plaintext-
-  only local packages that never persist key declarations or source key URLs
-- fMP4 initialization-map rotation for primary and external rendition tracks,
-  with deduplicated local map files, segment-accurate `EXT-X-MAP` boundaries,
-  and map-aware LL-HLS part promotion
-- complete `EXT-X-GAP` preservation for primary and external rendition tracks;
-  unavailable media is never requested or synthesized, local playlists retain
-  the timeline with safe placeholder paths, and primary progress plus receipts
-  expose a typed gap count
-- opt-in rolling DVR retention that evicts a complete oldest presentation
-  prefix while recording continues; sequence-stable local names prevent reuse,
-  unreferenced fMP4 maps and aligned rendition resources are reclaimed only
-  after a replacement checkpoint is durable, and progress plus receipts expose
-  cumulative primary count, duration, and all-track byte eviction statistics
-- on-demand in-progress DVR playback snapshots at the next coherent complete-
-  segment boundary; each request atomically publishes an independent URL-free
-  VOD package for the existing local-playback bridge while recording and
-  rolling eviction continue, with eight bounded outstanding requests, isolated
-  cancellation, and typed terminal or capacity failures
-- opt-in Apple HLS interstitial DVR packaging that rewrites direct assets and
-  ordered asset lists into complete package-local offline HLS assets; event,
-  asset, playlist, resource, and aggregate byte bounds stay explicit,
-  complete-event omission never publishes a partial reference, and progress
-  plus receipts expose value-redacted retained and omitted statistics
-- Apple Date Range Schedules expand through the same bounded resolver when
-  interstitial packaging is enabled; nested members preserve server order,
-  reloads reuse one in-memory resolution, source changes fail closed, and no
-  schedule `X-URI` reaches the recording or recovery checkpoint
-- eligible `com.apple.hls.preload` declarations can seed a later Date Range
-  Schedule without a second request; at most 32 bounded 256 KiB resources are
-  retained in memory, failed or stale preloads fall back to the authoritative
-  schedule URL, and preload bytes never enter the package or checkpoint
-- rolling interstitial expiry removes each event directory atomically;
-  recovery checkpoints keep only query-free source hashes and local file
-  proofs, and in-progress playback snapshots freeze the complete asset-list
-  and playlist graph before publication
-- bounded external audio, alternate-video, and subtitle selection by default,
-  preferred languages, exact names, or all referenced renditions; URL-free
-  local master playlists expose one package entry point plus typed local-track
-  metadata, and Content Steering failover requires stable rendition identity
-- retained Program Date Time and self-contained standard Date Ranges for the
-  recorded interval, with atomic rejection when redacted extension values,
-  non-schedule external timeline resources, or an incomplete rendition cannot
-  be preserved
-- configurable destination-capacity enforcement plus typed key status,
-  key-length, decryption, and storage failures
-- opt-in, URL-free recovery checkpoints at coherent complete-segment
-  boundaries; rolling multi-track snapshots align before publication, and
-  signed query values may rotate while source path, selected
-  variant, renditions, per-segment initialization-map assignments, file sizes,
-  and SHA-256 digests are revalidated before resume, and AES-128 keys are always
-  fetched again
-- one-shot or controllable resume with a caller-supplied current source URL,
-  plus explicit checkpoint discard; a moved live window fails with the typed
-  `liveWindowAdvanced` result and final publication remains one atomic move
-- typed rejection of DRM/sample encryption, unsupported timeline metadata,
-  missing maps, retroactive map or gap-availability changes, incomplete
-  renditions, and live-window loss instead of silently committing an
-  incomplete presentation
-- local DVR receipts expose the same typed, loopback-only playback bridge as
-  offline-package receipts without claiming direct `file://` playback
-
-### InnoStream: `InnoNetworkHLSAVFoundation`
-
-- a main-actor local-playback owner that serves validated raw offline and DVR
-  packages over a random, loopback-only HTTP endpoint; reachable playlists are
-  bounded and frozen before listening, package-local interstitial asset lists
-  are frozen with their reachable playlists, remote/package-escaping
-  references and symbolic links are rejected, and GET, HEAD, and single byte
-  ranges are supported for AVPlayer
-- caller-owned `AVURLAsset` CMCD opt-in with typed availability status while
-  AVFoundation retains ownership of generated request-header values; watchOS
-  reports the feature as unavailable because it does not expose asset resource
-  loaders
-- typed, value-based `AVPlayerItem` configuration for variant/network-cost
-  limits, live-edge offset, server interstitial policy, automatic/disabled
-  media groups, and Custom Media Selection preferences. The caller keeps
-  player ownership; version 26 systems use the native authored scheme while
-  earlier systems select a compatible media option
-- a `Sendable` legible-media catalog for custom subtitle and caption UI, with
-  localized display names, BCP 47 languages, current/default state,
-  generated/translated provenance, accessibility features, and opaque exact
-  selection IDs that never expose AVFoundation objects
-- an allowlist-first timed-metadata monitor built on
-  `AVPlayerItemMetadataOutput`, with identifier-only safe defaults, explicit
-  bounded text/number/date opt-in, sequence-flush and callback-overflow
-  events, and no raw data, URL object, or underlying-error exposure
-- a main-actor, read-only interstitial monitor that emits bounded,
-  cancellation-safe lifecycle streams as value-redacted `Sendable` events;
-  AVFoundation retains schedule and system skip-control ownership
-- a version-gated integrated-timeline monitor for primary and interstitial
-  segments, sampled playhead progress, wall-clock mapping, loaded ranges, and
-  native structural invalidations; snapshots cap segment, range, and
-  identifier storage while the application retains playback and seeking policy
-- a pure, bounded playback-health analyzer that reduces delivered metric
-  events into stable healthy/degraded/critical snapshots while applications
-  retain UI, alerting, and policy ownership
-- independently cancellable, URL-free playback metric streams plus an opt-in
-  initial-startup view that correlates bounded chronological playlist,
-  segment, and content-key request details while preserving exact request
-  counts, and a detailed variant-switch view that exposes source/destination
-  bitrates plus validated stable rendition IDs on version 26 systems; both
-  detailed views include bounded, URL-free loaded-buffer snapshots, while a
-  readiness stream covers both initial and later likely-to-keep-up events and
-  a rate-change stream correlates variant bitrate with stalls and seeks;
-  zero-based sequenced delivery makes bounded-buffer loss observable and the
-  playback-health analyzer retains that diagnostic completeness count
-- reconnectable AVFoundation background HLS downloads with typed content
-  selection, interstitial retention, bounded event replay, and version 26
-  URL-free download-summary metrics with bounded selected-variant details
-- persistable validated `.movpkg` references plus a cancellation-safe
-  `AVAssetCache` readiness inspector that distinguishes missing, invalid,
-  unrecognized, incomplete, and offline-playable packages; bounded snapshots
-  report cached standard media choices, safe language tags, and Custom Media
-  Selection coverage without retaining native objects
-- best-effort system eviction policy and symlink-safe idempotent package
-  removal on supported platforms
-- a bounded, versioned, Codable offline-asset library with stable ordering,
-  duplicate ID/location rejection, availability inspection, and missing-entry
-  pruning while applications retain metadata-persistence ownership
-- native `AVAssetDownloadURLSession` background persistence with a
-  reconnectable, application-owned session identifier
-- main-actor configuration of AVFoundation media selections and variant
-  qualifiers without crossing a non-`Sendable` boundary
-- task restoration, progress and terminal event streams, pause, resume, and
-  cancellation, plus replayable URL-free variant-selection snapshots before
-  transfer progress
-- application-delegate background completion handoff and optional app-group
-  shared container support
-- `HLSFairPlaySession` for delegate retention, HTTPS asset admission,
-  pre-load `AVContentKeySession` recipient attachment, explicit detachment,
-  downloaded `.movpkg` reattachment, normal expiration, and version 26
-  URL-free request-origin correlation through caller-known opaque asset IDs,
-  plus bounded streaming-key initial/renewal and restore-or-create
-  persistent-key workflows
-  with app-injected SPC/CKC transport, secure storage, typed redacted lifecycle
-  events, opt-in FairPlay protocol-version negotiation after KSM validation,
-  version 26 anonymized device-ID randomization with typed availability and
-  seed validation, and iOS 27 streaming-only advisory-key reuse through a
-  session-matched workflow; credentials, Keychain schema, key files, seed
-  generation, expiry, and deletion remain application-owned
-- an isolated, opt-in physical-iOS FairPlay acceptance gate that requires SPC
-  version 3, waits for AVFoundation acceptance of both initial and renewing
-  responses, then proves a protected system download reopens and advances from
-  its local package without another KSM request; no acceptance credentials or
-  key material are stored in the repository
-- HTTPS admission and bounded artwork input; AVFoundation remains responsible
-  for media requests, redirects, trust, content keys, and the asset location
-- available on iOS, macOS, watchOS, and visionOS where
-  `AVAssetDownloadURLSession` is supported; unavailable on tvOS
-
-### InnoStream: `InnoNetworkHLSAudio`
-
-- a version 27-only HLS-audio companion isolated from the core network,
-  raw HLS, live reload, and broader AVFoundation playback products
-- an explicit Xcode 27 and Swift 6.4 toolchain boundary; Xcode 26 continues to
-  build the package and compatibility test target but does not expose these
-  SDK-only declarations
-- validated custom linear PCM formats plus a concise Float32 convenience
-  configuration for common waveform, level, speech, and assistance pipelines
-- one demand-driven async read at a time, with typed rejection of overlapping
-  reads instead of an automatically drained, unbounded stream
-- an optional non-prefetching paced sequence that admits the next read only
-  when the previous sample is within a bounded lead of the player-item clock;
-  pause, backward seek, cancellation, and terminal detachment remain explicit
-- typed `Sendable` Core Media buffers that preserve marker-only samples,
-  output presentation time, duration, sample count, and sequence restarts
-- explicit, idempotent detachment while the application retains its player,
-  conversion, processing, storage, and UI responsibilities
-- an optional `MTAudioProcessingTapCreateWithPreferredFormat` bridge on macOS,
-  iOS, tvOS, and visionOS for modifying the complete audio mix in place before
-  or after the player's other effects; watchOS has no corresponding system API
-- an authoritative preparation callback for the actual processing format and
-  a synchronous processing callback whose real-time safety remains explicitly
-  application-owned
-- no DRM bypass or promise that protected audio will yield decoded samples;
-  Apple does not supply FairPlay-protected audio to the full-mix tap
+HLS is not shipped by this package. Install
+[InnoNetwork-Stream 6.1.1](https://github.com/InnoSquadCorp/InnoNetwork-Stream)
+for playlist parsing, VOD downloads, live/DVR, AVFoundation integration or decoded audio.
+The aggregate SwiftPM product is `InnoNetwork-Stream`; the individual products
+and importable modules remain `InnoNetworkHLS`, `InnoNetworkHLSLive`,
+`InnoNetworkHLSAVFoundation`, and `InnoNetworkHLSAudio`. There is no
+`InnoNetworkStream` module. Audio APIs have Swift 6.4 compiler guards and
+version-27 OS availability. Consult the sibling's current docs for feature limits,
+platform gates, DRM boundaries, and its own acceptance evidence.
 
 ### `InnoNetworkWebSocket`
 
@@ -894,28 +569,24 @@ The package intentionally targets current Apple platform releases. That lets the
 
 ## Protocol Buffers
 
-Protocol Buffers support lives in the separate `InnoNetwork-Protobuf` package
-(Swift module `InnoNetworkProtobuf`). Its redesigned 6.0 development line uses
-the public `EncodedRequest` contract shipped in InnoNetwork 6.1.0, without SPI.
-Its default declaration is `@ProtobufAPIDefinition`: generated-message body/query
-inputs feed the same client and operation pipeline through `EncodedAPIDefinition`.
-Manual factories remain available with both `Macros` traits disabled. Core's
-JSON `@APIDefinition` remains unchanged; the shared `InnoNetworkMacroSupport`
-product is compiler-host-only, not an app runtime dependency.
+Protocol Buffers support lives in the separate
+[InnoNetwork-Protobuf 6.1.1](https://github.com/InnoSquadCorp/InnoNetwork-Protobuf)
+package. Its preferred SwiftPM product is `InnoNetwork-Protobuf`; its Swift module
+and compatibility product remain `InnoNetworkProtobuf`. It uses the public
+`EncodedRequest` / `EncodedAPIDefinition` boundary, not SPI. Core's JSON macro
+is unchanged. Do not link `InnoNetworkMacroSupport` into application targets.
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", from: "6.1.0"),
-    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork-Protobuf.git", from: "6.0.0")
+    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork.git", exact: "6.1.1"),
+    .package(url: "https://github.com/InnoSquadCorp/InnoNetwork-Protobuf.git", exact: "6.1.1")
 ]
 ```
 
-Core 6.1.0 is published; the companion 6.0 line in this intended pair still
-requires its own publication, dependency-graph alignment and exact-pair checks.
-Use the adapter's explicit local-core override only for coordinated development
-until the companion release and tagged consumer validation are complete.
-Existing adapter 3.x belongs with its documented 3.x core; do not combine it
-with core 6.x. Stream adoption likewise retains its separate release gates.
+Stream and Protobuf 6.1.1 each pin Core 6.1.1 exactly. Resolve the whole graph
+and run your own consumer tests; Core CI does not certify an application's
+live services, background behavior or companion integration. Older adapter
+3.x belongs with its documented Core 3.x contract.
 
 ## Configuration
 
@@ -926,7 +597,7 @@ observability, or transport tuning. There is intentionally no universal
 "production" preset: retry, circuit-breaker, and idempotency semantics depend
 on the server contract and should not be enabled by a generic label.
 
-In the 5.x contract, `safeDefaults` and the `advanced` preset cap collected
+In the 6.1.1 contract, `safeDefaults` and the `advanced` preset cap collected
 responses, including file-upload responses, at 5 MiB by default.
 Set an explicit `.streaming(maxBytes: nil)` or `.buffered(maxBytes: nil)` only
 when an unbounded response is a deliberate, reviewed choice.
@@ -1171,9 +842,56 @@ an explicit endpoint type.
 See [Using Macros](Sources/InnoNetwork/InnoNetwork.docc/Articles/UsingMacros.md)
 for payload rules, diagnostics, and core-only trait opt-out.
 
+## Operation ownership and cancellation
+
+Run this independently from the request/error examples with a fresh client.
+The `cancel()` comment identifies the owner API; calling it after completion
+does not undo an already returned result. In an interactive feature, call it
+when the owner stops needing the in-flight work.
+
+```swift
+let operations = OperationNetworkClient(client: client)
+let operation = operations.start(GetUser(id: 42))
+do {
+    let user = try await operation.value()
+    print(user.name)
+} catch {
+    print(error) // NetworkFailure: value-only operation failure
+}
+// From the task owner when the work is no longer needed:
+// Owner: call operation.cancel() when in-flight work is no longer needed.
+// At the end of this client's lifetime:
+await client.shutdown()
+```
+
+`request` / `upload` throw `NetworkError`; `NetworkOperation.value()` throws
+`NetworkFailure`, a value-only classification that does not retain response
+payloads. Cancelling a task awaiting `value()` forwards cancellation to the
+operation. Keep the handle when you need explicit cancellation; merely dropping
+an event iterator is not a universal cancellation API. Operation events retain
+a bounded start/terminal lifecycle for a late first consumer. Observe `value()`
+for the result, rather than treating events as a lossless payload stream.
+
+`cancelAll()` cancels in-flight work while retaining a reusable client.
+`shutdown()` is idempotent and terminal: it cancels work and refresh, closes
+owned resources, and rejects later work with `.cancelled`. Injected sessions
+remain caller-owned. Retain Download/Upload/WebSocket managers for their feature
+lifetime; use unique background session identifiers and the documented restoration
+barrier. WebSocket explicit retry returns a fresh logical task; consume that
+result's event stream, not the retired task's stream.
+
+Retry and application replay are different. Default retry eligibility covers
+safe methods; opting in a mutation requires server-supported idempotency.
+A per-operation automatic key is not stable across newly created operations.
+401 may permit one coordinated refresh; 403 is not a refresh/replay signal.
+Cancellation is not a retryable connectivity failure. See
+[task ownership](docs/TaskOwnership.md), [WebSocket lifecycle](docs/WebSocketLifecycle.md)
+and [policy interactions](docs/PolicyInteractions.md).
+
 ## Error Handling
 
-InnoNetwork favors explicit transport errors over opaque failures.
+InnoNetwork favors explicit transport errors over opaque failures. Run this
+example with a client that has not been shut down.
 
 ```swift
 do {
@@ -1405,6 +1123,12 @@ Operational items to verify before shipping a client built on InnoNetwork.
 | Cancel-all | Trigger `cancelAll()` while a stream and an upload are in flight; both must terminate with `.cancelled`. |
 
 ## Documentation
+
+The seven current README guides cover the same onboarding and operational
+contracts. Source/static checks do not establish Swift compilation, DocC
+rendering, native-speaker review, live services, or device acceptance. Run the
+[contributor checks](CONTRIBUTING.md) on a supported Apple toolchain and validate
+your complete dependency graph and application behavior.
 
 - DocC API Reference: https://innosquadcorp.github.io/InnoNetwork/
 - Examples: [Examples/README.md](Examples/README.md)

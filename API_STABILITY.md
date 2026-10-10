@@ -1,5 +1,8 @@
 # API Stability (6.x)
 
+Current stable patch: [6.1.1](https://github.com/InnoSquadCorp/InnoNetwork/releases/tag/6.1.1).
+It changes no runtime API or ledger classification from 6.1.0.
+
 This document defines the approved compatibility contract for InnoNetwork 6.
 `6.0.0` is the approved compatibility baseline and was published on 2026-09-29
 UTC with its matching GitHub Release.

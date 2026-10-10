@@ -13,13 +13,13 @@ InnoNetwork ships against the current Apple platforms only:
 The package targets these versions intentionally so the codebase can rely on
 modern Swift Concurrency semantics, strict Sendable checking, and the latest
 URLSession surface without compatibility shims. There is no Linux toolchain
-support and no plan to add one in 5.x.
+support and no Linux support in the 6.x contract.
 
 ## Toolchain support
 
 The root package manifest requires Swift 6.2 and the canonical compatibility
 lane uses Xcode 26.0.1. The Xcode 27-only decoded-audio HLS surface moved to
-the separate InnoStream package.
+the separate InnoNetwork-Stream package.
 
 ## Why no Linux
 
@@ -50,8 +50,8 @@ ProductKit (Linux + Apple)         ← shared Decodable/Encodable models
 
 The canonical SwiftPM and bounded-shard compatibility lanes run on `macos-15`
 with Xcode 26.0.1. A second required SwiftPM lane, dead-code analysis, docs
-contract validation, and HLS-audio tests run on GitHub's `xcode-27` image so
-the SDK-only surface cannot be hidden by its compatibility guards. Adding a
+contract validation run on GitHub's `xcode-27` image for the supported compiler matrix. HLS-audio tests belong to the separate
+InnoNetwork-Stream repository. Adding a
 Linux build leg is intentionally out of scope; it would not catch a supported
 regression because the package does not compile on Linux.
 

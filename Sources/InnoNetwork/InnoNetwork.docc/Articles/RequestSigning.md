@@ -3,7 +3,7 @@
 Sign the final encoded request with access to the exact data or file bytes that
 the transport will send.
 
-> Important: This page documents the released 5.x request-signing contract.
+> Important: This page documents the released 6.1.1 request-signing contract.
 
 ## Overview
 
@@ -12,7 +12,7 @@ URL, method, or headers. ``RefreshTokenPolicy`` remains the right abstraction
 for session-rotated bearer tokens; a signer covers request-minted JWTs, HMAC,
 AWS Signature Version 4, and similar per-attempt authentication schemes.
 
-The 5.x execution order is fixed:
+The 6.1.1 execution order is fixed:
 
 1. Encode the endpoint payload and create a stable snapshot for caller-owned
    files when signing requires one.

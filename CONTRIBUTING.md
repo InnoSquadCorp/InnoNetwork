@@ -13,6 +13,7 @@ Thanks for contributing to InnoNetwork.
 ```bash
 swift test
 bash Scripts/check_docs_contract_sync.sh
+python3 Scripts/tests/test_current_readmes.py
 swift build --target InnoNetworkDocSmoke
 swift build --target InnoNetworkBenchmarks
 ```
@@ -22,6 +23,15 @@ For benchmark validation:
 ```bash
 swift run -c release InnoNetworkBenchmarks --quick --json-path /tmp/innonetwork-bench.json
 ```
+
+## Current documentation languages
+
+Maintain the English, Korean, Spanish, German, Simplified Chinese, Japanese and
+Russian root README guides together. Keep installation, public contracts and
+Swift examples aligned; the English guide also contains the detailed reference.
+`Scripts/check_current_readmes.py` checks structural parity and local file links,
+not translation quality or compilation. Preserve `docs/ko/README.md` as labeled
+historical content. Do not turn dated release evidence into new test claims.
 
 ## Pull Request Expectations
 

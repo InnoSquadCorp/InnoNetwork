@@ -29,6 +29,12 @@ Whichever channel you use, please include:
 
 ## Supported Versions
 
+The current supported release line is **6.x**, with stable **6.1.1** published
+on 2026-10-07 UTC. Earlier major releases are historical; use the current
+line for fixes. Report the exact resolved version and affected configuration.
+
+### Historical 6.0 readiness policy (superseded by publication)
+
 - `6.x` becomes the supported public release line when `6.0.0` is published.
   Ready approval alone does not establish a tagged support line.
 - Until that publication, `5.x` remains the supported tagged line and reports
