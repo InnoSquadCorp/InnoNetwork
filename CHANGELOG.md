@@ -9,7 +9,10 @@ Versioning.
 
 ## [6.1.1] - 2026-10-07
 
-Ready for the intended release date; publication remains pending.
+[Published on 2026-10-07 UTC](https://github.com/InnoSquadCorp/InnoNetwork/releases/tag/6.1.1)
+at 21:55:40Z. The annotated tag resolves to
+`44e4ca28c50c03f817231a077c0f3bdfdbc859c8`; the original Ready validation
+record remains in the release notes as historical evidence.
 
 ### Added
 

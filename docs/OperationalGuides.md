@@ -4,8 +4,9 @@
 
 Use `@_spi(GeneratedClientSupport)` only when adapting a generated client or SDK
 wrapper that cannot be represented with `APIDefinition`, `MultipartAPIDefinition`,
-or `StreamingAPIDefinition`. App feature code should stay on the public endpoint
-protocols in the 5.x stability contract. SPI has no SemVer guarantee; pin an
+`StreamingAPIDefinition`, or the public 6.1 `EncodedRequest` /
+`EncodedAPIDefinition` boundary. App feature code should stay on public endpoint
+protocols in the 6.1.1 stability contract. SPI has no SemVer guarantee; pin an
 exact released tag when adopting it.
 
 ## Cookie Isolation
@@ -18,8 +19,10 @@ resulting `URLSession` to `DefaultNetworkClient`.
 ## URLSession Lifecycle
 
 Prefer one long-lived `DefaultNetworkClient` per feature boundary or API domain.
-Avoid creating a new client for every request. If a client owns a custom
-`URLSession`, invalidate that session when the feature/session scope ends.
+Avoid creating a new client for every request. Call `shutdown()` when the
+client scope ends. It is terminal and invalidates only a library-created session;
+injected sessions remain caller-owned. Use `cancelAll()` to cancel current work
+without terminating a reusable client.
 
 ## Low Data Mode and Expensive Networks
 
@@ -42,8 +45,10 @@ tuning thresholds.
 
 ## Streaming Consumers
 
-`stream(_:)` remains lossless and uses unbounded output buffering. High-volume
-streams whose consumers can tolerate dropped decoded values should use
+`stream(_:)` is lossless and backpressured: it reads at most one decoded output
+ahead of the consumer. The explicit overload can choose unbounded buffering
+when producer suspension is unsuitable. High-volume streams whose consumers
+can tolerate dropped decoded values can use
 `stream(_:bufferingPolicy:)` with `.bufferingNewest(_:)` or
 `.bufferingOldest(_:)` to cap memory.
 

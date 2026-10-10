@@ -145,9 +145,18 @@ esac
 
 require_line "# Migration Guide: 6.0.0" "$migration"
 require_line "# Migrating to InnoNetwork 6" "$docc_migration"
-require_contains '.product(name: "InnoNetworkHLS", package: "InnoStream")' "$migration"
-require_contains '.upToNextMajor(from: "1.0.0")' "$migration"
-require_contains '.product(name: "InnoNetworkHLS", package: "InnoStream")' "$docc_migration"
+# Current adoption follows the published companion identity. Older tagged
+# validation snapshots retain the original InnoStream migration contract.
+if [[ -f "$validation_root/Scripts/published-releases.json" ]] && \
+   grep -Eq '"version"[[:space:]]*:[[:space:]]*"6\.1\.1"' "$validation_root/Scripts/published-releases.json"; then
+  require_contains '.product(name: "InnoNetworkHLS", package: "InnoNetwork-Stream")' "$migration"
+  require_contains '.exact("6.1.1")' "$migration"
+  require_contains '.product(name: "InnoNetworkHLS", package: "InnoNetwork-Stream")' "$docc_migration"
+else
+  require_contains '.product(name: "InnoNetworkHLS", package: "InnoStream")' "$migration"
+  require_contains '.upToNextMajor(from: "1.0.0")' "$migration"
+  require_contains '.product(name: "InnoNetworkHLS", package: "InnoStream")' "$docc_migration"
+fi
 require_contains '## Stable macro-first endpoint contract' "$migration"
 require_contains '## Stable macro-first endpoint contract' "$docc_migration"
 require_contains '### Root Macro Surface (Stable in 6.0)' "$api"

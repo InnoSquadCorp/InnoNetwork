@@ -3,9 +3,9 @@
 Adopt the operation, failure, and configuration contracts promoted into the
 core module in InnoNetwork 6.
 
-The 6.0 release contents are approved, but readiness is not publication.
-Confirm the matching tag and GitHub Release before changing production
-dependencies; until then, retain the tagged 5.x line.
+Core 6.1.1 and InnoNetwork-Stream 6.1.1 are published. Apply the 6.0 source
+changes below, then the 6.1 encoded-request additions when needed. Resolve
+the published tags and test the complete consumer graph before deployment.
 
 ## Overview
 
@@ -113,10 +113,10 @@ manual ``APIDefinition`` conformance remains the supported non-macro fallback.
 Existing accepted declarations retain their generated method, percent-encoded
 path, authentication, conformance, and payload-witness meaning throughout 6.x.
 
-## Move HLS product ownership to InnoStream
+## Move HLS product ownership to InnoNetwork-Stream
 
 The HLS product and module names remain unchanged, but their SwiftPM package
-owner changes. After InnoNetwork `6.0.0` and InnoStream `1.0.0` are published,
+owner changes. For published Core 6.1.1 and InnoNetwork-Stream 6.1.1,
 change a target dependency from:
 
 ```swift
@@ -126,15 +126,15 @@ change a target dependency from:
 to:
 
 ```swift
-.product(name: "InnoNetworkHLS", package: "InnoStream")
+.product(name: "InnoNetworkHLS", package: "InnoNetwork-Stream")
 ```
 
-and add the InnoStream package dependency:
+and add the InnoNetwork-Stream package dependency:
 
 ```swift
 .package(
-    url: "https://github.com/InnoSquadCorp/InnoStream.git",
-    .upToNextMajor(from: "1.0.0")
+    url: "https://github.com/InnoSquadCorp/InnoNetwork-Stream.git",
+    .exact("6.1.1")
 )
 ```
 

@@ -2,6 +2,9 @@
 
 Type-safe networking for Apple platforms with explicit request modeling, transport policy, retry coordination, and request lifecycle observability.
 
+Current stable baseline: **6.1.1** (Swift 6.2+, Apple platforms).
+Use the published package tag and validate optional companion dependencies separately.
+
 ## Overview
 
 `InnoNetwork` is the core module of the package. It focuses on request execution and response decoding while keeping transport concerns visible instead of hiding them behind opaque convenience APIs.

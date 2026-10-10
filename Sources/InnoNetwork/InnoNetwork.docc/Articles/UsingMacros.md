@@ -202,15 +202,15 @@ dependency:
 dependencies: [
     .package(
         url: "https://github.com/InnoSquadCorp/InnoNetwork.git",
-        .upToNextMajor(from: "5.0.0"),
+        .upToNextMinor(from: "6.1.1"),
         traits: []
     )
 ]
 ```
 
-Use `exact: "5.0.0"` when a reproducible release build must not accept any
-dependency update. The 4.x package does not expose the 5.0 macro contract
-shown here.
+Use `exact: "6.1.1"` when a reproducible release build must not accept any
+dependency update. Earlier major releases have different macro contracts;
+consult their tagged documentation when maintaining an older consumer.
 
 With `traits: []`, the macro declaration is absent and the compiler plug-in
 products are excluded from the target graph and compilation. SwiftPM still

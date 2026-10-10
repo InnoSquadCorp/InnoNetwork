@@ -1,7 +1,7 @@
 # Code Generation for InnoNetwork
 
 When you have more than ~30 endpoints, hand-rolling `APIDefinition` structs
-can become the bottleneck. The released 5.x contract supports three
+can become the bottleneck. The released 6.1.1 contract supports three
 distinct OpenAPI integration paths; choose based on the generated type shape
 and whether the request must use the full InnoNetwork execution pipeline.
 
