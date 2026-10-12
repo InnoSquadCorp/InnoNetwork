@@ -125,6 +125,16 @@ not changed. Diagnostic results cannot turn an original failure into success.
 Malformed/nonfinite data and unmatched workloads are rejected before any
 performance verdict, and executable/build failures do not launch more controls.
 
+Dependabot #157 (`2233b25841df37000d06564c6a7f325c70213011`) also retained a
+28.96% paired throughput regression for `persistence/append-log-compaction`
+(20% limit, 42.98% pair spread) in run `38194730770`. Its captured base/head
+`Sources`, `Benchmarks`, root manifest and lock identities and measured file
+hashes all agree; its separately built binary hashes differ. The PR changes
+only the standalone OpenAPI tool's Yams dependency. This supports investigating
+measurement/build variation, not attributing the result to a runtime source
+change or declaring the gate passed. The existing fixed controls measure only
+the event-fanout workload and cannot diagnose this compaction failure.
+
 ## Candidate validation and publication
 
 CI invokes `release-validation.yml` with `publish: false`. It has only read
@@ -195,6 +205,21 @@ The native run title and evaluation step bind PR number, exact head, head/base
 repository IDs, base main and immutable source. This also supports legitimate
 fork runs whose REST `pull_requests` association is empty without treating branch
 or display-name matches alone as provenance.
+
+Read-only REST responses can omit repository merge-setting fields. The reporter
+then queries the same repository's GraphQL settings, binding both numeric ID and
+full name and requiring real true booleans. Explicit false, malformed values,
+disagreement or unavailable evidence still block; no permission is expanded.
+This does not change the strict-base prerequisite or the meaning of Ready.
+
+Read-only reporters have independent per-PR/run concurrency groups. Admission
+order is not workflow run-number order, so an older admission must not cancel a
+newer reporter. The latest run/attempt and exact PR/head/source are still checked
+before and after evaluation; a cancelled latest reporter never falls back to an
+older successful verdict. A superseded event-bound reporter cancelled before
+runner assignment may have a real native check with zero steps. Only a verified
+historical cancelled run/job/check with no assigned runner and exact native
+identity is attributed as transport, never as a successful Ready verdict.
 
 The trusted coordinator can request only a bounded rerun of a verified native
 Ready reporter when its verdict changed. It verifies current attempt, source

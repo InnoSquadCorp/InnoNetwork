@@ -49,6 +49,7 @@ def validate_run(api, p, run, workflow, repo, pr, number, head):
               run.get("repository", {}).get("id") == repo["id"] and
               run.get("head_repository", {}).get("id") == pr["head"]["repo"]["id"] and
               pr["base"]["repo"]["id"] == repo["id"] and pr["base"]["ref"] == "main" and
+              type(run.get("run_number")) is int and run["run_number"] > 0 and
               type(run.get("run_attempt")) is int and run["run_attempt"] > 0 and type(run.get("check_suite_id")) is int,
               "invalid native reporter PR/head/workflow provenance")
     if links:
@@ -91,7 +92,7 @@ def latest(api, p, number, head):
     return max(candidates, key=lambda r: (r["run_number"], r["id"]))
 
 
-def job_record(api, p, run, attempt=None, require_steps=True):
+def job_record(api, p, run, attempt=None, require_steps=True, allow_unstarted_cancelled=False):
     attempt = run["run_attempt"] if attempt is None else attempt
     jobs = api.pages(p.route(f"actions/runs/{run['id']}/attempts/{attempt}/jobs"), "jobs")
     p.require(len(jobs) == 1 and jobs[0].get("name") == p.READY, "native reporter must have exactly one fixed-name job")
@@ -109,6 +110,18 @@ def job_record(api, p, run, attempt=None, require_steps=True):
     steps = job.get("steps") or []
     source_steps = [s for s in steps if str(s.get("name", "")).startswith(SOURCE_STEP)]
     binding = BINDING.fullmatch(run.get("display_title", ""))
+    if allow_unstarted_cancelled and not require_steps and binding and not steps:
+        # GitHub creates an empty, runner-less check when concurrency cancels a
+        # reporter before checkout. Only verified older transport may be
+        # attributed this way; this never supplies a current Ready verdict.
+        p.require(run.get("status") == job.get("status") == check.get("status") == "completed" and
+                  run.get("conclusion") == job.get("conclusion") == check.get("conclusion") == "cancelled" and
+                  job.get("run_id") == run["id"] and job.get("run_attempt") == attempt and
+                  job.get("head_sha") == run["head_sha"] and
+                  job.get("steps") == [] and type(job.get("runner_id")) is int and job["runner_id"] == 0,
+                  "historical reporter is not a verified pre-execution cancellation")
+        return job, check, None
+    p.require(bool(steps), "native reporter has no verified source steps")
     if binding:
         expected = SOURCE_STEP + binding[5] + " for " + run["display_title"].rsplit(" source:", 1)[0]
         p.require(len(source_steps) == 1 and source_steps[0]["name"] == expected,
@@ -254,6 +267,7 @@ def verified_check_ids(api, p, number, head):
     newest = max(((r["run_number"], r["id"]) for r in sources), default=None)
     for run in sources:
         for attempt in range(1, run["run_attempt"] + 1):
+            older_run = (run["run_number"], run["id"]) != newest
             jobs = api.pages(p.route(f"actions/runs/{run['id']}/attempts/{attempt}/jobs"), "jobs")
             if not jobs:
                 older = (run["run_number"], run["id"]) != newest or attempt < run["run_attempt"]
@@ -265,7 +279,8 @@ def verified_check_ids(api, p, number, head):
                 # No check IDs are exempted. Any actual orphan/legacy check
                 # still fails the main proof as unassociated evidence.
                 continue
-            _, check, _ = job_record(api, p, run, attempt, require_steps=False)
+            _, check, _ = job_record(api, p, run, attempt, require_steps=False,
+                                     allow_unstarted_cancelled=older_run)
             p.require(check["id"] not in ids, "duplicate native reporter check identity")
             ids.add(check["id"])
     return ids

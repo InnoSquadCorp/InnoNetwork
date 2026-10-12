@@ -510,9 +510,39 @@ def basic(pr, repo, require_open=True):
         require(pr.get("mergeable") is True, "conflict or unknown mergeability")
 
 
+def native_merge_settings(api, repo):
+    fields = {"allow_auto_merge": "autoMergeAllowed", "allow_squash_merge": "squashMergeAllowed"}
+    # Read-only Contents tokens can omit these REST fields. Missing evidence
+    # is not an explicit disabled setting, and never justifies more privilege.
+    for field in fields:
+        if field in repo:
+            require(type(repo[field]) is bool, "standby: native merge setting unverified: " + field)
+            require(repo[field], "native merge feature disabled: " + field)
+    if all(field in repo for field in fields):
+        return
+    owner, name = REPOSITORY.split("/")
+    query = """query($owner:String!,$name:String!) {
+      repository(owner:$owner,name:$name) {
+        databaseId nameWithOwner autoMergeAllowed squashMergeAllowed
+      }
+    }"""
+    try:
+        result = api.graphql(query, {"owner": owner, "name": name})
+    except Exception as error:
+        raise Rejected("standby: native merge settings unverified: read-only GraphQL unavailable") from error
+    settings = result.get("repository") if isinstance(result, dict) else None
+    require(isinstance(settings, dict) and type(settings.get("databaseId")) is int and
+            settings["databaseId"] == repo.get("id") and settings.get("nameWithOwner") == REPOSITORY,
+            "standby: native merge settings repository identity unverified")
+    for rest, graph in fields.items():
+        value = settings.get(graph)
+        require(type(value) is bool, "standby: native merge setting unverified: " + graph)
+        require(rest not in repo or repo[rest] == value, "native merge settings changed or disagree")
+        require(value, "native merge feature disabled: " + graph)
+
+
 def native_rules(api, repo):
-    require(repo.get("allow_auto_merge") is True and repo.get("allow_squash_merge") is True,
-            "native auto-merge/squash feature disabled")
+    native_merge_settings(api, repo)
     rules = api.pages(route("rules/branches/main"))
     status = [r for r in rules if r.get("type") == "required_status_checks"]
     review = [r for r in rules if r.get("type") == "pull_request"]

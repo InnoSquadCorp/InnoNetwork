@@ -202,6 +202,59 @@ class DependabotPolicyTests(unittest.TestCase):
         for change in changes:
             with self.subTest(change=change): self.reject(change)
 
+    def test_readonly_merge_settings_use_identity_bound_query_only(self):
+        for missing in [('allow_auto_merge',), ('allow_squash_merge',),
+                        ('allow_auto_merge', 'allow_squash_merge')]:
+            repo = copy.deepcopy(self.api.repo)
+            for key in missing: repo.pop(key)
+            result = dict(repository=dict(databaseId=100, nameWithOwner=p.REPOSITORY,
+                                          autoMergeAllowed=True, squashMergeAllowed=True))
+            with mock.patch.object(self.api, 'graphql', return_value=result) as query:
+                p.native_merge_settings(self.api, repo)
+            self.assertEqual(query.call_count, 1)
+            self.assertTrue(query.call_args.args[0].startswith('query('))
+            self.assertEqual(query.call_args.args[1], dict(owner='InnoSquadCorp', name='InnoNetwork'))
+        with mock.patch.object(self.api, 'graphql') as query:
+            p.native_merge_settings(self.api, self.api.repo)
+            query.assert_not_called()
+        self.assertFalse(self.api.mutations)
+
+    def test_merge_settings_never_promote_false_malformed_or_unknown_evidence(self):
+        for value in [False, None, 'true', 1, 0]:
+            for field in ['allow_auto_merge', 'allow_squash_merge']:
+                repo = dict(self.api.repo, **{field: value})
+                repo.pop('allow_squash_merge' if field == 'allow_auto_merge' else 'allow_auto_merge')
+                with mock.patch.object(self.api, 'graphql') as query:
+                    with self.subTest(field=field, value=value), self.assertRaises(p.Rejected):
+                        p.native_merge_settings(self.api, repo)
+                    query.assert_not_called()
+        repo = dict(self.api.repo)
+        repo.pop('allow_auto_merge')
+        good = dict(databaseId=100, nameWithOwner=p.REPOSITORY, autoMergeAllowed=True, squashMergeAllowed=True)
+        cases = [None, {}, dict(good, databaseId=True), dict(good, databaseId=101),
+                 dict(good, nameWithOwner='other/repo')]
+        for field in ['autoMergeAllowed', 'squashMergeAllowed']:
+            cases.extend(dict(good, **{field: value}) for value in [None, False, 'true', 1])
+            cases.append({k: v for k, v in good.items() if k != field})
+        for settings in cases:
+            with mock.patch.object(self.api, 'graphql', return_value=dict(repository=settings)):
+                with self.subTest(settings=settings), self.assertRaises(p.Rejected):
+                    p.native_merge_settings(self.api, repo)
+        with mock.patch.object(self.api, 'graphql', side_effect=PermissionError('unavailable')):
+            with self.assertRaisesRegex(p.Rejected, 'GraphQL unavailable'):
+                p.native_merge_settings(self.api, repo)
+        self.assertFalse(self.api.mutations)
+
+    def test_readonly_fallback_does_not_relax_strict_native_protection(self):
+        self.api.repo.pop('allow_auto_merge')
+        self.api.rules[0]['parameters']['strict_required_status_checks_policy'] = False
+        settings = dict(repository=dict(databaseId=100, nameWithOwner=p.REPOSITORY,
+                                        autoMergeAllowed=True, squashMergeAllowed=True))
+        with mock.patch.object(self.api, 'graphql', return_value=settings):
+            with self.assertRaisesRegex(p.Rejected, 'strict up-to-date base protection'):
+                p.native_rules(self.api, self.api.repo)
+        self.assertFalse(self.api.mutations)
+
     def test_native_review_barrier_and_runtime_no_bypass_visibility_are_required(self):
         for mutate in [lambda a: a.rules.pop(),
                        lambda a: a.rules[-1]['parameters'].update(required_review_thread_resolution=False),
