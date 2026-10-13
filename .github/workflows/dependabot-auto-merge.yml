@@ -43,8 +43,8 @@ jobs:
         run: python3 -B Scripts/dependabot-merge-policy.py targets
 
   ready-plan:
-    needs: inspect
-    if: needs.inspect.result == 'success' && needs.inspect.outputs.prs != '' && needs.inspect.outputs.prs != '[]' && github.repository == 'InnoSquadCorp/InnoNetwork' && github.ref == 'refs/heads/main' && github.workflow_ref == 'InnoSquadCorp/InnoNetwork/.github/workflows/dependabot-auto-merge.yml@refs/heads/main' && github.event_name != 'pull_request_target'
+    needs: [inspect, bot-ready]
+    if: always() && (needs.bot-ready.result == 'success' || needs.bot-ready.result == 'skipped') && needs.inspect.result == 'success' && needs.inspect.outputs.prs != '' && needs.inspect.outputs.prs != '[]' && github.repository == 'InnoSquadCorp/InnoNetwork' && github.ref == 'refs/heads/main' && github.workflow_ref == 'InnoSquadCorp/InnoNetwork/.github/workflows/dependabot-auto-merge.yml@refs/heads/main' && github.event_name != 'pull_request_target'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -58,7 +58,7 @@ jobs:
       - name: Checkout trusted coordinator only
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: refs/heads/main
+          ref: ${{ github.workflow_sha }}
           persist-credentials: false
           sparse-checkout: Scripts
       - name: Plan exact native Ready refreshes
@@ -92,7 +92,7 @@ jobs:
       - name: Checkout trusted coordinator only
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: refs/heads/main
+          ref: ${{ github.workflow_sha }}
           persist-credentials: false
           sparse-checkout: Scripts
       - name: Request verified native Ready refresh
@@ -125,15 +125,19 @@ jobs:
       - name: Checkout trusted coordinator only
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: refs/heads/main
+          ref: ${{ github.workflow_sha }}
           persist-credentials: false
           sparse-checkout: Scripts
       - name: Gate native auto-merge on exact current CI proof
+        id: gate
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ matrix.pr }}
           DEPENDABOT_AUTO_MERGE_ENABLED: ${{ vars.DEPENDABOT_AUTO_MERGE_ENABLED }}
         run: python3 -B Scripts/dependabot-merge-policy.py coordinate --pr "$PR_NUMBER"
+      - name: ${{ steps.gate.outputs.arm_receipt || 'No native arm receipt issued' }}
+        if: ${{ steps.gate.outputs.arm_receipt != '' }}
+        run: 'true'
 
   post-merge-plan:
     if: ${{ always() && needs.inspect.result == 'success' && github.repository == 'InnoSquadCorp/InnoNetwork' && github.ref == 'refs/heads/main' && github.workflow_ref == 'InnoSquadCorp/InnoNetwork/.github/workflows/dependabot-auto-merge.yml@refs/heads/main' && vars.DEPENDABOT_AUTO_MERGE_ENABLED == 'true' && ((needs.inspect.outputs.bot_prs != '[]' && needs.inspect.outputs.bot_prs != '') || github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
@@ -152,7 +156,7 @@ jobs:
       - name: Checkout trusted coordinator only
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: refs/heads/main
+          ref: ${{ github.workflow_sha }}
           persist-credentials: false
           sparse-checkout: Scripts
       - name: Plan only verified current-main bot recovery
@@ -180,7 +184,7 @@ jobs:
       - name: Checkout trusted coordinator only
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: refs/heads/main
+          ref: ${{ github.workflow_sha }}
           persist-credentials: false
           sparse-checkout: Scripts
       - name: Reconcile actual bot merge and only its current-main CI

@@ -193,14 +193,20 @@ Dependabot login/id/type, current main/base/head and exact test-merge parents,
 latest CI run and attempt, all 32 concrete jobs and validation steps, associated
 GitHub Actions app IDs, paginated check/status results and reviews. A failed,
 pending, skipped, duplicate, foreign or stale result blocks. Required review,
-requested reviewers and unresolved threads are not waived. No title/version
+submitted blocking reviews and unresolved threads are not waived. Optional
+requested reviewers/teams do not veto auto-merge by themselves; submitted
+`PENDING`/`CHANGES_REQUESTED`, native `REVIEW_REQUIRED` and unresolved threads
+still block. No title/version
 heuristic exempts a major update.
 
 The writer loads trusted main scripts only, never PR code, artifacts or caches.
 `Dependabot Ready` is now an unconditional native `pull_request_target` check,
 using immutable `github.workflow_sha` source and read-only permissions. Human PRs
 receive a policy pass without auto-merge approval. Bot readiness requires the full
-current proof and enabled flag. No API creates or patches a Ready conclusion.
+current proof, enabled flag and a verified native-arm receipt for this exact
+reporter rerun. An ordinary proof-only bot snapshot stays false, preventing a
+second lifecycle reporter from releasing the gate while arming is incomplete.
+No API creates or patches a Ready conclusion.
 The native run title and evaluation step bind PR number, exact head, head/base
 repository IDs, base main and immutable source. This also supports legitimate
 fork runs whose REST `pull_requests` association is empty without treating branch
@@ -210,7 +216,7 @@ Read-only REST responses can omit repository merge-setting fields. The reporter
 then queries the same repository's GraphQL settings, binding both numeric ID and
 full name and requiring real true booleans. Explicit false, malformed values,
 disagreement or unavailable evidence still block; no permission is expanded.
-This does not change the strict-base prerequisite or the meaning of Ready.
+This does not change native protection or the meaning of Ready.
 
 Read-only reporters have independent per-PR/run concurrency groups. Admission
 order is not workflow run-number order, so an older admission must not cancel a
@@ -219,7 +225,9 @@ before and after evaluation; a cancelled latest reporter never falls back to an
 older successful verdict. A superseded event-bound reporter cancelled before
 runner assignment may have a real native check with zero steps. Only a verified
 historical cancelled run/job/check with no assigned runner and exact native
-identity is attributed as transport, never as a successful Ready verdict.
+identity is attributed as transport, never as a successful Ready verdict. A
+previous attempt of the same rerun is additionally read from its authoritative
+attempt endpoint and checked against the run's immutable identity.
 
 The trusted coordinator can request only a bounded rerun of a verified native
 Ready reporter when its verdict changed. It verifies current attempt, source
@@ -228,50 +236,93 @@ writes are read back, never blindly retried. Historical native/coordinator
 transport checks are excluded only with exact job/app/head/suite/source binding.
 The literal unevaluated skipped matrix name is allowed only for an empty native
 skip paired with a successful immutable-source inspector. Serialized writers
-retain pending jobs with `queue: max`.
+retain pending jobs with `queue: max`. The planner waits for bot coordination;
+the refresh writer may retain an armed bot only with its exact successful
+coordinator receipt and fresh matching proof. All coordinator checkouts use
+immutable `github.workflow_sha`, matching the definition that ran.
 
-Native `enablePullRequestAutoMerge(expectedHeadOid: ...)` happens only after
-repeated CI/metadata/native-Ready reads. No immediate merge API or bypass path
-exists. Native strict checks and required PR/resolved-thread rules must be
+Native `enablePullRequestAutoMerge(expectedHeadOid: ...)` occurs behind a verified
+terminal failed native Ready barrier, after two matching full proofs. A third
+full proof and the unchanged failure barrier are required after enabling, before
+emitting a receipt. No immediate merge API or bypass path exists. App-bound native checks and required PR/resolved-thread rules must be
 verified, including the runtime token's explicit never-bypass signal; missing
 protection evidence leaves the coordinator in standby. No repository setting or
 approval count changes here. Metadata reconciliation can revoke ineligible bot
 auto-merge approvals. Scheduled discovery includes retargeted open bot PRs;
 normal default-branch `edited` delivery also reaches the cancellation path.
 
-### Current non-strict integration profile
+### Existing native integration profile
 
-The observed main ruleset uses the two aggregates and `strict=false`. This is a
-supported **manual-integration and release-audit** profile, not authorization for
-unattended bot merging. `check_required_status_checks.py --ruleset-json <export>`
-audits that profile and keeps the logical fifteen-check inventory independently
-enforced. It requires the complete main-scoped, active repository ruleset, the
+The observed main ruleset uses the two aggregates and an explicit `strict=false`.
+The coordinator respects either boolean strict setting without changing it.
+Missing, null, numeric and string values fail closed. The same current
+main/base/head, ordered test-merge parents, latest full CI run/attempt and native
+Ready identity are still verified repeatedly before native enable. This policy
+alignment changes no required checks, approvals, bypass actors or token scope.
+
+`check_required_status_checks.py --ruleset-json <export>` audits both explicit
+native profiles and keeps the logical fifteen-check inventory independently
+enforced. It requires the complete main-scoped, active repository ruleset,
 GitHub Actions app identity, resolved review threads and an empty bypass list.
-Other applicable/inherited protections still need their own audit.
+`--require-auto-merge` additionally requires the complete export; it no longer
+requires changing the native strict setting. Neither mode proves live CI/Ready,
+the enable flag, runtime no-bypass capability, all inherited protection, or
+permission to merge. Other applicable protections still need their own audit.
 
-The coordinator deliberately remains in standby under this profile even if its
-enable flag is true. `expectedHeadOid` binds the PR head but cannot pin main after
-the last read. The repeated exact head/base/test-merge/CI-attempt/Ready checks
-therefore do not replace native strict base protection. Already armed bot requests
-are protectively cancelled; an uncertain cancellation is reported as an error.
-Manual PRs keep their read-only Ready flow and are not automatically merged.
+Network uses a read-only native Ready reporter, unlike repositories with an
+API-written gate. A clean PR with Ready already green must first refresh back to
+false while unarmed. Enabling is allowed only against the latest controlled
+failed reporter run/attempt/job/check. GitHub owns the native verdict throughout.
 
-Metadata-only CI now verifies the authoritative `git/ref/heads/main` before and
-after its proof in addition to PR head/base, ordered merge parents, source tree,
-labels, run attempt and native check identity. This rejects a stale cached PR
-base, an observed main advance, and same-SHA retargeting away from main. It does
-not eliminate races after the final read. Fresh exact-main candidate validation
-and explicit maintainer decisions remain required for integration/publication.
+The coordinator performs two identical full proofs, enables expected-head squash
+auto-merge, reads back the exact request, rechecks the full proof and the same
+failed barrier, then emits a receipt. Its final receipt step and exact `bot-ready
+(PR)` job must both finish successfully; the entire workflow need not finish,
+which avoids a planner/refresh dependency cycle. A crash, failed step or lost
+receipt never authorizes Ready success and causes protective cancellation.
 
-`--require-auto-merge` selects the separate strict ruleset audit. It proves only
-that static prerequisite, not CI readiness, all inherited protection, runtime
-token no-bypass, enable-flag state or permission to merge. It changes no settings.
+The receipt binds a canonical SHA-256 of PR/node/head/base/test-merge/CI run and
+attempt, exact failed reporter run/attempt/job/check, immutable coordinator source
+and the current native request. Request identity includes method, Actions bot
+identity, enabled timestamp and the latest unique enable/squash timeline event
+ID. Request and event timestamps need not be identical, but each must fall
+inside the successful issuing job's execution interval. [AutoMergeRequest](https://docs.github.com/en/graphql/reference/pulls#automergerequest)
+has no unique request ID; the event ID also distinguishes disable/re-enable
+within the same timestamp. Disabled/rebase events, malformed identity and any
+changed request fail closed. No credential or new permission is involved.
 
-GitHub events cannot form an atomic lock with the merge operation. A review or
-new failing external check can race the final proof and native completion.
-Strict native required checks and the repository's existing native review rules
-are the safety boundary; scheduled/event reconciliation reduces, but cannot
-eliminate, this residual race. Do not describe the coordinator as race-free.
+A receipt is trusted only through authoritative Actions workflow/run/attempt,
+job/check app/suite/URL, successful source inspector and successful receipt step.
+Background runs are bound to their main source, not mistaken for PR-head runs.
+Untrusted run origins are discarded before receipt text is interpreted. Before
+any enable, the current issuer run/attempt is verified and must have been created
+no earlier than the selected reporter, matching bounded receipt discovery. An
+older queued coordinator defers to the next reporter completion wake.
+The read-only reporter can succeed only at exactly the original failed attempt
+plus one, with fresh full proof matching the receipt. Queued/running handshakes
+are preserved only after the same request and original failure are reverified;
+empty pending jobs exempt no check IDs and never count as successful evidence.
+A newer lifecycle reporter, failed/cancelled rerun, attempt+2, moved head/base/CI,
+new blocker, obsolete source or ambiguous receipt causes protective cancellation.
+
+Unknown enable responses receive one authoritative outcome read, never a blind
+retry or direct merge fallback. The refresh writer still verifies durable writer
+claims before its bounded single rerun. Missing receipts or uncertain cancellation
+remain errors or blocked decisions, not permission to invent Ready success.
+
+Metadata-only CI also verifies authoritative `git/ref/heads/main` before and
+after its proof, alongside head/base, ordered merge parents, source tree,
+labels, attempt and native check identity. Stale bases, observed main advances
+and same-SHA retargeting still fail. Human PRs retain their read-only Ready flow
+and are never automatically merged by this coordinator.
+
+GitHub events do not form an atomic lock with merging. `expectedHeadOid` pins
+the head, not main after the final read. With `strict=false`, an unobserved main
+advance after the final proof can race native completion; repeated reads do not
+supply strict base protection. New blocking reviews or external results can
+also race. GitHub enforces the configured native checks/review rules; this
+coordinator is not race-free and makes no stronger guarantee than that policy.
+Fresh exact-main validation remains required for release/publication.
 
 ## Native Ready bootstrap and recovery
 
@@ -343,13 +394,13 @@ merging the automation, maintainers must separately:
    actual job/step names match the reviewed fixture; a fixture is not live proof
 2. Export the complete current native rulesets and review requirements. Preserve
    existing review rules and unrelated checks. Autonomous activation requires
-   strict GitHub Actions app
+   GitHub Actions app
    `15368`-bound `CI Required` and `Dependabot Merge Ready` checks from
    `.github/automation-required-status-checks.json`. Do not replace the full
    ruleset with this small checks-only manifest.
-   The current `strict=false` profile intentionally stops here: leave automation
-   in standby. Any future protection-setting change needs separate approval;
-   release preparation is not that approval
+   The existing explicit `strict=false` policy is supported without changing it.
+   Any protection-setting change still needs separate approval; release
+   preparation is not that approval
 3. Audit every applicable repository/inherited ruleset and GitHub Actions bypass
    permission with an appropriately authorized account. Verify the coordinator
    has no bypass. An API-redacted/missing bypass list is not an empty list; do not

@@ -9,6 +9,13 @@ Versioning.
 
 ### Fixed
 
+- Keep native Ready failed until expected-head auto-merge is armed and a
+  successful immutable coordinator job records a matching post-enable proof;
+  release only the exact read-only reporter rerun, with request-event identity
+  checks and protective cancellation for stale or incomplete handshakes.
+- Align native auto-merge with the existing explicit strict-base policy and
+  optional review requests while retaining full current head/base/CI proof,
+  native Ready reruns, blocking reviews, resolved threads and no-bypass checks.
 - Verify omitted read-only GitHub merge settings without expanding permissions,
   prevent older Ready admissions from cancelling newer reporters, and attribute
   verified historical pre-execution cancellations without accepting stale success.

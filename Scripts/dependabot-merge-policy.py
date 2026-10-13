@@ -574,11 +574,11 @@ def native_rules(api, repo):
     for rule in status:
         verify_source(rule)
         parameters = rule.get("parameters", {})
-        # The current manual-integration profile deliberately uses strict=false.
-        # expectedHeadOid pins only the head, not main after our final proof read.
-        # Repeated reads cannot replace native strict protection for auto-merge.
-        require(parameters.get("strict_required_status_checks_policy") is True,
-                "standby: autonomous auto-merge requires strict up-to-date base protection")
+        # Respect the approved native policy, including explicit strict=false.
+        # This never waives our current head/base/test-merge/full-CI proof or
+        # changes repository protection. GitHub owns the final merge decision.
+        require(type(parameters.get("strict_required_status_checks_policy")) is bool,
+                "standby: native strict-base policy is missing or malformed")
         for check in parameters.get("required_status_checks", []):
             require(check.get("integration_id") == APP, "required check has wrong app or any source")
             contexts.add(check.get("context"))
@@ -635,7 +635,9 @@ def proof(api, number, notification=None):
     require([p["sha"] for p in parents] == [main, head], "test-merge parents do not match base/head")
     graph = reviews(api, number)
     require(graph["headRefOid"] == head, "head raced during reviews")
-    require(not pr.get("requested_reviewers") and not pr.get("requested_teams"), "review request pending")
+    # An optional requested reviewer/team is not a submitted PENDING review.
+    # reviews() still enforces blocking reviews, native required approvals and
+    # unresolved threads; GitHub retains every native review requirement.
     workflow = api.get(route("actions/workflows/ci.yml"))
     require(workflow.get("path") == CI_PATH and workflow.get("state") == "active", "wrong/inactive CI workflow")
     runs = api.pages(route(f"actions/workflows/ci.yml/runs?event=pull_request&head_sha={head}"), "workflow_runs")
@@ -871,29 +873,44 @@ def coordinate(api, number, enabled=False, notification=None):
         first = proof(api, number, notification)
         require(first["head"] == head, "head changed before native enable")
         readiness = ready_policy()
-        binding = readiness.require_success(api, this_policy(), number, head)
+        arming = readiness.arm_policy()
+        reporter = readiness.latest(api, this_policy(), number, head)
+        if first["pr"].get("auto_merge"):
+            # Preserve only our exact receipt-bound pending/successful handshake.
+            binding = arming.verify(api, this_policy(), readiness, number, first, reporter)
+            second = proof(api, number, notification)
+            same(first, second)
+            require(arming.verify(api, this_policy(), readiness, number, second,
+                                  readiness.latest(api, this_policy(), number, head)) == binding,
+                    "native arm receipt changed while preserving pending request")
+            return "native auto-merge armed; verified reporter handshake remains pending or complete"
+        barrier = arming.failed_reporter(api, this_policy(), readiness, number, head)
         second = proof(api, number, notification)
         same(first, second)
-        require(readiness.require_success(api, this_policy(), number, head) == binding, "native Ready changed before arming")
-        # Native Ready is already green. All authoritative proof reads must
-        # precede enable: GitHub can merge as soon as that request is accepted.
+        require("auto_merge" in second["pr"] and second["pr"]["auto_merge"] is None,
+                "native request appeared before enable")
+        require(arming.failed_reporter(api, this_policy(), readiness, number, head) == barrier,
+                "native failure barrier changed before enable")
+        arming.issuer_context(api, this_policy(), readiness, number, head)
+        query = '''mutation($id:ID!,$head:GitObjectID!) {
+          enablePullRequestAutoMerge(input:{pullRequestId:$id,expectedHeadOid:$head,mergeMethod:SQUASH}) {
+            pullRequest { id headRefOid autoMergeRequest { enabledAt } }
+          }
+        }'''
+        try:
+            api.graphql(query, {"id": second["node"], "head": head})
+        except Exception as error:
+            # No second mutation. The single authoritative read below must
+            # confirm the exact request/event or the outer handler cancels.
+            print("Native enable reply unavailable; verifying once:", type(error).__name__, file=sys.stderr)
+        arm = arming.state(api, this_policy(), number, second)
         third = proof(api, number, notification)
         same(second, third)
-        require(readiness.require_success(api, this_policy(), number, head) == binding, "native Ready changed at final arming guard")
-        if not third["pr"].get("auto_merge"):
-            query = '''mutation($id:ID!,$head:GitObjectID!) {
-              enablePullRequestAutoMerge(input:{pullRequestId:$id,expectedHeadOid:$head,mergeMethod:SQUASH}) {
-                pullRequest { id headRefOid autoMergeRequest { enabledAt } }
-              }
-            }'''
-            try:
-                api.graphql(query, {"id": third["node"], "head": head})
-            except Exception:
-                # Unknown mutation outcome: read once, never blind retry/fallback.
-                observed = api.get(route(f"pulls/{number}"))
-                require(observed.get("head", {}).get("sha") == head and observed.get("auto_merge") is not None,
-                        "native enable outcome not confirmed")
-        return "native auto-merge armed; server owns actual merge"
+        require(arming.failed_reporter(api, this_policy(), readiness, number, head) == barrier,
+                "native failure barrier changed after enable")
+        require(arming.state(api, this_policy(), number, third) == arm, "native arm changed after proof")
+        arming.emit(api, this_policy(), readiness, number, third, barrier, arm)
+        return "native auto-merge armed; read-only Ready receipt refresh still required"
     except Exception as error:
         reason = "blocked: " + str(error)
         try:

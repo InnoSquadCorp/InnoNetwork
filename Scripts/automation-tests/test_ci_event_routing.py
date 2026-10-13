@@ -122,10 +122,16 @@ class CoordinatorAdmissionTests(unittest.TestCase):
         for result in ['success', 'failure', 'cancelled', 'skipped']:
             for event in ['pull_request_target', 'workflow_run', 'push', 'schedule', 'workflow_dispatch']:
                 for targets in ['', '[]', '[45]']:
-                    actual = evaluate(expr, {'needs.inspect.result': result, 'github.event_name': event,
+                    actual = evaluate(expr, {'needs.inspect.result': result, 'needs.bot-ready.result': 'success', 'github.event_name': event,
                                              'needs.inspect.outputs.prs': targets, 'github.repository': 'InnoSquadCorp/InnoNetwork',
                                              'github.ref': 'refs/heads/main', 'github.workflow_ref': 'InnoSquadCorp/InnoNetwork/.github/workflows/dependabot-auto-merge.yml@refs/heads/main'})
                     self.assertEqual(actual, result == 'success' and event != 'pull_request_target' and targets == '[45]')
+        self.assertIn('    needs: [inspect, bot-ready]', source.split('  ready-plan:\n', 1)[1].split('  ready-refresh:\n', 1)[0])
+        for bot_result in ['failure', 'cancelled']:
+            self.assertFalse(evaluate(expr, {'needs.inspect.result': 'success', 'needs.bot-ready.result': bot_result,
+                'github.event_name': 'workflow_run', 'needs.inspect.outputs.prs': '[45]',
+                'github.repository': 'InnoSquadCorp/InnoNetwork', 'github.ref': 'refs/heads/main',
+                'github.workflow_ref': 'InnoSquadCorp/InnoNetwork/.github/workflows/dependabot-auto-merge.yml@refs/heads/main'}))
         recovery = condition(source, 'post-merge-plan')
         self.assertNotIn('needs.inspect.outputs.prs', recovery)
         for event in ['push', 'schedule', 'workflow_dispatch']:

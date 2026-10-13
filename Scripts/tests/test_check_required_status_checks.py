@@ -77,17 +77,17 @@ class RequiredCheckTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("2 native aggregate checks and live ruleset", result.stdout)
             self.assertIn("exact-head/base CI and release approval remain separate", result.stdout)
-            self.assertIn("auto-merge remains in standby", result.stdout)
+            self.assertIn("Auto-merge still requires runtime no-bypass", result.stdout)
 
-    def test_strict_profile_is_explicit_and_never_inferred_from_green_ci(self):
-        result = self.run_checker(ruleset(), extra=("--require-auto-merge",))
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("strict up-to-date base protection", result.stderr)
-        value = ruleset()
-        value["rules"][0]["parameters"]["strict_required_status_checks_policy"] = True
-        self.assertNotEqual(self.run_checker(value).returncode, 0)
-        result = self.run_checker(value, extra=("--require-auto-merge",))
-        self.assertEqual(result.returncode, 0, result.stderr)
+    def test_both_explicit_native_profiles_pass_static_audit_only(self):
+        for strict in (False, True):
+            value = ruleset()
+            value["rules"][0]["parameters"]["strict_required_status_checks_policy"] = strict
+            for extra in ((), ("--require-auto-merge",)):
+                result = self.run_checker(value, extra=extra)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("runtime no-bypass", result.stdout)
+                self.assertIn("native Ready", result.stdout)
         self.assertNotEqual(self.run_checker(extra=("--require-auto-merge",)).returncode, 0)
 
     def test_missing_wrong_app_duplicate_and_legacy_native_checks_fail(self):

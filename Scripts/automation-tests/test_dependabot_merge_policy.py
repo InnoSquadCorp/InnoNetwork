@@ -21,7 +21,8 @@ READY_RUN = 950
 NATIVE_RUN = 960
 TRUSTED = dict(PATH=os.environ["PATH"], GITHUB_REPOSITORY=p.REPOSITORY, GITHUB_REF="refs/heads/main",
                GITHUB_WORKFLOW_REF=p.REPOSITORY + "/.github/workflows/dependabot-auto-merge.yml@refs/heads/main",
-               GITHUB_EVENT_NAME="pull_request_target", GITHUB_RUN_ID=str(READY_RUN), GITHUB_RUN_ATTEMPT="1")
+               GITHUB_EVENT_NAME="pull_request_target", GITHUB_RUN_ID=str(READY_RUN), GITHUB_RUN_ATTEMPT="1",
+               GITHUB_JOB="bot-ready", GITHUB_WORKFLOW_SHA=BASE)
 INVENTORY = json.loads((Path(__file__).parent / 'fixtures/dependabot-full-ci.json').read_text())['jobs']
 
 
@@ -67,11 +68,14 @@ class Transcript:
         self.mutations, self.reads = [], []
         self.old_jobs, self.post_runs = [], []
         self.graph_fail = False
+        self.arm = None
+        self.arm_event = None
         self.native_workflow = dict(id=12, path='.github/workflows/dependabot-ready.yml', state='active')
         self.native_run = dict(self.ready_run, id=NATIVE_RUN, workflow_id=12, path=self.native_workflow['path'],
                                check_suite_id=900, status='completed', conclusion='success',
                                created_at=datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'))
         self.native_runs = [self.native_run]
+        self.ready_run['created_at'] = self.native_run['created_at']
         self.native_job = dict(id=9001, name=p.READY, status='completed', conclusion='success',
             check_run_url=f'https://api.github.com/repos/{p.REPOSITORY}/check-runs/9000',
             steps=[dict(name=name, status='completed', conclusion='success') for name in
@@ -137,9 +141,19 @@ class Transcript:
         if query.startswith('mutation'):
             self.mutations.append(('graphql', query, copy.deepcopy(variables)))
             if self.graph_fail: raise PermissionError('403 denied')
-            if 'disablePullRequestAutoMerge' in query: self.pr['auto_merge'] = None
-            else: self.pr['auto_merge'] = dict(enabled_by=dict(p.BOT))
+            if 'disablePullRequestAutoMerge' in query:
+                self.pr['auto_merge'] = None
+                self.arm = None
+            else:
+                self.pr['auto_merge'] = dict(enabled_by=dict(p.BOT))
+                actor = dict(login='github-actions', databaseId=41898282, __typename='Bot')
+                created = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+                self.arm = dict(enabledAt=created, mergeMethod='SQUASH', enabledBy=actor)
+                self.arm_event = dict(id='ARM_event', __typename='AutoSquashEnabledEvent', createdAt=created, actor=actor)
             return {}
+        if 'timelineItems' in query:
+            return dict(repository=dict(nameWithOwner=p.REPOSITORY, pullRequest=dict(id='PR_node', headRefOid=self.graph_head,
+                autoMergeRequest=copy.deepcopy(self.arm), timelineItems=dict(nodes=[copy.deepcopy(self.arm_event)] if self.arm_event else []))))
         return dict(repository=dict(pullRequest=dict(id='PR_node', headRefOid=self.graph_head,
                     reviewDecision=self.review_decision, reviewThreads=dict(nodes=copy.deepcopy(self.threads),
                     pageInfo=dict(hasNextPage=False, endCursor=None)))))
@@ -158,10 +172,19 @@ class Transcript:
         raise AssertionError('Unexpected mutation: ' + route)
 
 
+def failed_native(api):
+    for value in (api.native_run, api.native_job, api.native_check):
+        value.update(status='completed', conclusion='failure')
+    api.native_job['steps'][-1]['conclusion'] = 'failure'
+
+
 class DependabotPolicyTests(unittest.TestCase):
     def setUp(self):
         self.api = Transcript()
-        self.environment = mock.patch.dict(os.environ, TRUSTED, clear=True)
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.output = Path(directory.name) / 'outputs'
+        self.environment = mock.patch.dict(os.environ, dict(TRUSTED, GITHUB_OUTPUT=str(self.output)), clear=True)
         self.environment.start()
         self.addCleanup(self.environment.stop)
 
@@ -196,7 +219,7 @@ class DependabotPolicyTests(unittest.TestCase):
                    lambda a: a.rules.clear(), lambda a: a.ruleset.update(enforcement='evaluate'),
                    lambda a: a.ruleset.update(bypass_actors=[dict(actor_id=p.APP, actor_type='Integration')]),
                    lambda a: a.ruleset.update(current_user_can_bypass='always'),
-                   lambda a: a.rules[0]['parameters'].update(strict_required_status_checks_policy=False),
+                   lambda a: a.rules[0]['parameters'].pop('strict_required_status_checks_policy'),
                    lambda a: a.rules[0]['parameters']['required_status_checks'].pop(),
                    lambda a: a.rules[0]['parameters']['required_status_checks'][0].update(integration_id=None)]
         for change in changes:
@@ -245,14 +268,13 @@ class DependabotPolicyTests(unittest.TestCase):
                 p.native_merge_settings(self.api, repo)
         self.assertFalse(self.api.mutations)
 
-    def test_readonly_fallback_does_not_relax_strict_native_protection(self):
+    def test_readonly_fallback_keeps_explicit_native_profile_and_full_proof(self):
         self.api.repo.pop('allow_auto_merge')
         self.api.rules[0]['parameters']['strict_required_status_checks_policy'] = False
         settings = dict(repository=dict(databaseId=100, nameWithOwner=p.REPOSITORY,
                                         autoMergeAllowed=True, squashMergeAllowed=True))
         with mock.patch.object(self.api, 'graphql', return_value=settings):
-            with self.assertRaisesRegex(p.Rejected, 'strict up-to-date base protection'):
-                p.native_rules(self.api, self.api.repo)
+            p.native_rules(self.api, self.api.repo)
         self.assertFalse(self.api.mutations)
 
     def test_native_review_barrier_and_runtime_no_bypass_visibility_are_required(self):
@@ -330,7 +352,6 @@ class DependabotPolicyTests(unittest.TestCase):
         self.api.review_list.append(dict(id=3, user=dict(id=3), state='DISMISSED'))
         p.proof(self.api, NUMBER)
         self.reject(lambda a: a.threads.append(dict(isResolved=False)))
-        self.reject(lambda a: a.pr.update(requested_reviewers=[dict(id=3)]))
         self.reject(lambda a: a.__setattr__('graph_head', 'd' * 40))
         self.reject(lambda a: a.__setattr__('review_decision', 'REVIEW_REQUIRED'))
 
@@ -361,8 +382,8 @@ class DependabotPolicyTests(unittest.TestCase):
         self.assertFalse(any(m[0] == 'graphql' for m in self.api.mutations))
         self.assertFalse(any(m[0] in {'POST', 'PATCH'} for m in self.api.mutations))
 
-    def test_current_non_strict_profile_cannot_arm_even_with_full_green_ci(self):
-        for strict in [False, None, 0, 1, 'true', 'false']:
+    def test_missing_or_malformed_native_profile_cannot_arm_with_green_ci(self):
+        for strict in [None, 0, 1, 'true', 'false']:
             for armed in [False, True]:
                 api = Transcript()
                 api.rules[0]['parameters']['strict_required_status_checks_policy'] = strict
@@ -370,14 +391,14 @@ class DependabotPolicyTests(unittest.TestCase):
                     api.pr['auto_merge'] = dict(enabled_by=dict(p.BOT))
                 result = p.coordinate(api, NUMBER, True)
                 with self.subTest(strict=strict, armed=armed):
-                    self.assertIn('standby: autonomous auto-merge requires strict', result)
+                    self.assertIn('standby: native strict-base policy is missing or malformed', result)
                     self.assertIsNone(api.pr['auto_merge'])
                     self.assertEqual(len(api.mutations), int(armed))
                     if armed:
                         self.assertIn('disablePullRequestAutoMerge', api.mutations[0][1])
 
-    def test_non_strict_profile_reports_unconfirmed_protective_cancellation(self):
-        self.api.rules[0]['parameters']['strict_required_status_checks_policy'] = False
+    def test_invalid_profile_reports_unconfirmed_protective_cancellation(self):
+        self.api.rules[0]['parameters']['strict_required_status_checks_policy'] = None
         self.api.pr['auto_merge'] = dict(enabled_by=dict(p.BOT))
         self.api.graph_fail = True
         with self.assertRaisesRegex(p.Rejected, 'cancellation unconfirmed'):
@@ -385,48 +406,97 @@ class DependabotPolicyTests(unittest.TestCase):
         self.assertEqual(len(self.api.mutations), 1)
         self.assertIn('disablePullRequestAutoMerge', self.api.mutations[0][1])
 
-    def test_success_enables_native_expected_head_and_reuses_gate(self):
-        self.assertIn('armed', p.coordinate(self.api, NUMBER, True))
+    def test_explicit_strict_profiles_and_optional_requests_preserve_native_guards(self):
+        for strict in [False, True]:
+            api = Transcript()
+            api.rules[0]['parameters']['strict_required_status_checks_policy'] = strict
+            api.pr.update(requested_reviewers=[dict(id=3)], requested_teams=[dict(id=4)])
+            failed_native(api)
+            self.assertIn('read-only Ready receipt refresh', p.coordinate(api, NUMBER, True))
+            self.assertEqual(len(api.mutations), 1)
+            self.assertIn('enablePullRequestAutoMerge', api.mutations[0][1])
+            self.assertFalse(any('/check-runs' in str(m) for m in api.mutations))
+
+    def test_non_strict_optional_requests_never_waive_current_evidence(self):
+        changes = [lambda a: a.review_list.append(dict(id=1, user=dict(id=3), state='PENDING')),
+                   lambda a: a.review_list.append(dict(id=1, user=dict(id=3), state='CHANGES_REQUESTED')),
+                   lambda a: setattr(a, 'review_decision', 'REVIEW_REQUIRED'),
+                   lambda a: a.threads.append(dict(isResolved=False)),
+                   lambda a: setattr(a, 'base', 'd' * 40),
+                   lambda a: a.run['pull_requests'][0]['base'].update(sha='d' * 40),
+                   lambda a: a.run.update(conclusion='failure'),
+                   lambda a: a.jobs[4].update(conclusion='skipped'),
+                   lambda a: a.ruleset.update(current_user_can_bypass='always')]
+        for change in changes:
+            api = Transcript()
+            api.rules[0]['parameters']['strict_required_status_checks_policy'] = False
+            api.pr.update(requested_reviewers=[dict(id=3)], requested_teams=[dict(id=4)])
+            change(api)
+            with self.subTest(change=change):
+                self.assertIn('blocked', p.coordinate(api, NUMBER, True))
+                self.assertFalse(api.mutations)
+
+    def test_failure_barrier_enables_native_expected_head_and_emits_receipt(self):
+        failed_native(self.api)
+        self.assertIn('read-only Ready receipt refresh', p.coordinate(self.api, NUMBER, True))
         native = [m for m in self.api.mutations if m[0] == 'graphql']
         self.assertEqual(len(native), 1)
         self.assertEqual(native[0][2]['head'], HEAD)
         self.assertIn('expectedHeadOid', native[0][1])
         self.assertIn('mergeMethod:SQUASH', native[0][1])
-        self.assertEqual(len([c for c in self.api.checks if c['name'] == p.READY]), 1)
-        p.coordinate(self.api, NUMBER, True)
-        self.assertEqual(len([m for m in self.api.mutations if m[0] == 'graphql']), 1)
+        self.assertIn('arm_receipt=Native arm v1', self.output.read_text())
+        self.assertEqual(self.api.native_check['conclusion'], 'failure')
+        # Until the real job/receipt step succeeds, another wake must cancel.
+        self.assertIn('blocked', p.coordinate(self.api, NUMBER, True))
+        self.assertIsNone(self.api.pr['auto_merge'])
 
-    def test_head_base_or_attempt_race_prevents_enable(self):
+    def test_unarmed_green_ready_requires_failure_refresh_before_enable(self):
+        self.assertIn('refresh unarmed success first', p.coordinate(self.api, NUMBER, True))
+        self.assertFalse(self.api.mutations)
+        self.assertFalse(self.output.exists())
+
+    def test_head_base_or_attempt_race_blocks_or_cancels_native_enable(self):
         for field in ['head', 'base', 'merge', 'run', 'attempt', 'node']:
             for phase in [2, 3]:
                 api = Transcript()
+                failed_native(api)
                 proof = p.proof(api, NUMBER)
                 changed = dict(proof, **{field: 2 if field in {'run', 'attempt'} else 'd' * 40})
                 evidence = [proof] * (phase - 1) + [changed]
                 with self.subTest(field=field, phase=phase), mock.patch.object(p, 'proof', side_effect=evidence):
                     self.assertIn('blocked', p.coordinate(api, NUMBER, True))
-                self.assertFalse(api.mutations)
+                self.assertIsNone(api.pr['auto_merge'])
+                self.assertEqual(len(api.mutations), 0 if phase == 2 else 2)
+                if phase == 3:
+                    self.assertIn('disablePullRequestAutoMerge', api.mutations[-1][1])
 
-    def test_changed_or_failed_final_native_ready_cannot_arm(self):
+    def test_changed_or_failed_final_native_failure_barrier_cancels(self):
         readiness = p.ready_policy()
-        for verdict in [('changed',), p.Rejected('final Ready failed')]:
+        arming = readiness.arm_policy()
+        failed_native(self.api)
+        barrier = arming.failed_reporter(self.api, p, readiness, NUMBER, HEAD)
+        for verdict in [dict(barrier, attempt=2), p.Rejected('barrier changed')]:
             api = Transcript()
+            failed_native(api)
             with mock.patch.object(p, 'ready_policy', return_value=readiness), \
-                    mock.patch.object(readiness, 'require_success', side_effect=[('same',), ('same',), verdict]):
+                    mock.patch.object(readiness, 'arm_policy', return_value=arming), \
+                    mock.patch.object(arming, 'failed_reporter', side_effect=[barrier, barrier, verdict]):
                 self.assertIn('blocked', p.coordinate(api, NUMBER, True))
-            self.assertFalse(api.mutations)
+            self.assertIsNone(api.pr['auto_merge'])
+            self.assertEqual(len(api.mutations), 2)
+            self.assertIn('disablePullRequestAutoMerge', api.mutations[-1][1])
+            self.assertFalse(self.output.exists())
 
-    def test_third_proof_failure_precedes_native_enable(self):
+    def test_third_proof_failure_cancels_before_receipt_or_ready_release(self):
+        failed_native(self.api)
         proof = p.proof(self.api, NUMBER)
         with mock.patch.object(p, 'proof', side_effect=[proof, proof, p.Rejected('review raced')]):
             self.assertIn('blocked', p.coordinate(self.api, NUMBER, True))
         self.assertIsNone(self.api.pr['auto_merge'])
-        self.assertFalse(self.api.mutations)
-        self.api.pr['auto_merge'] = dict(enabled_by=dict(p.BOT))
-        with mock.patch.object(p, 'proof', side_effect=[proof, proof, p.Rejected('review raced')]):
-            self.assertIn('blocked', p.coordinate(self.api, NUMBER, True))
-        self.assertIsNone(self.api.pr['auto_merge'])
+        self.assertEqual(len(self.api.mutations), 2)
         self.assertIn('disablePullRequestAutoMerge', self.api.mutations[-1][1])
+        self.assertFalse(self.output.exists())
+        self.assertEqual(self.api.native_check['conclusion'], 'failure')
 
     def test_base_edit_cancels_only_verified_bot_auto_request(self):
         self.api.pr['base']['ref'] = 'develop'
@@ -436,6 +506,7 @@ class DependabotPolicyTests(unittest.TestCase):
         self.assertFalse(any(m[0] in {'POST', 'PATCH'} for m in self.api.mutations))
 
     def test_permission_denial_does_not_retry_enable_or_direct_merge(self):
+        failed_native(self.api)
         self.api.graph_fail = True
         self.assertIn('blocked', p.coordinate(self.api, NUMBER, True))
         self.assertEqual(len([m for m in self.api.mutations if m[0] == 'graphql']), 1)
@@ -757,8 +828,8 @@ class DependabotPolicyTests(unittest.TestCase):
         notice = (ROOT / '.github/workflows/dependabot-review-notice.yml').read_text()
         ci = (ROOT / '.github/workflows/ci.yml').read_text()
         docs = (ROOT / '.github/workflows/docs-publish.yml').read_text()
-        self.assertEqual(coordinator.count('ref: refs/heads/main'), 5)
-        self.assertEqual(coordinator.count('ref: ${{ github.workflow_sha }}'), 1)
+        self.assertEqual(coordinator.count('ref: refs/heads/main'), 0)
+        self.assertEqual(coordinator.count('ref: ${{ github.workflow_sha }}'), 6)
         inspect = coordinator.split('  inspect:\n', 1)[1].split('  ready-plan:\n', 1)[0]
         self.assertIn('ref: ${{ github.workflow_sha }}', inspect)
         self.assertIn('name: ' + p.COORDINATOR_SOURCE_STEP + '${{ github.workflow_sha }}', inspect)
