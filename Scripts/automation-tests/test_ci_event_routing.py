@@ -127,7 +127,7 @@ class CoordinatorAdmissionTests(unittest.TestCase):
                                              'github.ref': 'refs/heads/main', 'github.workflow_ref': 'InnoSquadCorp/InnoNetwork/.github/workflows/dependabot-auto-merge.yml@refs/heads/main'})
                     self.assertEqual(actual, result == 'success' and event != 'pull_request_target' and targets == '[45]')
         self.assertIn('    needs: [inspect, bot-ready]', source.split('  ready-plan:\n', 1)[1].split('  ready-refresh:\n', 1)[0])
-        for bot_result in ['failure', 'cancelled']:
+        for bot_result in ['cancelled', '', 'unknown']:
             self.assertFalse(evaluate(expr, {'needs.inspect.result': 'success', 'needs.bot-ready.result': bot_result,
                 'github.event_name': 'workflow_run', 'needs.inspect.outputs.prs': '[45]',
                 'github.repository': 'InnoSquadCorp/InnoNetwork', 'github.ref': 'refs/heads/main',
@@ -136,3 +136,30 @@ class CoordinatorAdmissionTests(unittest.TestCase):
         self.assertNotIn('needs.inspect.outputs.prs', recovery)
         for event in ['push', 'schedule', 'workflow_dispatch']:
             self.assertIn("github.event_name == '" + event + "'", recovery)
+
+
+    def test_failed_bot_matrix_allows_independent_plan_and_receipt_verified_refresh(self):
+        source = (ROOT / '.github/workflows/dependabot-auto-merge.yml').read_text()
+        values = {'needs.inspect.result': 'success', 'needs.ready-plan.result': 'success',
+                  'needs.inspect.outputs.prs': '[45,46]', 'needs.ready-plan.outputs.targets': '[{"pr":45}]',
+                  'github.repository': 'InnoSquadCorp/InnoNetwork', 'github.ref': 'refs/heads/main',
+                  'github.workflow_ref': 'InnoSquadCorp/InnoNetwork/.github/workflows/dependabot-auto-merge.yml@refs/heads/main',
+                  'github.event_name': 'workflow_run'}
+        for job in ('ready-plan', 'ready-refresh'):
+            expr = condition(source, job)
+            for result in ('success', 'skipped', 'failure', 'cancelled', '', 'unknown'):
+                with self.subTest(job=job, bot_result=result):
+                    self.assertEqual(evaluate(expr, {**values, 'needs.bot-ready.result': result}),
+                                     result in {'success', 'skipped', 'failure'})
+            allowed = {**values, 'needs.bot-ready.result': 'failure'}
+            for field, invalid in (('needs.inspect.result', 'failure'), ('github.ref', 'refs/heads/untrusted'),
+                                   ('github.workflow_ref', 'untrusted'), ('github.repository', 'untrusted'),
+                                   ('github.event_name', 'pull_request_target')):
+                with self.subTest(job=job, field=field):
+                    self.assertFalse(evaluate(expr, {**allowed, field: invalid}))
+            field = 'needs.inspect.outputs.prs' if job == 'ready-plan' else 'needs.ready-plan.outputs.targets'
+            for empty in ('', '[]'):
+                self.assertFalse(evaluate(expr, {**allowed, field: empty}))
+        for result in ('failure', 'cancelled', 'skipped'):
+            self.assertFalse(evaluate(condition(source, 'ready-refresh'),
+                                      {**values, 'needs.bot-ready.result': 'failure', 'needs.ready-plan.result': result}))

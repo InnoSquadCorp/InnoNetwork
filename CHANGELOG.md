@@ -9,6 +9,9 @@ Versioning.
 
 ### Fixed
 
+- Keep independent PR Ready refreshes eligible after a sibling coordinator
+  matrix failure, while still requiring each PR's successful receipt; prefilter
+  unrelated receipt candidates before authoritative detail revalidation.
 - Keep native Ready failed until expected-head auto-merge is armed and a
   successful immutable coordinator job records a matching post-enable proof;
   release only the exact read-only reporter rerun, with request-event identity

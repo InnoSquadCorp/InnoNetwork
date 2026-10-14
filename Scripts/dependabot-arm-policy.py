@@ -176,6 +176,10 @@ def verify(api, p, ready, number, proof, reporter, snapshot=False, require_proof
     matches = []
     for candidate in runs:
         p.require(candidate.get("path", "").split("@")[0] == p.COORDINATOR_PATH, "foreign native receipt history")
+        # Reject unrelated list entries before spending detail/job reads. This
+        # is only a prefilter; the authoritative detail is revalidated below.
+        if not trusted_origin(p, candidate, workflow, repo, number, proof["head"]):
+            continue
         run = api.get(p.route(f"actions/runs/{candidate['id']}"))
         # A different PR's untrusted pull_request workflow may reuse this path
         # and step names. Discard foreign origins before interpreting claims.

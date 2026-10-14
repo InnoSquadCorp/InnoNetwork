@@ -243,6 +243,31 @@ class NativeArmPolicyTests(unittest.TestCase):
                 self.verify()
             self.api.receipt_job[field] = saved
 
+    def test_failed_sibling_matrix_leg_does_not_authorize_or_block_this_pr(self):
+        self.arm_and_publish()
+        run = self.api.background_runs[ISSUER]
+        run.update(status='completed', conclusion='failure')
+        sibling = self.api.background_job(run, f'bot-ready ({NUMBER + 1})', 12004, [a.GATE_STEP])
+        sibling.update(conclusion='failure')
+        sibling['steps'][0]['conclusion'] = 'failure'
+        self.api.background_checks[13004]['conclusion'] = 'failure'
+        self.api.ready_jobs[(ISSUER, 1)].append(sibling)
+        self.verify()
+        target = n.refresh_plan(self.api, p, NUMBER, True)
+        self.assertIsNotNone(target)
+        self.api.publish_refresh_writer(target)
+        with mock.patch.dict(os.environ, GITHUB_JOB='ready-refresh', GITHUB_RUN_ID=str(WRITER)):
+            n.refresh(self.api, p, target, True)
+        self.api.running()
+        self.assertTrue(self.snapshot()[0])
+        # Aggregate workflow failure is not evidence for this PR. Its own
+        # receipt still has to pass every job/check/step validation.
+        self.api.receipt_job['conclusion'] = 'failure'
+        self.api.background_checks[13002]['conclusion'] = 'failure'
+        with self.assertRaisesRegex(p.Rejected, 'did not succeed'):
+            self.verify()
+        self.assertFalse(n.desired(self.api, p, NUMBER, True)[0])
+
     def test_receipt_identity_tampering_never_reaches_ready_success(self):
         self.arm_and_publish()
         mutations = [lambda api: api.receipt_job.update(run_attempt=2),
@@ -307,6 +332,40 @@ class NativeArmPolicyTests(unittest.TestCase):
         self.verify()
         self.assertIn('armed', p.coordinate(self.api, NUMBER, True))
         self.assertEqual(len(self.api.mutations), 1)
+
+    def test_untrusted_list_candidates_require_no_detail_or_job_reads(self):
+        self.arm_and_publish()
+        for offset, changes in enumerate(({'event': 'pull_request'}, {'workflow_id': -1},
+                {'head_branch': 'untrusted'}, {'repository': {'id': -1}},
+                {'head_repository': {'id': -1}}, {'event': 'pull_request_target', 'pull_requests': []}), 1):
+            self.api.background_run(ISSUER + offset).update(changes)
+        proof = p.proof(self.api, NUMBER)
+        with mock.patch.object(self.api, 'get', wraps=self.api.get) as get, \
+                mock.patch.object(self.api, 'pages', wraps=self.api.pages) as pages:
+            a.verify(self.api, p, n, NUMBER, proof, self.api.native_run)
+        for offset in range(1, 7):
+            identifier = ISSUER + offset
+            self.assertNotIn(mock.call(p.route(f'actions/runs/{identifier}')), get.call_args_list)
+            self.assertNotIn(mock.call(p.route(f'actions/runs/{identifier}/attempts/1/jobs'), 'jobs'),
+                             pages.call_args_list)
+        self.assertIn(mock.call(p.route(f'actions/runs/{ISSUER}')), get.call_args_list)
+
+    def test_trusted_list_candidate_is_revalidated_after_detail_fetch(self):
+        self.arm_and_publish()
+        proof = p.proof(self.api, NUMBER)
+        original_get = self.api.get
+        def changed_detail(route):
+            result = original_get(route)
+            if route == p.route(f'actions/runs/{ISSUER}'):
+                result['event'] = 'pull_request'
+            return result
+        with mock.patch.object(self.api, 'get', side_effect=changed_detail) as get, \
+                mock.patch.object(self.api, 'pages', wraps=self.api.pages) as pages:
+            with self.assertRaisesRegex(p.Rejected, 'missing or ambiguous'):
+                a.verify(self.api, p, n, NUMBER, proof, self.api.native_run)
+        self.assertIn(mock.call(p.route(f'actions/runs/{ISSUER}')), get.call_args_list)
+        self.assertNotIn(mock.call(p.route(f'actions/runs/{ISSUER}/attempts/1/jobs'), 'jobs'),
+                         pages.call_args_list)
 
     def test_pending_native_step_shape_cannot_hide_failed_or_foreign_execution(self):
         self.arm_and_publish()

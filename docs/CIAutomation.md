@@ -294,7 +294,13 @@ changed request fail closed. No credential or new permission is involved.
 A receipt is trusted only through authoritative Actions workflow/run/attempt,
 job/check app/suite/URL, successful source inspector and successful receipt step.
 Background runs are bound to their main source, not mistaken for PR-head runs.
-Untrusted run origins are discarded before receipt text is interpreted. Before
+Untrusted run origins are filtered from list metadata before detail/job reads,
+then revalidated against the authoritative detail before receipt text is
+interpreted. Ready planning and refresh wait for bot coordination but may
+continue after a sibling matrix leg fails; cancelled/unknown results remain
+blocked. Each PR still requires its own successful receipt job and fresh proof,
+so an aggregate failure neither approves that failed leg nor suppresses an
+independently verified sibling. Before
 any enable, the current issuer run/attempt is verified and must have been created
 no earlier than the selected reporter, matching bounded receipt discovery. An
 older queued coordinator defers to the next reporter completion wake.

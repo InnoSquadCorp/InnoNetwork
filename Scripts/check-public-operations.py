@@ -113,7 +113,13 @@ def workflow_boundaries(root):
                     'inspector must expose immutable native source attribution')
         require("github.ref == 'refs/heads/main'" in job and "github.workflow_ref == 'InnoSquadCorp/InnoNetwork/.github/workflows/dependabot-auto-merge.yml@refs/heads/main'" in job, name + ': trusted execution guard missing')
     require('    needs: [inspect, bot-ready]' in jobs['ready-plan'] and
-            "needs.bot-ready.result == 'success'" in jobs['ready-plan'], 'Ready planning must follow bot coordination')
+            '    needs: [inspect, ready-plan, bot-ready]' in jobs['ready-refresh'],
+            'Ready planning and refresh must follow bot coordination')
+    terminal_bot_results = ("(needs.bot-ready.result == 'success' || needs.bot-ready.result == 'skipped' || "
+                            "needs.bot-ready.result == 'failure')")
+    for name in ('ready-plan', 'ready-refresh'):
+        require(terminal_bot_results in jobs[name],
+                name + ': unrelated failed matrix legs must not suppress verified PR recovery')
     require('        id: gate' in jobs['bot-ready'] and
             "name: ${{ steps.gate.outputs.arm_receipt || 'No native arm receipt issued' }}" in jobs['bot-ready'] and
             "if: ${{ steps.gate.outputs.arm_receipt != '' }}" in jobs['bot-ready'] and

@@ -28,6 +28,8 @@ class PublicOperationsTests(unittest.TestCase):
                    ('.github/workflows/dependabot-auto-merge.yml', 'ref: ${{ github.workflow_sha }}', 'ref: ${{ github.event.pull_request.head.sha }}'),
                    ('.github/workflows/dependabot-auto-merge.yml', 'ref: ${{ github.workflow_sha }}', 'ref: refs/heads/main'),
                    ('.github/workflows/dependabot-auto-merge.yml', '    needs: [inspect, bot-ready]', '    needs: inspect'),
+                   ('.github/workflows/dependabot-auto-merge.yml', " || needs.bot-ready.result == 'failure'", ''),
+                   ('.github/workflows/dependabot-auto-merge.yml', "needs.bot-ready.result == 'failure'", "needs.bot-ready.result == 'cancelled'"),
                    ('.github/workflows/dependabot-auto-merge.yml', "if: ${{ steps.gate.outputs.arm_receipt != '' }}", 'if: always()'),
                    ('.github/workflows/dependabot-auto-merge.yml', 'persist-credentials: false', 'persist-credentials: true'),
                    ('.github/workflows/dependabot-auto-merge.yml', '      checks: read', '      checks: write'),
