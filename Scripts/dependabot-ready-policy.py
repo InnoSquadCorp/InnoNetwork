@@ -49,6 +49,7 @@ def validate_run(api, p, run, workflow, repo, pr, number, head):
               run.get("repository", {}).get("id") == repo["id"] and
               run.get("head_repository", {}).get("id") == pr["head"]["repo"]["id"] and
               pr["base"]["repo"]["id"] == repo["id"] and pr["base"]["ref"] == "main" and
+              type(run.get("run_number")) is int and run["run_number"] > 0 and
               type(run.get("run_attempt")) is int and run["run_attempt"] > 0 and type(run.get("check_suite_id")) is int,
               "invalid native reporter PR/head/workflow provenance")
     if links:
@@ -91,7 +92,7 @@ def latest(api, p, number, head):
     return max(candidates, key=lambda r: (r["run_number"], r["id"]))
 
 
-def job_record(api, p, run, attempt=None, require_steps=True):
+def job_record(api, p, run, attempt=None, require_steps=True, allow_unstarted_cancelled=False, allow_receipt_pending=False):
     attempt = run["run_attempt"] if attempt is None else attempt
     jobs = api.pages(p.route(f"actions/runs/{run['id']}/attempts/{attempt}/jobs"), "jobs")
     p.require(len(jobs) == 1 and jobs[0].get("name") == p.READY, "native reporter must have exactly one fixed-name job")
@@ -109,6 +110,32 @@ def job_record(api, p, run, attempt=None, require_steps=True):
     steps = job.get("steps") or []
     source_steps = [s for s in steps if str(s.get("name", "")).startswith(SOURCE_STEP)]
     binding = BINDING.fullmatch(run.get("display_title", ""))
+    if allow_receipt_pending and not require_steps and binding and not source_steps:
+        p.require(isinstance(job.get("steps"), list), "pending native steps must be an explicit array")
+        p.require(all(isinstance(s, dict) and s.get("name") in
+                      {"Set up job", "Checkout immutable trusted reporter source"} and
+                      ((s.get("status") == "completed" and s.get("conclusion") == "success") or
+                       (s.get("status") in {"queued", "in_progress"} and s.get("conclusion") is None))
+                      for s in steps), "pending native job contains unverified execution steps")
+        pending = {"queued", "pending", "waiting", "requested", "in_progress"}
+        p.require(run.get("status") in pending and job.get("status") in pending and check.get("status") in pending and
+                  run.get("conclusion") is job.get("conclusion") is check.get("conclusion") is None and
+                  job.get("run_id") == run["id"] and job.get("run_attempt") == attempt and
+                  job.get("head_sha") == run["head_sha"] and all(s.get("conclusion") in {None, "success"} for s in steps),
+                  "receipt-bound pending native job identity/state changed")
+        return job, check, None
+    if allow_unstarted_cancelled and not require_steps and binding and not steps:
+        # GitHub creates an empty, runner-less check when concurrency cancels a
+        # reporter before checkout. Only verified older transport may be
+        # attributed this way; this never supplies a current Ready verdict.
+        p.require(run.get("status") == job.get("status") == check.get("status") == "completed" and
+                  run.get("conclusion") == job.get("conclusion") == check.get("conclusion") == "cancelled" and
+                  job.get("run_id") == run["id"] and job.get("run_attempt") == attempt and
+                  job.get("head_sha") == run["head_sha"] and
+                  job.get("steps") == [] and type(job.get("runner_id")) is int and job["runner_id"] == 0,
+                  "historical reporter is not a verified pre-execution cancellation")
+        return job, check, None
+    p.require(bool(steps), "native reporter has no verified source steps")
     if binding:
         expected = SOURCE_STEP + binding[5] + " for " + run["display_title"].rsplit(" source:", 1)[0]
         p.require(len(source_steps) == 1 and source_steps[0]["name"] == expected,
@@ -152,7 +179,7 @@ def source_compatible(api, p, source):
     # Re-running preserves the old workflow definition and privileges. Do not
     # rerun an obsolete definition while checking out newer policy code.
     obsolete = False
-    for path in (REPORTER_PATH, p.COORDINATOR_PATH, "Scripts/dependabot-ready-policy.py", "Scripts/dependabot-merge-policy.py", "Scripts/ci-metadata-policy.py"):
+    for path in (REPORTER_PATH, p.COORDINATOR_PATH, "Scripts/dependabot-ready-policy.py", "Scripts/dependabot-merge-policy.py", "Scripts/dependabot-arm-policy.py", "Scripts/ci-metadata-policy.py"):
         current = api.get(p.route(f"contents/{path}?ref={main}"))
         p.require(isinstance(current.get("sha"), str) and p.SHA.fullmatch(current["sha"]),
                   "missing/malformed reporter definition/policy blob identity")
@@ -196,7 +223,30 @@ def current_pr(api, p, number, head=None):
     return pr
 
 
-def desired(api, p, number, enabled):
+def arm_policy():
+    spec = importlib.util.spec_from_file_location("native_arm_policy", Path(__file__).with_name("dependabot-arm-policy.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def pending_arm_receipt(api, p, number, head, run):
+    pr = current_pr(api, p, number, head)
+    p.require(p.bot(pr), "pending native receipt requires verified bot")
+    proof = dict(node=pr.get("node_id"), head=head)
+    return arm_policy().verify(api, p, sys.modules.get(__name__) or ready_module(), number, proof, run,
+                               snapshot=True, require_proof=False)
+
+
+def ready_module():
+    class Ready:
+        pass
+    module = Ready()
+    module.__dict__.update(globals())
+    return module
+
+
+def desired(api, p, number, enabled, reporter=None, snapshot=False):
     pr = current_pr(api, p, number)
     if not p.bot(pr):
         return True, "Manual PR: normal CI/review requirements remain; no auto-merge approval."
@@ -205,7 +255,9 @@ def desired(api, p, number, enabled):
     try:
         first, second = p.proof(api, number), p.proof(api, number)
         p.same(first, second)
-        return True, "Full exact-head/base/CI proof currently eligible."
+        reporter = reporter or latest(api, p, number, pr["head"]["sha"])
+        arm_policy().verify(api, p, ready_module(), number, second, reporter, snapshot=snapshot)
+        return True, "Full exact-head/base/CI proof and trusted native arming receipt currently eligible."
     except p.Rejected as error:
         return False, "Blocked: " + str(error)
 
@@ -240,7 +292,7 @@ def snapshot(api, p, number, enabled):
     p.require(run.get("status") == job.get("status") == check.get("status") == "in_progress" and
               run.get("conclusion") is None and check.get("conclusion") is None, "native reporter is no longer running")
     source_compatible(api, p, source)
-    verdict, reason = desired(api, p, number, enabled)
+    verdict, reason = desired(api, p, number, enabled, reporter=run, snapshot=True)
     current_pr(api, p, number, head)
     again = latest(api, p, number, head)
     p.require((again["id"], again["run_attempt"]) == (run["id"], run["run_attempt"]) and
@@ -254,10 +306,26 @@ def verified_check_ids(api, p, number, head):
     newest = max(((r["run_number"], r["id"]) for r in sources), default=None)
     for run in sources:
         for attempt in range(1, run["run_attempt"] + 1):
+            older_run = (run["run_number"], run["id"]) != newest
+            older = older_run or attempt < run["run_attempt"]
             jobs = api.pages(p.route(f"actions/runs/{run['id']}/attempts/{attempt}/jobs"), "jobs")
+            previous = run
+            if attempt < run["run_attempt"] and (not jobs or not jobs[0].get("steps")):
+                previous = api.get(p.route(f"actions/runs/{run['id']}/attempts/{attempt}"))
+                p.require(previous.get("run_attempt") == attempt and
+                          all(previous.get(key) == run.get(key) for key in
+                              ("id", "run_number", "check_suite_id", "display_title")),
+                          "historical native attempt changed immutable identity")
+                validate_run(api, p, previous, {"id": run["workflow_id"]}, api.get(p.route("")),
+                             current_pr(api, p, number, head), number, head)
+            receipt_pending = (not older and run.get("status") in {"queued", "pending", "waiting", "requested", "in_progress"}
+                               and (not jobs or not any(str(step.get("name", "")).startswith(SOURCE_STEP)
+                                                        for step in (jobs[0].get("steps") or []))))
+            if receipt_pending:
+                pending_arm_receipt(api, p, number, head, run)
+                if not jobs:
+                    continue
             if not jobs:
-                older = (run["run_number"], run["id"]) != newest or attempt < run["run_attempt"]
-                previous = run if attempt == run["run_attempt"] else api.get(p.route(f"actions/runs/{run['id']}/attempts/{attempt}"))
                 p.require(older and previous.get("id") == run["id"] and previous.get("head_sha") == head and
                           previous.get("workflow_id") == run["workflow_id"] and previous.get("event") == "pull_request_target" and
                           previous.get("status") == "completed" and previous.get("conclusion") == "cancelled",
@@ -265,7 +333,8 @@ def verified_check_ids(api, p, number, head):
                 # No check IDs are exempted. Any actual orphan/legacy check
                 # still fails the main proof as unassociated evidence.
                 continue
-            _, check, _ = job_record(api, p, run, attempt, require_steps=False)
+            _, check, _ = job_record(api, p, previous, attempt, require_steps=False,
+                                     allow_unstarted_cancelled=older, allow_receipt_pending=receipt_pending)
             p.require(check["id"] not in ids, "duplicate native reporter check identity")
             ids.add(check["id"])
     return ids
@@ -288,7 +357,7 @@ def refresh_plan(api, p, number, enabled):
     job, check, source = job_record(api, p, run)
     source_compatible(api, p, source)
     actual = controlled_verdict(p, run, job, check)
-    expected, _ = desired(api, p, number, enabled)
+    expected, _ = desired(api, p, number, enabled, reporter=run)
     if actual == expected:
         return None
     return dict(pr=number, head=pr["head"]["sha"], run=run["id"], attempt=run["run_attempt"], job=job["id"])
@@ -397,12 +466,14 @@ def refresh(api, p, target, enabled):
     p.require(timedelta(0) <= age < timedelta(days=30) and run["run_attempt"] < 50,
               "native reporter rerun age/attempt limit reached; fresh PR lifecycle event required")
     reject_prior_claim(api, p, target, run)
-    # The writer has no contents/pull-request write permission. Protective bot
-    # cancellation belongs to the existing privileged coordinator before this
-    # writer is admitted by workflow needs.
-    p.require(not p.bot(current_pr(api, p, target["pr"], target["head"])) or
-              not api.get(p.route(f"pulls/{target['pr']}" )).get("auto_merge"),
-              "armed bot must be protectively cancelled before Ready refresh")
+    # An armed bot may refresh only the exact failed reporter covered by a
+    # successful trusted coordinator receipt and fresh full proof. No fabricated
+    # check result or writer-side enable/disable mutation is permitted.
+    pr = current_pr(api, p, target["pr"], target["head"])
+    if p.bot(pr) and pr.get("auto_merge"):
+        first, second = p.proof(api, target["pr"]), p.proof(api, target["pr"])
+        p.same(first, second)
+        arm_policy().verify(api, p, ready_module(), target["pr"], second, run)
     p.require(refresh_plan(api, p, target["pr"], enabled) == target, "reporter/eligibility changed before refresh")
     try:
         api.mutate("POST", p.route(f"actions/jobs/{target['job']}/rerun"), {})
