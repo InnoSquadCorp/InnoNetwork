@@ -7,6 +7,24 @@ Versioning.
 
 ## [Unreleased]
 
+### Fixed
+
+- Keep independent PR Ready refreshes eligible after a sibling coordinator
+  matrix failure, while still requiring each PR's successful receipt; prefilter
+  unrelated receipt candidates before authoritative detail revalidation.
+- Keep native Ready failed until expected-head auto-merge is armed and a
+  successful immutable coordinator job records a matching post-enable proof;
+  release only the exact read-only reporter rerun, with request-event identity
+  checks and protective cancellation for stale or incomplete handshakes.
+- Align native auto-merge with the existing explicit strict-base policy and
+  optional review requests while retaining full current head/base/CI proof,
+  native Ready reruns, blocking reviews, resolved threads and no-bypass checks.
+- Verify omitted read-only GitHub merge settings without expanding permissions,
+  prevent older Ready admissions from cancelling newer reporters, and attribute
+  verified historical pre-execution cancellations without accepting stale success.
+- Expose benchmark input/build/binary identity diagnostics while preserving the
+  original 20% performance guard and unresolved measured failures.
+
 ## [6.1.1] - 2026-10-07
 
 [Published on 2026-10-07 UTC](https://github.com/InnoSquadCorp/InnoNetwork/releases/tag/6.1.1)

@@ -29,6 +29,11 @@ BUILD_TIMEOUT_SECONDS = 1200
 DIAGNOSTIC_BUDGET_SECONDS = 360
 DIAGNOSTIC_SAMPLE_TIMEOUT_SECONDS = 45
 EVENT = ("events", "task-event-fanout-single")
+BUILD_ENVIRONMENT_KEYS = (
+    "PATH", "DEVELOPER_DIR", "TOOLCHAINS", "SDKROOT", "MACOSX_DEPLOYMENT_TARGET",
+    "SWIFT_EXEC", "SWIFT_EXEC_MANIFEST", "CC", "CXX", "SWIFTFLAGS", "SWIFT_FLAGS",
+    "CFLAGS", "CXXFLAGS", "CPPFLAGS", "LDFLAGS",
+)
 
 
 def require(value, message):
@@ -92,6 +97,116 @@ def source_identity(root, expected):
     }
 
 
+def identity_status(base, head, valid):
+    missing = [side for side, value in (("base", base), ("head", head)) if not valid(value)]
+    if missing:
+        return {"status": "unknown", "missing_or_invalid": missing}
+    result = {"status": "equivalent" if base == head else "different"}
+    if isinstance(base, dict) and isinstance(head, dict):
+        result["different_keys"] = sorted(key for key in set(base) | set(head)
+                                          if key not in base or key not in head or base[key] != head[key])
+    return result
+
+
+def build_argv_without_storage_paths(argv):
+    if not isinstance(argv, list) or not argv or not all(isinstance(arg, str) and arg for arg in argv):
+        return None
+    normalized = []
+    index = 0
+    while index < len(argv):
+        arg = argv[index]
+        normalized.append(arg)
+        # Forwarded compiler/linker arguments must never be mistaken for SwiftPM
+        # storage options. Preserve their bytes, including path-like values.
+        if arg in ("-Xswiftc", "-Xcc", "-Xcxx", "-Xlinker"):
+            index += 1
+            if index == len(argv):
+                return None
+            normalized.append(argv[index])
+        elif arg in ("--scratch-path", "--cache-path"):
+            index += 1
+            if index == len(argv) or argv[index].startswith("-"):
+                return None
+            normalized.append("<storage-path>")
+        elif arg.startswith(("--scratch-path=", "--cache-path=")):
+            option, _, path = arg.partition("=")
+            if not path:
+                return None
+            normalized[-1] = option + "=<storage-path>"
+        index += 1
+    return normalized
+
+
+def compare_identities(value):
+    """Compare recorded evidence only; unknown evidence can never imply equivalence."""
+    def section(name, side):
+        group = value.get(name)
+        entry = group.get(side) if isinstance(group, dict) else None
+        return entry if isinstance(entry, dict) else {}
+
+    def digest(item):
+        return isinstance(item, str) and re.fullmatch(r"[0-9a-f]{64}", item) is not None
+
+    def tracked_files(item):
+        return (isinstance(item, dict) and all(isinstance(key, str) and digest(val) for key, val in item.items())
+                and {"Package.swift", "Package.resolved", "Benchmarks/InnoNetworkBenchmarks/main.swift"} <= set(item)
+                and any(key.startswith("Sources/") for key in item))
+
+    def environment_identity(item):
+        return (isinstance(item, dict) and set(item) == set(BUILD_ENVIRONMENT_KEYS)
+                and all(isinstance(entry, dict) and set(entry) == {"present", "sha256"}
+                        and type(entry["present"]) is bool
+                        and (digest(entry["sha256"]) if entry["present"] else entry["sha256"] is None)
+                        for entry in item.values()))
+
+    sources = {side: section("sources", side) for side in ("base", "head")}
+    checks = {key: identity_status(sources["base"].get(key), sources["head"].get(key), validator)
+              for key, validator in (("actual_tracked_file_sha256", tracked_files),
+                                     ("measured_harness_sha256", digest), ("manifest_sha256", digest),
+                                     ("lock_sha256", digest))}
+    statuses = {check["status"] for check in checks.values()}
+    measured_status = "different" if "different" in statuses else "unknown" if "unknown" in statuses else "equivalent"
+    builds = {side: section("builds", side) for side in ("base", "head")}
+    normalized = {side: build_argv_without_storage_paths(builds[side].get("argv")) for side in builds}
+    build_checks = {
+        "recorded_argv": identity_status(builds["base"].get("argv"), builds["head"].get("argv"),
+                                         lambda item: build_argv_without_storage_paths(item) is not None),
+        "argv_ignoring_storage_paths": identity_status(normalized["base"], normalized["head"], lambda item: item is not None),
+        "working_directory": identity_status(builds["base"].get("cwd"), builds["head"].get("cwd"),
+                                             lambda item: isinstance(item, str) and bool(item)),
+        "recorded_environment": identity_status(builds["base"].get("build_environment"), builds["head"].get("build_environment"),
+                                                 environment_identity),
+    }
+    return {
+        "schema": SCHEMA, "purpose": "diagnostic-only; never replaces primary 20% gate",
+        "measured_inputs": {"status": measured_status, "checks": checks},
+        "git_objects": identity_status(sources["base"].get("git_objects"), sources["head"].get("git_objects"),
+            lambda item: isinstance(item, dict) and set(item) == {"Sources", "Benchmarks", "Package.swift", "Package.resolved"}
+            and all(isinstance(val, str) and re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", val) for val in item.values())),
+        "build": {"checks": build_checks, "normalized_argv": normalized,
+                  "ignored_storage_options": ["--scratch-path", "--cache-path"]},
+        "binary_bytes": identity_status(section("binaries", "base").get("sha256"),
+                                         section("binaries", "head").get("sha256"), digest),
+        "limitation": "Only recorded tracked input hashes, build argv and allowlisted build environment hashes are compared. "
+                      "Storage paths and working directories can affect builds even when normalized argv match. "
+                      "The shared host/toolchain snapshot is not a per-build compiler identity. "
+                      "Equal input hashes do not prove equal binaries or explain performance; "
+                      "event-only controls do not diagnose persistence/compaction or a scheduler/thermal cause.",
+    }
+
+
+def emit_identity_comparison(comparison):
+    print("benchmark identity (diagnostic-only): recorded measured inputs=" + comparison["measured_inputs"]["status"]
+          + "; Git objects=" + comparison["git_objects"]["status"]
+          + "; binary bytes=" + comparison["binary_bytes"]["status"])
+    for group, checks in (("input", comparison["measured_inputs"]["checks"]), ("build", comparison["build"]["checks"])):
+        for name, result in checks.items():
+            details = result.get("different_keys") or result.get("missing_or_invalid") or []
+            print(f"benchmark identity {group}/{name}: {result['status']}"
+                  + (" " + json.dumps(details) if details else ""))
+    print("benchmark identity: " + comparison["limitation"] + " Primary 20% gate remains unchanged.")
+
+
 def system_snapshot():
     # These are observations, not thermal/scheduler diagnoses. No elevated
     # commands, CPU affinity, priority, power or machine settings are changed.
@@ -142,12 +257,22 @@ def terminate_child(child):
     return True
 
 
-def execute(argv, record_path, *, cwd=None, stdout_path=None, timeout_seconds=PRIMARY_TIMEOUT_SECONDS):
+def execute(argv, record_path, *, cwd=None, stdout_path=None, timeout_seconds=PRIMARY_TIMEOUT_SECONDS,
+            capture_build_environment=False):
     require(isinstance(argv, list) and argv and all(isinstance(x, str) and x for x in argv), "invalid command")
     require(type(timeout_seconds) in (float, int) and math.isfinite(timeout_seconds) and timeout_seconds > 0,
             "invalid process timeout")
     record = {"schema": SCHEMA, "argv": argv, "cwd": str(Path(cwd or '.').resolve()),
               "timeout_seconds": timeout_seconds, "before": system_snapshot(), "status": "running"}
+    if capture_build_environment:
+        # Flags may embed secrets and paths may be private. Store only presence
+        # and hashes, even for allowlisted variables; never raw values or tokens.
+        record["build_environment"] = {
+            key: {"present": key in os.environ,
+                  "sha256": hashlib.sha256(os.environ[key].encode("utf-8", errors="surrogateescape")).hexdigest()
+                  if key in os.environ else None}
+            for key in BUILD_ENVIRONMENT_KEYS
+        }
     write_json(record_path, record)
     before_usage = resource.getrusage(resource.RUSAGE_CHILDREN)
     child = None
@@ -247,7 +372,9 @@ def manifest(directory, roots, revisions, binaries, lane):
         value["binaries"][side] = {"path": str(binary), "sha256": sha256(binary)}
     require(value["sources"]["base"]["measured_harness_sha256"] == value["sources"]["head"]["measured_harness_sha256"],
             "baseline and candidate measured different harnesses")
+    value["identity_comparison"] = compare_identities(value)
     write_json(directory / "manifest.json", value)
+    emit_identity_comparison(value["identity_comparison"])
     return value
 
 
@@ -404,7 +531,7 @@ def main(argv=None):
         if args.command == "build":
             require(args.arguments and args.arguments[0] == "--", "build command delimiter missing")
             code = execute(args.arguments[1:], args.directory / (args.side + "-build.json"),
-                           cwd=args.cwd, timeout_seconds=BUILD_TIMEOUT_SECONDS)
+                           cwd=args.cwd, timeout_seconds=BUILD_TIMEOUT_SECONDS, capture_build_environment=True)
             return 2 if code == 1 else code
         if args.command == "manifest":
             manifest(args.directory, {side:getattr(args, side+"_root") for side in ("base","head")},

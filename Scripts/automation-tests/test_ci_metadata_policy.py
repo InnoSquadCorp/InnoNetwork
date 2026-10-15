@@ -2,11 +2,13 @@
 import copy
 import importlib.util
 import itertools
+import tempfile
 from pathlib import Path
 import unittest
 from unittest import mock
 
 import test_dependabot_merge_policy as bot
+import test_dependabot_arm_policy as arm
 import test_dependabot_ready_policy as ready
 import test_main_ci_reuse_policy as reuse
 
@@ -201,21 +203,25 @@ class MetadataProofTests(unittest.TestCase):
 
     def test_metadata_completion_recovers_a_blocked_real_ci_notification(self):
         for already_armed in (False, True):
-            with self.subTest(already_armed=already_armed):
-                b = MetadataAPI(bot.Transcript(), bot.NUMBER, bot.HEAD, bot.BASE, bot.MERGE)
+            with self.subTest(already_armed=already_armed), tempfile.TemporaryDirectory() as directory:
+                b = MetadataAPI(arm.ArmTranscript(), bot.NUMBER, bot.HEAD, bot.BASE, bot.MERGE)
                 if already_armed:
                     b.base.pr['auto_merge'] = dict(enabled_by=dict(bot.p.BOT))
                 b.run.update(status='in_progress', conclusion=None)
-                with mock.patch.dict(bot.os.environ, bot.TRUSTED, clear=True):
+                output = Path(directory) / 'output'
+                with mock.patch.dict(bot.os.environ, dict(bot.TRUSTED, GITHUB_OUTPUT=str(output)), clear=True):
                     blocked = bot.p.coordinate(b, bot.NUMBER, True, dict(id=bot.RUN, run_attempt=1))
                     self.assertIn('blocked:', blocked)
                     self.assertFalse(b.base.pr.get('auto_merge'))
                     b.run.update(status='completed', conclusion='success')
-                    # A still-green reporter produces no refresh/completion
-                    # event to rescue a discarded metadata wake-up.
+                    # A failed unarmed reporter stays false until the verified
+                    # metadata wake arms behind it and publishes its receipt.
                     self.assertIsNone(ready.n.refresh_plan(b, bot.p, bot.NUMBER, True))
                     notification = dict(id=META, run_attempt=1)
-                    self.assertIn('armed', bot.p.coordinate(b, bot.NUMBER, True, notification))
+                    self.assertIn('read-only Ready receipt refresh', bot.p.coordinate(b, bot.NUMBER, True, notification))
+                    receipt = dict(line.split('=', 1) for line in output.read_text().splitlines())['arm_receipt']
+                    b.base.publish_receipt(receipt)
+                    self.assertIsNotNone(ready.n.refresh_plan(b, bot.p, bot.NUMBER, True))
                     self.assertIn('armed', bot.p.coordinate(b, bot.NUMBER, True, notification))
                 enables = [m for m in b.base.mutations if 'enablePullRequestAutoMerge' in m[1]]
                 self.assertEqual(len(enables), 1)
@@ -255,11 +261,13 @@ class MetadataProofTests(unittest.TestCase):
 
     def test_metadata_rerun_requires_the_current_attempt_and_rechecks_real_ci(self):
         b = MetadataAPI(bot.Transcript(), bot.NUMBER, bot.HEAD, bot.BASE, bot.MERGE)
+        bot.failed_native(b.base)
         b.rerun()
-        with mock.patch.dict(bot.os.environ, bot.TRUSTED, clear=True):
+        with tempfile.TemporaryDirectory() as directory, \
+                mock.patch.dict(bot.os.environ, dict(bot.TRUSTED, GITHUB_OUTPUT=str(Path(directory) / 'output')), clear=True):
             self.assertIn('obsolete', bot.p.coordinate(b, bot.NUMBER, True, dict(id=META, run_attempt=1)))
             self.assertFalse(b.base.mutations)
-            self.assertIn('armed', bot.p.coordinate(b, bot.NUMBER, True, dict(id=META, run_attempt=2)))
+            self.assertIn('read-only Ready receipt refresh', bot.p.coordinate(b, bot.NUMBER, True, dict(id=META, run_attempt=2)))
             b.base.run.update(conclusion='failure')
             self.assertIn('blocked:', bot.p.coordinate(b, bot.NUMBER, True, dict(id=META, run_attempt=2)))
         self.assertEqual(len(b.base.mutations), 2)
