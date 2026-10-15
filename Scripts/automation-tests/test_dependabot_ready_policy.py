@@ -180,9 +180,9 @@ class NativeReadyTests(unittest.TestCase):
         self.api.native_job['steps'][1]['name'] += ' unbound suffix'
         with self.assertRaises(p.Rejected): n.require_success(self.api, p, NUMBER, HEAD)
 
-    def test_reporter_only_succeeds_for_real_readonly_eligibility(self):
+    def test_reporter_never_approves_bot_without_trusted_arm_receipt(self):
         self.running()
-        self.assertTrue(self.snapshot()[0])
+        self.assertFalse(self.snapshot()[0])
         self.assertFalse(self.api.mutations)
         self.api.run['conclusion'] = 'failure'
         self.assertFalse(self.snapshot()[0])
@@ -207,6 +207,7 @@ class NativeReadyTests(unittest.TestCase):
         self.assertNotIn('continue-on-error', source)
 
     def test_running_snapshot_does_not_require_future_step_metadata(self):
+        self.api.pr['user'] = dict(login='human', id=1, type='User')
         self.running()
         self.api.native_job['steps'] = self.api.native_job['steps'][:2]
         self.assertTrue(self.snapshot()[0])
@@ -264,12 +265,139 @@ class NativeReadyTests(unittest.TestCase):
         self.api.native_run['run_attempt'] = 2
         with self.assertRaises(p.Rejected): n.require_success(self.api, p, NUMBER, HEAD)
 
+    def historical_unstarted_reporter(self):
+        old = copy.deepcopy(self.api.native_run)
+        old.update(id=NATIVE_RUN + 1, run_number=39, status='completed', conclusion='cancelled',
+                   check_suite_id=901, display_title=(
+                       f'Ready v1 pr:{NUMBER} head:{HEAD} head-repo:100 base-repo:100 base:main source:{BASE}'))
+        job = dict(id=9101, name=p.READY, status='completed', conclusion='cancelled', steps=[], runner_id=0,
+                   run_id=old['id'], run_attempt=1, head_sha=HEAD,
+                   check_run_url=f'https://api.github.com/repos/{p.REPOSITORY}/check-runs/9100')
+        check = dict(id=9100, name=p.READY, status='completed', conclusion='cancelled', app=dict(id=p.APP),
+                     head_sha=HEAD, check_suite=dict(id=901),
+                     details_url=f'https://github.com/{p.REPOSITORY}/actions/runs/{old["id"]}/job/9101')
+        self.api.native_runs.append(old)
+        self.api.native_jobs[(old['id'], 1)] = [job]
+        self.api.checks.append(check)
+        return old, job, check
+
+    def test_superseded_runnerless_cancellation_is_only_transport_evidence(self):
+        self.historical_unstarted_reporter()
+        self.assertEqual(n.verified_check_ids(self.api, p, NUMBER, HEAD), {9000, 9100})
+        self.assertEqual(n.require_success(self.api, p, NUMBER, HEAD), (NATIVE_RUN, 1, 9000))
+        p.proof(self.api, NUMBER)
+        self.assertFalse(self.api.mutations)
+
+    def test_same_run_rerun_attributes_only_verified_runnerless_old_attempt(self):
+        old, job, check = self.historical_unstarted_reporter()
+        self.api.native_runs.remove(old)
+        self.api.native_run['display_title'] = old['display_title']
+        self.api.native_job['steps'][1]['name'] = (n.SOURCE_STEP + BASE + ' for ' +
+            old['display_title'].rsplit(' source:', 1)[0])
+        old.update(id=NATIVE_RUN, run_number=self.api.native_run['run_number'], check_suite_id=900)
+        job.update(run_id=NATIVE_RUN)
+        check.update(check_suite=dict(id=900),
+                     details_url=f'https://github.com/{p.REPOSITORY}/actions/runs/{NATIVE_RUN}/job/9101')
+        self.api.native_jobs[(NATIVE_RUN, 2)] = [self.api.native_job]
+        self.api.native_jobs[(NATIVE_RUN, 1)] = [job]
+        self.api.native_run['run_attempt'] = 2
+        get = self.api.get
+        def read_attempt(route):
+            if route == p.route(f'actions/runs/{NATIVE_RUN}/attempts/1'):
+                return copy.deepcopy(old)
+            return get(route)
+        with mock.patch.object(self.api, 'get', side_effect=read_attempt):
+            self.assertEqual(n.require_success(self.api, p, NUMBER, HEAD), (NATIVE_RUN, 2, 9000))
+            self.assertEqual(n.verified_check_ids(self.api, p, NUMBER, HEAD), {9000, 9100})
+            p.proof(self.api, NUMBER)
+            for field, value in [('run_attempt', 2), ('id', NATIVE_RUN + 1), ('run_number', 1),
+                                 ('check_suite_id', 999), ('head_sha', BASE), ('event', 'workflow_dispatch'),
+                                 ('display_title', ''), ('conclusion', 'success'), ('status', 'in_progress')]:
+                original = old[field]
+                old[field] = value
+                with self.subTest(field=field), self.assertRaises(p.Rejected):
+                    p.proof(self.api, NUMBER)
+                old[field] = original
+        self.assertFalse(self.api.mutations)
+
+    def test_older_pending_reporter_recovers_via_latest_controlled_false(self):
+        self.running()
+        old, job, check = self.historical_unstarted_reporter()
+        for item in (old, job, check):
+            item.update(status='queued', conclusion=None)
+        verdict, reason = self.snapshot()
+        self.assertFalse(verdict)
+        self.assertIn('pre-execution cancellation', reason)
+        self.assertFalse(self.api.mutations)
+        for item in (old, job, check):
+            item.update(status='completed', conclusion='failure')
+        job['runner_id'] = 123
+        job['steps'] = [
+            dict(name='Checkout immutable trusted reporter source', status='completed', conclusion='success'),
+            dict(name=n.SOURCE_STEP + BASE + ' for ' + old['display_title'].rsplit(' source:', 1)[0],
+                 status='completed', conclusion='failure'),
+            dict(name=n.ENFORCE_STEP, status='completed', conclusion='failure')]
+        self.verdict(False)
+        self.assertIsNone(n.refresh_plan(self.api, p, NUMBER, True))  # No arm receipt: stay safely false.
+        self.assertFalse(self.api.mutations)
+
+    def test_unstarted_exception_rejects_foreign_executed_or_current_cancellation(self):
+        changes = [lambda r, j, c: r.update(run_number=41),
+                   lambda r, j, c: r.update(run_number=True),
+                   lambda r, j, c: r.update(conclusion='failure'),
+                   lambda r, j, c: r.update(status='in_progress'),
+                   lambda r, j, c: r.update(display_title='unbound'),
+                   lambda r, j, c: j.update(runner_id=123),
+                   lambda r, j, c: j.update(runner_id=False),
+                   lambda r, j, c: j.pop('runner_id'),
+                   lambda r, j, c: j.update(run_id=NATIVE_RUN),
+                   lambda r, j, c: j.update(run_attempt=2),
+                   lambda r, j, c: j.update(head_sha=BASE),
+                   lambda r, j, c: j.update(steps=[dict(name='Checkout', conclusion='success')]),
+                   lambda r, j, c: j.update(conclusion='success'),
+                   lambda r, j, c: c.update(conclusion='failure'),
+                   lambda r, j, c: c['app'].update(id=999),
+                   lambda r, j, c: c['check_suite'].update(id=999),
+                   lambda r, j, c: c.update(head_sha=BASE),
+                   lambda r, j, c: c.update(details_url='https://example.invalid')]
+        for change in changes:
+            self.api = Transcript()
+            old, job, check = self.historical_unstarted_reporter()
+            change(old, job, check)
+            with self.subTest(change=change), self.assertRaises(p.Rejected):
+                n.verified_check_ids(self.api, p, NUMBER, HEAD)
+            self.assertFalse(self.api.mutations)
+
+    def test_independent_reporters_keep_global_latest_run_order(self):
+        self.api.pr['user'] = dict(login='human', id=1, type='User')
+        self.running()
+        newer = copy.deepcopy(self.api.native_run)
+        # Run IDs and same-second creation timestamps do not establish order.
+        newer.update(id=NATIVE_RUN - 1, run_number=41, check_suite_id=901)
+        job = copy.deepcopy(self.api.native_job)
+        job.update(id=9101, check_run_url=f'https://api.github.com/repos/{p.REPOSITORY}/check-runs/9100')
+        check = dict(self.api.native_check, id=9100, check_suite=dict(id=901),
+                     details_url=f'https://github.com/{p.REPOSITORY}/actions/runs/{newer["id"]}/job/9101')
+        self.api.native_runs.append(newer)
+        self.api.native_jobs[(newer['id'], 1)] = [job]
+        self.api.checks.append(check)
+        with self.assertRaisesRegex(p.Rejected, 'obsolete native reporter'):
+            self.snapshot()
+        self.assertTrue(self.snapshot(overrides={'GITHUB_RUN_ID': str(newer['id'])})[0])
+        self.assertFalse(self.api.mutations)
+        source = (ROOT / n.REPORTER_PATH).read_text()
+        self.assertIn('group: dependabot-native-ready-${{ github.event.pull_request.number }}-${{ github.run_id }}', source)
+        self.assertIn('cancel-in-progress: false', source)
+        self.assertNotIn('cancel-in-progress: true', source)
+
     def test_historical_native_attempts_are_attributed_without_self_dependency(self):
         self.api.native_run['run_attempt'] = 2
         previous = self.api.native_job
         current = copy.deepcopy(previous)
         current.update(id=9003, check_run_url=f'https://api.github.com/repos/{p.REPOSITORY}/check-runs/9002')
-        previous.update(status='completed', conclusion='cancelled', steps=[])
+        previous.update(status='completed', conclusion='cancelled')
+        for step in previous['steps']:
+            step.update(status='completed', conclusion='cancelled')
         self.api.native_check.update(conclusion='cancelled')
         check = dict(self.api.native_check, id=9002, conclusion='success', details_url=f'https://github.com/{p.REPOSITORY}/actions/runs/{NATIVE_RUN}/job/9003')
         self.api.checks.append(check)
@@ -345,7 +473,7 @@ class NativeReadyTests(unittest.TestCase):
 
     def test_snapshot_rejects_obsolete_or_cancelled_self_before_success(self):
         self.running()
-        with mock.patch.object(n, 'desired', side_effect=lambda *a: (self.api.native_run.update(status='completed', conclusion='cancelled') or (True, 'race'))):
+        with mock.patch.object(n, 'desired', side_effect=lambda *a, **kw: (self.api.native_run.update(status='completed', conclusion='cancelled') or (True, 'race'))):
             with self.assertRaises(p.Rejected): self.snapshot()
         self.api = Transcript()
         self.running()
@@ -354,6 +482,7 @@ class NativeReadyTests(unittest.TestCase):
         self.assertFalse(self.api.mutations)
 
     def test_running_and_unchanged_verdicts_never_spend_reruns(self):
+        self.verdict(False)
         self.assertIsNone(n.refresh_plan(self.api, p, NUMBER, True))
         self.running()
         self.assertIsNone(n.refresh_plan(self.api, p, NUMBER, True))
@@ -472,7 +601,7 @@ class NativeReadyTests(unittest.TestCase):
         self.api.pr['user'] = dict(p.BOT)
         self.api.pr['auto_merge'] = dict(enabled_by=dict(p.BOT))
         with mock.patch.object(n, 'refresh_plan', return_value=target):
-            with self.assertRaisesRegex(p.Rejected, 'cancelled before'): n.refresh(self.api, p, target, True)
+            with self.assertRaises(p.Rejected): n.refresh(self.api, p, target, True)
         self.assertFalse(self.api.mutations)
 
     def test_snapshot_ref_workflow_event_job_source_and_run_guards(self):
@@ -674,6 +803,7 @@ class NativeReadyTests(unittest.TestCase):
         self.assertFalse(self.api.mutations)
 
     def test_empty_or_unchanged_plan_has_no_refresh_and_explicit_no_blockers(self):
+        self.verdict(False)
         for numbers in [[], [NUMBER]]:
             self.assertEqual(n.refresh_batch(self.api, p, numbers, True), ([], []))
         coordinator = (ROOT / p.COORDINATOR_PATH).read_text()

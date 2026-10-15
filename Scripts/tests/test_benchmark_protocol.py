@@ -1,5 +1,7 @@
 """Small executable fixtures for bounded collection and preserved verdicts; no Swift builds."""
 import copy
+import contextlib
+import io
 import json
 import os
 from pathlib import Path
@@ -35,6 +37,205 @@ print('fixture complete')
             path.chmod(0o755)
             self.binaries[side] = {"path":str(path), "sha256":p.sha256(path)}
         self.manifest = {"schema":1, "lane":"runtime", "binaries":self.binaries}
+
+    def complete_identity_fixture(self):
+        value = copy.deepcopy(self.manifest)
+        source = {
+            "commit": "a" * 40,
+            "actual_tracked_file_sha256": {
+                "Sources/InnoNetworkDownload/DownloadTaskPersistence.swift": "a" * 64,
+                "Benchmarks/InnoNetworkBenchmarks/main.swift": "b" * 64,
+                "Package.swift": "c" * 64, "Package.resolved": "d" * 64,
+            },
+            "measured_harness_sha256": "b" * 64, "manifest_sha256": "c" * 64, "lock_sha256": "d" * 64,
+            "git_objects": {name: "a" * 40 for name in ("Sources", "Benchmarks", "Package.swift", "Package.resolved")},
+        }
+        value["sources"] = {side: copy.deepcopy(source) for side in ("base", "head")}
+        value["sources"]["head"]["commit"] = "b" * 40
+        value["builds"] = {side: {
+            "status": "completed", "exit_code": 0, "cwd": str(self.root / side),
+            "argv": ["xcrun", "swift", "build", "-c", "release", "--disable-default-traits",
+                     "--product", "InnoNetworkBenchmarks", "--scratch-path", str(self.root / side / ".build"),
+                     "--cache-path", str(self.root / "cache"), "-Xswiftc", "-DTEST"],
+            "build_environment": {key: {"present": False, "sha256": None} for key in p.BUILD_ENVIRONMENT_KEYS},
+        } for side in ("base", "head")}
+        return value
+
+    def test_identity_equal_recorded_inputs_do_not_claim_equal_binaries(self):
+        value = self.complete_identity_fixture()
+        original = copy.deepcopy(value)
+        comparison = p.compare_identities(value)
+        self.assertEqual(comparison['measured_inputs']['status'], 'equivalent')
+        self.assertEqual(comparison['git_objects']['status'], 'equivalent')
+        self.assertEqual(comparison['binary_bytes']['status'], 'different')
+        build = comparison['build']['checks']
+        self.assertEqual(build['recorded_argv']['status'], 'different')
+        self.assertEqual(build['working_directory']['status'], 'different')
+        self.assertEqual(build['argv_ignoring_storage_paths']['status'], 'equivalent')
+        self.assertEqual(build['recorded_environment']['status'], 'equivalent')
+        self.assertEqual(value, original)
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            p.emit_identity_comparison(comparison)
+        self.assertIn('recorded measured inputs=equivalent', output.getvalue())
+        self.assertIn('binary bytes=different', output.getvalue())
+        self.assertIn('do not diagnose persistence/compaction', output.getvalue())
+        self.assertIn('Primary 20% gate remains unchanged', output.getvalue())
+        value['binaries']['head']['sha256'] = value['binaries']['base']['sha256']
+        self.assertEqual(p.compare_identities(value)['binary_bytes']['status'], 'equivalent')
+
+    def test_each_measured_source_manifest_lock_and_harness_change_is_visible(self):
+        cases = [
+            ('Sources/InnoNetworkDownload/DownloadTaskPersistence.swift', None),
+            ('Package.swift', 'manifest_sha256'), ('Package.resolved', 'lock_sha256'),
+            ('Benchmarks/InnoNetworkBenchmarks/main.swift', 'measured_harness_sha256'),
+        ]
+        for path, field in cases:
+            with self.subTest(path=path):
+                value = self.complete_identity_fixture()
+                value['sources']['head']['actual_tracked_file_sha256'][path] = 'f' * 64
+                if field:
+                    value['sources']['head'][field] = 'f' * 64
+                measured = p.compare_identities(value)['measured_inputs']
+                self.assertEqual(measured['status'], 'different')
+                self.assertEqual(measured['checks']['actual_tracked_file_sha256']['different_keys'], [path])
+                if field:
+                    self.assertEqual(measured['checks'][field]['status'], 'different')
+        for side in ('base', 'head'):
+            value = self.complete_identity_fixture()
+            value['sources'][side]['actual_tracked_file_sha256']['Sources/New.swift'] = 'f' * 64
+            self.assertEqual(p.compare_identities(value)['measured_inputs']['status'], 'different')
+
+    def test_git_object_differences_are_separate_from_measured_harness_bytes(self):
+        value = self.complete_identity_fixture()
+        value['sources']['base']['git_objects']['Benchmarks'] = 'f' * 40
+        comparison = p.compare_identities(value)
+        self.assertEqual(comparison['measured_inputs']['status'], 'equivalent')
+        self.assertEqual(comparison['git_objects'], {'status': 'different', 'different_keys': ['Benchmarks']})
+
+    def test_build_flags_and_allowlisted_environment_changes_are_not_normalized_away(self):
+        for flags in (['-Xswiftc', '-DCHANGED'], ['-c', 'debug'], ['--traits', 'Changed'],
+                      ['-Xcc', '-O0'], ['-Xlinker', '-dead_strip'], ['--sdk', '/different-sdk']):
+            with self.subTest(flags=flags):
+                value = self.complete_identity_fixture()
+                value['builds']['head']['argv'] += flags
+                self.assertEqual(p.compare_identities(value)['build']['checks']['argv_ignoring_storage_paths']['status'], 'different')
+        value = self.complete_identity_fixture()
+        value['builds']['head']['build_environment']['SWIFTFLAGS'] = {'present': True, 'sha256': 'f' * 64}
+        self.assertEqual(p.compare_identities(value)['build']['checks']['recorded_environment'],
+                         {'status': 'different', 'different_keys': ['SWIFTFLAGS']})
+        # Empty-but-set flags are distinct from unset flags; invalid metadata
+        # on both sides must never be declared equivalent merely by equality.
+        for invalid in ({'present': True, 'sha256': None}, {'present': False, 'sha256': 'f' * 64},
+                        {'present': 1, 'sha256': 'f' * 64}):
+            for side in ('base', 'head'):
+                value['builds'][side]['build_environment']['SWIFTFLAGS'] = invalid
+            self.assertEqual(p.compare_identities(value)['build']['checks']['recorded_environment']['status'], 'unknown')
+        for flag in ('-Xswiftc', '-Xcc', '-Xcxx', '-Xlinker'):
+            args = ['swift', 'build', flag, '--scratch-path', flag, '/compiler-argument']
+            self.assertEqual(p.build_argv_without_storage_paths(args), args)
+        self.assertEqual(p.build_argv_without_storage_paths(['swift', 'build', '--scratch-path=/a', '--cache-path=/b']),
+                         ['swift', 'build', '--scratch-path=<storage-path>', '--cache-path=<storage-path>'])
+
+    def test_missing_or_malformed_identity_evidence_is_unknown_not_equivalent(self):
+        for field in ('actual_tracked_file_sha256', 'measured_harness_sha256', 'manifest_sha256', 'lock_sha256'):
+            for invalid in (None, '', {}, 'bad-hash'):
+                with self.subTest(field=field, invalid=invalid):
+                    value = self.complete_identity_fixture()
+                    for side in ('base', 'head'):
+                        value['sources'][side][field] = invalid
+                    self.assertEqual(p.compare_identities(value)['measured_inputs']['status'], 'unknown')
+        for section, key, group, check in (
+            ('sources', 'git_objects', None, 'git_objects'), ('binaries', 'sha256', None, 'binary_bytes'),
+            ('builds', 'argv', 'build', 'argv_ignoring_storage_paths'),
+            ('builds', 'cwd', 'build', 'working_directory'),
+            ('builds', 'build_environment', 'build', 'recorded_environment'),
+        ):
+            value = self.complete_identity_fixture()
+            del value[section]['head'][key]
+            comparison = p.compare_identities(value)
+            result = comparison[group]['checks'][check] if group else comparison[check]
+            self.assertEqual(result['status'], 'unknown', (section, key))
+        for argv in ([], ['swift', 'build', '-Xswiftc'], ['swift', 'build', '--scratch-path'],
+                     ['swift', 'build', '--cache-path=']):
+            self.assertIsNone(p.build_argv_without_storage_paths(argv))
+        for path in ('Package.swift', 'Package.resolved', 'Benchmarks/InnoNetworkBenchmarks/main.swift',
+                     'Sources/InnoNetworkDownload/DownloadTaskPersistence.swift'):
+            value = self.complete_identity_fixture()
+            for side in ('base', 'head'):
+                del value['sources'][side]['actual_tracked_file_sha256'][path]
+            self.assertEqual(p.compare_identities(value)['measured_inputs']['status'], 'unknown')
+
+    def test_old_manifest_remains_loadable_but_does_not_imply_known_inputs(self):
+        path = self.root / 'old-manifest.json'
+        p.write_json(path, self.manifest)
+        loaded = p.load_manifest(path)
+        self.assertEqual(loaded, self.manifest)
+        self.assertEqual(p.compare_identities(loaded)['measured_inputs']['status'], 'unknown')
+        self.assertEqual(p.compare_identities(loaded)['build']['checks']['recorded_environment']['status'], 'unknown')
+        loaded['builds'] = {side: {'build_environment': {key: '' for key in p.BUILD_ENVIRONMENT_KEYS}}
+                            for side in ('base', 'head')}
+        self.assertEqual(p.compare_identities(loaded)['build']['checks']['recorded_environment']['status'], 'unknown')
+
+    def test_build_cli_captures_only_allowlisted_environment_before_execution(self):
+        private = {'PATH': '/private/build/path-never-recorded', 'SWIFTFLAGS': '-DSECRET=swift-secret-never-recorded',
+                   'CFLAGS': '-DSECRET=c-secret-never-recorded', 'UNRELATED_SECRET': 'token-never-recorded'}
+        with mock.patch.dict(os.environ, {**private, 'SWIFT_FLAGS': ''}, clear=True):
+            self.assertEqual(p.main(['build', '--directory', str(self.root), '--side', 'base',
+                                     '--cwd', str(self.root), '--', sys.executable, '-c', 'pass']), 0)
+        record = p.load_report(self.root / 'base-build.json')
+        self.assertEqual(set(record['build_environment']), set(p.BUILD_ENVIRONMENT_KEYS))
+        for key in ('PATH', 'SWIFTFLAGS', 'CFLAGS'):
+            self.assertEqual(record['build_environment'][key],
+                             {'present': True, 'sha256': p.hashlib.sha256(private[key].encode()).hexdigest()})
+        self.assertEqual(record['build_environment']['CXXFLAGS'], {'present': False, 'sha256': None})
+        self.assertEqual(record['build_environment']['SWIFT_FLAGS'],
+                         {'present': True, 'sha256': p.hashlib.sha256(b'').hexdigest()})
+        for literal in private.values():
+            self.assertNotIn(literal, json.dumps(record))
+        self.assertNotIn('UNRELATED_SECRET', record['build_environment'])
+
+    def test_manifest_persists_and_emits_additive_identity_evidence(self):
+        value = self.complete_identity_fixture()
+        directory = self.root / 'protocol'
+        for side in ('base', 'head'):
+            p.write_json(directory / f'{side}-build.json', value['builds'][side])
+        output = io.StringIO()
+        with mock.patch.object(p, 'host_identity', return_value={'fixture': True}), \
+                mock.patch.object(p, 'source_identity', side_effect=lambda root, rev: value['sources'][rev]), \
+                contextlib.redirect_stdout(output):
+            saved = p.manifest(directory, {'base': 'base', 'head': 'head'}, {'base': 'base', 'head': 'head'},
+                               {side: binary['path'] for side, binary in self.binaries.items()}, 'runtime')
+        self.assertEqual(p.load_manifest(directory / 'manifest.json'), saved)
+        self.assertEqual(saved['schema'], 1)
+        self.assertEqual(saved['identity_comparison']['measured_inputs']['status'], 'equivalent')
+        self.assertEqual(saved['identity_comparison']['binary_bytes']['status'], 'different')
+        self.assertIn('binary bytes=different', output.getvalue())
+
+    def test_identical_inputs_do_not_replace_compaction_guard_failure_or_receipt(self):
+        identifier = ('persistence', 'append-log-compaction')
+        def report(ops):
+            return {'version': 2, 'results': [{'group': identifier[0], 'name': identifier[1],
+                    'iterations': 100, 'elapsedSeconds': 100 / ops, 'operationsPerSecond': ops}]}
+        base, head = report(1000), report(710.4)
+        compared = p.build_comparison_report([base] * 3, [head] * 3, {identifier}, 20)
+        original = copy.deepcopy(compared)
+        self.assertEqual(len(compared['baseline']['guardFailures']), 1)
+        identity = p.compare_identities(self.complete_identity_fixture())
+        self.assertEqual(identity['measured_inputs']['status'], 'equivalent')
+        output = self.root / 'results.json'
+        p.write_json(output, compared)
+        paths = {side: [self.root / f'{side}-{i}.json' for i in range(1, 4)] for side in ('base', 'head')}
+        for side, row in (('base', base), ('head', head)):
+            for path in paths[side]:
+                p.write_json(path, row)
+        receipt = p.comparison_receipt(compared, output, paths['base'], paths['head'], 'current', 'a' * 40)
+        p.write_json(self.root / 'protocol/comparison.json', receipt)
+        p.verify_comparison(self.root, 'current', 'a' * 40, 1)
+        with self.assertRaises(ValueError):
+            p.verify_comparison(self.root, 'current', 'a' * 40, 0)
+        self.assertEqual(compared, original)
+        self.assertEqual(receipt['exit_code'], 1)
 
     def test_fixed_controls_show_same_binary_zero_and_real_regression_in_both_orders(self):
         output = self.root / "controls"
