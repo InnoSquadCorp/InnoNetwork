@@ -23,7 +23,7 @@ let package = Package(
         .executable(name: "openapi-to-innonetwork", targets: ["openapi-to-innonetwork"])
     ],
     dependencies: [
-        .package(url: "https://github.com/jpsim/Yams.git", from: "5.0.6"),
+        .package(url: "https://github.com/jpsim/Yams.git", from: "6.2.2"),
         // The offline tool uses the same lossless parser and schema compiler as
         // its generated consumers. No new dependency is added to the library.
         .package(name: "InnoNetwork", path: "../..", traits: []),
