@@ -10,10 +10,13 @@ permissions:
   contents: read
 
 # GitHub owns this native fixed-name check. No API creates/patches a verdict.
-# Superseded reporters cancel instead of publishing a late old-head success.
+# GitHub concurrency admission is not ordered by run_number. A shared group
+# can cancel the newer reporter while an older one survives and rejects itself.
+# Keep read-only runs independent; the exact-head/latest-run proof before and
+# after evaluation still prevents a superseded reporter from issuing success.
 concurrency:
-  group: dependabot-native-ready-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  group: dependabot-native-ready-${{ github.event.pull_request.number }}-${{ github.run_id }}
+  cancel-in-progress: false
 
 jobs:
   ready:

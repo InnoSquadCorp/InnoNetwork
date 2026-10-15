@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Audit logical CI coverage and native aggregate checks without changing GitHub.
 
-The current non-strict ruleset permits manual integration, not autonomous native
-auto-merge. The latter still requires strict base protection in the coordinator.
-Neither ruleset profile proves that a candidate's exact head/base CI succeeded.
+Explicit strict and non-strict native profiles are supported without changing
+protection. Neither profile proves that exact head/base CI or Ready succeeded,
+or that the runtime token cannot bypass the repository's native requirements.
 """
 
 from __future__ import annotations
@@ -121,10 +121,8 @@ def validate_ruleset(path: Path, expected: list[dict[str, Any]], require_auto_me
     parameters = matching_rules[0].get("parameters")
     if not isinstance(parameters, dict):
         fail("live required_status_checks rule has no parameters")
-    if parameters.get("strict_required_status_checks_policy") is not require_auto_merge:
-        if require_auto_merge:
-            fail("autonomous auto-merge requires strict up-to-date base protection; current manual profile stays in standby")
-        fail("live ruleset differs from the current non-strict manual-integration profile")
+    if type(parameters.get("strict_required_status_checks_policy")) is not bool:
+        fail("live strict-base policy must be an explicit boolean")
 
     actual = parameters.get("required_status_checks")
     if not isinstance(actual, list):
@@ -162,7 +160,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--require-auto-merge", action="store_true",
-        help="Audit strict native protection as an additional auto-merge prerequisite, never enable it.",
+        help="Require a complete native-protection export for auto-merge auditing; never enable it.",
     )
     args = parser.parse_args()
 
@@ -176,8 +174,7 @@ def main() -> None:
     print(f"required-status-checks: OK ({len(logical)} logical checks, {len(expected)} native aggregate checks{suffix})")
     if args.ruleset_json is not None:
         print("Ruleset audit only: exact-head/base CI and release approval remain separate.")
-        if not args.require_auto_merge:
-            print("Current non-strict profile: autonomous native auto-merge remains in standby.")
+        print("Auto-merge still requires runtime no-bypass, the enabled flag, exact CI proof and native Ready.")
 
 
 if __name__ == "__main__":
