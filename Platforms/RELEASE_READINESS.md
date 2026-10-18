@@ -1,7 +1,8 @@
 # Android / Web 1.0.0 readiness record
 
-Assessment date: 2026-10-18 KST. Baseline: `ac0363674c974b8fd0423f29d17ea7791d28dbcb`
-plus the cross-platform working-tree changes. This is an installable local 1.0.0
+Assessment date: 2026-10-18 KST. Swift baseline: `ac0363674c974b8fd0423f29d17ea7791d28dbcb`.
+Cross-platform changes live on `feature/cross-platform-network-sessions`.
+This is an installable local 1.0.0
 candidate, not evidence of public Maven Central/npm publication. The root Swift
 manifest, lockfile, sources, and tests remain equal to `origin/main`.
 
@@ -51,7 +52,7 @@ are retained and included in the regression gates.
 
 | Boundary | Evidence | Result / limit |
 | --- | --- | --- |
-| Normal HTTP and typed decoding | Android 17 transport, 7 client, 3 serialization tests; Web 29 tests | Fresh local checks |
+| Normal HTTP and typed decoding | Android 17 transport, 7 client, 3 serialization tests; Web 37 tests | Fresh local checks |
 | I/O, status, decoding failure | Native MockWebServer and Fetch fixtures; custom callback read/close failures | Caller settles; HTTP failures stay values until explicitly rejected |
 | Cancellation and ownership | Awaiting headers, body buffering, pre-cancel, late response, stream handoff race, async decoder abort | Fresh controlled and native checks |
 | Concurrency and React replacement | 8 concurrent Android requests; React StrictMode, unmount, input replacement, invalid payload; real TanStack Query | Android runtime and 9 React tests |
@@ -61,10 +62,10 @@ are retained and included in the regression gates.
 | Compatibility and artifacts | JVM signatures, Kotlin ABI, explicit API, lint, Maven structure/license/checksums, packed npm declarations/runtime | Fresh local checks; no registry signature/provenance claim |
 | Android packaging/runtime | API-21-targeted D8/R8 APK; actual API 26 emulator execution | KSP, JSON, concurrent requests, gzip, limit, streaming, cancellation passed; API 21-25 device execution unverified |
 | TypeScript/runtime consumers | TypeScript 7.0.2, DOM and Node-only projects; installed tarball on Node 22.0.0; maintainer Node 24/26 | Exact Node receipt is recorded in a generated release bundle |
-| Native browser engines | Playwright 1.64.1: Chromium 156 and WebKit 27.2 on macOS 27.0.1 | Passed; this is WebKit engine evidence, not iOS Safari device evidence |
+| Native browser engines | Playwright 1.64.1: Chromium 156 and WebKit 27.2; independent native Fetch/stream controls and actual truncated-body rejection | WebKit engine evidence, not iOS Safari device evidence; Chromium telemetry qualification below |
 | Firefox | Firefox 157 passes on Linux in [source run 39102936977](https://github.com/InnoSquadCorp/InnoNetwork/actions/runs/39102936977); macOS launch control fails before library code | Linux runtime verified; macOS environment qualification remains |
 | Retry/restoration | No library retry or restoration layer in Android/Web 1.0 | Intentionally outside this release; native policy remains explicit |
-| Remote CI / release | Source run 39102936977: Node 22/24/26, all three browser engines, installed tarball and 9 React tests pass; Android native tests/lint/publication pass, independent consumer exposes one more missing metadata checksum | Final Android CI and CodeQL qualification pending; no registry ownership, signing/provenance, tags or publication claim |
+| Remote CI / release | [Source run 39103150313](https://github.com/InnoSquadCorp/InnoNetwork/actions/runs/39103150313): Android JDK 17/21 complete gates pass, Node 22/26 pass; earlier Node 24 source run passes tarball and 9 React tests | Final browser/CodeQL qualification follows the branch head; no registry ownership, signing/provenance, tags or publication claim |
 
 The [ecosystem assessment](ECOSYSTEM_FIT.md) records Android repository/DI/
 coroutine integration and React query/SSR boundaries, including tested and
@@ -72,14 +73,26 @@ unqualified consumers. Initial CI failures are retained as diagnostic evidence,
 not converted to a passing result because Firefox passed independently.
 
 Initial Chromium runs recorded `ERR_ABORTED` after the page had decoded complete
-no-store response streams. This resembles [upstream issue 42742](https://github.com/microsoft/playwright/issues/42742),
-but the implementation cause was not established here. A native Fetch control
-and request/response/terminal-event diagnostics were added; unexpected failures
-still fail the gate. The next Linux source run passed all engines without any
-new exception/allowlist for those responses. Strict Gradle verification was
-retained; missing parent/BOM/module metadata was cross-checked byte-for-byte
-against Maven Central before adding checksums. CodeQL's Android lane forces
-compilation rather than accepting cached compiled outputs.
+no-store response streams, matching the observable class in
+[upstream issue 42742](https://github.com/microsoft/playwright/issues/42742).
+An independent native Fetch reader now reproduces that diagnostic without
+InnoNetwork, while native `.text()`/no-cache stream controls pass. The precise
+Chromium/DevTools implementation cause remains unestablished.
+
+The gate qualifies only `ERR_ABORTED`, Chromium, HTTP 200, no-store, exact
+fully validated fixture URLs, after the native stream reproduced the same
+diagnostic in that invocation. Eight matcher controls prevent general abort/
+error suppression. Page errors, wrong payloads, actual truncated bodies,
+unmatched requests and other engines remain blocking. Truncated HTTP bodies
+must produce a transport failure in every engine. Qualified diagnostics are
+logged, not counted as network failures or silently discarded.
+
+Strict Gradle verification was retained; missing parent/BOM/module metadata
+was cross-checked byte-for-byte against Maven Central before adding checksums.
+CodeQL's Android lane forces compilation rather than accepting cached outputs.
+Its initial scan covered all 15 Kotlin library source files; the test app's
+backup-enabled finding was addressed with explicit `allowBackup=false` and a
+fresh minified build/lint, pending exact-head rescanning.
 
 The Firefox failure matches the startup class discussed in
 [Playwright issue 42768](https://github.com/microsoft/playwright/issues/42768),
@@ -127,7 +140,8 @@ dependency resolution settings, and depend on
 the npm tarball directly with `npm install /absolute/path/to/bundle/npm/innosquad-innonetwork-1.0.0.tgz`.
 These local distributions need no public registry credentials. Checksums are
 integrity records, not publisher signatures. Remote release qualification,
-including Firefox on Linux, must be completed before declaring a public release.
+must be completed before declaring a public release. Linux Firefox runtime
+evidence is separate from macOS Firefox startup and registry publication.
 
 ## Native contracts consulted
 

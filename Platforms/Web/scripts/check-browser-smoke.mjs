@@ -5,6 +5,7 @@ import { createInterface } from "node:readline";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, firefox, webkit } from "playwright";
+import { isQualifiedChromiumStreamDiagnostic } from "./browser-network-diagnostics.mjs";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(scriptDirectory, "../../..");
@@ -56,14 +57,20 @@ async function checkBrowser(engineName, serverUrl) {
     const browserErrors = [];
     const consoleErrors = [];
     const intentionalFailures = [];
+    const requestFailures = [];
+    const responses = new Map();
     const networkEvents = [];
     page.on("request", (request) => networkEvents.push(`start ${request.method()} ${request.url()}`));
-    page.on("response", (response) => networkEvents.push(`headers ${response.status()} ${response.url()}`));
+    page.on("response", (response) => {
+      networkEvents.push(`headers ${response.status()} ${response.url()}`);
+      responses.set(response.url(), { status: response.status(), cacheControl: response.headers()["cache-control"] });
+    });
     page.on("requestfinished", (request) => networkEvents.push(`finished ${request.url()}`));
     const expectedFailures = new Set([
       new URL("api/slow", serverUrl).href,
       new URL("api/redirect", serverUrl).href,
       new URL("api/head", serverUrl).href,
+      new URL("api/truncated", serverUrl).href,
     ]);
     page.on("console", (message) => {
       if (message.type() === "error") consoleErrors.push(message.text());
@@ -79,7 +86,7 @@ async function checkBrowser(engineName, serverUrl) {
       if (expectedFailures.has(request.url())) {
         intentionalFailures.push(request.url());
       } else {
-        browserErrors.push(`request: ${request.url()} ${request.failure()?.errorText}`);
+        requestFailures.push({ url: request.url(), errorText: request.failure()?.errorText });
       }
     });
 
@@ -96,15 +103,39 @@ async function checkBrowser(engineName, serverUrl) {
       headBytes: 0,
       compressed: "ok",
       redirectTargetRequests: 0,
+      nativeControls: true,
+      truncatedKind: "transport",
     });
+    // The page must first verify every payload and both native stream controls.
+    // No arbitrary abort, failed body, non-200 status or unvalidated URL is accepted.
+    const controlUrl = new URL("api/native-stream-control", serverUrl).href;
+    const nativeControlFailed = requestFailures.some((failure) =>
+      failure.url === controlUrl && failure.errorText === "net::ERR_ABORTED" &&
+      responses.get(controlUrl)?.status === 200 && responses.get(controlUrl)?.cacheControl === "no-store");
+    const validatedUrls = new Set(["api/native-stream-control", "api/message", "api/compressed", "api/stats"]
+      .map((path) => new URL(path, serverUrl).href));
+    const qualifiedDiagnostics = [];
+    for (const failure of requestFailures) {
+      const metadata = responses.get(failure.url);
+      if (isQualifiedChromiumStreamDiagnostic({
+        ...failure, ...metadata, engineName, nativeControlFailed, validatedUrls,
+      })) {
+        qualifiedDiagnostics.push(failure.url);
+      } else {
+        browserErrors.push(`request: ${failure.url} ${failure.errorText}`);
+      }
+    }
     assert.deepEqual(browserErrors, [], `Browser errors: ${JSON.stringify(browserErrors)}\n${networkEvents.join("\n")}`);
+    if (qualifiedDiagnostics.length > 0) {
+      console.warn(`Chromium no-store DevTools diagnostic reproduced by native Fetch; validated bodies: ${qualifiedDiagnostics.join(", ")}`);
+    }
     // Engines report blocked Fetch redirects differently, sometimes without a source URL.
     // Permit only native resource messages backed by this fixture's expected failed requests.
     const webkitRedirectMessage = "Not allowed to follow a redirection while loading " + new URL("api/redirect", serverUrl).href;
     assert.deepEqual(consoleErrors.filter((message) =>
       !message.startsWith("Failed to load resource:") &&
       !(engineName === "webkit" && message === webkitRedirectMessage)), []);
-    assert.ok(consoleErrors.length <= intentionalFailures.length, consoleErrors.join("\n"));
+    assert.ok(consoleErrors.length <= intentionalFailures.length + qualifiedDiagnostics.length, consoleErrors.join("\n"));
 
     console.log(`InnoNetwork ${engineName} runtime: OK (${browser.version()})`);
   } finally {

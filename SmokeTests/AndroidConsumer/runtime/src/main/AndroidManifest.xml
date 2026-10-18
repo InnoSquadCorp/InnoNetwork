@@ -1,6 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
-    <application android:label="InnoNetwork runtime smoke" android:usesCleartextTraffic="true">
+    <application
+        android:label="InnoNetwork runtime smoke"
+        android:allowBackup="false"
+        android:usesCleartextTraffic="true">
         <activity android:name=".SmokeActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

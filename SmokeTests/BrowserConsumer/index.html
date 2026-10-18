@@ -50,6 +50,23 @@
         if (nativeControl !== JSON.stringify("hello from Chromium")) {
           throw new Error("Native Fetch control returned an unexpected body");
         }
+        for (const path of ["api/native-stream-control", "api/native-cache-control"]) {
+          const response = await fetch(path);
+          const reader = response.body.getReader();
+          let text = "";
+          const decoder = new TextDecoder();
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              text += decoder.decode(value, { stream: true });
+            }
+            text += decoder.decode();
+          } finally {
+            reader.releaseLock();
+          }
+          if (text !== nativeControl) throw new Error(`Native stream control failed: ${path}`);
+        }
         const session = new FetchNetworkSession({
           baseUrl: new URL("/", window.location.href),
         });
@@ -87,6 +104,15 @@
         const headBytes = (await smallSession.data("api/head", { method: "HEAD" })).body.byteLength;
         const compressed = (await smallSession.data("api/compressed")).text();
 
+        // Failing control: actual truncated bytes must reject, not be qualified as telemetry.
+        let truncatedKind = "missing";
+        try {
+          await session.data("api/truncated");
+        } catch (error) {
+          if (!(error instanceof NetworkError)) throw error;
+          truncatedKind = error.kind;
+        }
+
         const guardedSession = new FetchNetworkSession({
           baseUrl: new URL("/", window.location.href),
           defaultHeaders: { "X-Redirect-Guard": "secret" },
@@ -110,6 +136,7 @@
           redirectKind !== "transport" ||
           headBytes !== 0 ||
           compressed !== "ok" ||
+          truncatedKind !== "transport" ||
           stats.redirectRequests < 1 ||
           stats.redirectTargetRequests !== 0
         ) {
@@ -119,7 +146,7 @@
         status.textContent = "InnoNetwork browser smoke: OK";
         status.dataset.state = "ok";
         details.textContent = JSON.stringify({ message, cancellationKind, redirectKind, headBytes, compressed,
-          redirectTargetRequests: stats.redirectTargetRequests }, null, 2);
+          redirectTargetRequests: stats.redirectTargetRequests, nativeControls: true, truncatedKind }, null, 2);
       } catch (error) {
         status.textContent = "InnoNetwork browser smoke: FAILED";
         status.dataset.state = "failed";

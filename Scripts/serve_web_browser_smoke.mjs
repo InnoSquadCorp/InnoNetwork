@@ -64,6 +64,18 @@ function sendFile(response, root, requestPath) {
 
 const server = createServer((request, response) => {
   const requestUrl = new URL(request.url ?? "/", "http://127.0.0.1");
+  if (requestUrl.pathname === "/api/native-stream-control" || requestUrl.pathname === "/api/native-cache-control") {
+    const body = JSON.stringify("hello from Chromium");
+    response.writeHead(200, {
+      "Content-Type": "application/json",
+      "Cache-Control": requestUrl.pathname === "/api/native-stream-control" ? "no-store" : "no-cache",
+    });
+    response.write(body.slice(0, 4));
+    // Separate writes exercise native stream EOF independently of InnoNetwork.
+    const timer = setTimeout(() => response.end(body.slice(4)), 20);
+    response.once("close", () => clearTimeout(timer));
+    return;
+  }
   if (requestUrl.pathname === "/api/compressed") {
     const body = gzipSync("ok");
     response.writeHead(200, {
@@ -73,6 +85,13 @@ const server = createServer((request, response) => {
       "Cache-Control": "no-store",
     });
     response.end(body);
+    return;
+  }
+  if (requestUrl.pathname === "/api/truncated") {
+    response.writeHead(200, { "Content-Length": "9999", "Cache-Control": "no-store" });
+    response.write("incomplete");
+    const timer = setTimeout(() => response.destroy(), 20);
+    response.once("close", () => clearTimeout(timer));
     return;
   }
   if (requestUrl.pathname === "/api/head") {

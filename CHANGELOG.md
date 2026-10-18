@@ -33,6 +33,9 @@ Versioning.
   `Dispatchers.Default`, rather than blocking the caller's main thread.
 - Complete clean-runner Maven metadata verification from Maven Central without
   weakening strict dependency verification.
+- Qualify Chromium's native no-store stream diagnostic only with independent
+  controls and fully validated bodies; keep real truncation and unmatched
+  failures blocking. Disable backup in the isolated Android test application.
 
 - Settle Android callback read/close exceptions on the suspended caller, close
   buffered responses before delivery, and stop cancelled work before call creation
