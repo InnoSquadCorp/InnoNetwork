@@ -7,8 +7,40 @@ Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- Add Android 1.0.0 release-candidate modules over native OkHttp: bounded and
+  streaming sessions, typed clients, optional kotlinx.serialization, and
+  optional KSP endpoint generation intended to replace Retrofit execution
+  without replacing OkHttp configuration.
+- Add Web/React 1.0.0 release-candidate packaging over native Fetch with bounded
+  buffering, caller-owned streaming, origin-scoped default headers, immutable
+  buffered data, runtime JSON validation, and `AbortSignal` cancellation.
+- Add independent Maven, npm tarball, TypeScript, React, and Chromium consumers;
+  Android/Web public API baselines; KSP ABI and diagnostic gates; strict Gradle
+  dependency/wrapper verification; lockfile-backed npm installs; artifact
+  structure checks; CodeQL lanes; and dependency-update coverage.
+- Document the transport-first, macro-first cross-platform contract while
+  keeping the root Swift 6.1.1 package and its optional products aligned with
+  current `main` rather than presenting Android/Web as full API mirrors.
+
 ### Fixed
 
+- Settle Android callback read/close exceptions on the suspended caller, close
+  buffered responses before delivery, and stop cancelled work before call creation
+  or late-response buffering.
+- Generate collision-safe Kotlin endpoints for default/keyword packages, preserve
+  trailing slashes, diagnose inaccessible properties, and accept native body subtypes.
+- Bound Fetch's decoded bytes, preserve bodyless HTTP semantics across browser
+  engines, and return size failures without waiting indefinitely for cleanup.
+- Preserve Web async decoder cancellation and reject late results; support Node-only
+  declarations without DOM and ship complete source maps and embedded licenses.
+- Verify minified Android consumers and React StrictMode/replacement behavior;
+  check wrapper integrity before execution and freeze source identity in local
+  Maven/npm release bundles.
+- Reject literal and expanded-placeholder dot segments in generated Android
+  endpoint paths so OkHttp URL normalization cannot move a generated request
+  above its configured base path.
 - Keep independent PR Ready refreshes eligible after a sibling coordinator
   matrix failure, while still requiring each PR's successful receipt; prefilter
   unrelated receipt candidates before authoritative detail revalidation.

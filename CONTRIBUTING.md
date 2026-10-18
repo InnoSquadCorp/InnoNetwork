@@ -18,6 +18,18 @@ swift build --target InnoNetworkDocSmoke
 swift build --target InnoNetworkBenchmarks
 ```
 
+For changes under `Platforms/`, run the cross-platform release-candidate gate:
+
+```bash
+Scripts/check_cross_platform.sh
+```
+
+The gate validates Android tests/lint/KSP ABI, strict dependency verification,
+local Maven artifacts and an independent consumer, plus Web declarations,
+tests, a real npm tarball, and independent TypeScript/React consumers. Browser
+runtime validation is `npm --prefix Platforms/Web run test:browser` and also
+runs in CI. Do not describe local results as registry publication or remote CI.
+
 For benchmark validation:
 
 ```bash
@@ -40,6 +52,10 @@ historical content. Do not turn dated release evidence into new test claims.
 - Add or update tests for any user-visible behavior.
 - Keep examples aligned with `safeDefaults` unless the example is explicitly about advanced tuning.
 - Do not introduce `@unchecked Sendable` in production sources.
+- Preserve native transport boundaries: URLSession for the root Swift package,
+  OkHttp for Android, and Fetch for Web.
+- Update `Platforms/API_STABILITY.md` and the relevant public API baseline when
+  intentionally changing an Android/Web 1.x contract.
 
 ## Public API Policy
 

@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="data:," />
+    <title>InnoNetwork browser smoke</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: system-ui, sans-serif;
+      }
+      body {
+        display: grid;
+        min-height: 100vh;
+        margin: 0;
+        place-items: center;
+      }
+      main {
+        max-width: 42rem;
+        padding: 2rem;
+      }
+      [data-state="ok"] {
+        color: #16803d;
+      }
+      [data-state="failed"] {
+        color: #c53425;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>InnoNetwork browser runtime</h1>
+      <p id="status" role="status">Running native Fetch checks…</p>
+      <pre id="details"></pre>
+    </main>
+    <script type="module">
+      import {
+        DefaultNetworkClient,
+        FetchNetworkSession,
+        NetworkError,
+      } from "/package/index.js";
+
+      const status = document.querySelector("#status");
+      const details = document.querySelector("#details");
+
+      try {
+        const session = new FetchNetworkSession({
+          baseUrl: new URL("/", window.location.href),
+        });
+        const client = new DefaultNetworkClient(session);
+        const message = await client.request({
+          input: "api/message",
+          decode(response) {
+            return response.decodeJson((value) => {
+              if (typeof value !== "string") {
+                throw new TypeError("message must be a string");
+              }
+              return value;
+            });
+          },
+        });
+
+        const controller = new AbortController();
+        const cancellation = session.data("api/slow", { signal: controller.signal });
+        window.setTimeout(() => controller.abort("browser-smoke"), 25);
+        let cancellationKind = "missing";
+        try {
+          await cancellation;
+        } catch (error) {
+          if (error instanceof NetworkError) {
+            cancellationKind = error.kind;
+          } else {
+            throw error;
+          }
+        }
+
+        const smallSession = new FetchNetworkSession({
+          baseUrl: new URL("/", window.location.href),
+          maxResponseBodyBytes: 2,
+        });
+        const headBytes = (await smallSession.data("api/head", { method: "HEAD" })).body.byteLength;
+        const compressed = (await smallSession.data("api/compressed")).text();
+
+        const guardedSession = new FetchNetworkSession({
+          baseUrl: new URL("/", window.location.href),
+          defaultHeaders: { "X-Redirect-Guard": "secret" },
+        });
+        let redirectKind = "missing";
+        try {
+          await guardedSession.data("api/redirect");
+        } catch (error) {
+          if (error instanceof NetworkError) {
+            redirectKind = error.kind;
+          } else {
+            throw error;
+          }
+        }
+
+        const stats = (await session.data("api/stats")).json();
+
+        if (
+          message !== "hello from Chromium" ||
+          cancellationKind !== "cancelled" ||
+          redirectKind !== "transport" ||
+          headBytes !== 0 ||
+          compressed !== "ok" ||
+          stats.redirectRequests < 1 ||
+          stats.redirectTargetRequests !== 0
+        ) {
+          throw new Error(`Unexpected result: ${message}, ${cancellationKind}, ${redirectKind}`);
+        }
+
+        status.textContent = "InnoNetwork browser smoke: OK";
+        status.dataset.state = "ok";
+        details.textContent = JSON.stringify({ message, cancellationKind, redirectKind, headBytes, compressed,
+          redirectTargetRequests: stats.redirectTargetRequests }, null, 2);
+      } catch (error) {
+        status.textContent = "InnoNetwork browser smoke: FAILED";
+        status.dataset.state = "failed";
+        details.textContent = error instanceof Error ? error.stack ?? error.message : String(error);
+        console.error(error);
+      }
+    </script>
+  </body>
+</html>

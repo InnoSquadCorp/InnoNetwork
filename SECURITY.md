@@ -33,6 +33,11 @@ The current supported release line is **6.x**, with stable **6.1.1** published
 on 2026-10-07 UTC. Earlier major releases are historical; use the current
 line for fixes. Report the exact resolved version and affected configuration.
 
+Android and Web sources under `Platforms/` identify themselves as 1.0.0
+release candidates. Until Maven/npm publication and remote release evidence
+exist, reports against them should include the tested commit and are assessed
+as prerelease findings rather than as a published support-line guarantee.
+
 ### Historical 6.0 readiness policy (superseded by publication)
 
 - `6.x` becomes the supported public release line when `6.0.0` is published.

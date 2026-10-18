@@ -15,7 +15,10 @@ Current adoption guides share the 6.1.1 baseline, installation, request and oper
 [![Supply Chain](https://img.shields.io/badge/supply%20chain-SHA--pinned%20Actions%20%2B%20Dependabot-blue)](#production-checklist)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-InnoNetwork is a Swift package for type-safe networking on Apple platforms.
+The root InnoNetwork distribution is a Swift package for type-safe networking
+on Apple platforms. Android and Web/React 1.0.0 release-candidate sources live
+under [`Platforms`](Platforms/README.md); they preserve OkHttp and Fetch as the
+native low-level boundary and do not claim parity with every optional Swift product.
 Most applications import only the root `InnoNetwork` product and use three
 concepts:
 
@@ -153,7 +156,7 @@ redacted request lifecycle events into exporter-neutral semantic attributes.
 See `API_STABILITY.md` for the Stable / Provisionally Stable contract
 around each of these.
 
-> ⚠️ **Apple platforms only by design.** InnoNetwork builds on URLSession, `OSAllocatedUnfairLock`, OSLog, and Network.framework, none of which match Apple-platform behaviour on Linux. Linux/server-side Swift is **not** a supported target. See [docs/PlatformSupport.md](docs/PlatformSupport.md) for the rationale and for guidance on sharing models with Linux server code (e.g. Vapor).
+> ⚠️ **The root Swift package is Apple-platform-only by design.** It builds on URLSession, `OSAllocatedUnfairLock`, OSLog, and Network.framework, none of which match Apple-platform behaviour on Linux. Linux/server-side Swift is **not** a supported target. Android and Web use separate native packages under `Platforms/`. See [docs/PlatformSupport.md](docs/PlatformSupport.md) for the exact boundary.
 
 > 📚 **API Reference (DocC):** https://innosquadcorp.github.io/InnoNetwork/
 > 🇰🇷 **한국어 문서:** [docs/ko/README.md](docs/ko/README.md)

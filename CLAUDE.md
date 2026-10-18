@@ -46,6 +46,13 @@ InnoNetwork is a type-safe Swift network library with **9 runtime products** and
 the compiler-host-only **InnoNetworkMacroSupport** product (published 6.1.1).
 The former HLS products live in the sibling InnoNetwork-Stream package.
 
+The repository also contains independent Android and Web/React 1.0.0
+release-candidate packages under `Platforms/`. They align only the core native
+session, cancellation, bounded buffering, HTTP-status, typed-client, and JSON
+validation contracts. Android keeps OkHttp and optional KSP; Web keeps Fetch and
+TypeScript structural typing. Do not port the full Swift surface by name or
+claim remote registry publication from local package evidence.
+
 **InnoNetwork (Core):**
 - Async/await + `typed throws` (`async throws(NetworkError)`)
 - Type-safe request/response via generics + `APIDefinition`
@@ -118,6 +125,9 @@ swift test --no-parallel --enable-code-coverage
 
 # List tests
 swift test --list-tests
+
+# Android/Web release-candidate gate
+Scripts/check_cross_platform.sh
 ```
 
 ## Architecture
@@ -217,6 +227,14 @@ swift test --list-tests
 - `Benchmarks/InnoNetworkBenchmarks/` — performance harness
 - `SmokeTests/InnoNetworkDocSmoke/` / `InnoNetworkDownloadSmoke/` — release-time live smoke
 - `Tests/InnoNetworkLiveTests/` — env-gated live (gated by env vars, off by default)
+
+### Platforms/Android and Platforms/Web
+- `Platforms/Android/innonetwork` — native OkHttp session and streaming boundary
+- `Platforms/Android/innonetwork-client` / `innonetwork-ksp` — optional typed client and compile-time request generation
+- `Platforms/Android/innonetwork-kotlinx-serialization` — optional explicit JSON adapter
+- `Platforms/Web/src` — zero-runtime-dependency Fetch session and typed client
+- `SmokeTests/AndroidConsumer` — published local Maven/KSP consumer
+- `SmokeTests/WebConsumer` / `ReactConsumer` / `WebTarballConsumer` / `BrowserConsumer` — package, lifecycle, tarball, and Chromium boundaries
 
 ## Common Patterns
 

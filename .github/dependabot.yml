@@ -66,6 +66,74 @@
         "swift",
         "release-validation"
       ]
+    },
+    {
+      "package-ecosystem": "gradle",
+      "directories": [
+        "/Platforms/Android",
+        "/SmokeTests/AndroidConsumer"
+      ],
+      "schedule": {
+        "interval": "weekly",
+        "day": "monday",
+        "time": "10:00",
+        "timezone": "Asia/Seoul"
+      },
+      "open-pull-requests-limit": 5,
+      "groups": {
+        "android-minor-patch": {
+          "patterns": [
+            "*"
+          ],
+          "update-types": [
+            "minor",
+            "patch"
+          ]
+        }
+      },
+      "commit-message": {
+        "prefix": "chore(android-deps)"
+      },
+      "labels": [
+        "dependencies",
+        "android",
+        "release-validation"
+      ]
+    },
+    {
+      "package-ecosystem": "npm",
+      "directories": [
+        "/Platforms/Web",
+        "/SmokeTests/WebConsumer",
+        "/SmokeTests/WebTarballConsumer",
+        "/SmokeTests/ReactConsumer"
+      ],
+      "schedule": {
+        "interval": "weekly",
+        "day": "monday",
+        "time": "10:30",
+        "timezone": "Asia/Seoul"
+      },
+      "open-pull-requests-limit": 5,
+      "groups": {
+        "web-minor-patch": {
+          "patterns": [
+            "*"
+          ],
+          "update-types": [
+            "minor",
+            "patch"
+          ]
+        }
+      },
+      "commit-message": {
+        "prefix": "chore(web-deps)"
+      },
+      "labels": [
+        "dependencies",
+        "web",
+        "release-validation"
+      ]
     }
   ]
 }

@@ -1,0 +1,170 @@
+name: Cross-platform
+
+on:
+  pull_request:
+    paths:
+      - "Platforms/**"
+      - "SmokeTests/AndroidConsumer/**"
+      - "SmokeTests/WebConsumer/**"
+      - "SmokeTests/ReactConsumer/**"
+      - "SmokeTests/WebTarballConsumer/**"
+      - "SmokeTests/BrowserConsumer/**"
+      - "Scripts/check_*"
+      - "Scripts/serve_web_browser_smoke.mjs"
+      - "Scripts/check_android_device_smoke.mjs"
+      - "Scripts/prepare_cross_platform_release.sh"
+      - ".github/workflows/cross-platform.yml"
+  push:
+    branches:
+      - main
+      - "feature/**"
+    paths:
+      - "Platforms/**"
+      - "SmokeTests/AndroidConsumer/**"
+      - "SmokeTests/WebConsumer/**"
+      - "SmokeTests/ReactConsumer/**"
+      - "SmokeTests/WebTarballConsumer/**"
+      - "SmokeTests/BrowserConsumer/**"
+      - "Scripts/check_*"
+      - "Scripts/serve_web_browser_smoke.mjs"
+      - "Scripts/check_android_device_smoke.mjs"
+      - "Scripts/prepare_cross_platform_release.sh"
+      - ".github/workflows/cross-platform.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cross-platform-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    name: Android 1.0 / JDK ${{ matrix.java }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        java: ["17", "21"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up JDK
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+          cache: gradle
+
+      - name: Verify Gradle wrapper integrity before execution
+        run: Scripts/check_android_wrapper_integrity.sh
+
+      - name: Install Android compile SDK
+        run: >-
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          "platforms;android-37.0" "build-tools;36.0.0"
+
+      - name: Test, lint, and publish Android 1.0 packages locally
+        run: >-
+          Platforms/Android/gradlew
+          -p Platforms/Android
+          testDebugUnitTest
+          :innonetwork-ksp:test
+          lint
+          :innonetwork-ksp:checkKotlinAbi
+          publishAllPublicationsToPreviewRepository
+
+      - name: Verify Maven release artifacts
+        run: Scripts/check_android_release_artifacts.sh
+
+      - name: Verify Android public API
+        run: Scripts/check_android_public_api.sh
+
+      - name: Build and test Android KSP consumer
+        run: >-
+          Platforms/Android/gradlew
+          -p SmokeTests/AndroidConsumer
+          :consumer:testDebugUnitTest
+          :consumer:assembleDebug
+          :runtime:assembleRelease
+          -PusePublishedPreview=true
+
+      - name: Verify Android executable test counts
+        run: Scripts/check_android_test_counts.sh
+
+      - name: Verify Android KSP diagnostics
+        run: Scripts/check_android_codegen_failures.sh
+
+  web:
+    name: Web 1.0 / Node ${{ matrix.node }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["22", "24", "26"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: |
+            Platforms/Web/package-lock.json
+            SmokeTests/WebConsumer/package-lock.json
+            SmokeTests/WebTarballConsumer/package-lock.json
+            SmokeTests/ReactConsumer/package-lock.json
+
+      - name: Test and build Web package
+        working-directory: Platforms/Web
+        run: |
+          npm ci --ignore-scripts --no-audit
+          npm run check
+          npm test
+          npm run build
+          npm pack --dry-run
+
+      - name: Advisory npm vulnerability audit
+        if: matrix.node == '24'
+        continue-on-error: true
+        working-directory: Platforms/Web
+        run: npm audit --audit-level=high
+
+      - name: Install native browser engines
+        if: matrix.node == '24'
+        working-directory: Platforms/Web
+        run: |
+          npx playwright install --with-deps --only-shell chromium
+          npx playwright install --with-deps firefox webkit
+
+      - name: Verify Chromium, Firefox, and WebKit runtimes
+        if: matrix.node == '24'
+        working-directory: Platforms/Web
+        run: npm run test:browsers
+
+      - name: Verify Web declaration API and packed consumer
+        run: |
+          Scripts/check_web_public_api.sh
+          Scripts/check_web_tarball_consumer.sh
+
+      - name: Compile Web consumer smoke
+        working-directory: SmokeTests/WebConsumer
+        run: |
+          npm ci --ignore-scripts --no-audit
+          npm run check
+
+      - name: Test React lifecycle consumer smoke
+        if: matrix.node == '24'
+        working-directory: SmokeTests/ReactConsumer
+        run: |
+          npm ci --ignore-scripts --no-audit
+          npm run check
+          npm test

@@ -1,0 +1,54 @@
+{
+  "name": "@innosquad/innonetwork",
+  "version": "1.0.0",
+  "description": "A platform-native Fetch session and typed API client for browser and React applications",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "keywords": [
+    "fetch",
+    "http",
+    "networking",
+    "react",
+    "typescript"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:browser": "node scripts/check-browser-smoke.mjs",
+    "test:browsers": "node scripts/check-browser-smoke.mjs --all",
+    "prepack": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "26.4.1",
+    "playwright": "1.64.1",
+    "typescript": "7.0.2",
+    "vitest": "5.0.0"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/InnoSquadCorp/InnoNetwork.git",
+    "directory": "Platforms/Web"
+  }
+}

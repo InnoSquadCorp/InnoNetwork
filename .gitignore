@@ -109,3 +109,15 @@ iOSInjectionProject/
 # DocC Documentation Build
 docs-build/
 __pycache__/
+
+# Android / Gradle
+**/.gradle/
+**/.kotlin/
+local.properties
+
+# Web / Node
+**/node_modules/
+**/dist/
+**/*.tgz
+/output/
+.playwright-cli/
