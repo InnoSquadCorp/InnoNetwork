@@ -92,3 +92,4 @@ results. This is not SWR, Next.js hydration, React Native or every bundler proof
 - [React effects](https://react.dev/reference/react/useEffect): cleanup, reactive dependencies and client-only effects.
 - [TanStack Query cancellation](https://tanstack.com/query/latest/docs/framework/react/guides/query-cancellation): query-owned signals and cancellation.
 - [TanStack query functions](https://tanstack.com/query/latest/docs/framework/react/guides/query-functions): errors must reject the query function.
+- [Next.js Fetch](https://nextjs.org/docs/app/api-reference/functions/fetch): framework-specific cache, revalidation and tag options are separate from native Fetch.

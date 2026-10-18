@@ -62,14 +62,24 @@ are retained and included in the regression gates.
 | Android packaging/runtime | API-21-targeted D8/R8 APK; actual API 26 emulator execution | KSP, JSON, concurrent requests, gzip, limit, streaming, cancellation passed; API 21-25 device execution unverified |
 | TypeScript/runtime consumers | TypeScript 7.0.2, DOM and Node-only projects; installed tarball on Node 22.0.0; maintainer Node 24/26 | Exact Node receipt is recorded in a generated release bundle |
 | Native browser engines | Playwright 1.64.1: Chromium 156 and WebKit 27.2 on macOS 27.0.1 | Passed; this is WebKit engine evidence, not iOS Safari device evidence |
-| Firefox | Firefox 157 passes on Linux in [remote run 39102511966](https://github.com/InnoSquadCorp/InnoNetwork/actions/runs/39102511966); macOS launch control fails before library code | Linux runtime verified; macOS environment qualification remains |
+| Firefox | Firefox 157 passes on Linux in [source run 39102936977](https://github.com/InnoSquadCorp/InnoNetwork/actions/runs/39102936977); macOS launch control fails before library code | Linux runtime verified; macOS environment qualification remains |
 | Retry/restoration | No library retry or restoration layer in Android/Web 1.0 | Intentionally outside this release; native policy remains explicit |
-| Remote CI / release | Initial branch run and retry: Node 22/26 pass, Firefox/WebKit pass; Android missing four verified Maven metadata checksums; Chromium unexpected abort diagnostics | Overall CI qualification pending; no registry ownership, signing/provenance, tags or publication claim |
+| Remote CI / release | Source run 39102936977: Node 22/24/26, all three browser engines, installed tarball and 9 React tests pass; Android native tests/lint/publication pass, independent consumer exposes one more missing metadata checksum | Final Android CI and CodeQL qualification pending; no registry ownership, signing/provenance, tags or publication claim |
 
 The [ecosystem assessment](ECOSYSTEM_FIT.md) records Android repository/DI/
 coroutine integration and React query/SSR boundaries, including tested and
 unqualified consumers. Initial CI failures are retained as diagnostic evidence,
 not converted to a passing result because Firefox passed independently.
+
+Initial Chromium runs recorded `ERR_ABORTED` after the page had decoded complete
+no-store response streams. This resembles [upstream issue 42742](https://github.com/microsoft/playwright/issues/42742),
+but the implementation cause was not established here. A native Fetch control
+and request/response/terminal-event diagnostics were added; unexpected failures
+still fail the gate. The next Linux source run passed all engines without any
+new exception/allowlist for those responses. Strict Gradle verification was
+retained; missing parent/BOM/module metadata was cross-checked byte-for-byte
+against Maven Central before adding checksums. CodeQL's Android lane forces
+compilation rather than accepting cached compiled outputs.
 
 The Firefox failure matches the startup class discussed in
 [Playwright issue 42768](https://github.com/microsoft/playwright/issues/42768),
