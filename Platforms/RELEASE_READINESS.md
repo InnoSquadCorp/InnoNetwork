@@ -241,7 +241,34 @@ Gradle up-to-date/cache reuse; this is not a claim that every Android test was
 newly executed. Browser engines and CodeQL were not rerun for the document-only
 change; their exact-subject evidence remains separately identified above.
 
-## Confirmed corrections in this pass
+## Main integration and layout preflight — 2026-10-18
+
+The subsequent request authorizes the cross-platform PR and main merge, not
+registry publication or a Swift release. The protected Swift baseline remains
+`ac0363674c974b8fd0423f29d17ea7791d28dbcb`; root Swift files, manifest, lockfile,
+targets/resources and package entry point are preserved. Instead of moving
+SwiftPM into a platform subdirectory, [native layout and releasing](RELEASING.md)
+records the compatibility decision and independent release paths. This is a
+local, reversible layout/check change; that focused document and the PR carry
+the design rather than a separate broad architecture proposal.
+
+The layout checker and positive/negative controls validate canonical roots,
+Android modules/composite/preview paths, npm package metadata/entry points,
+Web/React consumer paths and licenses. Portable validation and every Android/Web
+CI matrix leg invoke them; the local bundle includes their exact source hashes.
+They are static checks of this repository's declaration conventions, not a full
+Gradle/Swift parser or a substitute for installed-artifact execution.
+
+Fresh local `xcrun swift test` completed successfully on Xcode 27 / Swift 6.4
+without Swift edits. Cross-platform source run
+[39108007778](https://github.com/InnoSquadCorp/InnoNetwork/actions/runs/39108007778)
+at `165b97fb` also passed all five jobs, including three native browser engines
+and React lifecycle tests, before the layout-only follow-up. That previous run
+is not relabeled as validation of the later layout checker. Exact PR-head CI,
+local package bundles and merge identities must be read from their own receipts
+and PR checks; Swift CodeQL findings/qualifications above remain separate.
+
+## Confirmed corrections in the cross-platform implementation
 
 - Buffered Android callback exceptions now settle the suspended caller. Bodies
   close before result delivery, cancelled calls do not read late responses, and

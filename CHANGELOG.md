@@ -9,6 +9,10 @@ Versioning.
 
 ### Added
 
+- Freeze the native package-root contract without moving SwiftPM sources;
+  validate Android/Web metadata and consumer paths with negative controls,
+  and document independent layout, tagging and publication boundaries.
+
 - Add a real TanStack Query consumer for typed queries, cache/deduplication,
   cancellation and HTTP-error semantics, plus Android/React ecosystem guidance.
 

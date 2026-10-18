@@ -70,6 +70,11 @@ structural typing. Generated code must not hide the native escape hatch.
 
 ## Release boundary
 
+The existing SwiftPM entry point stays at the repository root; Android and Web
+stay under `Platforms/Android` and `Platforms/Web`. No Swift source/manifest or
+consumer URL migration is introduced. See [layout and releasing](../Platforms/RELEASING.md)
+for canonical paths, executable layout checks and independent publication gates.
+
 Android and Web begin independent 1.x SemVer lines. Local gates validate Maven
 artifacts, npm tarballs, consumers, API/ABI baselines, failure diagnostics,
 React StrictMode/replacement, R8 packaging, and native browser behavior. See

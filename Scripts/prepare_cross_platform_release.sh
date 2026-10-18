@@ -20,6 +20,7 @@ source_manifest() {
             LICENSE CHANGELOG.md Platforms SmokeTests/AndroidConsumer SmokeTests/WebConsumer \
             SmokeTests/ReactConsumer SmokeTests/WebTarballConsumer SmokeTests/BrowserConsumer \
             'Scripts/check_android_*' 'Scripts/check_web_*' Scripts/check_cross_platform.sh \
+            Scripts/check_platform_layout.py Scripts/tests/test_check_platform_layout.py \
             Scripts/prepare_cross_platform_release.sh Scripts/serve_web_browser_smoke.mjs \
             .github/workflows/cross-platform.yml .github/workflows/codeql.yml |
             LC_ALL=C sort -u |

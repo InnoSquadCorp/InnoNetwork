@@ -4,6 +4,8 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+python3 "$repo_root/Scripts/check_platform_layout.py"
+python3 "$repo_root/Scripts/tests/test_check_platform_layout.py"
 "$repo_root/Scripts/check_android_wrapper_integrity.sh"
 
 if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then

@@ -10,6 +10,7 @@ on:
       - "SmokeTests/WebTarballConsumer/**"
       - "SmokeTests/BrowserConsumer/**"
       - "Scripts/check_*"
+      - "Scripts/tests/test_check_platform_layout.py"
       - "Scripts/serve_web_browser_smoke.mjs"
       - "Scripts/check_android_device_smoke.mjs"
       - "Scripts/prepare_cross_platform_release.sh"
@@ -26,6 +27,7 @@ on:
       - "SmokeTests/WebTarballConsumer/**"
       - "SmokeTests/BrowserConsumer/**"
       - "Scripts/check_*"
+      - "Scripts/tests/test_check_platform_layout.py"
       - "Scripts/serve_web_browser_smoke.mjs"
       - "Scripts/check_android_device_smoke.mjs"
       - "Scripts/prepare_cross_platform_release.sh"
@@ -52,6 +54,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Verify native package layout and negative controls
+        run: |
+          python3 Scripts/check_platform_layout.py
+          python3 Scripts/tests/test_check_platform_layout.py
 
       - name: Set up JDK
         uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
@@ -111,6 +118,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Verify native package layout and negative controls
+        run: |
+          python3 Scripts/check_platform_layout.py
+          python3 Scripts/tests/test_check_platform_layout.py
 
       - name: Set up Node
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0

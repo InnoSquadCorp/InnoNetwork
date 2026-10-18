@@ -43,3 +43,7 @@ The current [release readiness record](RELEASE_READINESS.md) lists fresh checks,
 remaining qualifications, and the 1.0.0 scope. To create an installable local
 Maven/npm bundle after all portable gates pass, run
 `bash Scripts/prepare_cross_platform_release.sh` from the repository root.
+
+[Native layout and releasing](RELEASING.md) fixes the SwiftPM root, independent
+Gradle/npm package roots, consumer paths and separate release/tag boundaries.
+The layout and its negative controls are checked by the portable gate and CI.
