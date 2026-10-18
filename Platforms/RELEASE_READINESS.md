@@ -280,6 +280,21 @@ grouping and unregistered owned manifests; generated caches are excluded from
 owned-source inventory. This corrects an integration-policy mismatch, not a
 Swift runtime defect or a reason to weaken required checks.
 
+Dependency Review also stopped on GitHub's base/head snapshot warning (0 versus
+1), while the immutable Swift lock transition passed. The existing trusted
+main submission workflow was dispatched at `ac036367`
+([39111357579](https://github.com/InnoSquadCorp/InnoNetwork/actions/runs/39111357579));
+it succeeded, and the default-branch SBOM contains the five expected Swift
+packages. The current PR snapshot was then resubmitted successfully. The old
+comparison still reported five unchanged Swift packages as additions and the
+0/1 warning. That is unresolved comparison/index evidence, not proof of a
+dependency change or permission to ignore the warning. This documentation-only
+head is one bounded control created after the baseline submission, to test
+whether a newly generated comparison reconciles the indexed baseline. The
+cache/index explanation is a hypothesis; only successful native Dependency
+Review on the current head can close the gate. No snapshot-warning exception,
+reduced query, fabricated status or Swift change is introduced.
+
 ## Confirmed corrections in the cross-platform implementation
 
 - Buffered Android callback exceptions now settle the suspended caller. Bodies
