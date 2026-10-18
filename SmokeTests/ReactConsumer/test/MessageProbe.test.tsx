@@ -1,4 +1,4 @@
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -73,6 +73,7 @@ describe("React consumer lifecycle", () => {
     const onMessage = vi.fn<(message: string) => void>();
     const onError = vi.fn<(error: unknown) => void>();
 
+    const requests = vi.spyOn(client, "request");
     const view = render(<StrictMode>
       <MessageProbe client={client} input="https://api.example.com/message"
         onMessage={onMessage} onError={onError} />
@@ -82,8 +83,41 @@ describe("React consumer lifecycle", () => {
     expect(signals).toHaveLength(2);
     expect(signals[0]?.aborted).toBe(true);
     expect(signals[1]?.aborted).toBe(false);
+    const effectSignal = requests.mock.calls[1]?.[0].init?.signal;
+    expect(effectSignal?.aborted).toBe(false);
     view.unmount();
+    // The completed native Request may already be collected; cleanup owns the effect's signal.
+    expect(effectSignal?.aborted).toBe(true);
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("aborts each in-flight StrictMode request during cleanup without delivering cancellation errors", async () => {
+    const signals: AbortSignal[] = [];
+    const fetch: FetchFunction = async (input) => {
+      if (!(input instanceof Request)) throw new TypeError("expected Request");
+      signals.push(input.signal);
+      return new Promise<Response>((_resolve, reject) => {
+        input.signal.addEventListener(
+          "abort",
+          () => reject(new DOMException("aborted", "AbortError")),
+          { once: true },
+        );
+      });
+    };
+    const client = new DefaultNetworkClient(new FetchNetworkSession({ fetch }));
+    const onMessage = vi.fn<(message: string) => void>();
+    const onError = vi.fn<(error: unknown) => void>();
+    const view = render(<StrictMode>
+      <MessageProbe client={client} input="https://api.example.com/slow"
+        onMessage={onMessage} onError={onError} />
+    </StrictMode>);
+
+    await waitFor(() => expect(signals).toHaveLength(2));
+    expect(signals[0]?.aborted).toBe(true);
+    expect(signals[1]?.aborted).toBe(false);
+    await act(async () => { view.unmount(); });
     expect(signals[1]?.aborted).toBe(true);
+    expect(onMessage).not.toHaveBeenCalled();
     expect(onError).not.toHaveBeenCalled();
   });
 
