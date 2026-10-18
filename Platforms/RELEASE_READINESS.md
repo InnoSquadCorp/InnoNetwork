@@ -268,6 +268,18 @@ is not relabeled as validation of the later layout checker. Exact PR-head CI,
 local package bundles and merge identities must be read from their own receipts
 and PR checks; Swift CodeQL findings/qualifications above remain separate.
 
+The first PR policy run rejected the new dependency-update configuration:
+`check-public-operations.py` still required exactly Actions and Swift entries.
+The failure was reproduced locally; the unchanged main configuration passed
+the same focused control. The integration policy now validates exactly four
+declared ecosystems and their owned package directories, weekly schedules,
+limits, labels and minor/patch grouping. Existing Swift constraints/exclusions
+and privileged-workflow/token boundaries remain unchanged. Negative controls
+reject missing/duplicate ecosystems, directory drift, hidden updates, major
+grouping and unregistered owned manifests; generated caches are excluded from
+owned-source inventory. This corrects an integration-policy mismatch, not a
+Swift runtime defect or a reason to weaken required checks.
+
 ## Confirmed corrections in the cross-platform implementation
 
 - Buffered Android callback exceptions now settle the suspended caller. Bodies
