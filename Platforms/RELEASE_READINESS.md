@@ -1,7 +1,9 @@
 # Android / Web 1.0.0 readiness record
 
 Assessment date: 2026-10-18 KST. Swift baseline: `ac0363674c974b8fd0423f29d17ea7791d28dbcb`.
-Cross-platform changes live on `feature/cross-platform-network-sessions`.
+The initial cross-platform integration was merged in [PR #159](https://github.com/InnoSquadCorp/InnoNetwork/pull/159)
+as `da6fde046000612913f5e54835a8942031f52f24`. The React fixture follow-up below
+is developed on `fix/react-consumer-cancellation-contract`.
 This is an installable local 1.0.0
 candidate, not evidence of public Maven Central/npm publication. The root Swift
 manifest, lockfile, sources, and tests remain equal to `origin/main`.
@@ -19,6 +21,53 @@ Swift runtime changes, full Swift feature parity, app-owned auth/refresh/replay,
 background restoration, WebSockets, persistence, and React Native are excluded.
 Native OkHttp/Fetch configuration remains the application boundary for TLS,
 timeouts, cache, cookies, credentials, interceptors, and observability.
+
+## Post-merge React cancellation fixture follow-up — 2026-10-18
+
+The final integration head `8d3c4baf` passed the complete
+[PR CI](https://github.com/InnoSquadCorp/InnoNetwork/actions/runs/39111932131)
+and all five [Cross-platform jobs](https://github.com/InnoSquadCorp/InnoNetwork/actions/runs/39111932102)
+before squash merge. Fresh post-merge Git checks confirmed the merged tree is
+identical to that head, and all Swift files, manifest/lockfile, sources, tests,
+root CI and existing release workflows are unchanged from its actual main parent.
+
+The first [main Cross-platform run](https://github.com/InnoSquadCorp/InnoNetwork/actions/runs/39116428504)
+then passed both Android jobs and Node 22/26 but failed Node 24's React fixture.
+The failing assertion was `MessageProbe.test.tsx:86`: after an immediate typed
+response had already been delivered, unmount was expected to abort the captured
+native `Request.signal`. Web unit/build/API/tarball consumers and Chromium,
+Firefox and WebKit had all passed in that same job. The original failure is
+retained as a failure, not relabeled as a passing browser or CI execution.
+
+Focused controls used the exact CI Node `24.21.0` and local Node `26.12.0`:
+
+- A retained native Request propagates its owner's abort. When the completed
+  Request is garbage-collected but only its derived signal is retained, that
+  derived signal can remain un-aborted even though the owner's signal aborts.
+- The same completed-request behavior reproduced through the real
+  `DefaultNetworkClient` and `FetchNetworkSession`, with no package changes.
+- Under identical forced-GC setup, the archived pre-fix lifecycle fixture
+  failed at the exact remote assertion (one failure / five tests). The patched
+  fixture passed all six lifecycle tests on both Node versions.
+- The normal React suite passed all ten tests, repeated ten times on each Node
+  version. TypeScript's strict consumer check also passed. These are local
+  controls, not a claim of a successful post-fix remote run.
+
+The fix observes the effect-owned source signal for cleanup after completion.
+It retains the pre-completion native signal assertions and adds a separate
+StrictMode pending-request test that must abort both native requests without
+delivering cancellation errors. No assertion about a still-active native
+request was removed. The React adapter, package implementation, dependencies,
+Swift tree and CI policy are unchanged; no retry or relaxed gate hides the
+failure. This follows React's [effect setup/cleanup ownership](https://react.dev/reference/react/useEffect#my-effect-runs-twice-when-the-component-mounts).
+
+The isolated controls and exact failure log are retained locally under
+`output/pr-merge.bO86db/` (`request-signal-lifetime.mjs`, the two archived/fixed
+GC comparisons, repeated-run logs, and `post-merge-node24.log`). The GC probes
+are not added to production sources or the normal test environment. Post-fix
+PR/main CI and a clean-source bundle must be identified separately before
+claiming their completion. Public registry publication, signatures and tags
+remain excluded.
 
 ## Swift CodeQL completion contract — 2026-10-18
 
