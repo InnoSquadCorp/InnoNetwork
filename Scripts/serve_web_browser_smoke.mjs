@@ -80,7 +80,7 @@ const server = createServer((request, response) => {
     response.end();
     return;
   }
-  if (requestUrl.pathname === "/api/message") {
+  if (requestUrl.pathname === "/api/message" || requestUrl.pathname === "/api/native-control") {
     const body = JSON.stringify("hello from Chromium");
     response.writeHead(200, {
       "Content-Type": "application/json; charset=utf-8",

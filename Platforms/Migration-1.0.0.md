@@ -14,6 +14,11 @@ TLS, cookies, cache, connection pooling, proxy selection, and `EventListener`
 remain native OkHttp concerns. Construct `OkHttpNetworkSession(okHttpClient)` and
 give `DefaultNetworkClient` the application's base `HttpUrl`.
 
+Typed response decoding now uses `Dispatchers.Default` by default; an optional
+third constructor argument injects the application's decoding dispatcher. The
+two-argument constructor is retained. Decoders must not assume the caller's
+thread or perform UI work. Cancellation remains structured.
+
 | Retrofit concept | InnoNetwork 1.0 |
 | --- | --- |
 | `@GET`, `@POST`, related methods | `@InnoEndpoint(method, path)` |
@@ -43,3 +48,8 @@ is trusted to receive the same values. Origin-scoped defaults disable automatic
 redirect following; use native `redirect: "manual"` for caller-owned redirect
 handling. JSON reaches endpoint decoders as `unknown`; continue validating it
 with a caller-selected schema or type guard.
+
+For React server state, pass TanStack Query's query-function `signal` through
+the endpoint's `init`; keep caching, retries and invalidation in Query. See the
+[tested query adapter](../SmokeTests/ReactConsumer/src/messageQueryOptions.ts)
+and [ecosystem assessment](ECOSYSTEM_FIT.md), including SSR limitations.

@@ -56,6 +56,10 @@ async function checkBrowser(engineName, serverUrl) {
     const browserErrors = [];
     const consoleErrors = [];
     const intentionalFailures = [];
+    const networkEvents = [];
+    page.on("request", (request) => networkEvents.push(`start ${request.method()} ${request.url()}`));
+    page.on("response", (response) => networkEvents.push(`headers ${response.status()} ${response.url()}`));
+    page.on("requestfinished", (request) => networkEvents.push(`finished ${request.url()}`));
     const expectedFailures = new Set([
       new URL("api/slow", serverUrl).href,
       new URL("api/redirect", serverUrl).href,
@@ -71,6 +75,7 @@ async function checkBrowser(engineName, serverUrl) {
       }
     });
     page.on("requestfailed", (request) => {
+      networkEvents.push(`failed ${request.url()} ${request.failure()?.errorText}`);
       if (expectedFailures.has(request.url())) {
         intentionalFailures.push(request.url());
       } else {
@@ -92,7 +97,7 @@ async function checkBrowser(engineName, serverUrl) {
       compressed: "ok",
       redirectTargetRequests: 0,
     });
-    assert.deepEqual(browserErrors, []);
+    assert.deepEqual(browserErrors, [], `Browser errors: ${JSON.stringify(browserErrors)}\n${networkEvents.join("\n")}`);
     // Engines report blocked Fetch redirects differently, sometimes without a source URL.
     // Permit only native resource messages backed by this fixture's expected failed requests.
     const webkitRedirectMessage = "Not allowed to follow a redirection while loading " + new URL("api/redirect", serverUrl).href;

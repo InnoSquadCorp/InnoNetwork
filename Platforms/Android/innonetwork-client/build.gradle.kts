@@ -89,8 +89,8 @@ kotlin {
 
 dependencies {
     api(project(":innonetwork"))
+    api(libs.kotlinx.coroutines.core)
 
     testImplementation(libs.junit)
-    testImplementation(libs.kotlinx.coroutines.core)
     testImplementation(libs.okhttp.mockwebserver)
 }

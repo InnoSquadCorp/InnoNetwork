@@ -37,6 +37,8 @@ the real Web tarball, independent TypeScript and React consumers, and all local
 release-candidate checks. Chromium runtime validation is available through
 `npm --prefix Platforms/Web run test:browser` and runs in CI.
 
+The [ecosystem fit assessment](ECOSYSTEM_FIT.md) records Android and React
+integration decisions and unqualified framework/toolchain boundaries.
 The current [release readiness record](RELEASE_READINESS.md) lists fresh checks,
 remaining qualifications, and the 1.0.0 scope. To create an installable local
 Maven/npm bundle after all portable gates pass, run

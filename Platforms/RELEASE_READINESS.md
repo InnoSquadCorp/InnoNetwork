@@ -38,6 +38,10 @@ timeouts, cache, cookies, credentials, interceptors, and observability.
 - Wrapper integrity is checked before execution. Test-count gates exclude
   skipped tests and reject failed/error results. The independent Android
   consumer builds an actual API-21-targeted R8-minified APK.
+- Android typed decoding is main-safe by default through an injectable
+  dispatcher, with a retained two-argument constructor and cancellation tests.
+  A real TanStack Query consumer now covers typed queries, deduplication,
+  freshness, signal forwarding and HTTP rejection without hidden retries.
 
 The preceding pass's redaction, origin-scoped default-header redirect guard,
 bounded buffering, immutable buffered data, and native request escape hatches
@@ -47,10 +51,10 @@ are retained and included in the regression gates.
 
 | Boundary | Evidence | Result / limit |
 | --- | --- | --- |
-| Normal HTTP and typed decoding | Android 17 transport, 4 client, 3 serialization tests; Web 29 tests | Fresh local checks |
+| Normal HTTP and typed decoding | Android 17 transport, 7 client, 3 serialization tests; Web 29 tests | Fresh local checks |
 | I/O, status, decoding failure | Native MockWebServer and Fetch fixtures; custom callback read/close failures | Caller settles; HTTP failures stay values until explicitly rejected |
 | Cancellation and ownership | Awaiting headers, body buffering, pre-cancel, late response, stream handoff race, async decoder abort | Fresh controlled and native checks |
-| Concurrency and React replacement | 8 concurrent Android requests; React StrictMode, unmount, input replacement, invalid payload | Android runtime and 5 React tests |
+| Concurrency and React replacement | 8 concurrent Android requests; React StrictMode, unmount, input replacement, invalid payload; real TanStack Query | Android runtime and 9 React tests |
 | Resource limits | Declared/chunked bodies, gzip, one-byte chunks, empty HEAD stream, never-settling cleanup | Bounded buffered path; streaming remains caller-owned |
 | KSP authoring | 5 parser tests; 8 Maven-consumer tests; deterministic negative diagnostics | Packages/names, native body subtypes, trailing slash, dot segments covered |
 | Observability and security | Native EventListener/Fetch injection, URL redaction, separate redirect destination with zero requests, dependency verification | No custom TLS stack or exporter claim |
@@ -58,9 +62,14 @@ are retained and included in the regression gates.
 | Android packaging/runtime | API-21-targeted D8/R8 APK; actual API 26 emulator execution | KSP, JSON, concurrent requests, gzip, limit, streaming, cancellation passed; API 21-25 device execution unverified |
 | TypeScript/runtime consumers | TypeScript 7.0.2, DOM and Node-only projects; installed tarball on Node 22.0.0; maintainer Node 24/26 | Exact Node receipt is recorded in a generated release bundle |
 | Native browser engines | Playwright 1.64.1: Chromium 156 and WebKit 27.2 on macOS 27.0.1 | Passed; this is WebKit engine evidence, not iOS Safari device evidence |
-| Firefox | Launch fails with `Could not find profile folder` before page/library code, including a fresh persistent-profile control | Local environment qualification remains; required Linux CI lane retained |
+| Firefox | Firefox 157 passes on Linux in [remote run 39102511966](https://github.com/InnoSquadCorp/InnoNetwork/actions/runs/39102511966); macOS launch control fails before library code | Linux runtime verified; macOS environment qualification remains |
 | Retry/restoration | No library retry or restoration layer in Android/Web 1.0 | Intentionally outside this release; native policy remains explicit |
-| Remote CI / release | Static Actionlint/ShellCheck and local gates | Remote execution, registry ownership, signing/provenance, tags and publication not performed |
+| Remote CI / release | Initial branch run and retry: Node 22/26 pass, Firefox/WebKit pass; Android missing four verified Maven metadata checksums; Chromium unexpected abort diagnostics | Overall CI qualification pending; no registry ownership, signing/provenance, tags or publication claim |
+
+The [ecosystem assessment](ECOSYSTEM_FIT.md) records Android repository/DI/
+coroutine integration and React query/SSR boundaries, including tested and
+unqualified consumers. Initial CI failures are retained as diagnostic evidence,
+not converted to a passing result because Firefox passed independently.
 
 The Firefox failure matches the startup class discussed in
 [Playwright issue 42768](https://github.com/microsoft/playwright/issues/42768),

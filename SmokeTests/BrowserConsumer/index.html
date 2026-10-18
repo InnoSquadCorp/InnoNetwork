@@ -45,6 +45,11 @@
       const details = document.querySelector("#details");
 
       try {
+        // Passing control: the same body consumed by native Fetch without the library.
+        const nativeControl = await (await fetch("api/native-control")).text();
+        if (nativeControl !== JSON.stringify("hello from Chromium")) {
+          throw new Error("Native Fetch control returned an unexpected body");
+        }
         const session = new FetchNetworkSession({
           baseUrl: new URL("/", window.location.href),
         });

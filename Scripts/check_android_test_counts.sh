@@ -55,7 +55,7 @@ assert_minimum_tests \
 assert_minimum_tests \
     "Android typed client" \
     "$repo_root/Platforms/Android/innonetwork-client/build/test-results/testDebugUnitTest" \
-    4
+    7
 assert_minimum_tests \
     "Android serialization" \
     "$repo_root/Platforms/Android/innonetwork-kotlinx-serialization/build/test-results/testDebugUnitTest" \

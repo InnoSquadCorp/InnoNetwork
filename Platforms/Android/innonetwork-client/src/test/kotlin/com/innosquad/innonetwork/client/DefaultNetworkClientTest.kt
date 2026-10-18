@@ -5,6 +5,10 @@ import com.innosquad.innonetwork.NetworkDataResponse
 import com.innosquad.innonetwork.NetworkDecodingException
 import com.innosquad.innonetwork.OkHttpNetworkSession
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.CancellationException
+import java.util.concurrent.Executors
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.runBlocking
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
@@ -13,6 +17,7 @@ import okhttp3.Request
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertThrows
 import org.junit.Before
 import org.junit.Test
@@ -41,6 +46,66 @@ public class DefaultNetworkClientTest {
 
         assertEquals("hello", result)
         assertEquals("/message", server.takeRequest().url.encodedPath)
+    }
+
+    @Test
+    public fun defaultDecoderDoesNotBlockTheCallingThread(): Unit = runBlocking {
+        server.enqueue(MockResponse.Builder().body("hello").build())
+        val caller = Thread.currentThread()
+        val decoderThread = AtomicReference<Thread>()
+        val endpoint = object : APIDefinition<String> {
+            override fun request(baseUrl: HttpUrl): Request = Request.Builder().url(baseUrl).build()
+
+            override fun decode(response: NetworkDataResponse): String {
+                decoderThread.set(Thread.currentThread())
+                return response.bodyText()
+            }
+        }
+
+        val result = DefaultNetworkClient(server.url("/"), OkHttpNetworkSession()).request(endpoint)
+
+        assertEquals("hello", result)
+        assertNotEquals(caller, decoderThread.get())
+    }
+
+    @Test
+    public fun decoderDispatcherCanBeProvidedByTheApplication(): Unit = runBlocking {
+        server.enqueue(MockResponse.Builder().body("hello").build())
+        val decoderThread = AtomicReference<Thread>()
+        Executors.newSingleThreadExecutor { task ->
+            Thread(task, "consumer-decoder").also { decoderThread.set(it) }
+        }
+            .asCoroutineDispatcher().use { dispatcher ->
+                val endpoint = object : APIDefinition<Thread> {
+                    override fun request(baseUrl: HttpUrl): Request = Request.Builder().url(baseUrl).build()
+
+                    override fun decode(response: NetworkDataResponse): Thread = Thread.currentThread()
+                }
+
+                val client = DefaultNetworkClient(server.url("/"), OkHttpNetworkSession(), dispatcher)
+
+                val actualThread = client.request(endpoint)
+                assertEquals(decoderThread.get(), actualThread)
+            }
+    }
+
+    @Test
+    public fun decoderCancellationIsNotWrappedAsADecodingFailure(): Unit {
+        server.enqueue(MockResponse.Builder().body("hello").build())
+        val cancellation = CancellationException("decoder cancelled")
+        val endpoint = object : APIDefinition<String> {
+            override fun request(baseUrl: HttpUrl): Request = Request.Builder().url(baseUrl).build()
+
+            override fun decode(response: NetworkDataResponse): String = throw cancellation
+        }
+
+        val exception = assertThrows(CancellationException::class.java) {
+            runBlocking {
+                DefaultNetworkClient(server.url("/"), OkHttpNetworkSession()).request(endpoint)
+            }
+        }
+
+        assertEquals("decoder cancelled", exception.message)
     }
 
     @Test

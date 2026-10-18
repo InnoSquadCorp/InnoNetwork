@@ -23,6 +23,8 @@ The following behavior is intended to be Stable for their 1.x lines:
 - Web JSON decoders receive `unknown` and must validate domain data explicitly;
 - Web ceilings measure decoded bytes and preserve bodyless HTTP semantics;
 - buffered Android calls release their response before delivering a result;
+- Android typed decoding uses an injectable dispatcher, defaulting to
+  `Dispatchers.Default`, without creating a detached scope;
 - Web declarations work with DOM libraries or Node Fetch globals without DOM.
 
 Patch releases may fix implementation bugs without changing these observable

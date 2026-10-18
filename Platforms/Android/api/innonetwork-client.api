@@ -27,6 +27,9 @@ public interface com.innosquad.innonetwork.client.APIDefinition<Response> {
 ## com.innosquad.innonetwork.client.DefaultNetworkClient
 Compiled from "DefaultNetworkClient.kt"
 public final class com.innosquad.innonetwork.client.DefaultNetworkClient implements com.innosquad.innonetwork.client.NetworkClient {
+  public com.innosquad.innonetwork.client.DefaultNetworkClient(okhttp3.HttpUrl, com.innosquad.innonetwork.NetworkSession, kotlinx.coroutines.CoroutineDispatcher);
+    descriptor: (Lokhttp3/HttpUrl;Lcom/innosquad/innonetwork/NetworkSession;Lkotlinx/coroutines/CoroutineDispatcher;)V
+
   public com.innosquad.innonetwork.client.DefaultNetworkClient(okhttp3.HttpUrl, com.innosquad.innonetwork.NetworkSession);
     descriptor: (Lokhttp3/HttpUrl;Lcom/innosquad/innonetwork/NetworkSession;)V
 

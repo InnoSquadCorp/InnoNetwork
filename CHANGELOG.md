@@ -9,6 +9,9 @@ Versioning.
 
 ### Added
 
+- Add a real TanStack Query consumer for typed queries, cache/deduplication,
+  cancellation and HTTP-error semantics, plus Android/React ecosystem guidance.
+
 - Add Android 1.0.0 release-candidate modules over native OkHttp: bounded and
   streaming sessions, typed clients, optional kotlinx.serialization, and
   optional KSP endpoint generation intended to replace Retrofit execution
@@ -25,6 +28,11 @@ Versioning.
   current `main` rather than presenting Android/Web as full API mirrors.
 
 ### Fixed
+
+- Decode Android typed responses on an injectable dispatcher, defaulting to
+  `Dispatchers.Default`, rather than blocking the caller's main thread.
+- Complete clean-runner Maven metadata verification from Maven Central without
+  weakening strict dependency verification.
 
 - Settle Android callback read/close exceptions on the suspended caller, close
   buffered responses before delivery, and stop cancelled work before call creation

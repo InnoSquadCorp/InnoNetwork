@@ -62,7 +62,31 @@ const getUser = {
 const user = await client.request(getUser);
 ```
 
-## React lifecycle
+## React integration
+
+For shared server state, use the client inside a TanStack Query/SWR fetcher or
+framework loader instead of adding another cache or hook framework here. Pass
+the data layer's cancellation signal into the native request:
+
+```ts
+const options = queryOptions({
+  queryKey: ["user", userId],
+  queryFn: ({ signal }) => client.request({
+    input: `users/${encodeURIComponent(userId)}`,
+    init: { signal },
+    decode: (response) => response.decodeJson(UserSchema.parse),
+  } satisfies APIDefinition<User>),
+  retry: false, // Choose an endpoint-specific policy in the application.
+});
+```
+
+`queryOptions` comes from `@tanstack/react-query`, not this library. See the
+[tested consumer](../../SmokeTests/ReactConsumer/src/messageQueryOptions.ts)
+and [ecosystem fit](../ECOSYSTEM_FIT.md) for cache ownership, SSR credential
+isolation and Next.js extended-Fetch limitations. SWR/Next.js integration has
+not been qualified by this fixture.
+
+### Direct lifecycle example
 
 The package has no React dependency. Components own cancellation where they own
 the request lifecycle:

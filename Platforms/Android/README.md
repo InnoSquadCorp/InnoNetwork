@@ -92,6 +92,14 @@ supports top-level public/internal endpoints, public/internal annotated
 properties, default and keyword packages, and names that also occur in the
 native transport API. Required trailing slashes are preserved.
 
+The typed client decodes on `Dispatchers.Default`, so buffered JSON decoding
+does not block a calling `viewModelScope` coroutine's main thread. Supply
+`DefaultNetworkClient(baseUrl, session, decodingDispatcher)` to inject a test or
+application dispatcher. Request builders/status policies must be lightweight;
+direct JSON helpers run synchronously on their caller. See
+[ecosystem fit](../ECOSYSTEM_FIT.md) for repository/DI integration and the
+Retrofit migration boundary.
+
 Generated relative paths reject literal `.` and `..` segments at compile time
 and reject placeholder values that resolve to either segment at request-build
 time. OkHttp therefore cannot normalize a generated endpoint outside the
@@ -114,9 +122,11 @@ Use `open()` for large downloads and indefinite streams. The caller owns the
 native response and must close it:
 
 ```kotlin
-session.open(request).use { response ->
-    while (!response.source.exhausted()) {
-        consume(response.source.readUtf8Line())
+withContext(ioDispatcher) {
+    session.open(request).use { response ->
+        while (!response.source.exhausted()) {
+            consume(response.source.readUtf8Line())
+        }
     }
 }
 ```

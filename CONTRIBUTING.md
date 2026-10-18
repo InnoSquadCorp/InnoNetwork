@@ -27,7 +27,7 @@ Scripts/check_cross_platform.sh
 The gate validates Android tests/lint/KSP ABI, strict dependency verification,
 local Maven artifacts and an independent consumer, plus Web declarations,
 tests, a real npm tarball, and independent TypeScript/React consumers. Browser
-runtime validation is `npm --prefix Platforms/Web run test:browser` and also
+runtime validation is `npm --prefix Platforms/Web run test:browsers` and also
 runs in CI. Do not describe local results as registry publication or remote CI.
 
 For benchmark validation:
