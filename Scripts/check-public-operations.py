@@ -27,12 +27,14 @@ def dependabot(root):
     config = json.loads((root / '.github/dependabot.yml').read_text())
     require(config.get('version') == 2, 'Dependabot schema version changed')
     updates = config.get('updates', [])
-    require(len(updates) == 2, 'exact Actions and Swift update inventory required')
+    require(len(updates) == 4, 'exact Actions, Swift, Android and Web update inventory required')
     by_kind = {u.get('package-ecosystem'): u for u in updates}
-    require(set(by_kind) == {'github-actions', 'swift'}, 'wrong Dependabot ecosystem inventory')
+    require(set(by_kind) == {'github-actions', 'swift', 'gradle', 'npm'}, 'wrong Dependabot ecosystem inventory')
     for ecosystem, minute, limit, prefix, group, label in [
         ('github-actions', '09:00', 5, 'chore(ci)', 'actions-minor-patch', 'github-actions'),
-        ('swift', '09:30', 3, 'chore(deps)', 'swift-minor-patch', 'swift')]:
+        ('swift', '09:30', 3, 'chore(deps)', 'swift-minor-patch', 'swift'),
+        ('gradle', '10:00', 5, 'chore(android-deps)', 'android-minor-patch', 'android'),
+        ('npm', '10:30', 5, 'chore(web-deps)', 'web-minor-patch', 'web')]:
         item = by_kind[ecosystem]
         require(item.get('schedule') == {'interval': 'weekly', 'day': 'monday', 'time': minute, 'timezone': 'Asia/Seoul'}, 'weekly schedule drift')
         require(item.get('open-pull-requests-limit') == limit, 'version PR limit drift')
@@ -46,8 +48,24 @@ def dependabot(root):
             require(item.get('directories') == ['/', '/' + SAMPLE] and 'directory' not in item, 'live Swift manifest inventory drift')
             live = sorted(str(p.parent.relative_to(root)) for p in list((root / 'Examples').rglob('Package.swift')) + list((root / 'Tools').rglob('Package.swift')) if '.build' not in p.relative_to(root).parts and 'url:' in p.read_text())
             require(live == [SAMPLE], 'new remote manifest needs explicit policy review')
-        else:
+        elif ecosystem == 'github-actions':
             require(item.get('directory') == '/' and 'directories' not in item, 'Actions directory drift')
+        else:
+            directories = {
+                'gradle': ['/Platforms/Android', '/SmokeTests/AndroidConsumer'],
+                'npm': ['/Platforms/Web', '/SmokeTests/WebConsumer',
+                        '/SmokeTests/WebTarballConsumer', '/SmokeTests/ReactConsumer'],
+            }[ecosystem]
+            require(item.get('directories') == directories and 'directory' not in item,
+                    ecosystem + ' native package directory inventory drift')
+            manifest_name = 'settings.gradle.kts' if ecosystem == 'gradle' else 'package.json'
+            ignored = {'.build', 'build', '.gradle', 'node_modules', 'output'}
+            live = sorted('/' + str(path.parent.relative_to(root))
+                          for base in ('Platforms', 'SmokeTests')
+                          for path in (root / base).rglob(manifest_name)
+                          if not ignored.intersection(path.relative_to(root).parts))
+            require(live == sorted(directories),
+                    ecosystem + ' owned manifest inventory needs explicit policy review')
         require(groups[group] == expected, 'major/toolchain updates must remain individual, not ignored')
         require(not item.get('ignore') and not item.get('allow') and not item.get('exclude-paths'), 'dependency updates must not be silently excluded')
 

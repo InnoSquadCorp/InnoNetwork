@@ -1,0 +1,5 @@
+# Preserve native Gradle launcher line endings on every checkout.
+Platforms/Android/gradlew text eol=lf
+Platforms/Android/gradlew.bat text eol=crlf
+# Kotlin ABI dumps intentionally end with a separator line.
+Platforms/Android/innonetwork-ksp/api/*.api whitespace=-blank-at-eof

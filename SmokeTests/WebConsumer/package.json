@@ -1,0 +1,14 @@
+{
+  "name": "innonetwork-web-consumer-smoke",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@innosquad/innonetwork": "file:../../Platforms/Web"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2"
+  }
+}

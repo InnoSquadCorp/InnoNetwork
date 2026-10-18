@@ -1,0 +1,13 @@
+{
+  "name": "innonetwork-web-tarball-consumer-smoke",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "tsc -p tsconfig.json --noEmit",
+    "runtime": "node src/runtime.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "typescript": "7.0.2"
+  }
+}

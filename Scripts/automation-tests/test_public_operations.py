@@ -1,5 +1,6 @@
 """Dependency range, supply-chain boundary and OSS consistency negative controls."""
 import importlib.util
+import json
 from pathlib import Path
 import shutil
 import tempfile
@@ -8,6 +9,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location('operations', ROOT / 'Scripts/check-public-operations.py')
 p = importlib.util.module_from_spec(spec); spec.loader.exec_module(p)
+GENERATED = shutil.ignore_patterns('.git', '.build', 'build', '.gradle', 'node_modules', 'output', '__pycache__')
 
 
 class PublicOperationsTests(unittest.TestCase):
@@ -38,7 +40,7 @@ class PublicOperationsTests(unittest.TestCase):
         for path, old, new in changes:
             with self.subTest(path=path, old=old), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)/'repo'
-                shutil.copytree(ROOT, root, ignore=shutil.ignore_patterns('.git', '.build', '__pycache__'))
+                shutil.copytree(ROOT, root, ignore=GENERATED)
                 file = root/path; text=file.read_text(); self.assertIn(old,text);file.write_text(text.replace(old,new,1))
                 with self.assertRaises((ValueError, KeyError)): p.validate(root)
 
@@ -46,7 +48,7 @@ class PublicOperationsTests(unittest.TestCase):
         for path in ['.github/workflows/future.yaml', '.github/actions/future/action.yaml']:
             with self.subTest(path=path), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)/'repo'
-                shutil.copytree(ROOT, root, ignore=shutil.ignore_patterns('.git', '.build', '__pycache__'))
+                shutil.copytree(ROOT, root, ignore=GENERATED)
                 file = root/path; file.parent.mkdir(parents=True, exist_ok=True)
                 file.write_text('steps:\n  - uses: actions/checkout@v7\n')
                 with self.assertRaises(ValueError): p.action_pins(root)
@@ -54,7 +56,7 @@ class PublicOperationsTests(unittest.TestCase):
     def test_generated_dependency_manifests_do_not_expand_owned_inventory(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / 'repo'
-            shutil.copytree(ROOT, root, ignore=shutil.ignore_patterns('.git', '.build', '__pycache__'))
+            shutil.copytree(ROOT, root, ignore=GENERATED)
             cached = root / 'Examples/Consumer/.build/checkouts/Dependency/Package.swift'
             cached.parent.mkdir(parents=True)
             cached.write_text('url: "https://example.invalid/dependency"')
@@ -62,4 +64,39 @@ class PublicOperationsTests(unittest.TestCase):
             owned = root / 'Examples/Consumer/Package.swift'
             owned.write_text(cached.read_text())
             with self.assertRaisesRegex(ValueError, 'new remote manifest'):
+                p.dependabot(root)
+
+    def test_native_dependency_inventory_keeps_all_safety_controls(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / 'repo'
+            shutil.copytree(ROOT, root, ignore=GENERATED)
+            path = root / '.github/dependabot.yml'
+            original = json.loads(path.read_text())
+            for ecosystem, change in [
+                    ('gradle', lambda item: item.update(directories=['/'])),
+                    ('npm', lambda item: item.update(directories=['/Platforms/Web'])),
+                    ('gradle', lambda item: item['groups']['android-minor-patch'].update({'update-types': ['major']})),
+                    ('npm', lambda item: item.update(ignore=[{'dependency-name': '*'}])),
+                    ('npm', lambda item: item['schedule'].update(interval='daily')),
+                    ('swift', lambda item: item['groups']['swift-minor-patch'].pop('exclude-patterns'))]:
+                with self.subTest(ecosystem=ecosystem, change=change):
+                    config = json.loads(json.dumps(original))
+                    change(next(item for item in config['updates'] if item['package-ecosystem'] == ecosystem))
+                    path.write_text(json.dumps(config))
+                    with self.assertRaises(ValueError):
+                        p.dependabot(root)
+            config = json.loads(json.dumps(original))
+            config['updates'].append(config['updates'][-1])
+            path.write_text(json.dumps(config))
+            with self.assertRaises(ValueError):
+                p.dependabot(root)
+            path.write_text(json.dumps(original))
+            generated = root / 'Platforms/Web/node_modules/third-party/package.json'
+            generated.parent.mkdir(parents=True)
+            generated.write_text('{}')
+            p.dependabot(root)
+            owned = root / 'SmokeTests/NewConsumer/package.json'
+            owned.parent.mkdir(parents=True)
+            owned.write_text('{}')
+            with self.assertRaisesRegex(ValueError, 'owned manifest inventory'):
                 p.dependabot(root)
