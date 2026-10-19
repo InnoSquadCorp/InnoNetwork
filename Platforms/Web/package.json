@@ -40,10 +40,10 @@
     "prepack": "npm run build"
   },
   "devDependencies": {
-    "@types/node": "26.4.1",
+    "@types/node": "26.6.5",
     "playwright": "1.64.1",
     "typescript": "7.0.2",
-    "vitest": "5.0.0"
+    "vitest": "5.0.5"
   },
   "license": "MIT",
   "repository": {
