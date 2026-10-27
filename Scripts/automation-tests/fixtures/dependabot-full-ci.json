@@ -736,6 +736,58 @@
         "conclusion": "success"
       }
     ],
+    "CodeQL / java-kotlin": [
+      {
+        "name": "Checkout",
+        "conclusion": "success"
+      },
+      {
+        "name": "Set up JDK",
+        "conclusion": "success"
+      },
+      {
+        "name": "Set up Node",
+        "conclusion": "success"
+      },
+      {
+        "name": "Initialize CodeQL",
+        "conclusion": "success"
+      },
+      {
+        "name": "Build",
+        "conclusion": "success"
+      },
+      {
+        "name": "Perform CodeQL Analysis",
+        "conclusion": "success"
+      }
+    ],
+    "CodeQL / javascript-typescript": [
+      {
+        "name": "Checkout",
+        "conclusion": "success"
+      },
+      {
+        "name": "Set up JDK",
+        "conclusion": "success"
+      },
+      {
+        "name": "Set up Node",
+        "conclusion": "success"
+      },
+      {
+        "name": "Initialize CodeQL",
+        "conclusion": "success"
+      },
+      {
+        "name": "Build",
+        "conclusion": "success"
+      },
+      {
+        "name": "Perform CodeQL Analysis",
+        "conclusion": "success"
+      }
+    ],
     "Tests under ThreadSanitizer": [
       {
         "name": "Checkout",

@@ -1156,6 +1156,78 @@ jobs:
         with:
           category: "/language:${{ matrix.language }}"
 
+  # Scheduled CodeQL records these configurations on main. A PR that uploads
+  # Swift alone cannot prove which alerts it introduces, so GitHub reports the
+  # PR CodeQL check as neutral. Builds mirror codeql.yml without caches.
+  codeql-cross-platform:
+    name: CodeQL / ${{ matrix.language }}
+    needs: ci-plan
+    if: fromJSON(needs.ci-plan.outputs.plan).jobs.codeql-cross-platform
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [java-kotlin, javascript-typescript]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: '24'
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        with:
+          languages: ${{ matrix.language }}
+          queries: security-extended,security-and-quality
+
+      - name: Build
+        env:
+          CODEQL_LANGUAGE: ${{ matrix.language }}
+        run: |
+          set -eo pipefail
+          case "$CODEQL_LANGUAGE" in
+            java-kotlin)
+              Scripts/check_android_wrapper_integrity.sh
+              "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37.0" "build-tools;36.0.0"
+              # Extraction must observe compilation, not restore compiled Gradle outputs.
+              Platforms/Android/gradlew -p Platforms/Android \
+                --no-daemon --no-build-cache --no-configuration-cache --rerun-tasks \
+                -Pkotlin.incremental=false assemble :innonetwork-ksp:classes
+              ;;
+            javascript-typescript)
+              cd Platforms/Web
+              npm ci --ignore-scripts --no-audit
+              npm run build
+              ;;
+            *)
+              echo "unsupported CodeQL language: $CODEQL_LANGUAGE" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        with:
+          category: "/language:${{ matrix.language }}"
+
   thread-sanitizer:
     concurrency:
       group: scoped-job-v1-${{ github.repository }}-${{ github.workflow }}-ci.yml-thread-sanitizer-pr-${{ github.event.pull_request.number }}-base-${{ github.event.pull_request.base.ref }}-${{ contains(github.event.pull_request.labels.*.name, 'release-validation') && 'release-validation' || 'no-release-validation' }}-${{ contains(github.event.pull_request.labels.*.name, 'concurrency-review') && 'concurrency-review' || 'no-concurrency-review' }}-${{ ((vars.INNO_JOB_CANCELLATION == '' || vars.INNO_JOB_CANCELLATION == 'enabled') && github.event_name == 'pull_request' && !((github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base))))) && 'active' || format('off-{0}-{1}', github.run_id, github.run_attempt) }}
@@ -1385,7 +1457,7 @@ jobs:
   ci-required:
     name: CI Required
     if: ${{ always() }}
-    needs: [ci-plan, policy, dependency-review, lint, dead-code, build-and-test, upload-core-coverage, parallel-tests, docs-contract-sync, apple-platform-build-smoke, consumer-smoke, consumer-examples, consumer-macros, consumer-openapi, upload-macro-coverage, benchmark-smoke, codeql, thread-sanitizer, benchmarks, documentation, release-candidate]
+    needs: [ci-plan, policy, dependency-review, lint, dead-code, build-and-test, upload-core-coverage, parallel-tests, docs-contract-sync, apple-platform-build-smoke, consumer-smoke, consumer-examples, consumer-macros, consumer-openapi, upload-macro-coverage, benchmark-smoke, codeql, codeql-cross-platform, thread-sanitizer, benchmarks, documentation, release-candidate]
     runs-on: ubuntu-latest
     timeout-minutes: ${{ ((vars.INNO_JOB_CANCELLATION == '' || vars.INNO_JOB_CANCELLATION == 'enabled') && github.event_name == 'pull_request') && ((github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base)))) && 360 || (5) }}
     permissions:

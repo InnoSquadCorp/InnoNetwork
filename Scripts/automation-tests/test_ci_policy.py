@@ -46,7 +46,7 @@ class PlannerTests(unittest.TestCase):
     def test_selective_docs_and_individual_workflows(self):
         cases = {'README.md': {'documentation', 'docs-contract-sync'},
                  '.spi.yml': {'documentation', 'docs-contract-sync'},
-                 '.github/workflows/codeql.yml': {'codeql'},
+                 '.github/workflows/codeql.yml': {'codeql', 'codeql-cross-platform'},
                  '.github/workflows/tsan.yml': {'thread-sanitizer'},
                  '.github/workflows/benchmarks.yml': {'benchmarks', 'benchmark-smoke'},
                  '.github/workflows/dependabot-auto-merge.yml': set(),
@@ -55,6 +55,15 @@ class PlannerTests(unittest.TestCase):
             plan = p.make_plan('pull_request', event(), [path])
             self.assertEqual({j for j, v in plan['jobs'].items() if v}, expected | {'policy'})
             p.evaluate(plan, results(plan))
+
+    def test_codeql_uploads_every_main_configuration_or_none(self):
+        # A PR that uploads only some main CodeQL configurations gets a
+        # neutral GitHub CodeQL check, which blocks the Dependabot coordinator.
+        paths = ['README.md', 'docs/site/index.html', 'Sources/InnoNetwork/A.swift', 'Platforms/Web/src/a.ts',
+                 '.coderabbit.yaml', '.github/dependabot.yml'] + ['.github/workflows/' + n for n in p.WORKFLOW_IMPACT]
+        for path in paths:
+            plan = p.make_plan('pull_request', event(), [path])
+            self.assertEqual(plan['jobs']['codeql'], plan['jobs']['codeql-cross-platform'], path)
 
     def test_all_bot_majors_toolchains_and_labels_require_full(self):
         for action in p.PR_ACTIONS:

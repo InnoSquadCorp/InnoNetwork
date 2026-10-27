@@ -10,7 +10,7 @@ import re
 PREFIX = 'CI metadata-only v1 '
 TITLE = re.compile(PREFIX + r'pr:([1-9][0-9]*) head:([0-9a-f]{40}) base:([0-9a-f]{40}) action:(labeled|unlabeled|edited) source:([0-9a-f]{40})')
 PATH = '.github/workflows/ci.yml'
-DIRECT = {'Upload Macro Coverage', 'Lint (swift-format)', 'Consumer Macros', 'Consumer Examples', 'Apple Platform Build Smoke', 'CI and public operations policy', 'Benchmark Smoke', 'Run Benchmarks', 'Build DocC Site', 'CI Plan', 'Test (Bounded Target Shards) — Xcode 26.0.1', 'Upload Core Coverage', 'Dependency Review', 'Build and Test (SwiftPM) — Xcode ${{ matrix.xcode.label }}', 'Tests under ThreadSanitizer', 'Lint (Periphery)', 'Docs / Contract Sync', 'CodeQL / Swift', 'Consumer OpenAPI'}
+DIRECT = {'Upload Macro Coverage', 'Lint (swift-format)', 'Consumer Macros', 'Consumer Examples', 'Apple Platform Build Smoke', 'CI and public operations policy', 'Benchmark Smoke', 'Run Benchmarks', 'Build DocC Site', 'CI Plan', 'Test (Bounded Target Shards) — Xcode 26.0.1', 'Upload Core Coverage', 'Dependency Review', 'Build and Test (SwiftPM) — Xcode ${{ matrix.xcode.label }}', 'Tests under ThreadSanitizer', 'Lint (Periphery)', 'Docs / Contract Sync', 'CodeQL / Swift', 'CodeQL / ${{ matrix.language }}', 'Consumer OpenAPI'}
 CALLS = (({'Release Candidate'}, {'Release Candidate / Validate ${{ matrix.runtime }} Build', 'Release Candidate / Validate Release'}),)
 # GitHub records skipped dynamic job names as expression source without ${{ }}.
 # Match only these exact reviewed expressions, still bound to the workflow blob;

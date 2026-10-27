@@ -166,6 +166,7 @@
         "consumer-smoke": "planner/final aggregate or metadata observer",
         "upload-macro-coverage": "external upload/security/stateful writer permissions",
         "codeql": "external upload/security/stateful writer permissions",
+        "codeql-cross-platform": "external upload/security/stateful writer permissions",
         "release-candidate": "reusable call may own child aggregates/writers; caller cancellation left unchanged",
         "ci-required": "planner/final aggregate or metadata observer"
       },
@@ -181,6 +182,7 @@
         "consumer-smoke": null,
         "upload-macro-coverage": null,
         "codeql": null,
+        "codeql-cross-platform": null,
         "release-candidate": null,
         "ci-required": null
       }

@@ -36,7 +36,7 @@ aggregates in `.github/automation-required-status-checks.json`; the legacy list
 must not be restored as native requirements for path-selected/metadata runs.
 Consumer Smoke still requires all three independent consumer lanes.
 The baseline fixture asserts all old runner/matrix/test command contracts. Full
-PR validation expands to 32 concrete jobs, including six release candidate jobs.
+PR validation expands to 34 concrete jobs, including six release candidate jobs.
 Scheduled/manual CodeQL, TSAN and benchmark entry points remain; their former
 PR work now lives in CI and cannot escape the aggregate. Benchmark PR comments
 are replaced by preserved artifacts, so PR benchmark code no longer holds
@@ -57,7 +57,7 @@ ThreadSanitizer. Admission requires a single-commit non-force squash push, one
 merged same-repository PR, exact pre-merge main/base/head parents, and an identical
 complete Git tree to the tested merge commit. The immutable reusable
 `release-validation.yml` reference binds the original PR merge SHA. Every one of
-the full PR's 32 concrete jobs, mandatory steps and native app/suite/job/check
+the full PR's 34 concrete jobs, mandatory steps and native app/suite/job/check
 identities must be successful at the latest run/attempt, completed within 24
 hours before merge and still fresh at admission. Source run/attempt and current
 main are checked again after paginated evidence reads to detect races.
@@ -99,6 +99,14 @@ post-check because its before/after fingerprint did not agree. The exact changed
 identity field was not exposed in that log. CodeQL's independently instrumented
 build environment is outside this cache observation contract; removing only its
 cache wrapper avoids weakening the strict identity checks for other lanes.
+
+Scheduled CodeQL records Swift, java-kotlin and javascript-typescript
+configurations on main. When a PR uploads only some of them, GitHub reports the
+PR's CodeQL check as neutral ("configurations not found"), and the Dependabot
+coordinator blocks on any non-success extra check. So whenever CI plans CodeQL
+it uploads all three: the Swift job is unchanged, and `codeql-cross-platform`
+repeats the scheduled Android/Web builds without caches or conditional steps.
+The planner always selects both jobs together.
 
 Snapshot serialization now lives on eligible submission jobs, with
 `cancel-in-progress: false` and `queue: max`, scoped by immutable main/head SHA.
@@ -190,10 +198,13 @@ Existing open Dependabot PRs are not closed, edited or merged by this change.
 The default is standby: `DEPENDABOT_AUTO_MERGE_ENABLED` must be exactly `true`
 before any bot auto-merge is enabled. The coordinator checks same-repository
 Dependabot login/id/type, current main/base/head and exact test-merge parents,
-latest CI run and attempt, all 32 concrete jobs and validation steps, associated
+latest CI run and attempt, all 34 concrete jobs and validation steps, associated
 GitHub Actions app IDs, paginated check/status results and reviews. A failed,
-pending, skipped, duplicate, foreign or stale result blocks. Required review,
-submitted blocking reviews and unresolved threads are not waived. Optional
+pending, skipped, duplicate, foreign or stale result blocks. This includes
+third-party checks, so CodeRabbit does not publish its review progress check:
+it skips bot PRs, and the skipped check would block every Dependabot head.
+Required review, submitted blocking reviews and unresolved threads are not
+waived. Optional
 requested reviewers/teams do not veto auto-merge by themselves; submitted
 `PENDING`/`CHANGES_REQUESTED`, native `REVIEW_REQUIRED` and unresolved threads
 still block. No title/version
