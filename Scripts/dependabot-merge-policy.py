@@ -875,9 +875,9 @@ def coordinate(api, number, enabled=False, notification=None):
             runs, _, metadata_runs = validation_runs(api, runs, workflow["id"], pr["base"]["repo"]["id"],
                                                      number, head, pr["merge_commit_sha"])
             if (notification["id"], notification["run_attempt"]) in metadata_runs:
-                # A verified no-op can finish after real CI was blocked on it.
-                # Reconcile current facts without binding proof to the no-op:
-                # only the latest actual full CI and native Ready can arm.
+                # A verified metadata run is only a wake-up. Reconcile current
+                # facts without binding proof to it: only the latest actual
+                # full CI and native Ready can arm.
                 notification = None
             elif not runs or max(runs, key=lambda r: (r["run_number"], r["id"]))["id"] != notification["id"]:
                 return "obsolete notification; no mutation"

@@ -1,5 +1,6 @@
 name: CI
-# Metadata events queue behind validation and recheck its immutable evidence.
+# Metadata events queue without a runner behind the same head/base/lane validation,
+# then recheck its immutable evidence once.
 # Stable required check names keep GitHub branch protection actionable.
 run-name: >-
   ${{ (github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base))) && format('CI metadata-only v1 pr:{0} head:{1} base:{2} action:{3} source:{4}', github.event.pull_request.number, github.event.pull_request.head.sha, github.event.pull_request.base.sha, github.event.action, github.workflow_sha) || (github.event_name == 'pull_request' && format('CI validation v2 pr:{0} head:{1} base:{2} source:{3} release:{4} asan:{5} concurrency:{6}', github.event.pull_request.number, github.event.pull_request.head.sha, github.event.pull_request.base.sha, github.sha, contains(github.event.pull_request.labels.*.name, 'release-validation'), false, contains(github.event.pull_request.labels.*.name, 'concurrency-review')) || (inputs.dependabot_merge_pr && format('CI / Dependabot merge #{0}', inputs.dependabot_merge_pr) || format('CI validation / {0} / {1}', github.event_name, github.ref))) }}
@@ -20,7 +21,7 @@ on:
         default: ''
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ inputs.dependabot_merge_pr != '' && format('dependabot-{0}', inputs.dependabot_merge_pr) || 'validation' }}${{ ((vars.INNO_JOB_CANCELLATION == '' || vars.INNO_JOB_CANCELLATION == 'enabled') && github.event_name == 'pull_request') && format('-jobs-{0}-{1}', github.run_id, github.run_attempt) || '' }}
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ inputs.dependabot_merge_pr != '' && format('dependabot-{0}', inputs.dependabot_merge_pr) || 'validation' }}${{ ((vars.INNO_JOB_CANCELLATION == '' || vars.INNO_JOB_CANCELLATION == 'enabled') && github.event_name == 'pull_request') && format('-head-{0}-base-{1}-{2}-{3}', github.event.pull_request.head.sha, github.event.pull_request.base.ref, contains(github.event.pull_request.labels.*.name, 'release-validation') && 'release-validation' || 'no-release-validation', contains(github.event.pull_request.labels.*.name, 'concurrency-review') && 'concurrency-review' || 'no-concurrency-review') || '' }}
   cancel-in-progress: ${{ !((vars.INNO_JOB_CANCELLATION == '' || vars.INNO_JOB_CANCELLATION == 'enabled') && github.event_name == 'pull_request') && (!(github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base)))) }}
   queue: ${{ (github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base))) && 'max' || 'single' }}
 
@@ -1459,7 +1460,7 @@ jobs:
     if: ${{ always() }}
     needs: [ci-plan, policy, dependency-review, lint, dead-code, build-and-test, upload-core-coverage, parallel-tests, docs-contract-sync, apple-platform-build-smoke, consumer-smoke, consumer-examples, consumer-macros, consumer-openapi, upload-macro-coverage, benchmark-smoke, codeql, codeql-cross-platform, thread-sanitizer, benchmarks, documentation, release-candidate]
     runs-on: ubuntu-latest
-    timeout-minutes: ${{ ((vars.INNO_JOB_CANCELLATION == '' || vars.INNO_JOB_CANCELLATION == 'enabled') && github.event_name == 'pull_request') && ((github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base)))) && 360 || (5) }}
+    timeout-minutes: 5
     permissions:
       contents: read
       actions: read
@@ -1482,8 +1483,7 @@ jobs:
       - name: Verify prior validation for metadata
         if: ${{ (github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base))) }}
         env:
-          INNO_JOB_CANCELLATION: ${{ (vars.INNO_JOB_CANCELLATION == '' || vars.INNO_JOB_CANCELLATION == 'enabled') && 'enabled' || 'disabled' }}
           GH_TOKEN: ${{ github.token }}
           INNO_MAIN_MOVED_REUSE: ${{ (vars.INNO_MAIN_MOVED_REUSE == '' || vars.INNO_MAIN_MOVED_REUSE == 'enabled') && 'enabled' || 'disabled' }}
           CI_INPUT_VARIABLES: ${{ toJSON(vars) }}
-        run: python3 -B Scripts/metadata_wait.py -- python3 -B Scripts/verify-ci-metadata.py --check 'CI Required'
+        run: python3 -B Scripts/verify-ci-metadata.py --check 'CI Required'
