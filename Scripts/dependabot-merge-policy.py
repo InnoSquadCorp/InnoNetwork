@@ -999,7 +999,17 @@ def post_merge(api, enabled=False, expected_sha=None, expected_pr=None):
     number, main = candidate["pr"], candidate["main"]
     if expected_sha is not None or expected_pr is not None:
         require(main == expected_sha and number == expected_pr, "post-merge plan changed before dispatch")
-    # Exact workflow/ref hardcoded. No arbitrary dispatch supplied by a PR.
+    # Exact workflows/ref hardcoded. No arbitrary dispatch supplied by a PR.
+    # A GITHUB_TOKEN-dispatched CI never wakes workflow_run consumers, so the
+    # main snapshot is dispatched directly. It goes first: an uncertain CI
+    # dispatch keeps the plan open and the next wake dispatches both again.
+    try:
+        api.mutate("POST", route("actions/workflows/dependency-submission.yml/dispatches"), {"ref": "main"})
+    except Exception:
+        observed = api.pages(route(f"actions/workflows/dependency-submission.yml/runs?branch=main&head_sha={main}"),
+                             "workflow_runs")
+        require(any(r.get("event") == "workflow_dispatch" for r in observed),
+                "snapshot dispatch outcome uncertain; no retry")
     try:
         api.mutate("POST", route("actions/workflows/ci.yml/dispatches"),
                    {"ref": "main", "inputs": {"dependabot_merge_pr": str(number)}})
@@ -1007,7 +1017,7 @@ def post_merge(api, enabled=False, expected_sha=None, expected_pr=None):
         observed = api.pages(route(f"actions/workflows/ci.yml/runs?branch=main&head_sha={main}"), "workflow_runs")
         require(any(r.get("event") == "workflow_dispatch" and r.get("display_title") == PREFIX + str(number)
                     for r in observed), "dispatch outcome uncertain; no retry")
-    return "verified current-main CI dispatched"
+    return "verified current-main snapshot and CI dispatched"
 
 
 def targets(api, event_name, event):

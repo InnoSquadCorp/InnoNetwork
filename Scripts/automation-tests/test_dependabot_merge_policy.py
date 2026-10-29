@@ -66,7 +66,7 @@ class Transcript:
         self.merge_checks, self.statuses, self.review_list, self.threads = [], [], [], []
         self.graph_head, self.review_decision = HEAD, None
         self.mutations, self.reads = [], []
-        self.old_jobs, self.post_runs = [], []
+        self.old_jobs, self.post_runs, self.snapshot_runs = [], [], []
         self.graph_fail = False
         self.arm = None
         self.arm_event = None
@@ -127,6 +127,7 @@ class Transcript:
         elif suffix.startswith('actions/runs/') and '/attempts/' in suffix and int(suffix.split('/')[2]) != RUN:
             value = self.ready_jobs.get((int(suffix.split('/')[2]), int(suffix.split('/')[4])), [])
         elif suffix.startswith('actions/workflows/ci.yml/runs?branch='): value = self.post_runs
+        elif suffix.startswith('actions/workflows/dependency-submission.yml/runs?branch='): value = self.snapshot_runs
         elif suffix == f'actions/runs/{RUN}/attempts/{self.run["run_attempt"]}/jobs': value = self.jobs
         elif suffix.startswith(f'actions/runs/{RUN}/attempts/'): value = self.old_jobs
         elif suffix == f'commits/{HEAD}/check-runs?filter=all': value = self.checks
@@ -653,13 +654,27 @@ class DependabotPolicyTests(unittest.TestCase):
     def test_post_merge_exact_bot_main_fixed_dispatch_and_dedup(self):
         self.api.pr.update(state='closed', merged=True, merged_at='2026-09-30T00:00:00Z', merge_commit_sha=BASE)
         self.assertIn('dispatched', p.post_merge(self.api, True))
-        dispatch = self.api.mutations[-1]
-        self.assertEqual(dispatch[1], p.route('actions/workflows/ci.yml/dispatches'))
-        self.assertEqual(dispatch[2], dict(ref='main', inputs=dict(dependabot_merge_pr=str(NUMBER))))
+        self.assertEqual(self.api.mutations, [
+            ('POST', p.route('actions/workflows/dependency-submission.yml/dispatches'), dict(ref='main')),
+            ('POST', p.route('actions/workflows/ci.yml/dispatches'), dict(ref='main', inputs=dict(dependabot_merge_pr=str(NUMBER))))])
         self.api.post_runs = [dict(head_sha=BASE, event='push', conclusion='failure')]
         self.assertIn('already exists', p.post_merge(self.api, True))
-        self.assertEqual(len(self.api.mutations), 1)
+        self.assertEqual(len(self.api.mutations), 2)
         self.assertIn('standby', p.post_merge(self.api, False))
+
+    def test_post_merge_uncertain_snapshot_dispatch_fails_closed_before_ci(self):
+        self.merged_bot()
+        original = self.api.mutate
+        def flaky(method, route, payload):
+            if 'dependency-submission.yml' in route: raise OSError('dispatch response lost')
+            return original(method, route, payload)
+        with mock.patch.object(self.api, 'mutate', side_effect=flaky):
+            with self.assertRaisesRegex(p.Rejected, 'snapshot dispatch outcome uncertain'):
+                p.post_merge(self.api, True)
+            self.assertFalse(self.api.mutations)
+            self.api.snapshot_runs = [dict(head_sha=BASE, event='workflow_dispatch')]
+            self.assertIn('dispatched', p.post_merge(self.api, True))
+        self.assertEqual([m[1] for m in self.api.mutations], [p.route('actions/workflows/ci.yml/dispatches')])
 
     def merged_bot(self):
         self.api.pr.update(state='closed', merged=True, merged_at='2026-10-01T00:00:00Z', merge_commit_sha=BASE)

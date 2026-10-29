@@ -420,13 +420,18 @@ merging the automation, maintainers must separately:
 
 The coordinator recovers `GITHUB_TOKEN`-suppressed main push events by locating
 an actual same-repository Dependabot PR whose merge SHA equals current main.
-It dispatches only the fixed main CI with a verified PR marker and checks for an
-existing native/recovery run first. A moved main or uncertain dispatch fails
-closed. That marker is reverified inside CI. The dependency snapshot workflow
-independently authenticates the recovery run/bot/current-main relationship;
-Pages waits for successful verified main CI. Recovery cannot cancel a native
-main CI because their concurrency keys differ. It does not retry a failed main
-CI, publish a release, or retag anything.
+It dispatches only the fixed main dependency snapshot workflow and the fixed
+main CI with a verified PR marker, and checks for an existing native/recovery
+run first. A moved main or uncertain dispatch fails closed. That marker is
+reverified inside CI. The snapshot is dispatched directly because a
+`GITHUB_TOKEN`-dispatched CI run never wakes the snapshot workflow's
+`workflow_run` trigger (#155, #157 and #160 each left current main without a
+base snapshot, failing every bot PR's Dependency Review until a manual
+submission). It goes before CI, so an uncertain CI dispatch leaves the plan open
+and the next wake dispatches both again; a duplicate submission of the same
+main SHA is harmless. Pages waits for successful verified main CI. Recovery
+cannot cancel a native main CI because their concurrency keys differ. It does
+not retry a failed main CI, publish a release, or retag anything.
 
 ## Existing 6.1 candidate integration order
 
