@@ -333,6 +333,40 @@ labels, attempt and native check identity. Stale bases, observed main advances
 and same-SHA retargeting still fail. Human PRs retain their read-only Ready flow
 and are never automatically merged by this coordinator.
 
+### Metadata-only gate
+
+A non-lane `labeled`/`unlabeled` event or a body-only `edited` event starts a
+metadata-only CI run. Every validation job is skipped. Only `CI Required` runs,
+and it calls `verify-ci-metadata.py` once within its 5-minute limit. It succeeds
+only when the latest real validation of the exact head, base and lane labels has
+already succeeded. A pending, failed, missing, stale or obsolete-head validation
+ends the gate as a failure at once. No gate waits for a runner or for validation.
+Dependabot edits the PR body on every rebase, so each rebase starts such a gate.
+
+GitHub evaluates only the newest check run with a required name. PR #139 merged
+with an older failed `CI Required` in another check suite, and the ruleset
+reported `pass` without a bypass. A gate that exits while validation is running
+is therefore superseded natively by the validation's own `CI Required`, which
+GitHub creates when the validation jobs finish.
+
+`ci-metadata-policy.py` gives the coordinator, native Ready and main reuse the
+same view. Every attempt of a metadata run must still show only skipped
+validation jobs and a skipped real aggregate step. Only the latest attempt is
+the run's verdict, so a timed-out or cancelled earlier attempt no longer blocks a
+successful rerun. A failed or cancelled latest gate is exempt only when a newer
+`CI Required` supersedes it, with both a higher check ID and a later completion
+time. That newer check must be the latest validation's latest-attempt aggregate
+or a proven successful metadata gate. Callers still prove that validation
+separately. Exemption never counts as validation, and every other gate result
+blocks.
+
+One race remains. A metadata event can arrive after the validation's
+`CI Required` job was created but before the run finished. Its failed gate is
+then the newest check, and readers report that it is still the newest
+`CI Required`. After the validation succeeds, re-run the failed metadata job; a
+newer validation or a newer proven gate also clears it. Nothing reruns it
+automatically.
+
 GitHub events do not form an atomic lock with merging. `expectedHeadOid` pins
 the head, not main after the final read. With `strict=false`, an unobserved main
 advance after the final proof can race native completion; repeated reads do not

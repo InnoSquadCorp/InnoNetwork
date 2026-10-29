@@ -1,9 +1,12 @@
 """Recognize native metadata rechecks; never substitute them for real CI proof.
 
 A title is a candidate, not evidence. Bind the immutable workflow definition,
-merge parents, complete job/check inventory and latest attempt before excluding
-one from latest-validation selection. Unknown evidence blocks the caller.
+merge parents and every attempt's complete job/check inventory before excluding
+one from latest-validation selection. A gate that exits without proof (pending
+or failed validation, obsolete head) is excluded only after a newer native
+CI Required supersedes it. Unknown evidence blocks the caller.
 """
+from datetime import datetime
 import itertools
 import re
 
@@ -19,12 +22,69 @@ METADATA_CONDITION = "(github.event_name == 'pull_request' && (((github.event.ac
 GATES = {'CI Required': 'Require every planned CI result'}
 AGGREGATES = (({'Consumer Metadata Only'}, {METADATA_CONDITION + " && 'Consumer Metadata Only' || 'Consumer Smoke'"}),)
 INVENTORIES = [DIRECT.union(GATES, *children) for children in itertools.product(*CALLS, *AGGREGATES)]
+VERIFY_STEP = 'Verify prior validation for metadata'
+# The gate runs its verifier once and exits. A non-success never becomes a pass;
+# it only stops counting when a newer same-name native check replaces it.
+DEFERRED = {'failure', 'cancelled'}
+APP = 15368
+
+
+def completed_at(check, require):
+    value = check.get('completed_at')
+    try:
+        moment = datetime.fromisoformat(value.replace('Z', '+00:00')) if isinstance(value, str) else None
+    except ValueError:
+        moment = None
+    require(moment is not None and moment.tzinfo is not None, 'missing or invalid native check completion time')
+    return moment
+
+
+def supersedes(newer, older, require):
+    """GitHub evaluates the newest same-name check; demand both ID and completion order."""
+    return (newer is not None and type(newer.get('id')) is int and newer['id'] > older['id'] and
+            newer.get('name') == older.get('name') and
+            newer.get('head_sha') == older.get('head_sha') and newer.get('status') == 'completed' and
+            completed_at(newer, require) > completed_at(older, require))
+
+
+def validation_gate(api, route, runs, *, repository, repository_id, workflow_id, head, require):
+    """Return the latest real validation's native CI Required check once GitHub created it."""
+    ordinary = [r for r in runs if not str(r.get('display_title', '')).startswith(PREFIX)]
+    if not ordinary:
+        return None
+    listed = max(ordinary, key=lambda r: (r['run_number'], r['id']))
+    run = api.get(route + f"actions/runs/{listed['id']}")
+    require(run.get('id') == listed['id'] and run.get('workflow_id') == workflow_id and run.get('path') == PATH and
+            run.get('event') == 'pull_request' and run.get('head_sha') == head and
+            run.get('repository', {}).get('id') == repository_id and
+            run.get('head_repository', {}).get('id') == repository_id and
+            type(run.get('run_attempt')) is int and 0 < run['run_attempt'] <= 100 and
+            type(run.get('check_suite_id')) is int and run['check_suite_id'] > 0,
+            'superseding validation is foreign or unbound')
+    jobs = [j for j in api.pages(route + f"actions/runs/{run['id']}/attempts/{run['run_attempt']}/jobs", 'jobs')
+            if j.get('name') == 'CI Required']
+    require(len(jobs) <= 1, 'duplicate validation CI Required job')
+    if not jobs:
+        return None
+    job, prefix = jobs[0], 'https://api.github.com/' + route + 'check-runs/'
+    url = job.get('check_run_url', '')
+    require(type(job.get('id')) is int and job.get('run_id') == run['id'] and job.get('run_attempt') == run['run_attempt'] and
+            job.get('head_sha') == head and url.startswith(prefix) and
+            re.fullmatch(r'[1-9][0-9]*', url[len(prefix):]) is not None, 'unbound validation CI Required job')
+    check = api.get(route + 'check-runs/' + url[len(prefix):])
+    require(check.get('id') == int(url[len(prefix):]) and check.get('name') == 'CI Required' and
+            check.get('app', {}).get('id') == APP and check.get('head_sha') == head and
+            check.get('check_suite', {}).get('id') == run['check_suite_id'] and check.get('details_url') ==
+            f"https://github.com/{repository}/actions/runs/{run['id']}/job/{job['id']}",
+            'unverified validation CI Required check')
+    return check
 
 
 def partition(api, runs, *, repository, repository_id, workflow_id, number, head, source, require):
     """Return validation runs, exempt check IDs and verified (run, attempt) pairs."""
     route = 'repos/' + repository + '/'
     validations, ignored, metadata_runs = [], set(), set()
+    proven, deferred = [], []
     expected_blob = None
     require(all(type(r.get('id')) is int and r['id'] > 0 and
                 type(r.get('run_number')) is int and r['run_number'] > 0 for r in runs),
@@ -49,7 +109,7 @@ def partition(api, runs, *, repository, repository_id, workflow_id, number, head
                 run.get('event') == 'pull_request' and run.get('head_sha') == head and
                 run.get('repository', {}).get('id') == repository_id and
                 run.get('head_repository', {}).get('id') == repository_id and
-                run.get('status') == 'completed' and run.get('conclusion') in {'success', 'skipped'} and
+                run.get('status') == 'completed' and run.get('conclusion') in {'success', 'skipped'} | DEFERRED and
                 type(run.get('run_attempt')) is int and 0 < run['run_attempt'] <= 100 and
                 type(run.get('check_suite_id')) is int and run['check_suite_id'] > 0,
                 'metadata run is pending, foreign or unbound')
@@ -66,8 +126,12 @@ def partition(api, runs, *, repository, repository_id, workflow_id, number, head
         checks = api.pages(route + f"check-suites/{run['check_suite_id']}/check-runs?filter=all", 'check_runs')
         by_id = {c.get('id'): c for c in checks}
         require(len(by_id) == len(checks), 'duplicate metadata checks')
-        observed = set()
+        observed, gates = set(), {}
+        # Every attempt must prove it skipped all validation work. Only the
+        # latest attempt's gate can be the run's native verdict; a rerun's newer
+        # gate supersedes an earlier timed-out or cancelled one.
         for attempt in range(1, run['run_attempt'] + 1):
+            latest = attempt == run['run_attempt']
             jobs = api.pages(route + f"actions/runs/{run['id']}/attempts/{attempt}/jobs", 'jobs')
             names = [j.get('name') for j in jobs]
             require(len(names) == len(set(names)) and set(names) in INVENTORIES,
@@ -81,34 +145,57 @@ def partition(api, runs, *, repository, repository_id, workflow_id, number, head
                 require(check_id not in observed, 'duplicate metadata job/check association')
                 observed.add(check_id)
                 check = by_id.get(check_id, {})
-                gate = job['name'] in GATES
-                expected = 'success' if gate else 'skipped'
-                if gate:
+                if job['name'] in GATES:
                     steps = job.get('steps', [])
-                    verify = [s for s in steps if s.get('name') == 'Verify prior validation for metadata']
+                    verify = [s for s in steps if s.get('name') == VERIFY_STEP]
                     normal = [s for s in steps if s.get('name') == GATES[job['name']]]
-                    require(len(verify) == 1 and verify[0].get('conclusion') == 'success' and
-                            len(normal) == 1 and normal[0].get('conclusion') == 'skipped' and
-                            all(s.get('status') == 'completed' and s.get('conclusion') in {'success', 'skipped'}
-                                for s in steps), 'metadata gate did not verify prior validation')
+                    expected = job.get('conclusion')
+                    if expected == 'success':
+                        require(len(verify) == 1 and verify[0].get('conclusion') == 'success' and
+                                len(normal) == 1 and normal[0].get('conclusion') == 'skipped' and
+                                all(s.get('status') == 'completed' and s.get('conclusion') in {'success', 'skipped'}
+                                    for s in steps), 'metadata gate did not verify prior validation')
+                    else:
+                        # An unproven gate may stop at any step, but the real
+                        # aggregate step must never have run in a metadata event.
+                        require(expected in DEFERRED and len(verify) <= 1 and len(normal) <= 1 and
+                                all(s.get('conclusion') in {'skipped', None} for s in normal),
+                                'metadata gate skipped, ran validation work or ended in an unknown state')
+                    if latest:
+                        require(expected == run['conclusion'] or (expected == 'success' and run['conclusion'] == 'skipped'),
+                                'metadata gate disagrees with its run conclusion')
+                    gates[attempt] = check
                 else:
+                    expected = 'skipped'
                     require(job.get('steps') == [], 'metadata run executed validation work')
                 require(type(job.get('id')) is int and job['id'] > 0 and
                         job.get('run_id') == run['id'] and job.get('run_attempt') == attempt and
                         job.get('head_sha') == head and job.get('status') == 'completed' and
                         job.get('conclusion') == expected and
-                        check.get('name') == job['name'] and check.get('app', {}).get('id') == 15368 and
+                        check.get('name') == job['name'] and check.get('app', {}).get('id') == APP and
                         check.get('check_suite', {}).get('id') == run['check_suite_id'] and
                         check.get('head_sha') in {head, definition} and check.get('status') == 'completed' and
                         check.get('conclusion') == expected and check.get('details_url') ==
                         f"https://github.com/{repository}/actions/runs/{run['id']}/job/{job['id']}",
                         'metadata run executed work or has unverified native checks')
         require(set(by_id) == observed, 'unassociated metadata checks')
+        verdict = gates[run['run_attempt']]
+        require(all(supersedes(verdict, gate, require) for attempt, gate in gates.items() if attempt < run['run_attempt']),
+                'metadata rerun did not supersede its earlier attempt')
         final = api.get(route + f"actions/runs/{run['id']}")
         require(all(final.get(k) == run.get(k) for k in (
             'id', 'run_number', 'run_attempt', 'workflow_id', 'path', 'event', 'display_title',
             'head_sha', 'repository', 'head_repository', 'check_suite_id', 'status', 'conclusion')),
             'metadata run changed while reading proof')
+        (deferred if verdict['conclusion'] in DEFERRED else proven).append(verdict)
         ignored.update(observed)
         metadata_runs.add((run['id'], run['run_attempt']))
+    if deferred:
+        # Exclude an unproven gate only when GitHub already evaluates a newer
+        # CI Required instead: the latest validation's own aggregate or a
+        # proven metadata gate. Callers still prove that validation separately.
+        newer = proven + [validation_gate(api, route, runs, repository=repository, repository_id=repository_id,
+                                          workflow_id=workflow_id, head=head, require=require)]
+        require(all(any(supersedes(check, gate, require) for check in newer) for gate in deferred),
+                'unproven metadata gate is still the newest CI Required; rerun it after validation succeeds')
     return validations, ignored, metadata_runs

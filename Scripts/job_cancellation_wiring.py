@@ -41,15 +41,6 @@ def job_fields(workflow, job, metadata, axes=(), products=(), product_key=None, 
     return {'group': group, 'cancel-in-progress': '${{ ' + enabled + ' }}'}
 
 
-def metadata_timeout(original, metadata):
-    original_expression = str(original) if type(original) is int else inner(original)
-    return '${{ (' + FLAG + ') && (' + metadata + ') && 360 || (' + original_expression + ') }}'
-
-
-def wrapped_command(original, scripts):
-    return 'python3 -B ' + scripts + '/metadata_wait.py -- ' + original
-
-
 def workload_key(repository, workflow, job, pr, base, lane, matrix, *, enabled=True, metadata=False, product_mode=False, run=1, attempt=1):
     """Executable key model for collision/default/metadata negative controls."""
     data = [repository, workflow, job, pr, base, lane, matrix]
@@ -75,12 +66,12 @@ def validate_workflow(document, entry, config, filename):
     for name, original_concurrency in entry.get('excluded_concurrency', {}).items():
         if document['jobs'][name].get('concurrency') != original_concurrency:
             raise ValueError('excluded stateful/aggregate concurrency changed: '+name)
+    # A metadata gate is one bounded verifier call. It exits instead of holding a
+    # runner; the validation's own newer CI Required supersedes an early failure.
     for name, metadata in entry['metadata_gates'].items():
         job=document['jobs'][name]
-        if job['timeout-minutes'] != metadata_timeout(metadata['timeout'], config['metadata']):
-            raise ValueError('metadata observer timeout contract changed')
+        if job['timeout-minutes'] != metadata['timeout']:
+            raise ValueError('metadata gate timeout contract changed')
         steps=[s for s in job['steps'] if s.get('name')=='Verify prior validation for metadata']
-        if len(steps)!=1 or steps[0]['run']!=wrapped_command(metadata['command'],config['scripts']):
-            raise ValueError('authoritative metadata command changed or bypassed')
-        if steps[0].get('env',{}).get('INNO_JOB_CANCELLATION')!="${{ (vars.INNO_JOB_CANCELLATION == '' || vars.INNO_JOB_CANCELLATION == 'enabled') && 'enabled' || 'disabled' }}":
-            raise ValueError('metadata rollout flag not propagated')
+        if len(steps)!=1 or steps[0]['run']!=metadata['command']:
+            raise ValueError('authoritative metadata command changed, wrapped or bypassed')

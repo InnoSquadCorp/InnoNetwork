@@ -1,5 +1,6 @@
 """Native metadata no-ops cannot replace, green, cancel or hide real CI evidence."""
 import copy
+from datetime import datetime, timedelta
 import importlib.util
 import itertools
 import tempfile
@@ -17,16 +18,23 @@ spec = importlib.util.spec_from_file_location('metadata', ROOT / 'Scripts/ci-met
 m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)
 META, SUITE, SOURCE = 9900, 9901, 'f' * 40
+GATE_DONE = '2026-10-29T06:45:13Z'
+
+
+def later(stamp, minutes):
+    return (datetime.fromisoformat(stamp.replace('Z', '+00:00')) + timedelta(minutes=minutes)).isoformat().replace('+00:00', 'Z')
 
 
 class MetadataAPI:
-    def __init__(self, base, number, head, ancestor, current_source, *, expanded=False, inventory=None):
+    def __init__(self, base, number, head, ancestor, current_source, *, expanded=False, inventory=None,
+                 meta=META, suite=SUITE, run_number=99, offset=0, completed=GATE_DONE):
         self.base, self.head, self.current_source = base, head, current_source
+        self.meta, self.suite = meta, suite
         repo = base.repo
-        self.run = dict(id=META, run_number=99, run_attempt=1, workflow_id=base.workflow['id'],
+        self.run = dict(id=meta, run_number=run_number, run_attempt=1, workflow_id=base.workflow['id'],
                         path=m.PATH, event='pull_request', head_sha=head, repository=repo, head_repository=repo,
                         pull_requests=[dict(number=number)],
-                        status='completed', conclusion='success', check_suite_id=SUITE,
+                        status='completed', conclusion='success', check_suite_id=suite,
                         display_title=f'CI metadata-only v1 pr:{number} head:{head} base:{ancestor} action:labeled source:{SOURCE}')
         self.commit = dict(sha=SOURCE, parents=[dict(sha=ancestor), dict(sha=head)])
         self.blob = '9' * 40
@@ -34,26 +42,31 @@ class MetadataAPI:
         self.jobs, self.checks = [], []
         names = m.INVENTORIES[-1 if expanded else 0] if inventory is None else inventory
         for i, name in enumerate(sorted(names)):
-            job = dict(id=20000+i, name=name, run_id=META, run_attempt=1, head_sha=head,
+            job = dict(id=20000+offset+i, name=name, run_id=meta, run_attempt=1, head_sha=head,
                        status='completed', conclusion='skipped', steps=[],
-                       check_run_url=f'https://api.github.com/repos/{bot.p.REPOSITORY}/check-runs/{30000+i}')
+                       check_run_url=f'https://api.github.com/repos/{bot.p.REPOSITORY}/check-runs/{30000+offset+i}')
             self.jobs.append(job)
-            self.checks.append(dict(id=30000+i, name=name, app=dict(id=15368), check_suite=dict(id=SUITE),
-                                    head_sha=head, status='completed', conclusion='skipped',
-                                    details_url=f'https://github.com/{bot.p.REPOSITORY}/actions/runs/{META}/job/{job["id"]}'))
-        for job, check in zip(self.jobs, self.checks):
-            if job['name'] in m.GATES:
-                job.update(conclusion='success', steps=[
-                    dict(name=m.GATES[job['name']], conclusion='skipped', status='completed'),
-                    dict(name='Verify prior validation for metadata', conclusion='success', status='completed')])
-                check['conclusion'] = 'success'
+            self.checks.append(dict(id=30000+offset+i, name=name, app=dict(id=15368), check_suite=dict(id=suite),
+                                    head_sha=head, status='completed', conclusion='skipped', completed_at=completed,
+                                    details_url=f'https://github.com/{bot.p.REPOSITORY}/actions/runs/{meta}/job/{job["id"]}'))
         self.base.runs.append(self.run)
         self.jobs_by_attempt = {1: self.jobs}
+        self.prove_gate()
         self.finish_mutation = None
         self.run_reads = 0
 
+    def __getattr__(self, name):
+        # Stacked metadata runs share one underlying CI transcript.
+        base = self.__dict__.get('base')
+        if base is None:
+            raise AttributeError(name)
+        return getattr(base, name)
+
+    def transcript(self):
+        return self.base.transcript() if isinstance(self.base, MetadataAPI) else self.base
+
     def get(self, route):
-        if route.endswith(f'actions/runs/{META}'):
+        if route.endswith(f'actions/runs/{self.meta}'):
             self.run_reads += 1
             result = copy.deepcopy(self.run)
             if self.run_reads % 2 == 0 and self.finish_mutation:
@@ -63,12 +76,19 @@ class MetadataAPI:
             return copy.deepcopy(self.commit)
         if '/contents/' + m.PATH + '?ref=' in route:
             return dict(sha=self.blob if route.endswith(SOURCE) else self.expected_blob)
+        if '/check-runs/' in route and '?' not in route:
+            check_id = int(route.rsplit('/', 1)[1])
+            found = [c for c in self.checks if c['id'] == check_id]
+            if found:
+                return copy.deepcopy(found[0])
+            if isinstance(self.base, reuse.Transcript):  # The reuse transcript only lists suites.
+                return copy.deepcopy(next(c for c in self.base.checks if c['id'] == check_id))
         return self.base.get(route)
 
     def pages(self, route, key=None):
-        if f'check-suites/{SUITE}/' in route:
+        if f'check-suites/{self.suite}/' in route:
             return copy.deepcopy(self.checks)
-        if f'actions/runs/{META}/attempts/' in route and route.endswith('/jobs'):
+        if f'actions/runs/{self.meta}/attempts/' in route and route.endswith('/jobs'):
             return copy.deepcopy(self.jobs_by_attempt[int(route.split('/')[-2])])
         result = self.base.pages(route, key)
         if f'commits/{self.head}/check-runs?' in route:
@@ -77,6 +97,44 @@ class MetadataAPI:
 
     def graphql(self, query, variables):
         return self.base.graphql(query, variables)
+
+    def gate(self):
+        job = next(j for j in self.jobs if j['name'] in m.GATES)
+        return job, next(c for c in self.checks if c['id'] == int(job['check_run_url'].rsplit('/', 1)[1]))
+
+    def prove_gate(self):
+        job, check = self.gate()
+        job.update(conclusion='success', steps=[
+            dict(name=m.GATES[job['name']], conclusion='skipped', status='completed'),
+            dict(name=m.VERIFY_STEP, conclusion='success', status='completed')])
+        check['conclusion'] = self.run['conclusion'] = 'success'
+
+    def end_gate(self, conclusion='failure', steps=None):
+        """Model the one-shot gate exiting before validation finished or after its head moved."""
+        job, check = self.gate()
+        job.update(conclusion=conclusion, steps=steps if steps is not None else [
+            dict(name='Checkout', conclusion='success', status='completed'),
+            dict(name=m.GATES[job['name']], conclusion='skipped', status='completed'),
+            dict(name=m.VERIFY_STEP, conclusion=conclusion, status='completed')])
+        check['conclusion'] = self.run['conclusion'] = conclusion
+
+    def force_cancel_gate(self):
+        """The shape GitHub recorded for force-cancelled waiting observers on 2026-10-29."""
+        self.end_gate('cancelled', [
+            dict(name='Set up job', conclusion='success', status='completed'),
+            dict(name='Checkout', conclusion='success', status='completed'),
+            dict(name=m.GATES['CI Required'], conclusion='skipped', status='completed'),
+            dict(name=m.VERIFY_STEP, conclusion=None, status='in_progress'),
+            dict(name='Post Checkout', conclusion=None, status='pending')])
+
+    def validation_required(self, check_id, completed):
+        """Place the real validation's own CI Required at a native check order."""
+        t = self.transcript()
+        job = next(j for j in t.jobs if j['name'] == 'CI Required')
+        check = next(c for c in t.checks if c['id'] == int(job['check_run_url'].rsplit('/', 1)[1]))
+        job.update(run_id=t.run['id'], run_attempt=t.run['run_attempt'], head_sha=self.head,
+                   check_run_url=job['check_run_url'].rsplit('/', 1)[0] + f'/{check_id}')
+        check.update(id=check_id, completed_at=completed)
 
     def rerun(self):
         attempt = self.run['run_attempt'] + 1
@@ -88,8 +146,8 @@ class MetadataAPI:
             check = copy.deepcopy(next(c for c in self.checks if c['id'] == check_id))
             job.update(id=job['id'] + 100000, run_attempt=attempt,
                        check_run_url=job['check_run_url'].rsplit('/', 1)[0] + '/' + str(check_id + 100000))
-            check.update(id=check_id + 100000,
-                         details_url=f'https://github.com/{bot.p.REPOSITORY}/actions/runs/{META}/job/{job["id"]}')
+            check.update(id=check_id + 100000, completed_at=later(check['completed_at'], 90),
+                         details_url=f'https://github.com/{bot.p.REPOSITORY}/actions/runs/{self.meta}/job/{job["id"]}')
             current_checks.append(check)
         self.checks.extend(current_checks)
         self.jobs_by_attempt[attempt] = self.jobs
@@ -98,6 +156,23 @@ class MetadataAPI:
 def reuse_api(expanded=False, inventory=None):
     t = reuse.Transcript()
     return MetadataAPI(t, reuse.NUMBER, reuse.HEAD, reuse.BASE, reuse.MAIN, expanded=expanded, inventory=inventory)
+
+
+def bot_api(base=None, **kwargs):
+    return MetadataAPI(base or bot.Transcript(), bot.NUMBER, bot.HEAD, bot.BASE, bot.MERGE, **kwargs)
+
+
+def consumers(configure):
+    """Both latest-validation readers must agree on every metadata outcome."""
+    a = reuse_api()
+    configure(a)
+    b = bot_api()
+    configure(b)
+    return [('main-reuse', lambda: reuse.p.prove(a, a.base.event, reuse.CONTEXT, now=a.base.now)['run'], reuse.RUN),
+            ('coordinator', lambda: bot.p.proof(b, bot.NUMBER)['run'], bot.RUN)]
+
+
+VALIDATION_DONE = later(GATE_DONE, 340)
 
 
 class MetadataProofTests(unittest.TestCase):
@@ -273,3 +348,128 @@ class MetadataProofTests(unittest.TestCase):
         self.assertEqual(len(b.base.mutations), 2)
         self.assertIn('enablePullRequestAutoMerge', b.base.mutations[0][1])
         self.assertIn('disablePullRequestAutoMerge', b.base.mutations[1][1])
+
+
+
+class OneShotGateTests(unittest.TestCase):
+    """A metadata gate exits at once; only a newer native CI Required removes its non-success."""
+
+    def assert_proven(self, configure):
+        for name, prove, expected in consumers(configure):
+            with self.subTest(consumer=name):
+                self.assertEqual(prove(), expected)
+
+    def assert_blocked(self, configure, pattern=''):
+        for name, prove, _ in consumers(configure):
+            with self.subTest(consumer=name), self.assertRaisesRegex(ValueError, pattern):
+                prove()
+
+    def test_gate_that_exits_before_validation_is_superseded_by_its_newer_ci_required(self):
+        for end in (lambda a: a.end_gate('failure'), lambda a: a.end_gate('cancelled'), MetadataAPI.force_cancel_gate):
+            self.assert_proven(lambda a: (end(a), a.validation_required(40000, VALIDATION_DONE)))
+
+    def test_gate_newer_than_validation_blocks_until_a_rerun_proves_it(self):
+        racing = lambda a: (a.end_gate(), a.validation_required(25000, later(GATE_DONE, -5)))
+        self.assert_blocked(racing, 'still the newest CI Required')
+        self.assert_proven(lambda a: (racing(a), a.rerun(), a.prove_gate()))
+
+    def test_pending_missing_or_unordered_validation_aggregate_never_supersedes(self):
+        def missing(a):
+            t = a.transcript()
+            t.jobs.remove(next(j for j in t.jobs if j['name'] == 'CI Required'))
+        def running(a):
+            a.validation_required(40000, None)
+            next(c for c in a.transcript().checks if c['id'] == 40000).update(status='in_progress')
+        for order in (missing, running,
+                      lambda a: a.validation_required(40000, GATE_DONE),
+                      lambda a: a.validation_required(25000, VALIDATION_DONE)):
+            self.assert_blocked(lambda a: (a.end_gate(), order(a)), 'still the newest CI Required')
+        for forged in (lambda c: c.update(head_sha='0' * 40), lambda c: c['app'].update(id=999),
+                       lambda c: c.update(name='CI Metadata Only'), lambda c: c.update(details_url='wrong')):
+            self.assert_blocked(lambda a: (a.end_gate(), a.validation_required(40000, VALIDATION_DONE),
+                                           forged(next(c for c in a.transcript().checks if c['id'] == 40000))))
+
+    def test_failed_or_force_cancelled_first_attempt_recovers_after_rerun(self):
+        # #161, #163 and #170 stayed blocked because attempt 1 timed out even
+        # after a successful rerun. Only the latest attempt is the native verdict.
+        for end in (lambda a: a.end_gate('failure'), lambda a: a.end_gate('cancelled'), MetadataAPI.force_cancel_gate):
+            self.assert_proven(lambda a: (end(a), a.rerun(), a.prove_gate()))
+        b = bot_api()
+        bot.failed_native(b.base)
+        b.end_gate()
+        b.rerun()
+        b.prove_gate()
+        with tempfile.TemporaryDirectory() as directory, \
+                mock.patch.dict(bot.os.environ, dict(bot.TRUSTED, GITHUB_OUTPUT=str(Path(directory) / 'output')), clear=True):
+            self.assertIn('obsolete', bot.p.coordinate(b, bot.NUMBER, True, dict(id=META, run_attempt=1)))
+            self.assertIn('read-only Ready receipt refresh', bot.p.coordinate(b, bot.NUMBER, True, dict(id=META, run_attempt=2)))
+
+    def test_unproven_gate_never_hides_validation_work_or_unknown_outcomes(self):
+        superseded = lambda a: a.validation_required(40000, VALIDATION_DONE)
+        def rerun_after(change):
+            def configure(a):
+                a.end_gate()
+                a.rerun()
+                a.prove_gate()
+                change(a)
+            return configure
+        def disagree(conclusion):
+            def configure(a):
+                a.run['conclusion'] = conclusion
+            return configure
+        mutations = [
+            lambda a: a.end_gate('failure', [dict(name=m.GATES['CI Required'], conclusion='success', status='completed')]),
+            lambda a: a.end_gate('failure', [dict(name=m.GATES['CI Required'], conclusion='failure', status='completed')]),
+            lambda a: a.end_gate('skipped'), lambda a: a.end_gate('timed_out'), lambda a: a.end_gate('neutral'),
+            lambda a: (a.end_gate(), disagree('success')(a)), lambda a: (a.end_gate(), disagree('cancelled')(a)),
+            lambda a: disagree('failure')(a),
+            lambda a: (a.end_gate(), a.gate()[1].update(conclusion='success')),
+            lambda a: (a.end_gate(), a.jobs[0].update(steps=[dict(name='executed')])),
+            lambda a: (a.end_gate(), a.gate()[1].pop('completed_at')),
+            lambda a: (a.end_gate(), a.gate()[1].update(completed_at='not-a-time')),
+            lambda a: (a.end_gate(), a.run.update(status='in_progress', conclusion=None)),
+            rerun_after(lambda a: a.jobs_by_attempt[1][0].update(steps=[dict(name='executed')])),
+            rerun_after(lambda a: next(c for c in a.checks if c['name'] == 'CI Required' and c['id'] < 100000)
+                        .update(completed_at=later(GATE_DONE, 600))),
+            rerun_after(lambda a: next(j for j in a.jobs_by_attempt[1] if j['name'] == 'CI Required')
+                        .update(steps=[dict(name=m.GATES['CI Required'], conclusion='success', status='completed')])),
+        ]
+        for index, mutate in enumerate(mutations):
+            with self.subTest(index=index):
+                self.assert_blocked(lambda a: (mutate(a), superseded(a)))
+
+    def test_later_proven_metadata_gate_supersedes_only_an_older_unproven_gate(self):
+        racing = bot_api()
+        racing.end_gate()
+        racing.validation_required(25000, later(GATE_DONE, -5))
+        with self.assertRaisesRegex(ValueError, 'still the newest CI Required'):
+            bot.p.proof(racing, bot.NUMBER)
+        proven = bot_api(racing, meta=9910, suite=9911, run_number=100, offset=500, completed=later(GATE_DONE, 30))
+        self.assertEqual(bot.p.proof(proven, bot.NUMBER)['run'], bot.RUN)
+        first = bot_api()
+        first.validation_required(25000, later(GATE_DONE, -5))
+        unproven = bot_api(first, meta=9910, suite=9911, run_number=100, offset=500, completed=later(GATE_DONE, 30))
+        unproven.end_gate()
+        with self.assertRaisesRegex(ValueError, 'still the newest CI Required'):
+            bot.p.proof(unproven, bot.NUMBER)
+
+    def test_coordinator_reconciles_once_the_validation_aggregate_finishes(self):
+        # Dependabot edits the body as it rebases: the metadata gate exits while
+        # validation is still running and the coordinator wakes again later.
+        b = bot_api()
+        bot.failed_native(b.base)
+        t = b.transcript()
+        required = next(j for j in t.jobs if j['name'] == 'CI Required')
+        t.jobs.remove(required)
+        t.run.update(status='in_progress', conclusion=None)
+        b.end_gate()
+        with tempfile.TemporaryDirectory() as directory, \
+                mock.patch.dict(bot.os.environ, dict(bot.TRUSTED, GITHUB_OUTPUT=str(Path(directory) / 'output')), clear=True):
+            self.assertIn('blocked:', bot.p.coordinate(b, bot.NUMBER, True, dict(id=META, run_attempt=1)))
+            self.assertFalse(b.base.mutations)
+            t.jobs.append(required)
+            t.run.update(status='completed', conclusion='success')
+            b.validation_required(40000, VALIDATION_DONE)
+            self.assertIn('read-only Ready receipt refresh', bot.p.coordinate(b, bot.NUMBER, True, dict(id=bot.RUN, run_attempt=1)))
+        self.assertEqual(len(b.base.mutations), 1)
+        self.assertIn('enablePullRequestAutoMerge', b.base.mutations[0][1])

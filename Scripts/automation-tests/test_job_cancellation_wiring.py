@@ -29,8 +29,9 @@ class JobCancellationWiringTests(unittest.TestCase):
             self.assertEqual(bool(expression_value(w.active(CONFIG['metadata']),current)),expected)
             for event in ['push','merge_group','workflow_dispatch']:
                 self.assertFalse(expression_value(w.active(CONFIG['metadata']),{**current,'github.event_name':event}))
+            # The metadata gate never waits, so the rollout flag cannot change its runner budget.
             step=next(s for s in source['jobs']['ci-required']['steps'] if s.get('name')=='Verify prior validation for metadata')
-            self.assertEqual(expression_value(w.inner(step['env']['INNO_JOB_CANCELLATION']),current),'enabled' if expected else 'disabled')
+            self.assertNotIn('INNO_JOB_CANCELLATION',step['env'])
         scoped=w.active(CONFIG['metadata'],['INNONETWORK_PRODUCT_CI'],'needs.ci-plan.outputs.product-key')
         for value in ['', 'true', 'TRUE', 'false', 'unknown']:
             current={**values,'vars.INNO_JOB_CANCELLATION':'','vars.INNONETWORK_PRODUCT_CI':value,'needs.ci-plan.outputs.product-key':''}
@@ -89,14 +90,20 @@ class JobCancellationWiringTests(unittest.TestCase):
         for field in ('enabled','metadata','product_mode'):
             kw={field:False if field=='enabled' else True}
             self.assertNotEqual(w.workload_key(*inputs,run=1,**kw),w.workload_key(*inputs,run=2,**kw))
-    def test_metadata_wait_keeps_the_exact_verifier_and_bounds(self):
+    def test_metadata_gate_runs_the_exact_verifier_once_without_holding_a_runner(self):
         for path,entry in CONFIG['workflows'].items():
             for job,old in entry['metadata_gates'].items():
                 data=yaml(ROOT/path);step=next(s for s in data['jobs'][job]['steps'] if s.get('name')=='Verify prior validation for metadata')
-                self.assertTrue(step['run'].endswith('-- '+old['command']))
-                self.assertIn('/metadata_wait.py -- ',step['run'])
-                bad=copy.deepcopy(data);next(s for s in bad['jobs'][job]['steps'] if s.get('name')==step['name'])['run']='true'
-                with self.assertRaises(ValueError):w.validate_workflow(bad,entry,CONFIG,Path(path).name)
+                self.assertEqual(step['run'],old['command'])
+                self.assertEqual(data['jobs'][job]['timeout-minutes'],old['timeout'])
+                self.assertLessEqual(old['timeout'],5)
+                waits=['true','python3 -B Scripts/metadata_wait.py -- '+old['command'],old['command']+' || sleep 21000']
+                for run in waits:
+                    bad=copy.deepcopy(data);next(s for s in bad['jobs'][job]['steps'] if s.get('name')==step['name'])['run']=run
+                    with self.subTest(run=run),self.assertRaises(ValueError):w.validate_workflow(bad,entry,CONFIG,Path(path).name)
+                for timeout in [360,"${{ (vars.INNO_JOB_CANCELLATION == '' || vars.INNO_JOB_CANCELLATION == 'enabled') && 360 || 5 }}"]:
+                    bad=copy.deepcopy(data);bad['jobs'][job]['timeout-minutes']=timeout
+                    with self.subTest(timeout=timeout),self.assertRaises(ValueError):w.validate_workflow(bad,entry,CONFIG,Path(path).name)
     def test_lane_labels_are_part_of_each_stable_identity(self):
         for path,entry in CONFIG['workflows'].items():
             for name,item in entry['jobs'].items():

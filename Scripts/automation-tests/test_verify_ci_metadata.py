@@ -2,8 +2,13 @@
 import copy
 from datetime import datetime, timedelta, timezone
 import importlib.util
+import io
+import json
+import os
 from pathlib import Path
+import tempfile
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location('gate', ROOT / 'Scripts/verify-ci-metadata.py')
@@ -115,6 +120,27 @@ class MetadataGateTests(unittest.TestCase):
             with self.subTest(state=state,result=result),self.assertRaises(ValueError):t.prove()
         t=Transcript();t.runs=[t.own]
         with self.assertRaises(ValueError):t.prove()
+
+    def test_gate_exits_once_without_waiting_for_pending_validation_or_obsolete_head(self):
+        for name, mutate, reason in [
+                ('running', lambda t: t.run.update(status='in_progress', conclusion=None), 'still running'),
+                ('queued', lambda t: t.run.update(status='queued', conclusion=None), 'still running'),
+                ('not created', lambda t: setattr(t, 'runs', [t.own]), 'no real validation exists for this head yet'),
+                ('head moved', lambda t: t.pr['head'].update(sha='d' * 40), 'PR changed before validation')]:
+            t = Transcript()
+            mutate(t)
+            with tempfile.TemporaryDirectory() as directory:
+                event = Path(directory) / 'event.json'
+                event.write_text(json.dumps(t.event))
+                stderr = io.StringIO()
+                with self.subTest(name=name), mock.patch.object(gate, 'API', return_value=t), \
+                        mock.patch.dict(os.environ, dict(t.env, GITHUB_EVENT_PATH=str(event), GH_TOKEN='token'), clear=True), \
+                        mock.patch('sys.argv', ['verify-ci-metadata.py', '--check', 'CI Required']), \
+                        mock.patch('sys.stderr', stderr):
+                    self.assertEqual(gate.main(), 1)
+                    self.assertIn(reason, stderr.getvalue())
+                    self.assertIn('does not wait', stderr.getvalue())
+                    self.assertLessEqual(t.pages_read, 1)
 
     def test_newest_real_failure_is_not_hidden_by_older_success_or_metadata(self):
         t=Transcript();t.runs.append({**t.run,'id':9,'run_number':9,'conclusion':'success'});t.run['conclusion']='failure'
