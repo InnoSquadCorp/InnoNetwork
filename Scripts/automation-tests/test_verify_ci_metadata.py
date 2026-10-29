@@ -139,7 +139,7 @@ class MetadataGateTests(unittest.TestCase):
                         mock.patch('sys.stderr', stderr):
                     self.assertEqual(gate.main(), 1)
                     self.assertIn(reason, stderr.getvalue())
-                    self.assertIn('does not wait', stderr.getvalue())
+                    self.assertIn('does not wait or retry', stderr.getvalue())
                     self.assertLessEqual(t.pages_read, 1)
 
     def test_newest_real_failure_is_not_hidden_by_older_success_or_metadata(self):

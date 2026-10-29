@@ -24,8 +24,8 @@ FORMAT = (r'CI validation v2 pr:([1-9][0-9]*) head:([0-9a-f]{40}) '
 TITLE = re.compile(FORMAT)
 METADATA_PREFIX = 'CI metadata-only v1 '
 VERIFY_STEP = 'Verify prior validation for metadata'
-DEFERRAL = ('This gate does not wait. A newer CI Required from the validation run supersedes this '
-            'result; if this gate is still the newest after validation succeeds, re-run it.')
+DEFERRAL = ('This gate does not wait or retry. Metadata runs queue without a runner behind the validation of '
+            'the same head; if this gate ran before that validation succeeded, re-run it afterwards.')
 
 
 def require(value, message):

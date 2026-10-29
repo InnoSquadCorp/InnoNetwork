@@ -339,33 +339,36 @@ A non-lane `labeled`/`unlabeled` event or a body-only `edited` event starts a
 metadata-only CI run. Every validation job is skipped. Only `CI Required` runs,
 and it calls `verify-ci-metadata.py` once within its 5-minute limit. It succeeds
 only when the latest real validation of the exact head, base and lane labels has
-already succeeded. A pending, failed, missing, stale or obsolete-head validation
-ends the gate as a failure at once. No gate waits for a runner or for validation.
-Dependabot edits the PR body on every rebase, so each rebase starts such a gate.
+already succeeded. Anything else, including an obsolete head, fails at once.
+Dependabot edits the PR body on every rebase, and review bots edit it after
+pushes, so these runs are frequent.
 
-GitHub evaluates only the newest check run with a required name. PR #139 merged
-with an older failed `CI Required` in another check suite, and the ruleset
-reported `pass` without a bypass. A gate that exits while validation is running
-is therefore superseded natively by the validation's own `CI Required`, which
-GitHub creates when the validation jobs finish.
+GitHub does not document how it picks among same-name checks in different check
+suites. PR #139 merged without a bypass even though an older suite had a failed
+`CI Required` and a newer suite a successful one. PR #142 first gave metadata
+runs no `CI Required` at all, and the required check stayed Expected. GitHub may
+therefore judge the newest suite. So a metadata run must report the real verdict
+itself, after its validation has finished.
+
+With job cancellation on, each PR run is admitted by head, base branch and lane
+labels. A metadata run shares that group with its validation and waits in the
+`max` queue without a runner. It then proves the finished run in one call.
+A new head, retargeted base or lane change still gets its own group and starts
+at once. Older-head metadata runs wait for their own head's run, which job-level
+cancellation shortens, and then fail immediately.
 
 `ci-metadata-policy.py` gives the coordinator, native Ready and main reuse the
 same view. Every attempt of a metadata run must still show only skipped
 validation jobs and a skipped real aggregate step. Only the latest attempt is
 the run's verdict, so a timed-out or cancelled earlier attempt no longer blocks a
-successful rerun. A failed or cancelled latest gate is exempt only when a newer
-`CI Required` supersedes it, with both a higher check ID and a later completion
-time. That newer check must be the latest validation's latest-attempt aggregate
-or a proven successful metadata gate. Callers still prove that validation
-separately. Exemption never counts as validation, and every other gate result
-blocks.
+successful rerun. A failed or cancelled latest gate keeps blocking until that run
+is re-run, or until a newer metadata run with a newer check proves validation. A
+later aggregate from the older validation suite never replaces it.
+Exemption never counts as validation, and every other gate result blocks.
 
-One race remains. A metadata event can arrive after the validation's
-`CI Required` job was created but before the run finished. Its failed gate is
-then the newest check, and readers report that it is still the newest
-`CI Required`. After the validation succeeds, re-run the failed metadata job; a
-newer validation or a newer proven gate also clears it. Nothing reruns it
-automatically.
+A gate can still fail first if it is admitted before a newer validation of the
+same head, for example after a lane label change. Re-run that metadata job once
+the validation succeeds. Nothing reruns it automatically.
 
 GitHub events do not form an atomic lock with merging. `expectedHeadOid` pins
 the head, not main after the final read. With `strict=false`, an unobserved main

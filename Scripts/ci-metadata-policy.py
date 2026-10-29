@@ -2,9 +2,9 @@
 
 A title is a candidate, not evidence. Bind the immutable workflow definition,
 merge parents and every attempt's complete job/check inventory before excluding
-one from latest-validation selection. A gate that exits without proof (pending
-or failed validation, obsolete head) is excluded only after a newer native
-CI Required supersedes it. Unknown evidence blocks the caller.
+one from latest-validation selection. GitHub may judge a required name by the
+newest check suite, so a metadata gate that ended without proof stays blocking
+until its own rerun or a newer metadata run proves it. Unknown evidence blocks.
 """
 from datetime import datetime
 import itertools
@@ -23,8 +23,8 @@ GATES = {'CI Required': 'Require every planned CI result'}
 AGGREGATES = (({'Consumer Metadata Only'}, {METADATA_CONDITION + " && 'Consumer Metadata Only' || 'Consumer Smoke'"}),)
 INVENTORIES = [DIRECT.union(GATES, *children) for children in itertools.product(*CALLS, *AGGREGATES)]
 VERIFY_STEP = 'Verify prior validation for metadata'
-# The gate runs its verifier once and exits. A non-success never becomes a pass;
-# it only stops counting when a newer same-name native check replaces it.
+# The gate runs its verifier once. A non-success never becomes a pass; it only
+# stops counting once a newer suite and check of the same name replace it.
 DEFERRED = {'failure', 'cancelled'}
 APP = 15368
 
@@ -40,44 +40,11 @@ def completed_at(check, require):
 
 
 def supersedes(newer, older, require):
-    """GitHub evaluates the newest same-name check; demand both ID and completion order."""
+    """Demand creation and completion order; callers also order the check suites."""
     return (newer is not None and type(newer.get('id')) is int and newer['id'] > older['id'] and
             newer.get('name') == older.get('name') and
             newer.get('head_sha') == older.get('head_sha') and newer.get('status') == 'completed' and
             completed_at(newer, require) > completed_at(older, require))
-
-
-def validation_gate(api, route, runs, *, repository, repository_id, workflow_id, head, require):
-    """Return the latest real validation's native CI Required check once GitHub created it."""
-    ordinary = [r for r in runs if not str(r.get('display_title', '')).startswith(PREFIX)]
-    if not ordinary:
-        return None
-    listed = max(ordinary, key=lambda r: (r['run_number'], r['id']))
-    run = api.get(route + f"actions/runs/{listed['id']}")
-    require(run.get('id') == listed['id'] and run.get('workflow_id') == workflow_id and run.get('path') == PATH and
-            run.get('event') == 'pull_request' and run.get('head_sha') == head and
-            run.get('repository', {}).get('id') == repository_id and
-            run.get('head_repository', {}).get('id') == repository_id and
-            type(run.get('run_attempt')) is int and 0 < run['run_attempt'] <= 100 and
-            type(run.get('check_suite_id')) is int and run['check_suite_id'] > 0,
-            'superseding validation is foreign or unbound')
-    jobs = [j for j in api.pages(route + f"actions/runs/{run['id']}/attempts/{run['run_attempt']}/jobs", 'jobs')
-            if j.get('name') == 'CI Required']
-    require(len(jobs) <= 1, 'duplicate validation CI Required job')
-    if not jobs:
-        return None
-    job, prefix = jobs[0], 'https://api.github.com/' + route + 'check-runs/'
-    url = job.get('check_run_url', '')
-    require(type(job.get('id')) is int and job.get('run_id') == run['id'] and job.get('run_attempt') == run['run_attempt'] and
-            job.get('head_sha') == head and url.startswith(prefix) and
-            re.fullmatch(r'[1-9][0-9]*', url[len(prefix):]) is not None, 'unbound validation CI Required job')
-    check = api.get(route + 'check-runs/' + url[len(prefix):])
-    require(check.get('id') == int(url[len(prefix):]) and check.get('name') == 'CI Required' and
-            check.get('app', {}).get('id') == APP and check.get('head_sha') == head and
-            check.get('check_suite', {}).get('id') == run['check_suite_id'] and check.get('details_url') ==
-            f"https://github.com/{repository}/actions/runs/{run['id']}/job/{job['id']}",
-            'unverified validation CI Required check')
-    return check
 
 
 def partition(api, runs, *, repository, repository_id, workflow_id, number, head, source, require):
@@ -187,15 +154,12 @@ def partition(api, runs, *, repository, repository_id, workflow_id, number, head
             'id', 'run_number', 'run_attempt', 'workflow_id', 'path', 'event', 'display_title',
             'head_sha', 'repository', 'head_repository', 'check_suite_id', 'status', 'conclusion')),
             'metadata run changed while reading proof')
-        (deferred if verdict['conclusion'] in DEFERRED else proven).append(verdict)
+        (deferred if verdict['conclusion'] in DEFERRED else proven).append((run['run_number'], verdict))
         ignored.update(observed)
         metadata_runs.add((run['id'], run['run_attempt']))
-    if deferred:
-        # Exclude an unproven gate only when GitHub already evaluates a newer
-        # CI Required instead: the latest validation's own aggregate or a
-        # proven metadata gate. Callers still prove that validation separately.
-        newer = proven + [validation_gate(api, route, runs, repository=repository, repository_id=repository_id,
-                                          workflow_id=workflow_id, head=head, require=require)]
-        require(all(any(supersedes(check, gate, require) for check in newer) for gate in deferred),
-                'unproven metadata gate is still the newest CI Required; rerun it after validation succeeds')
+    # A later CI Required from an older validation suite is not enough: only a
+    # newer metadata run whose gate proved validation replaces an unproven gate.
+    require(all(any(number > order and supersedes(check, gate, require) for number, check in proven)
+                for order, gate in deferred),
+            'unproven metadata gate is still the newest CI Required; rerun it after validation succeeds')
     return validations, ignored, metadata_runs

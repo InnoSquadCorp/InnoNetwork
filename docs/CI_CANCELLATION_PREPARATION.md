@@ -10,8 +10,10 @@ normalize the variable; the metadata gate does not read it.
 - Feature-off retains the exact prior outer workflow group, cancellation and
   metadata queue behavior. Additional job groups are run/attempt-unique, so they
   introduce no cross-run serialization/cancellation when disabled
-- Feature-on PRs receive unique outer admission groups and disable whole-workflow
-  cancellation. Only reviewed validation jobs get a stable active job key
+- Feature-on PRs disable whole-workflow cancellation. Their outer admission group
+  is keyed by head, base branch and lane labels, so a metadata run queues behind
+  its validation without a runner. Only reviewed validation jobs get a stable
+  active job key
 - Keys distinguish repository, caller workflow, workflow file, job workload,
   PR/base branch, validation label lane and reviewed matrix cell. Release-validation
   never collides with ordinary validation; concurrency-review is included
@@ -40,12 +42,11 @@ Fixed full-package test jobs use their fixed job workload, not a source subset.
 
 The aggregate's read-only authoritative metadata verifier runs exactly once with
 its original arguments in both modes, within the original 5-minute job limit.
-Feature-off still queues a metadata run behind validation in the shared outer
-group. Feature-on gives it its own admission group, so its gate can start before
-validation finishes; it then fails at once instead of waiting. Only a genuine
-successful proof returns success. Failure/timeout/cancellation is never
-translated into a green result. Metadata cannot share an active cancellation key
-with validation.
+Feature-off queues a metadata run behind validation in the shared PR group.
+Feature-on queues it behind the validation of the same head, base branch and lane
+labels. Neither holds a runner while waiting. Only a genuine successful proof
+returns success. Failure/timeout/cancellation is never translated into a green
+result. Metadata cannot share an active job cancellation key with validation.
 
 The former `metadata_wait.py` wrapper retried for up to 21,000 seconds under a
 360-minute job budget. On 2026-10-29 six concurrent Dependabot rebases left 18
@@ -53,7 +54,7 @@ such observers holding Ubuntu runners. Twelve watched superseded heads that coul
 never pass, and an unrelated PR's CI could not start for five hours. Exact
 head/base/attempt/current-main checks remain in the verifier. If the candidate
 changes, an older gate cannot bless the new candidate; it fails immediately.
-How readers treat a gate that exits early is described in
+How readers treat a failed gate is described in
 [CI automation](CIAutomation.md#metadata-only-gate).
 
 ## Reviewed wiring
@@ -63,12 +64,11 @@ How readers treat a gate that exits early is described in
 ## Repeated metadata events
 
 Each metadata event still creates its own gate, but a gate holds an Ubuntu runner
-only for one bounded proof. Gate cancellation is still not enabled and is no
-longer needed to free runners. This repository's readers exempt a failed or
-cancelled gate only after a newer native `CI Required` supersedes it, and a
-failed earlier attempt no longer blocks a successful rerun. The sibling
-DI/Flow/Router readers are unchanged. Do not claim this coalesces metadata or has
-measured queue savings.
+only for one bounded proof after its validation finishes. Gate cancellation is
+still not enabled and is no longer needed to free runners. This repository's
+readers judge each metadata run by its latest attempt, so a failed earlier
+attempt no longer blocks a successful rerun. The sibling DI/Flow/Router readers
+are unchanged. Do not claim this coalesces metadata or has measured queue savings.
 
 ## Validation and remaining limits
 

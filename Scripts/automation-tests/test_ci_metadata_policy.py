@@ -127,6 +127,10 @@ class MetadataAPI:
             dict(name=m.VERIFY_STEP, conclusion=None, status='in_progress'),
             dict(name='Post Checkout', conclusion=None, status='pending')])
 
+    def attempt_gate(self, attempt):
+        job = next(j for j in self.jobs_by_attempt[attempt] if j['name'] in m.GATES)
+        return job, next(c for c in self.checks if c['id'] == int(job['check_run_url'].rsplit('/', 1)[1]))
+
     def validation_required(self, check_id, completed):
         """Place the real validation's own CI Required at a native check order."""
         t = self.transcript()
@@ -352,7 +356,7 @@ class MetadataProofTests(unittest.TestCase):
 
 
 class OneShotGateTests(unittest.TestCase):
-    """A metadata gate exits at once; only a newer native CI Required removes its non-success."""
+    """A metadata gate runs once; only a newer suite that proves validation replaces its non-success."""
 
     def assert_proven(self, configure):
         for name, prove, expected in consumers(configure):
@@ -364,30 +368,19 @@ class OneShotGateTests(unittest.TestCase):
             with self.subTest(consumer=name), self.assertRaisesRegex(ValueError, pattern):
                 prove()
 
-    def test_gate_that_exits_before_validation_is_superseded_by_its_newer_ci_required(self):
+    def test_unproven_gate_blocks_even_when_an_older_suite_reports_later(self):
+        # PR #142 first dropped CI Required from metadata runs and the required
+        # check stayed Expected: GitHub may judge the newest suite, not the newest
+        # check. A later aggregate from the older validation suite is not enough.
         for end in (lambda a: a.end_gate('failure'), lambda a: a.end_gate('cancelled'), MetadataAPI.force_cancel_gate):
-            self.assert_proven(lambda a: (end(a), a.validation_required(40000, VALIDATION_DONE)))
+            self.assert_blocked(lambda a: (end(a), a.validation_required(40000, VALIDATION_DONE)),
+                                'still the newest CI Required')
 
-    def test_gate_newer_than_validation_blocks_until_a_rerun_proves_it(self):
-        racing = lambda a: (a.end_gate(), a.validation_required(25000, later(GATE_DONE, -5)))
-        self.assert_blocked(racing, 'still the newest CI Required')
-        self.assert_proven(lambda a: (racing(a), a.rerun(), a.prove_gate()))
-
-    def test_pending_missing_or_unordered_validation_aggregate_never_supersedes(self):
-        def missing(a):
-            t = a.transcript()
-            t.jobs.remove(next(j for j in t.jobs if j['name'] == 'CI Required'))
-        def running(a):
-            a.validation_required(40000, None)
-            next(c for c in a.transcript().checks if c['id'] == 40000).update(status='in_progress')
-        for order in (missing, running,
-                      lambda a: a.validation_required(40000, GATE_DONE),
-                      lambda a: a.validation_required(25000, VALIDATION_DONE)):
-            self.assert_blocked(lambda a: (a.end_gate(), order(a)), 'still the newest CI Required')
-        for forged in (lambda c: c.update(head_sha='0' * 40), lambda c: c['app'].update(id=999),
-                       lambda c: c.update(name='CI Metadata Only'), lambda c: c.update(details_url='wrong')):
-            self.assert_blocked(lambda a: (a.end_gate(), a.validation_required(40000, VALIDATION_DONE),
-                                           forged(next(c for c in a.transcript().checks if c['id'] == 40000))))
+    def test_gate_that_ran_before_validation_was_created_is_historical(self):
+        # A metadata event can win admission before its validation exists. Its
+        # suite is older than that validation's, so it is ordinary history.
+        for end in (lambda a: a.end_gate('failure'), MetadataAPI.force_cancel_gate):
+            self.assert_proven(lambda a: (end(a), a.run.update(run_number=29)))
 
     def test_failed_or_force_cancelled_first_attempt_recovers_after_rerun(self):
         # #161, #163 and #170 stayed blocked because attempt 1 timed out even
@@ -404,72 +397,70 @@ class OneShotGateTests(unittest.TestCase):
             self.assertIn('obsolete', bot.p.coordinate(b, bot.NUMBER, True, dict(id=META, run_attempt=1)))
             self.assertIn('read-only Ready receipt refresh', bot.p.coordinate(b, bot.NUMBER, True, dict(id=META, run_attempt=2)))
 
-    def test_unproven_gate_never_hides_validation_work_or_unknown_outcomes(self):
-        superseded = lambda a: a.validation_required(40000, VALIDATION_DONE)
-        def rerun_after(change):
+    def test_superseded_attempt_never_hides_validation_work_or_unknown_outcomes(self):
+        def first(change):
             def configure(a):
                 a.end_gate()
                 a.rerun()
                 a.prove_gate()
-                change(a)
+                change(a, *a.attempt_gate(1))
             return configure
-        def disagree(conclusion):
-            def configure(a):
-                a.run['conclusion'] = conclusion
-            return configure
-        mutations = [
-            lambda a: a.end_gate('failure', [dict(name=m.GATES['CI Required'], conclusion='success', status='completed')]),
-            lambda a: a.end_gate('failure', [dict(name=m.GATES['CI Required'], conclusion='failure', status='completed')]),
-            lambda a: a.end_gate('skipped'), lambda a: a.end_gate('timed_out'), lambda a: a.end_gate('neutral'),
-            lambda a: (a.end_gate(), disagree('success')(a)), lambda a: (a.end_gate(), disagree('cancelled')(a)),
-            lambda a: disagree('failure')(a),
-            lambda a: (a.end_gate(), a.gate()[1].update(conclusion='success')),
-            lambda a: (a.end_gate(), a.jobs[0].update(steps=[dict(name='executed')])),
-            lambda a: (a.end_gate(), a.gate()[1].pop('completed_at')),
-            lambda a: (a.end_gate(), a.gate()[1].update(completed_at='not-a-time')),
-            lambda a: (a.end_gate(), a.run.update(status='in_progress', conclusion=None)),
-            rerun_after(lambda a: a.jobs_by_attempt[1][0].update(steps=[dict(name='executed')])),
-            rerun_after(lambda a: next(c for c in a.checks if c['name'] == 'CI Required' and c['id'] < 100000)
-                        .update(completed_at=later(GATE_DONE, 600))),
-            rerun_after(lambda a: next(j for j in a.jobs_by_attempt[1] if j['name'] == 'CI Required')
-                        .update(steps=[dict(name=m.GATES['CI Required'], conclusion='success', status='completed')])),
+        attempt_mutations = [
+            lambda a, job, check: job.update(steps=[dict(name=m.GATES['CI Required'], conclusion='success', status='completed')]),
+            lambda a, job, check: job.update(steps=[dict(name=m.GATES['CI Required'], conclusion='failure', status='completed')]),
+            lambda a, job, check: (job.update(conclusion='skipped'), check.update(conclusion='skipped')),
+            lambda a, job, check: (job.update(conclusion='timed_out'), check.update(conclusion='timed_out')),
+            lambda a, job, check: (job.update(conclusion='neutral'), check.update(conclusion='neutral')),
+            lambda a, job, check: check.update(conclusion='success'),
+            lambda a, job, check: a.jobs_by_attempt[1][0].update(steps=[dict(name='executed')]),
+            lambda a, job, check: check.pop('completed_at'),
+            lambda a, job, check: check.update(completed_at='not-a-time'),
+            lambda a, job, check: check.update(completed_at=later(GATE_DONE, 600)),
         ]
-        for index, mutate in enumerate(mutations):
-            with self.subTest(index=index):
-                self.assert_blocked(lambda a: (mutate(a), superseded(a)))
+        for index, mutate in enumerate(attempt_mutations):
+            with self.subTest(attempt_mutation=index):
+                self.assert_blocked(first(mutate))
+        for index, mutate in enumerate([lambda a: a.run.update(conclusion='failure'),
+                                        lambda a: (a.end_gate(), a.run.update(conclusion='success')),
+                                        lambda a: a.run.update(status='in_progress', conclusion=None)]):
+            with self.subTest(latest_mutation=index):
+                self.assert_blocked(mutate)
 
-    def test_later_proven_metadata_gate_supersedes_only_an_older_unproven_gate(self):
-        racing = bot_api()
-        racing.end_gate()
-        racing.validation_required(25000, later(GATE_DONE, -5))
-        with self.assertRaisesRegex(ValueError, 'still the newest CI Required'):
-            bot.p.proof(racing, bot.NUMBER)
-        proven = bot_api(racing, meta=9910, suite=9911, run_number=100, offset=500, completed=later(GATE_DONE, 30))
-        self.assertEqual(bot.p.proof(proven, bot.NUMBER)['run'], bot.RUN)
-        first = bot_api()
-        first.validation_required(25000, later(GATE_DONE, -5))
-        unproven = bot_api(first, meta=9910, suite=9911, run_number=100, offset=500, completed=later(GATE_DONE, 30))
+    def test_only_a_newer_proven_metadata_run_supersedes_an_unproven_gate(self):
+        unproven = bot_api()
         unproven.end_gate()
         with self.assertRaisesRegex(ValueError, 'still the newest CI Required'):
             bot.p.proof(unproven, bot.NUMBER)
+        newer = bot_api(unproven, meta=9910, suite=9911, run_number=100, offset=500, completed=later(GATE_DONE, 30))
+        self.assertEqual(bot.p.proof(newer, bot.NUMBER)['run'], bot.RUN)
+        # A proven gate from an older suite cannot replace a newer suite's failure,
+        # even when its check was created and completed later (for example a rerun).
+        unproven = bot_api()
+        unproven.end_gate()
+        older = bot_api(unproven, meta=9910, suite=9911, run_number=98, offset=500, completed=later(GATE_DONE, 30))
+        with self.assertRaisesRegex(ValueError, 'still the newest CI Required'):
+            bot.p.proof(older, bot.NUMBER)
+        first = bot_api()
+        failed_later = bot_api(first, meta=9910, suite=9911, run_number=100, offset=500, completed=later(GATE_DONE, 30))
+        failed_later.end_gate()
+        with self.assertRaisesRegex(ValueError, 'still the newest CI Required'):
+            bot.p.proof(failed_later, bot.NUMBER)
 
-    def test_coordinator_reconciles_once_the_validation_aggregate_finishes(self):
-        # Dependabot edits the body as it rebases: the metadata gate exits while
-        # validation is still running and the coordinator wakes again later.
+    def test_queued_metadata_run_proves_validation_after_it_finishes(self):
+        # Dependabot and CodeRabbit edit the body right after a push. The metadata
+        # run waits in the shared admission group, then proves the finished run.
         b = bot_api()
         bot.failed_native(b.base)
         t = b.transcript()
-        required = next(j for j in t.jobs if j['name'] == 'CI Required')
-        t.jobs.remove(required)
         t.run.update(status='in_progress', conclusion=None)
-        b.end_gate()
+        b.run.update(status='queued', conclusion=None)
         with tempfile.TemporaryDirectory() as directory, \
                 mock.patch.dict(bot.os.environ, dict(bot.TRUSTED, GITHUB_OUTPUT=str(Path(directory) / 'output')), clear=True):
             self.assertIn('blocked:', bot.p.coordinate(b, bot.NUMBER, True, dict(id=META, run_attempt=1)))
             self.assertFalse(b.base.mutations)
-            t.jobs.append(required)
             t.run.update(status='completed', conclusion='success')
-            b.validation_required(40000, VALIDATION_DONE)
-            self.assertIn('read-only Ready receipt refresh', bot.p.coordinate(b, bot.NUMBER, True, dict(id=bot.RUN, run_attempt=1)))
+            b.run['status'] = 'completed'
+            b.prove_gate()
+            self.assertIn('read-only Ready receipt refresh', bot.p.coordinate(b, bot.NUMBER, True, dict(id=META, run_attempt=1)))
         self.assertEqual(len(b.base.mutations), 1)
         self.assertIn('enablePullRequestAutoMerge', b.base.mutations[0][1])

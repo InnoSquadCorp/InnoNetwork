@@ -4,8 +4,16 @@ import json
 FLAG = "(vars.INNO_JOB_CANCELLATION == '' || vars.INNO_JOB_CANCELLATION == 'enabled') && github.event_name == 'pull_request'"
 
 
-def outer_group(original):
-    return original + "${{ (" + FLAG + ") && format('-jobs-{0}-{1}', github.run_id, github.run_attempt) || '' }}"
+def lane(label):
+    return "contains(github.event.pull_request.labels.*.name, '"+label+"') && '"+label+"' || 'no-"+label+"'"
+
+
+def outer_group(original, lane_labels):
+    # Feature-on PR runs share admission only with the same head, base branch and
+    # lanes: a metadata run queues behind that validation without holding a runner.
+    lanes = ''.join('-{' + str(i + 2) + '}' for i in range(len(lane_labels)))
+    return original + ("${{ (" + FLAG + ") && format('-head-{0}-base-{1}" + lanes + "', github.event.pull_request.head.sha, "
+                       "github.event.pull_request.base.ref" + ''.join(', ' + lane(label) for label in lane_labels) + ") || '' }}")
 
 
 def inner(value):
@@ -31,7 +39,7 @@ def job_fields(workflow, job, metadata, axes=(), products=(), product_key=None, 
     group = ('scoped-job-v1-${{ github.repository }}-${{ github.workflow }}-' + workflow + '-' + job +
              '-pr-${{ github.event.pull_request.number }}-base-${{ github.event.pull_request.base.ref }}')
     for label in lane_labels:
-        group += "-${{ contains(github.event.pull_request.labels.*.name, '"+label+"') && '"+label+"' || 'no-"+label+"' }}"
+        group += "-${{ " + lane(label) + " }}"
     for axis in axes:
         group += '-${{ ' + axis + ' }}'
     if products:
@@ -51,7 +59,7 @@ def workload_key(repository, workflow, job, pr, base, lane, matrix, *, enabled=T
 def validate_workflow(document, entry, config, filename):
     original = entry['original_concurrency']
     if original is not None:
-        expected = {**original, 'group': outer_group(original['group']),
+        expected = {**original, 'group': outer_group(original['group'], config['lane_labels']),
                     'cancel-in-progress': outer_cancel(original['cancel-in-progress'])}
         if document.get('concurrency') != expected:
             raise ValueError('outer default/metadata concurrency contract changed')
@@ -66,8 +74,8 @@ def validate_workflow(document, entry, config, filename):
     for name, original_concurrency in entry.get('excluded_concurrency', {}).items():
         if document['jobs'][name].get('concurrency') != original_concurrency:
             raise ValueError('excluded stateful/aggregate concurrency changed: '+name)
-    # A metadata gate is one bounded verifier call. It exits instead of holding a
-    # runner; the validation's own newer CI Required supersedes an early failure.
+    # A metadata gate is one bounded verifier call. Its run waits for validation in
+    # the shared admission group, never on a runner.
     for name, metadata in entry['metadata_gates'].items():
         job=document['jobs'][name]
         if job['timeout-minutes'] != metadata['timeout']:
