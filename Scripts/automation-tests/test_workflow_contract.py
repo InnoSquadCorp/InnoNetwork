@@ -59,6 +59,32 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertEqual(job['if'], 'fromJSON(needs.ci-plan.outputs.plan).jobs.codeql')
         self.assertIn('codeql', self.docs['ci.yml']['jobs']['ci-required']['needs'])
 
+    def test_pr_codeql_uploads_every_scheduled_main_configuration(self):
+        # Scheduled CodeQL defines the configurations recorded on main. A PR
+        # missing any of them gets a neutral GitHub CodeQL check.
+        scheduled = json.loads(subprocess.check_output(['ruby', '-ryaml', '-rjson', '-e',
+            'puts YAML.safe_load(File.read(ARGV[0]), aliases: false).to_json',
+            str(ROOT / '.github/workflows/codeql.yml')], text=True))['jobs']
+        ci = self.docs['ci.yml']['jobs']
+        job = ci['codeql-cross-platform']
+        languages = lambda jobs: sorted(l for j in jobs for l in j['strategy']['matrix']['language'])
+        self.assertEqual(languages([ci['codeql'], job]), languages(scheduled.values()))
+        self.assertEqual(job['permissions'], {'contents':'read', 'actions':'read', 'security-events':'write'})
+        self.assertEqual(job['if'], 'fromJSON(needs.ci-plan.outputs.plan).jobs.codeql-cross-platform')
+        self.assertIn('codeql-cross-platform', ci['ci-required']['needs'])
+        self.assertEqual([step['name'] for step in job['steps']],
+                         ['Checkout', 'Set up JDK', 'Set up Node', 'Initialize CodeQL', 'Build', 'Perform CodeQL Analysis'])
+        for step in job['steps']:
+            self.assertNotIn('if', step)
+            self.assertNotIn('continue-on-error', step)
+            self.assertNotIn('cache', step.get('with', {}))
+            self.assertNotIn('ci-cache.py', step.get('run', ''))
+        self.assertEqual(job['steps'][-1]['with'], {'category': '/language:${{ matrix.language }}'})
+        build = {line.strip() for line in job['steps'][4]['run'].splitlines()}
+        for step in scheduled['analyze-cross-platform']['steps']:
+            if step['name'] in ('Build Android library', 'Build Web library'):
+                self.assertLessEqual({line.strip() for line in step['run'].splitlines()} - {''}, build, step['name'])
+
     def test_readonly_candidate_preserves_all_release_validation_commands(self):
         release = self.docs['release.yml']['jobs']
         candidate = self.docs['release-validation.yml']['jobs']

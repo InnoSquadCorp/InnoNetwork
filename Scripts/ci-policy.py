@@ -9,7 +9,7 @@ import re
 import subprocess
 import sys
 
-JOBS = ('policy', 'dependency-review', 'lint', 'dead-code', 'build-and-test', 'upload-core-coverage', 'parallel-tests', 'docs-contract-sync', 'apple-platform-build-smoke', 'consumer-smoke', 'consumer-examples', 'consumer-macros', 'consumer-openapi', 'upload-macro-coverage', 'benchmark-smoke', 'codeql', 'thread-sanitizer', 'benchmarks', 'documentation', 'release-candidate')
+JOBS = ('policy', 'dependency-review', 'lint', 'dead-code', 'build-and-test', 'upload-core-coverage', 'parallel-tests', 'docs-contract-sync', 'apple-platform-build-smoke', 'consumer-smoke', 'consumer-examples', 'consumer-macros', 'consumer-openapi', 'upload-macro-coverage', 'benchmark-smoke', 'codeql', 'codeql-cross-platform', 'thread-sanitizer', 'benchmarks', 'documentation', 'release-candidate')
 SHA = re.compile(r"[0-9a-f]{40}")
 PR_ACTIONS = {"opened", "synchronize", "reopened", "edited", "labeled", "unlabeled"}
 DEPENDENCIES = {
@@ -19,7 +19,7 @@ DEPENDENCIES = {
 }
 WORKFLOW_IMPACT = {
     "ci.yml": set(JOBS), "release.yml": set(JOBS), "release-validation.yml": set(JOBS),
-    "codeql.yml": {"codeql"}, "tsan.yml": {"thread-sanitizer"},
+    "codeql.yml": {"codeql", "codeql-cross-platform"}, "tsan.yml": {"thread-sanitizer"},
     "benchmarks.yml": {"benchmarks", "benchmark-smoke"},
     "docc-pages.yml": {"documentation", "docs-contract-sync"},
     "docs-publish.yml": {"documentation", "docs-contract-sync"},

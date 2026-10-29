@@ -11,7 +11,13 @@ reviews:
   
   # Add high-level summary to PR description
   high_level_summary: true
-  
+
+  # Review status stays in the walkthrough comment. A CodeRabbit check run
+  # (or legacy commit status) is "skipped" on bot PRs, and the Dependabot
+  # coordinator rejects any non-success extra check on the head.
+  review_progress: false
+  commit_status: false
+
   # Review comment style
   comment_mode: concise  # 'concise' or 'verbose'
   
