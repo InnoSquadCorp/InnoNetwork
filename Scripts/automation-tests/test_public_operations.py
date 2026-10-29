@@ -36,6 +36,10 @@ class PublicOperationsTests(unittest.TestCase):
                    ('.github/workflows/dependabot-auto-merge.yml', 'persist-credentials: false', 'persist-credentials: true'),
                    ('.github/workflows/dependabot-auto-merge.yml', '      checks: read', '      checks: write'),
                    ('.github/workflows/dependabot-review-notice.yml', 'permissions: {}', 'permissions: write-all'),
+                   ('.github/workflows/dependabot-rebase.yml', '      pull-requests: read', '      pull-requests: write'),
+                   ('.github/workflows/dependabot-rebase.yml', 'persist-credentials: false', 'persist-credentials: true'),
+                   ('.github/workflows/dependabot-rebase.yml', "vars.DEPENDABOT_AUTO_MERGE_ENABLED }}", "vars.DEPENDABOT_AUTO_MERGE_ENABLED }}\n          LEAK: ${{ secrets.DEPENDABOT_COMMAND_TOKEN }}"),
+                   ('.github/workflows/dependabot-rebase.yml', "dependabot-rebase.yml@refs/heads/main'", "dependabot-rebase.yml@refs/heads/feature'"),
                    ('.github/workflows/release-validation.yml', '  contents: read', '  contents: write')]
         for path, old, new in changes:
             with self.subTest(path=path, old=old), tempfile.TemporaryDirectory() as tmp:
