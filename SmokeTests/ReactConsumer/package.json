@@ -8,7 +8,7 @@
   },
   "dependencies": {
     "@innosquad/innonetwork": "file:../../Platforms/Web",
-    "@tanstack/react-query": "5.104.4",
+    "@tanstack/react-query": "5.104.5",
     "react": "19.3.1",
     "react-dom": "19.3.1"
   },
