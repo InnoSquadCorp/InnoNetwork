@@ -27,6 +27,7 @@ WORKFLOW_IMPACT = {
     "pr-dependency-submission.yml": {"dependency-review", "build-and-test"},
     "scorecard.yml": set(), "nightly-live.yml": set(JOBS),
     "dependabot-auto-merge.yml": set(), "dependabot-review-notice.yml": set(),
+    "dependabot-rebase.yml": set(),
     "dependabot-ready.yml": set(),
 }
 

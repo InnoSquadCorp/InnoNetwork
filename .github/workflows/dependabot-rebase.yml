@@ -1,0 +1,45 @@
+name: Dependabot rebase
+
+# The coordinator only proves a Dependabot PR whose base is current main, and
+# nothing rebases the others after a merge. Dependabot refuses commands from
+# GITHUB_TOKEN and GitHub Apps, so the command is posted with a user token.
+on:
+  push:
+    branches: [main]
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+  schedule:
+    - cron: '47 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependabot-rebase
+  cancel-in-progress: false
+
+jobs:
+  request:
+    if: (github.event_name != 'workflow_run' || github.event.workflow_run.event == 'pull_request') && github.repository == 'InnoSquadCorp/InnoNetwork' && github.ref == 'refs/heads/main' && github.workflow_ref == 'InnoSquadCorp/InnoNetwork/.github/workflows/dependabot-rebase.yml@refs/heads/main' && vars.DEPENDABOT_AUTO_MERGE_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    steps:
+      - name: Checkout trusted coordinator only
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+          sparse-checkout: Scripts
+      - name: Request one Dependabot rebase onto current main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # Optional push-capable user token, used only to post the command.
+          DEPENDABOT_COMMAND_TOKEN: ${{ secrets.DEPENDABOT_COMMAND_TOKEN }}
+          DEPENDABOT_AUTO_MERGE_ENABLED: ${{ vars.DEPENDABOT_AUTO_MERGE_ENABLED }}
+        run: python3 -B Scripts/dependabot-rebase-policy.py run
