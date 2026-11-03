@@ -329,10 +329,11 @@ remain errors or blocked decisions, not permission to invent Ready success.
 
 Metadata-only CI also verifies authoritative `git/ref/heads/main` before and
 after its proof, alongside head/base, ordered merge parents, source tree,
-labels, attempt and native check identity. A checkout on an older main,
-unproven main advances and same-SHA retargeting still fail. Human PRs retain
-their read-only Ready flow and are never automatically merged by this
-coordinator.
+labels, attempt and native check identity. A checkout or validation on an
+older main passes only with the main-moved equivalence proof (default-on
+`INNO_MAIN_MOVED_REUSE`); without that proof a main advance fails, as does
+same-SHA retargeting. Human PRs retain their read-only Ready flow and are never
+automatically merged by this coordinator.
 
 ### Metadata-only gate
 
@@ -354,10 +355,11 @@ base counts only when the second parent is the head, the first parent is the
 authoritative `git/ref/heads/main`, and `compare/{cached}...{parent}` is a
 fast-forward from the cached base. The validation title's base is resolved the
 same way from its `source` commit, so a validation of the same merge is reused
-directly and a regenerated one still needs an identical tree. A merge on an
-older main or with reversed parents still fails, and a validation of an older
-merge still needs the main-moved equivalence proof. The PR binding keeps
-comparing the cached base, so a base refresh during the proof also fails.
+directly and a regenerated one still needs an identical tree. A first parent
+that is neither the cached base nor current main, or reversed parents, still
+fails. A checkout or validation on an older main passes only with the
+main-moved equivalence proof above. The PR binding keeps comparing the cached
+base, so a base refresh during the proof also fails.
 
 GitHub does not document how it picks among same-name checks in different check
 suites. PR #139 merged without a bypass even though an older suite had a failed
