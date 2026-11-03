@@ -3,20 +3,22 @@
 Status: scoped cancellation is enabled for PR validation by default.
 Unset/empty `INNO_JOB_CANCELLATION` or `enabled` uses the new behavior;
 `disabled` or unknown values restore prior admission. Workflow expressions
-normalize the variable before forwarding it to the Python metadata observer.
+normalize the variable; the metadata gate does not read it.
 
 ## Admission and immutable workload scopes
 
 - Feature-off retains the exact prior outer workflow group, cancellation and
   metadata queue behavior. Additional job groups are run/attempt-unique, so they
   introduce no cross-run serialization/cancellation when disabled
-- Feature-on PRs receive unique outer admission groups and disable whole-workflow
-  cancellation. Only reviewed validation jobs get a stable active job key
+- Feature-on PRs disable whole-workflow cancellation. Their outer admission group
+  is keyed by head, base branch and lane labels, so a metadata run queues behind
+  its validation without a runner. Only reviewed validation jobs get a stable
+  active job key
 - Keys distinguish repository, caller workflow, workflow file, job workload,
   PR/base branch, validation label lane and reviewed matrix cell. Release-validation
   never collides with ordinary validation; concurrency-review is included
   because it affects this repository contract
-- Planners, final aggregators, metadata observers, state/history writers and
+- Planners, final aggregators, metadata gates, state/history writers and
   permission-bearing external upload/security jobs are excluded. Reusable callers
   containing unthreaded child aggregates/writers remain a documented safe fallback
 - Dedicated release/publication/history workflow concurrency is unchanged
@@ -36,35 +38,37 @@ cancel another run. Reusable product leaves accept an optional `product-key`
 input from their caller; direct legacy invocations without it under-cancel safely.
 Fixed full-package test jobs use their fixed job workload, not a source subset.
 
-## Metadata proof observer
+## Metadata gate
 
-The aggregate's original read-only authoritative metadata verifier is wrapped by
-`metadata_wait.py`. Feature-off calls it exactly once with the original arguments.
-Feature-on retries the unchanged fail-closed verifier for at most 21,000 seconds,
-with each invocation limited to the remaining deadline;
-only a genuine successful proof returns success. Failure/timeout/cancellation is
-never translated into a green result. Metadata cannot share an active cancellation
-key with validation.
+The aggregate's read-only authoritative metadata verifier runs exactly once with
+its original arguments in both modes, within the original 5-minute job limit.
+Feature-off queues a metadata run behind validation in the shared PR group.
+Feature-on queues it behind the validation of the same head, base branch and lane
+labels. Neither holds a runner while waiting. Only a genuine successful proof
+returns success. Failure/timeout/cancellation is never translated into a green
+result. Metadata cannot share an active job cancellation key with validation.
 
-Only enabled metadata aggregate jobs receive a 360-minute budget. This can occupy
-an Ubuntu runner while macOS jobs wait in queues; the cost is explicit. Exact
+The former `metadata_wait.py` wrapper retried for up to 21,000 seconds under a
+360-minute job budget. On 2026-10-29 six concurrent Dependabot rebases left 18
+such observers holding Ubuntu runners. Twelve watched superseded heads that could
+never pass, and an unrelated PR's CI could not start for five hours. Exact
 head/base/attempt/current-main checks remain in the verifier. If the candidate
-changes, an older metadata observer cannot bless the new candidate.
+changes, an older gate cannot bless the new candidate; it fails immediately.
+How readers treat a failed gate is described in
+[CI automation](CIAutomation.md#metadata-only-gate).
 
 ## Reviewed wiring
 
 - .github/workflows/ci.yml: 15 cancellable validation jobs; exclusions: ci-plan, upload-core-coverage, consumer-smoke, upload-macro-coverage, codeql, release-candidate, ci-required
 
-## Observer accumulation is an explicit fallback
+## Repeated metadata events
 
-Repeated metadata events currently create independent bounded observers. They can
-occupy more than one Ubuntu runner while the same source validation is pending.
-Observer-only cancellation is deliberately not enabled: the existing DI/Flow/Router
-provenance readers reject cancelled metadata runs, so adding cancellation alone
-could leave a later valid candidate blocked. Coalescing requires a separate proof
-that a cancelled observer was superseded by a newer exact successful observer.
-Do not claim this preparation coalesces metadata or has measured queue savings.
-The observer is enabled by default, with the 360-minute per-observer limit above.
+Each metadata event still creates its own gate, but a gate holds an Ubuntu runner
+only for one bounded proof after its validation finishes. Gate cancellation is
+still not enabled and is no longer needed to free runners. This repository's
+readers judge each metadata run by its latest attempt, so a failed earlier
+attempt no longer blocks a successful rerun. The sibling DI/Flow/Router readers
+are unchanged. Do not claim this coalesces metadata or has measured queue savings.
 
 ## Validation and remaining limits
 

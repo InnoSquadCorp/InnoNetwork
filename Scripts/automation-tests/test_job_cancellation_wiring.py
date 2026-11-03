@@ -29,8 +29,9 @@ class JobCancellationWiringTests(unittest.TestCase):
             self.assertEqual(bool(expression_value(w.active(CONFIG['metadata']),current)),expected)
             for event in ['push','merge_group','workflow_dispatch']:
                 self.assertFalse(expression_value(w.active(CONFIG['metadata']),{**current,'github.event_name':event}))
+            # The metadata gate never waits, so the rollout flag cannot change its runner budget.
             step=next(s for s in source['jobs']['ci-required']['steps'] if s.get('name')=='Verify prior validation for metadata')
-            self.assertEqual(expression_value(w.inner(step['env']['INNO_JOB_CANCELLATION']),current),'enabled' if expected else 'disabled')
+            self.assertNotIn('INNO_JOB_CANCELLATION',step['env'])
         scoped=w.active(CONFIG['metadata'],['INNONETWORK_PRODUCT_CI'],'needs.ci-plan.outputs.product-key')
         for value in ['', 'true', 'TRUE', 'false', 'unknown']:
             current={**values,'vars.INNO_JOB_CANCELLATION':'','vars.INNONETWORK_PRODUCT_CI':value,'needs.ci-plan.outputs.product-key':''}
@@ -59,7 +60,9 @@ class JobCancellationWiringTests(unittest.TestCase):
                 with self.assertRaises(ValueError):w.validate_workflow(bad,entry,CONFIG,Path(path).name)
     def test_outer_feature_off_is_exact_previous_admission(self):
         values={'vars.INNO_JOB_CANCELLATION':'disabled','github.event_name':'pull_request','github.run_id':42,'github.run_attempt':1,
-                'github.event.action':'synchronize','github.event.label.name':'','github.event.changes.base':''}
+                'github.event.action':'synchronize','github.event.label.name':'','github.event.changes.base':'',
+                'github.event.pull_request.head.sha':'a'*40,'github.event.pull_request.base.ref':'main',
+                'github.event.pull_request.labels.*.name':[]}
         for entry in CONFIG['workflows'].values():
             old=entry['original_concurrency']
             if old is None:continue
@@ -67,9 +70,27 @@ class JobCancellationWiringTests(unittest.TestCase):
                 v={**values,'github.event.action':action,'github.event.label.name':label,'github.event.changes.base':base}
                 self.assertEqual(bool(expression_value(w.inner(w.outer_cancel(old['cancel-in-progress'])),v)),bool(expression_value(w.inner(old['cancel-in-progress']),v)))
                 self.assertFalse(expression_value(w.inner(w.outer_cancel(old['cancel-in-progress'])),{**v,'vars.INNO_JOB_CANCELLATION':'enabled'}))
-            suffix=w.outer_group(old['group'])[len(old['group']):]
+            suffix=w.outer_group(old['group'],CONFIG['lane_labels'])[len(old['group']):]
             self.assertEqual(expression_value(w.inner(suffix),values),'')
-            self.assertEqual(expression_value(w.inner(suffix),{**values,'vars.INNO_JOB_CANCELLATION':'enabled'}),'-jobs-42-1')
+            self.assertEqual(expression_value(w.inner(suffix),{**values,'vars.INNO_JOB_CANCELLATION':'enabled'}),
+                             '-head-'+'a'*40+'-base-main-no-release-validation-no-concurrency-review')
+    def test_feature_on_metadata_queues_only_behind_validation_of_the_same_head_base_and_lanes(self):
+        # A shared admission group lets a metadata run wait without a runner, while
+        # a new head, retargeted base or lane change still starts at once.
+        old=next(iter(CONFIG['workflows'].values()))['original_concurrency']
+        suffix=w.inner(w.outer_group(old['group'],CONFIG['lane_labels'])[len(old['group']):])
+        base={'vars.INNO_JOB_CANCELLATION':'','github.event_name':'pull_request','github.event.label.name':'','github.event.changes.base':'',
+              'github.event.pull_request.head.sha':'a'*40,'github.event.pull_request.base.ref':'main',
+              'github.event.pull_request.labels.*.name':['documentation'],'github.run_id':42,'github.run_attempt':1}
+        key=lambda **changes:expression_value(suffix,{**base,**changes})
+        validation=key(**{'github.event.action':'synchronize'})
+        for metadata in [key(**{'github.event.action':'edited'}),key(**{'github.event.action':'labeled','github.event.label.name':'bug'}),
+                         key(**{'github.event.action':'edited','github.run_id':43,'github.run_attempt':2})]:
+            self.assertEqual(metadata,validation)
+        for other in [key(**{'github.event.pull_request.head.sha':'b'*40}),key(**{'github.event.pull_request.base.ref':'develop'}),
+                      key(**{'github.event.pull_request.labels.*.name':['release-validation']}),
+                      key(**{'github.event.pull_request.labels.*.name':['Concurrency-Review']})]:
+            self.assertNotEqual(other,validation)
     def test_metadata_jobs_never_cancel_validation_and_scoped_missing_key_under_cancels(self):
         values={'vars.INNO_JOB_CANCELLATION':'enabled','github.event_name':'pull_request','github.event.action':'labeled',
                 'github.event.label.name':'documentation','github.event.changes.base':''}
@@ -89,14 +110,20 @@ class JobCancellationWiringTests(unittest.TestCase):
         for field in ('enabled','metadata','product_mode'):
             kw={field:False if field=='enabled' else True}
             self.assertNotEqual(w.workload_key(*inputs,run=1,**kw),w.workload_key(*inputs,run=2,**kw))
-    def test_metadata_wait_keeps_the_exact_verifier_and_bounds(self):
+    def test_metadata_gate_runs_the_exact_verifier_once_without_holding_a_runner(self):
         for path,entry in CONFIG['workflows'].items():
             for job,old in entry['metadata_gates'].items():
                 data=yaml(ROOT/path);step=next(s for s in data['jobs'][job]['steps'] if s.get('name')=='Verify prior validation for metadata')
-                self.assertTrue(step['run'].endswith('-- '+old['command']))
-                self.assertIn('/metadata_wait.py -- ',step['run'])
-                bad=copy.deepcopy(data);next(s for s in bad['jobs'][job]['steps'] if s.get('name')==step['name'])['run']='true'
-                with self.assertRaises(ValueError):w.validate_workflow(bad,entry,CONFIG,Path(path).name)
+                self.assertEqual(step['run'],old['command'])
+                self.assertEqual(data['jobs'][job]['timeout-minutes'],old['timeout'])
+                self.assertLessEqual(old['timeout'],5)
+                waits=['true','python3 -B Scripts/metadata_wait.py -- '+old['command'],old['command']+' || sleep 21000']
+                for run in waits:
+                    bad=copy.deepcopy(data);next(s for s in bad['jobs'][job]['steps'] if s.get('name')==step['name'])['run']=run
+                    with self.subTest(run=run),self.assertRaises(ValueError):w.validate_workflow(bad,entry,CONFIG,Path(path).name)
+                for timeout in [360,"${{ (vars.INNO_JOB_CANCELLATION == '' || vars.INNO_JOB_CANCELLATION == 'enabled') && 360 || 5 }}"]:
+                    bad=copy.deepcopy(data);bad['jobs'][job]['timeout-minutes']=timeout
+                    with self.subTest(timeout=timeout),self.assertRaises(ValueError):w.validate_workflow(bad,entry,CONFIG,Path(path).name)
     def test_lane_labels_are_part_of_each_stable_identity(self):
         for path,entry in CONFIG['workflows'].items():
             for name,item in entry['jobs'].items():

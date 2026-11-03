@@ -1,7 +1,6 @@
 {
   "schema": 1,
   "feature": "INNO_JOB_CANCELLATION",
-  "scripts": "Scripts",
   "metadata": "(github.event_name == 'pull_request' && (((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name && github.event.label.name != 'release-validation' && github.event.label.name != 'concurrency-review') || (github.event.action == 'edited' && !github.event.changes.base)))",
   "workflows": {
     ".github/workflows/ci.yml": {
