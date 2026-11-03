@@ -282,8 +282,13 @@ uses the read-only job token. The secret appears only in that step, and the
 coordinator workflow itself still has no secret. Without the secret the job
 only logs its plan, and it does not run while `DEPENDABOT_AUTO_MERGE_ENABLED`
 is not `true`.
-Only commands from owners, members and collaborators hold the queue. If
-Dependabot refuses the command, the job warns and moves on.
+A command holds the queue only when its author currently has write access to
+the repository. A MEMBER or COLLABORATOR association alone does not mean that.
+The token owner's write access is checked the same way before the job posts,
+so a refused command is never posted again on every wake. Commands count only
+after main actually moved to its current SHA, taken from the repository
+activity record, not the commit date, which can predate the push. If
+Dependabot still refuses a command, the job warns and moves on.
 
 ### Existing native integration profile
 

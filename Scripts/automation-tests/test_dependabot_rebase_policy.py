@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 import sys
 import unittest
+import urllib.error
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -26,18 +27,23 @@ def stamp(value):
 
 class FakeAPI:
     def __init__(self):
-        self.prs, self.comments, self.runs, self.commits, self.posts = [], {}, {}, {}, []
+        self.prs, self.comments, self.runs, self.posts = [], {}, {}, []
+        # Activity is newest first; main moved to MAIN two hours ago.
+        self.moves = {'refs/heads/main': [dict(after=MAIN, timestamp=stamp(MOVED)),
+                                          dict(after=OLD, timestamp=stamp(MOVED - timedelta(days=1)))]}
+        self.roles = {'maintainer': 'write', 'owner': 'admin', 'reader': 'read'}
+        self.lookups = []
 
     def pr(self, number, base=OLD, author=BOT, draft=False, repo=p.REPOSITORY):
-        head = format(number, '040x')
+        head, ref = format(number, '040x'), f'dependabot/npm_and_yarn/pr-{number}'
         self.prs.append(dict(number=number, user=author, draft=draft, base=dict(ref='main', sha=base),
-                             head=dict(sha=head, repo=dict(full_name=repo))))
-        self.commits[head] = stamp(NOW - timedelta(hours=1))
+                             head=dict(sha=head, ref=ref, repo=dict(full_name=repo))))
+        self.moves['refs/heads/' + ref] = [dict(after=head, timestamp=stamp(NOW - timedelta(hours=1)))]
         return head
 
-    def comment(self, number, body, at, association='COLLABORATOR', user=None):
+    def comment(self, number, body, at, login='maintainer', user=None, association='COLLABORATOR'):
         self.comments.setdefault(number, []).append(dict(body=body, created_at=stamp(at), author_association=association,
-                                                         user=user or dict(login='maintainer', id=7, type='User')))
+                                                         user=user or dict(login=login, id=7, type='User')))
 
     def run(self, number, status='completed', conclusion='success', updated=NOW - timedelta(hours=2), run_number=1):
         head = format(number, '040x')
@@ -47,9 +53,17 @@ class FakeAPI:
 
     def get(self, path):
         if path == p.route('commits/main'):
-            return dict(sha=MAIN, commit=dict(committer=dict(date=stamp(MOVED))))
-        sha = path.rsplit('/', 1)[1]
-        return dict(sha=sha, commit=dict(committer=dict(date=self.commits[sha])))
+            # A commit date says nothing about when main moved; keep it misleading.
+            return dict(sha=MAIN, commit=dict(committer=dict(date=stamp(MOVED - timedelta(hours=5)))))
+        match = re.fullmatch(re.escape(p.route('activity?ref=')) + r'(.+)&per_page=100', path)
+        if match:
+            return list(self.moves.get(match[1], []))
+        match = re.fullmatch(re.escape(p.route('collaborators/')) + r'([^/]+)/permission', path)
+        assert match is not None, path
+        self.lookups.append(match[1])
+        if match[1] not in self.roles:
+            raise urllib.error.HTTPError(path, 404, 'Not Found', {}, None)
+        return dict(permission=self.roles[match[1]])
 
     def pages(self, path, key=None):
         if path == p.route('pulls?state=open&base=main'):
@@ -69,8 +83,8 @@ class RebasePolicyTests(unittest.TestCase):
     def setUp(self):
         self.api, self.command = FakeAPI(), FakeAPI()
 
-    def run_policy(self, enabled=True, command=True):
-        return r.run(self.api, self.command if command else None, enabled, NOW)
+    def run_policy(self, enabled=True, command=True, owner='maintainer'):
+        return r.run(self.api, self.command if command else None, lambda: owner, enabled, NOW)
 
     def assertRequested(self, number):
         self.assertEqual(self.command.posts, [('POST', p.route(f'issues/{number}/comments'), {'body': '@dependabot rebase'})])
@@ -104,45 +118,90 @@ class RebasePolicyTests(unittest.TestCase):
                 self.run_policy()
                 self.assertRequested(163)
 
-    def test_latest_validation_run_decides_and_foreign_titles_are_ignored(self):
+    def test_latest_validation_run_decides_and_push_time_comes_from_the_move_record(self):
         self.api.pr(163)
         head = self.api.pr(164, base=MAIN)
+        ref = 'refs/heads/dependabot/npm_and_yarn/pr-164'
         self.api.run(164, conclusion='failure', run_number=1)
         self.api.run(164, status='in_progress', conclusion=None, run_number=2)
         self.run_policy()
         self.assertEqual(self.command.posts, [])
         self.api.runs[head] = [dict(self.api.runs[head][1], display_title=f'CI metadata-only v1 pr:164 head:{head}')]
-        self.api.commits[head] = stamp(NOW - timedelta(minutes=5))
+        self.api.moves[ref] = [dict(after=head, timestamp=stamp(NOW - timedelta(minutes=5)))]
         self.assertIn('waiting for CI to start', self.run_policy())
-        self.api.commits[head] = stamp(NOW - timedelta(hours=1))
-        self.run_policy()
-        self.assertRequested(163)
+        for moves in ([dict(after=head, timestamp=stamp(NOW - timedelta(hours=1)))],
+                      [dict(after=OLD, timestamp=stamp(NOW - timedelta(minutes=5)))], []):
+            with self.subTest(moves=moves):
+                self.command.posts.clear()
+                self.api.moves[ref] = moves
+                self.run_policy()
+                self.assertRequested(163)
 
-    def test_pending_trusted_request_waits_then_expires_to_the_next_pr(self):
+    def test_pending_push_capable_request_waits_then_expires_to_the_next_pr(self):
         self.api.pr(161)
         self.api.pr(163)
-        self.api.comment(161, '@dependabot rebase', NOW - timedelta(minutes=10))
+        self.api.comment(161, '@dependabot rebase', NOW - timedelta(minutes=10), login='owner')
         self.assertIn('#161 rebase requested', self.run_policy())
         self.assertEqual(self.command.posts, [])
         self.api.comments[161][0]['created_at'] = stamp(NOW - timedelta(minutes=61))
         self.run_policy()
         self.assertRequested(163)
 
-    def test_untrusted_or_pre_merge_commands_do_not_hold_the_queue(self):
+    def test_commands_without_current_write_access_do_not_hold_the_queue(self):
         self.api.pr(161)
-        self.api.comment(161, '@dependabot rebase', NOW - timedelta(minutes=5), association='NONE')
-        self.api.comment(161, '@dependabot rebase', MOVED - timedelta(minutes=1))
-        self.api.comment(161, 'please @dependabot rebase', NOW - timedelta(minutes=5))
+        # A MEMBER/COLLABORATOR association alone does not grant push access.
+        self.api.comment(161, '@dependabot rebase', NOW - timedelta(minutes=5), login='reader', association='MEMBER')
+        self.api.comment(161, '@dependabot rebase', NOW - timedelta(minutes=4), login='stranger')
+        self.api.comment(161, '@dependabot recreate', NOW - timedelta(minutes=3), login='')
+        self.api.comment(161, 'please @dependabot rebase', NOW - timedelta(minutes=2))
+        self.run_policy()
+        self.assertRequested(161)
+        self.assertEqual(sorted(set(self.api.lookups)), ['maintainer', 'reader', 'stranger'])
+
+    def test_commands_and_refusals_before_the_actual_main_move_belong_to_the_old_main(self):
+        # After the misleading commit date but before main actually moved.
+        self.api.pr(161)
+        self.api.comment(161, '@dependabot rebase', MOVED - timedelta(minutes=30))
+        self.api.comment(161, 'Sorry, only users with push access can use that command.', MOVED - timedelta(minutes=29),
+                         user=BOT)
         self.run_policy()
         self.assertRequested(161)
 
-    def test_refusal_skips_the_pr_without_waiting(self):
+    def test_missing_main_move_record_fails_closed(self):
+        self.api.pr(161)
+        self.api.moves['refs/heads/main'] = [dict(after=OLD, timestamp=stamp(MOVED))]
+        with self.assertRaisesRegex(p.Rejected, 'no main move record'):
+            self.run_policy()
+        self.assertEqual(self.command.posts, [])
+
+    def test_refusal_after_a_push_capable_command_skips_the_pr_without_waiting(self):
         self.api.pr(161)
         self.api.pr(163)
         self.api.comment(161, '@dependabot rebase', NOW - timedelta(minutes=10))
         self.api.comment(161, 'Sorry, only users with push access can use that command.', NOW - timedelta(minutes=9),
-                         association='NONE', user=BOT)
+                         user=BOT)
         self.run_policy()
+        self.assertRequested(163)
+
+    def test_permission_lookup_errors_other_than_absence_fail_closed(self):
+        self.api.pr(161)
+        self.api.comment(161, '@dependabot rebase', NOW - timedelta(minutes=5))
+        def forbidden(path):
+            raise urllib.error.HTTPError(path, 403, 'Forbidden', {}, None)
+        with mock.patch.object(self.api, 'get', side_effect=lambda path: forbidden(path) if '/collaborators/' in path
+                               else FakeAPI.get(self.api, path)):
+            with self.assertRaises(urllib.error.HTTPError) as raised:
+                self.run_policy()
+            raised.exception.close()
+        self.assertEqual(self.command.posts, [])
+
+    def test_command_token_owner_without_write_access_posts_nothing(self):
+        self.api.pr(163)
+        for owner in ('reader', 'stranger'):
+            with self.subTest(owner=owner):
+                self.assertIn('lacks write access', self.run_policy(owner=owner))
+                self.assertEqual(self.command.posts, [])
+        self.run_policy(owner='owner')
         self.assertRequested(163)
 
     def test_only_same_repository_non_draft_dependabot_prs_are_moved(self):
@@ -152,10 +211,11 @@ class RebasePolicyTests(unittest.TestCase):
         self.assertEqual(self.run_policy(), 'no behind Dependabot PR needs a rebase')
         self.assertEqual(self.command.posts, [])
 
-    def test_standby_and_missing_command_token_post_nothing(self):
+    def test_standby_and_missing_command_token_post_nothing_or_look_up_the_owner(self):
         self.api.pr(163)
-        self.assertIn('standby', self.run_policy(enabled=False))
-        self.assertIn('not configured', self.run_policy(command=False))
+        owner = mock.Mock(side_effect=AssertionError('owner lookup needs a planned command'))
+        self.assertIn('standby', r.run(self.api, self.command, owner, False, NOW))
+        self.assertIn('not configured', r.run(self.api, None, owner, True, NOW))
         self.assertEqual(self.command.posts, [])
         self.assertEqual(self.api.posts, [])
 
