@@ -2,6 +2,7 @@
 
 Only the latest real validation of this exact PR head, base, workflow definition
 and validation-label set is accepted. All transport is read-only and bounded.
+The gate runs once and exits: it never holds a runner waiting for validation.
 """
 import argparse
 import importlib.util
@@ -23,6 +24,8 @@ FORMAT = (r'CI validation v2 pr:([1-9][0-9]*) head:([0-9a-f]{40}) '
 TITLE = re.compile(FORMAT)
 METADATA_PREFIX = 'CI metadata-only v1 '
 VERIFY_STEP = 'Verify prior validation for metadata'
+DEFERRAL = ('This gate does not wait or retry. Metadata runs queue without a runner behind the validation of '
+            'the same head; if this gate ran before that validation succeeded, re-run it afterwards.')
 
 
 def require(value, message):
@@ -163,12 +166,13 @@ def prove(api, event, env, check_name='CI Required'):
     validations = [r for r in runs if r.get('id') != own_id and
                    not str(r.get('display_title', '')).startswith(METADATA_PREFIX) and
                    not belongs_to_other_pr(r, number)]
-    require(validations, 'no real validation exists for this head')
+    require(validations, 'no real validation exists for this head yet')
     require(all(type(r.get('run_number')) is int and r['run_number'] > 0 for r in validations), 'invalid run ordering')
     listed = max(validations, key=lambda r: r['run_number'])
     run = api.get(route + f"actions/runs/{listed['id']}")
     match = TITLE.fullmatch(run.get('display_title', ''))
     require(match is not None, 'latest validation lacks immutable PR binding')
+    require(run.get('status') == 'completed', 'latest real validation is still running')
     n, h, b, definition, *bound_labels = match.groups()
     require((int(n), h, tuple(bound_labels)) == (number, head, labels),
             'latest validation used a different head or label set')
@@ -267,6 +271,7 @@ def main():
         return 0
     except Exception as error:
         print('CI metadata gate rejected: ' + str(error), file=sys.stderr)
+        print(DEFERRAL, file=sys.stderr)
         return 1
 
 
