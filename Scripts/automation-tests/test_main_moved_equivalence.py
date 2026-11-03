@@ -54,6 +54,13 @@ class MainMovedEquivalenceTests(unittest.TestCase):
   result=t.prove();self.assertEqual(result['main_moved_equivalence']['base'],original.BASE);self.assertEqual(result['main_moved_equivalence']['current_main'],t.main)
   t=MovedTranscript();t.pr['base']['sha']=t.main;t.event['pull_request']['base']['sha']=t.main;t.env['GITHUB_SHA']=t.new_source;t.env['INNO_MAIN_MOVED_REUSE']='disabled'
   with self.assertRaises(ValueError):t.prove()
+ def test_stale_cached_base_on_current_main_checkout_reuses_older_merge_only_with_input_proof(self):
+  t=MovedTranscript();t.env['GITHUB_SHA']=t.new_source
+  result=t.prove();self.assertEqual(result['base'],t.main);self.assertEqual(result['cached_pr_base'],original.BASE);self.assertEqual(result['main_moved_equivalence']['base'],original.BASE)
+  t=MovedTranscript();t.env['GITHUB_SHA']=t.new_source;t.current_tree['tree'][0]['sha']='8'*40
+  with self.assertRaisesRegex(ValueError,'fresh affected gate'):t.prove()
+  t=MovedTranscript();t.env['GITHUB_SHA']=t.new_source;t.env['INNO_MAIN_MOVED_REUSE']='disabled'
+  with self.assertRaisesRegex(ValueError,'different validated base'):t.prove()
  def test_explicit_disable_retains_old_main_guard(self):
   t=MovedTranscript();t.env['INNO_MAIN_MOVED_REUSE']='disabled'
   with self.assertRaisesRegex(ValueError,'main moved'):t.prove()
