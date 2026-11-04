@@ -104,15 +104,43 @@ def binding(pr):
     return (pr['number'], pr['head']['sha'], pr['base']['sha'], flags(pr))
 
 
-def require_current_main(api, route, pr, expected, allow_moved=False):
-    """Bind a PR snapshot to the authoritative branch, not a cached PR base."""
+def current_main(api, route, pr):
+    """Read the authoritative branch, not a cached PR base."""
     require(pr.get('base', {}).get('ref') == 'main' and
             pr['base'].get('repo', {}).get('full_name') == CONFIG['repository'],
             'PR must target this repository main branch')
     main = api.get(route + 'git/ref/heads/main').get('object', {}).get('sha')
     require(isinstance(main, str) and re.fullmatch('[0-9a-f]{40}', main) is not None,
             'missing or invalid current main SHA')
+    return main
+
+
+def require_current_main(api, route, pr, expected, allow_moved=False):
+    """Bind a PR snapshot to the authoritative branch, not a cached PR base."""
+    main = current_main(api, route, pr)
     require(main == expected or allow_moved, 'current main moved beyond the validated base')
+    return main
+
+
+def checkout_base(api, route, commit, sha, base, head, main):
+    """Return the base a native PR merge commit really combines with head, or None.
+
+    GitHub can keep the cached PR base (event payload, PR API, run title) at the
+    branch's old merge-base after main advances while refs/pull/N/merge is
+    already rebuilt on current main. Accept that newer first parent only when it
+    is the authoritative current main and a fast-forward of the cached base.
+    """
+    if commit.get('sha') != sha:
+        return None
+    parents = [p.get('sha') for p in commit.get('parents', [])]
+    if parents == [base, head]:
+        return base
+    if parents != [main, head]:
+        return None
+    relation = api.get(route + 'compare/' + base + '...' + main)
+    require(relation.get('status') in ('ahead', 'identical') and
+            relation.get('merge_base_commit', {}).get('sha') == base,
+            'checkout base does not descend from the cached PR base')
     return main
 
 
@@ -143,7 +171,8 @@ def prove(api, event, env, check_name='CI Required'):
     require(check_name in CONFIG['checks'], 'unknown required check')
     current = api.get(route + f'pulls/{number}')
     require(current.get('state') == 'open' and binding(current) == binding(pr), 'PR changed before validation')
-    observed_main = require_current_main(api, route, current, base, env.get('INNO_MAIN_MOVED_REUSE', '').lower() in ('', 'enabled'))
+    moved_reuse = env.get('INNO_MAIN_MOVED_REUSE', '').lower() in ('', 'enabled')
+    observed_main = current_main(api, route, current)
     own_id = int(env['GITHUB_RUN_ID'])
     own = api.get(route + f'actions/runs/{own_id}')
     source = env['GITHUB_SHA']
@@ -153,11 +182,14 @@ def prove(api, event, env, check_name='CI Required'):
     require(own.get('run_attempt') == int(env['GITHUB_RUN_ATTEMPT']), 'current attempt changed')
     workflow = own['workflow_id']
     merge = api.get(route + 'git/commits/' + source)
-    require(merge.get('sha') == source and [p['sha'] for p in merge.get('parents', [])] == [base, head],
-            'checkout does not combine the current base and head')
+    # Bind every later check to the base this checkout really contains;
+    # binding() keeps comparing the cached PR base on both sides.
+    pr_base, base = base, checkout_base(api, route, merge, source, base, head, observed_main)
+    require(base is not None, 'checkout does not combine the current base and head')
+    require(observed_main == base or moved_reuse, 'current main moved beyond the validated base')
     equivalence = None
     moved = None
-    if env.get('INNO_MAIN_MOVED_REUSE', '').lower() in ('', 'enabled'):
+    if moved_reuse:
         spec = importlib.util.spec_from_file_location('main_moved_equivalence', Path(__file__).with_name('main_moved_equivalence.py'))
         equivalence = importlib.util.module_from_spec(spec); spec.loader.exec_module(equivalence)
     if observed_main != base:
@@ -176,6 +208,10 @@ def prove(api, event, env, check_name='CI Required'):
     n, h, b, definition, *bound_labels = match.groups()
     require((int(n), h, tuple(bound_labels)) == (number, head, labels),
             'latest validation used a different head or label set')
+    if b != base:
+        # The title records the same cached base; its source shows what it tested.
+        validated = merge if definition == source else api.get(route + 'git/commits/' + definition)
+        b = checkout_base(api, route, validated, definition, b, head, observed_main) or b
     if b != base:
         require(equivalence is not None, 'latest validation used a different validated base')
         prior = moved
@@ -252,6 +288,7 @@ def prove(api, event, env, check_name='CI Required'):
     else:
         require_current_main(api, route, final_pr, base)
     result = dict(run=run['id'], attempt=attempt, head=head, base=base, source=source, check=check_name)
+    if pr_base != base: result.update(cached_pr_base=pr_base)
     if moved: result.update(main_moved_equivalence=moved, source_artifact=artifact_proof)
     return result
 

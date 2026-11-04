@@ -357,9 +357,11 @@ remain errors or blocked decisions, not permission to invent Ready success.
 
 Metadata-only CI also verifies authoritative `git/ref/heads/main` before and
 after its proof, alongside head/base, ordered merge parents, source tree,
-labels, attempt and native check identity. Stale bases, observed main advances
-and same-SHA retargeting still fail. Human PRs retain their read-only Ready flow
-and are never automatically merged by this coordinator.
+labels, attempt and native check identity. A checkout or validation on an
+older main passes only with the main-moved equivalence proof (default-on
+`INNO_MAIN_MOVED_REUSE`); without that proof a main advance fails, as does
+same-SHA retargeting. Human PRs retain their read-only Ready flow and are never
+automatically merged by this coordinator.
 
 ### Metadata-only gate
 
@@ -370,6 +372,22 @@ only when the latest real validation of the exact head, base and lane labels has
 already succeeded. Anything else, including an obsolete head, fails at once.
 Dependabot edits the PR body on every rebase, and review bots edit it after
 pushes, so these runs are frequent.
+
+The cached PR base (event payload, PR API and run title) can stay at the
+branch's old merge-base after main advances, while `refs/pull/N/merge` is
+already rebuilt on current main. On PR #173 the payload kept `b46900d` while the
+merge `f21e04cf` had parents `[8977ec2, ac46a07]`, so a body-edit gate rejected
+the merge its own validation had tested, and re-running it could not help. The
+gate now reads the base from the checkout: a first parent other than the cached
+base counts only when the second parent is the head, the first parent is the
+authoritative `git/ref/heads/main`, and `compare/{cached}...{parent}` is a
+fast-forward from the cached base. The validation title's base is resolved the
+same way from its `source` commit, so a validation of the same merge is reused
+directly and a regenerated one still needs an identical tree. A first parent
+that is neither the cached base nor current main, or reversed parents, still
+fails. A checkout or validation on an older main passes only with the
+main-moved equivalence proof above. The PR binding keeps comparing the cached
+base, so a base refresh during the proof also fails.
 
 GitHub does not document how it picks among same-name checks in different check
 suites. PR #139 merged without a bypass even though an older suite had a failed

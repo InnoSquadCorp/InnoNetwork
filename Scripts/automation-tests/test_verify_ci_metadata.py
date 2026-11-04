@@ -15,6 +15,7 @@ spec = importlib.util.spec_from_file_location('gate', ROOT / 'Scripts/verify-ci-
 gate = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(gate)
 HEAD, BASE, SOURCE = 'a' * 40, 'b' * 40, 'c' * 40
+MAIN = '6' * 40
 REPO = gate.CONFIG['repository']
 
 
@@ -47,8 +48,12 @@ class Transcript:
         self.run_race,self.pr_race,self.list_race=None,None,None
         self.main, self.final_main, self.main_reads = BASE, BASE, 0
         self.main_error = None
+        self.comparisons = {}
 
     def get(self,path):
+        if '/compare/' in path:
+            default = dict(status='diverged', merge_base_commit=dict(sha='0' * 40))
+            return copy.deepcopy(self.comparisons.get(tuple(path.rsplit('/', 1)[1].split('...')), default))
         if path.endswith('git/ref/heads/main'):
             self.main_reads += 1
             if self.main_error:
@@ -184,6 +189,72 @@ class MetadataGateTests(unittest.TestCase):
             # Both PR reads keep returning the old base and head.
             with self.subTest(field=field), self.assertRaisesRegex(ValueError, 'current main moved'):
                 t.prove()
+
+    @staticmethod
+    def stale_base():
+        # PR #173: the payload, PR API and validation title keep the old
+        # merge-base while GITHUB_SHA already merges current main and head.
+        t = Transcript()
+        t.main = t.final_main = MAIN
+        t.merge['parents'][0]['sha'] = MAIN
+        t.comparisons[(BASE, MAIN)] = dict(status='ahead', merge_base_commit=dict(sha=BASE))
+        return t
+
+    def test_stale_cached_base_reuses_validation_of_the_same_current_main_checkout(self):
+        for reuse in ('disabled', 'enabled'):
+            t = self.stale_base()
+            t.env['INNO_MAIN_MOVED_REUSE'] = reuse
+            with self.subTest(reuse=reuse):
+                self.assertEqual(t.prove(), dict(run=10, attempt=1, head=HEAD, base=MAIN, source=SOURCE,
+                                                 check='CI Required', cached_pr_base=BASE))
+                self.assertEqual(t.main_reads, 2)
+        # A regenerated validation merge on current main is reused only byte-identical.
+        t = self.stale_base()
+        old = 'd' * 40
+        t.run['display_title'] = t.run['display_title'].replace(SOURCE, old)
+        t.validated_merge = {**copy.deepcopy(t.merge), 'sha': old}
+        self.assertEqual(t.prove()['base'], MAIN)
+        t.validated_merge['tree']['sha'] = 'f' * 40
+        with self.assertRaisesRegex(ValueError, 'different source tree'):
+            t.prove()
+
+    def test_stale_cached_base_requires_ordered_merge_on_current_main_descendant(self):
+        other = 'd' * 40
+        mutations = {
+            'first parent is not current main': lambda t: t.merge['parents'][0].update(sha=other),
+            'first parent descends but is not current main': lambda t: (
+                t.merge['parents'][0].update(sha=other),
+                t.comparisons.update({(BASE, other): dict(status='ahead', merge_base_commit=dict(sha=BASE))})),
+            'reversed parents': lambda t: t.merge['parents'].reverse(),
+            'second parent is not head': lambda t: t.merge['parents'][1].update(sha=other),
+            'extra parent': lambda t: t.merge['parents'].append(dict(sha=other)),
+            'not a descendant': lambda t: t.comparisons.clear(),
+            'behind': lambda t: t.comparisons.update({(BASE, MAIN): dict(status='behind', merge_base_commit=dict(sha=MAIN))}),
+            'diverged merge base': lambda t: t.comparisons.update({(BASE, MAIN): dict(status='ahead', merge_base_commit=dict(sha=other))}),
+            'main moved again during proof': lambda t: setattr(t, 'final_main', other),
+            'cached base refreshed during proof': lambda t: setattr(t, 'pr_race', lambda p: p['base'].update(sha=MAIN)),
+        }
+        for reuse in ('disabled', 'enabled'):
+            for name, mutate in mutations.items():
+                t = self.stale_base()
+                t.env['INNO_MAIN_MOVED_REUSE'] = reuse
+                mutate(t)
+                with self.subTest(reuse=reuse, name=name), self.assertRaises(ValueError):
+                    t.prove()
+
+    def test_stale_validation_title_must_prove_its_own_current_main_merge(self):
+        other = 'd' * 40
+        for reuse in ('disabled', 'enabled'):
+            for name, parents, title_base in [('reversed', [HEAD, MAIN], BASE),
+                                              ('older main', ['e' * 40, HEAD], BASE),
+                                              ('foreign title base', [MAIN, HEAD], 'e' * 40)]:
+                t = self.stale_base()
+                t.env['INNO_MAIN_MOVED_REUSE'] = reuse
+                t.run['display_title'] = t.run['display_title'].replace(SOURCE, other).replace(BASE, title_base)
+                t.validated_merge = {**copy.deepcopy(t.merge), 'sha': other, 'parents': [dict(sha=sha) for sha in parents]}
+                t.comparisons[(BASE, 'e' * 40)] = dict(status='ahead', merge_base_commit=dict(sha=BASE))
+                with self.subTest(reuse=reuse, name=name), self.assertRaises(ValueError):
+                    t.prove()
 
     def test_unavailable_or_malformed_main_fails_closed(self):
         for field in ('main', 'final_main'):
