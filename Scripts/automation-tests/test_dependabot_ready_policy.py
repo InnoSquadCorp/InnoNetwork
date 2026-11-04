@@ -542,44 +542,91 @@ class NativeReadyTests(unittest.TestCase):
             with self.assertRaisesRegex(p.Rejected, 'prior refresh'): n.refresh(self.api, p, target, False)
             mutation.assert_not_called()
 
-    def test_prior_and_contradictory_queued_claims_block_but_genuinely_future_does_not(self):
+    def test_queued_claims_defer_or_pass_and_contradictory_ones_block(self):
         target = self.writer()
         current_started = datetime.fromisoformat(self.api.native_run['created_at'].replace('Z', '+00:00'))
-        other = dict(self.api.ready_run, id=READY_RUN + 1, status='pending', created_at=(current_started + timedelta(seconds=1)).isoformat())
+        other = dict(self.api.ready_run, id=READY_RUN + 1, status='pending', created_at=(current_started - timedelta(seconds=5)).isoformat())
         self.api.refresh_writers.append(other)
-        queued = dict(id=7780, name=n.claim_name(target), status='queued', conclusion=None, steps=[])
+        queued = dict(id=7780, name=n.claim_name(target), status='queued', conclusion=None, steps=[],
+                      created_at=(current_started + timedelta(seconds=1)).isoformat())
         self.api.ready_jobs[(READY_RUN + 1, 1)] = [queued]
+        # Created after this writer started, so it cannot have run beforehand.
         n.reject_prior_claim(self.api, p, target, self.api.native_run)
-        other['created_at'] = (current_started - timedelta(seconds=1)).isoformat()
-        with self.assertRaises(p.Rejected): n.reject_prior_claim(self.api, p, target, self.api.native_run)
-        other['created_at'] = (current_started + timedelta(seconds=1)).isoformat()
-        other.update(status='completed', conclusion='failure')
-        with self.assertRaises(p.Rejected): n.reject_prior_claim(self.api, p, target, self.api.native_run)
+        # Created earlier but not started: it runs after this writer and keeps the request.
+        queued['created_at'] = (current_started - timedelta(seconds=1)).isoformat()
+        for status in ['queued', 'pending', 'waiting']:
+            queued['status'] = status
+            with self.subTest(status=status), self.assertRaisesRegex(n.Deferred, f'run {READY_RUN + 1} attempt 1'):
+                n.reject_prior_claim(self.api, p, target, self.api.native_run)
+        # Cancelled before it started, so it never reached its request.
+        queued.update(status='completed', conclusion='cancelled')
+        n.reject_prior_claim(self.api, p, target, self.api.native_run)
+        for change in [lambda: other.update(status='completed', conclusion='failure'),
+                       lambda: queued.pop('created_at'),
+                       lambda: queued.update(steps=[dict(name=n.CLAIM_STEP, status='in_progress', conclusion=None)]),
+                       lambda: queued.update(status='completed', conclusion='cancelled',
+                                             steps=[dict(name=n.REQUEST_STEP, status='completed', conclusion='cancelled')])]:
+            other.update(status='pending', conclusion=None)
+            queued.update(status='queued', conclusion=None, steps=[], created_at=(current_started - timedelta(seconds=1)).isoformat())
+            change()
+            with self.subTest(change=change), self.assertRaises(p.Rejected):
+                n.reject_prior_claim(self.api, p, target, self.api.native_run)
         self.assertFalse(self.api.mutations)
 
-    def test_simultaneous_preplanned_wakes_conservatively_require_operator_recovery(self):
+    def test_simultaneous_preplanned_wakes_leave_the_request_to_the_last_writer(self):
         target = self.writer()
         started = datetime.fromisoformat(self.api.native_run['created_at'].replace('Z', '+00:00'))
-        self.api.ready_jobs[(READY_RUN, 1)][0]['started_at'] = (started + timedelta(seconds=2)).isoformat()
+        first = self.api.ready_jobs[(READY_RUN, 1)][0]
+        first.update(started_at=(started + timedelta(seconds=2)).isoformat(),
+                     steps=[dict(name=n.CLAIM_STEP, status='in_progress', conclusion=None),
+                            dict(name=n.REQUEST_STEP, status='pending', conclusion=None)])
         contender = dict(self.api.ready_run, id=READY_RUN + 1, status='pending',
                          created_at=(started + timedelta(seconds=1)).isoformat())
         self.api.ready_runs.append(contender)
         self.api.refresh_writers.append(contender)
-        self.api.ready_jobs[(READY_RUN + 1, 1)] = [dict(id=7780, name=n.claim_name(target), status='queued', conclusion=None, steps=[])]
-        with self.assertRaisesRegex(p.Rejected, 'ambiguous'):
+        later = dict(id=7780, name=n.claim_name(target), status='pending', conclusion=None, steps=[],
+                     created_at=(started + timedelta(seconds=1)).isoformat())
+        self.api.ready_jobs[(READY_RUN + 1, 1)] = [later]
+        # The per-PR group admitted the first writer ahead of an older one.
+        request, reason = n.claim(self.api, p, target, False)
+        self.assertFalse(request)
+        self.assertIn('Deferred', reason)
+        with self.assertRaisesRegex(p.Rejected, 'changed before request'):
             n.refresh(self.api, p, target, False)
         self.assertFalse(self.api.mutations)
-        # Once the first writer failed without a confirmed request, an
-        # ordinary later wake cannot erase that conservative interlock.
-        prior = self.api.ready_jobs[(READY_RUN, 1)][0]
-        prior.update(status='completed', conclusion='failure')
-        prior['steps'][0].update(status='completed', conclusion='failure')
-        later = self.api.ready_jobs[(READY_RUN + 1, 1)][0]
         later.update(status='in_progress', started_at=(started + timedelta(seconds=4)).isoformat(),
-                     steps=[dict(name=n.REQUEST_STEP, status='in_progress', conclusion=None)])
-        with mock.patch.dict(os.environ, GITHUB_RUN_ID=str(READY_RUN + 1)):
-            with self.assertRaisesRegex(p.Rejected, 'prior refresh'):
-                n.refresh(self.api, p, target, False)
+                     steps=[dict(name=n.CLAIM_STEP, status='in_progress', conclusion=None),
+                            dict(name=n.REQUEST_STEP, status='pending', conclusion=None)])
+        # Deferring or stopping in the claim leaves the request skipped, which
+        # proves no request; the last writer to run makes it.
+        for outcome in ['success', 'failure']:
+            first.update(status='completed', conclusion=outcome)
+            first['steps'][0].update(status='completed', conclusion=outcome)
+            first['steps'][1].update(status='completed', conclusion='skipped')
+            with self.subTest(outcome=outcome), mock.patch.dict(os.environ, GITHUB_RUN_ID=str(READY_RUN + 1)):
+                self.assertTrue(n.claim(self.api, p, target, False)[0])
+        later['steps'][0].update(status='completed', conclusion='success')
+        later['steps'][1].update(status='in_progress')
+        def advance(method, path, payload):
+            self.api.mutations.append((method, path, payload))
+            self.api.native_run.update(run_attempt=2, status='queued', conclusion=None)
+        with mock.patch.dict(os.environ, GITHUB_RUN_ID=str(READY_RUN + 1)), \
+                mock.patch.object(self.api, 'mutate', side_effect=advance), mock.patch.object(n.time, 'sleep'):
+            self.assertIn('Verified', n.refresh(self.api, p, target, False))
+        self.assertEqual(self.api.mutations, [('POST', p.route('actions/jobs/9001/rerun'), {})])
+        # The reporter is rerunning, so any writer still queued finds nothing to request.
+        self.assertEqual(n.claim(self.api, p, target, False), (False, 'No native refresh needed or reporter already running.'))
+
+    def test_claim_command_reports_request_without_posting(self):
+        target = self.writer()
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / 'output'
+            environment = dict(REFRESH_TARGET=json.dumps(target), GITHUB_OUTPUT=str(output))
+            with mock.patch.object(n, 'policy_module', return_value=p), mock.patch.object(p, 'GitHub', return_value=self.api), \
+                    mock.patch.object(n.sys, 'argv', ['ready-policy', 'claim']), mock.patch.dict(os.environ, **environment), \
+                    mock.patch('sys.stdout', new_callable=io.StringIO):
+                self.assertEqual(n.main(), 0)
+            self.assertEqual(output.read_text(), 'request=true\n')
         self.assertFalse(self.api.mutations)
 
     def test_lost_post_reply_with_confirmed_attempt_advance_is_not_retried(self):
@@ -857,6 +904,12 @@ class NativeReadyTests(unittest.TestCase):
         self.assertIn('needs: [inspect, ready-plan, bot-ready]', writer)
         self.assertNotIn('contents: write', writer)
         self.assertNotIn('pull-requests: write', writer)
+        # Only a claimed request may run; a deferred or failed claim must skip it.
+        claim, request = writer.split('      - name: ' + n.REQUEST_STEP + '\n', 1)
+        self.assertIn('      - name: ' + n.CLAIM_STEP + '\n        id: claim\n', claim)
+        self.assertIn('dependabot-ready-policy.py claim', claim)
+        self.assertTrue(request.startswith("        if: ${{ steps.claim.outputs.request == 'true' }}\n"))
+        self.assertIn('dependabot-ready-policy.py refresh', request)
         code = (ROOT / 'Scripts/dependabot-ready-policy.py').read_text()
         self.assertEqual(code.count('api.mutate('), 1)
         self.assertIn('actions/jobs/{target[\'job\']}/rerun', code)

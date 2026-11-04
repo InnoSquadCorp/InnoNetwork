@@ -95,7 +95,18 @@ jobs:
           ref: ${{ github.workflow_sha }}
           persist-credentials: false
           sparse-checkout: Scripts
+      # Every wake that sees the failed reporter plans the same refresh. The
+      # claim decides alone, so a writer that defers or stops leaves the
+      # request skipped and a later writer can still make it.
+      - name: Claim verified native Ready refresh
+        id: claim
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REFRESH_TARGET: ${{ toJSON(matrix.target) }}
+          DEPENDABOT_AUTO_MERGE_ENABLED: ${{ vars.DEPENDABOT_AUTO_MERGE_ENABLED }}
+        run: python3 -B Scripts/dependabot-ready-policy.py claim
       - name: Request verified native Ready refresh
+        if: ${{ steps.claim.outputs.request == 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
           REFRESH_TARGET: ${{ toJSON(matrix.target) }}
