@@ -10,6 +10,7 @@
     ".github/workflows/codeql.yml",
     ".github/workflows/dependabot-auto-merge.yml",
     ".github/workflows/dependabot-ready.yml",
+    ".github/workflows/dependabot-rebase.yml",
     ".github/workflows/dependabot-review-notice.yml",
     ".github/workflows/dependency-submission.yml",
     ".github/workflows/docc-pages.yml",

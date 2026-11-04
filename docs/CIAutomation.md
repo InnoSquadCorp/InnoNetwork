@@ -262,6 +262,34 @@ approval count changes here. Metadata reconciliation can revoke ineligible bot
 auto-merge approvals. Scheduled discovery includes retargeted open bot PRs;
 normal default-branch `edited` delivery also reaches the cancellation path.
 
+### Rebasing Dependabot PRs onto current main
+
+The coordinator proves only a bot PR whose base is current main. After any main
+push, every other open Dependabot PR is blocked until it is rebased, and
+Dependabot does not rebase a PR that is only behind. `dependabot-rebase.yml`
+moves one PR at a time. On a main push, a completed PR CI run or the hourly
+schedule, it waits while any Dependabot PR is rebasing, running CI or waiting
+for auto-merge, then comments `@dependabot rebase` on the oldest behind PR.
+Rebasing every PR at once lets only one merge and spends full CI on the rest.
+A failed CI, a green PR still open an hour later, or a command left unanswered
+for an hour releases the queue to the next PR.
+
+Dependabot answers only users with push access, so the command cannot come
+from `GITHUB_TOKEN` or a GitHub App. The comment is posted with the optional
+`DEPENDABOT_COMMAND_TOKEN` secret: a fine-grained token of a user with push
+access, limited to this repository with Pull requests read/write. Every read
+uses the read-only job token. The secret appears only in that step, and the
+coordinator workflow itself still has no secret. Without the secret the job
+only logs its plan, and it does not run while `DEPENDABOT_AUTO_MERGE_ENABLED`
+is not `true`.
+A command holds the queue only when its author currently has write access to
+the repository. A MEMBER or COLLABORATOR association alone does not mean that.
+The token owner's write access is checked the same way before the job posts,
+so a refused command is never posted again on every wake. Commands count only
+after main actually moved to its current SHA, taken from the repository
+activity record, not the commit date, which can predate the push. If
+Dependabot still refuses a command, the job warns and moves on.
+
 ### Existing native integration profile
 
 The observed main ruleset uses the two aggregates and an explicit `strict=false`.

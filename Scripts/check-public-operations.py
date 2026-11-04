@@ -157,6 +157,18 @@ def workflow_boundaries(root):
         require(unsafe not in reporter, 'unsafe native reporter input: ' + unsafe)
     notice = (root / '.github/workflows/dependabot-review-notice.yml').read_text()
     require('permissions: {}' in notice and 'uses:' not in notice and 'secrets.' not in notice and 'GH_TOKEN' not in notice, 'review notice must be inert and zero-permission')
+    rebase = (root / '.github/workflows/dependabot-rebase.yml').read_text()
+    # Dependabot refuses GITHUB_TOKEN commands. The user token stays in the one
+    # read-only, trusted-checkout step that posts the command.
+    require(rebase.count('secrets.') == 1 and
+            'DEPENDABOT_COMMAND_TOKEN: ${{ secrets.DEPENDABOT_COMMAND_TOKEN }}' in rebase and
+            ': write' not in rebase and 'pull_request_target' not in rebase and
+            rebase.count('ref: ${{ github.workflow_sha }}') == 1 and rebase.count('persist-credentials: false') == 1 and
+            rebase.count('sparse-checkout: Scripts') == 1 and
+            "github.workflow_ref == 'InnoSquadCorp/InnoNetwork/.github/workflows/dependabot-rebase.yml@refs/heads/main'" in rebase,
+            'Dependabot rebase command token boundary drift')
+    for unsafe in ['download-artifact', 'cache@', 'pip install', 'npm install', 'continue-on-error', 'secrets: inherit']:
+        require(unsafe not in rebase, 'unsafe rebase workflow input: ' + unsafe)
     for path in ['release-validation.yml', 'docc-pages.yml']:
         workflow = (root / '.github/workflows' / path).read_text()
         require(not re.search(r'^\s+(?:contents|actions|checks|pull-requests|pages|id-token):\s*write', workflow, re.M), path + ': validation token must remain read-only')
