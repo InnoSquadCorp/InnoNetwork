@@ -243,7 +243,14 @@ attempt endpoint and checked against the run's immutable identity.
 The trusted coordinator can request only a bounded rerun of a verified native
 Ready reporter when its verdict changed. It verifies current attempt, source
 compatibility and prior writer claims before its single request; uncertain
-writes are read back, never blindly retried. Historical native/coordinator
+writes are read back, never blindly retried. Every wake that sees the same
+failed reporter plans the same refresh, and the per-PR group admits those
+writers in no fixed order. A separate claim step therefore decides first: a
+writer defers when an older writer for the same reporter attempt is still
+queued, and a writer that defers or stops in its claim leaves its request step
+skipped. A skipped request proves no rerun was asked for, so the last writer
+admitted makes the single request. A request step that ran without a confirmed
+rerun still blocks every later writer for that attempt. Historical native/coordinator
 transport checks are excluded only with exact job/app/head/suite/source binding.
 The literal unevaluated skipped matrix name is allowed only for an empty native
 skip paired with a successful immutable-source inspector. Serialized writers
