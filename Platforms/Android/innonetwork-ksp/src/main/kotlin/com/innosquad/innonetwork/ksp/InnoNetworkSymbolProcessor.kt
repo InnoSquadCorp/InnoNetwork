@@ -24,10 +24,10 @@ internal class InnoNetworkSymbolProcessor(
 
     override fun process(resolver: Resolver): List<KSAnnotated> {
         val symbols = resolver.getSymbolsWithAnnotation(ENDPOINT_ANNOTATION).toList()
-        val deferred = symbols.filterNot { it.validate() }
+        val deferred = symbols.filterNot { it.validate(enableNewFeatures = false) }
 
         symbols.asSequence()
-            .filter { it.validate() }
+            .filter { it.validate(enableNewFeatures = false) }
             .forEach { symbol ->
                 val declaration = symbol as? KSClassDeclaration
                 if (declaration == null) {
