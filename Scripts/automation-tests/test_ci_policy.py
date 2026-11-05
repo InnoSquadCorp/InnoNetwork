@@ -38,6 +38,11 @@ WEB = [
     'Platforms/Web/api/public.d.ts', 'SmokeTests/WebConsumer/package-lock.json', 'SmokeTests/ReactConsumer/src/App.tsx',
     'SmokeTests/WebTarballConsumer/package.json', 'SmokeTests/BrowserConsumer/index.html', 'Scripts/check_web_public_api.sh',
 ]
+# Manifests and lockfiles a grouped Dependabot npm update can change.
+NPM_DEPENDABOT = [directory + '/' + name for directory in (
+    'Platforms/Web', 'SmokeTests/WebConsumer', 'SmokeTests/WebTarballConsumer', 'SmokeTests/ReactConsumer')
+    for name in ('package.json', 'package-lock.json')]
+GRADLE_DEPENDABOT = ['Platforms/Android/gradle/libs.versions.toml', 'SmokeTests/AndroidConsumer/build.gradle.kts']
 
 
 def workflow_jobs(name):
@@ -150,7 +155,7 @@ class PlannerTests(unittest.TestCase):
                      'SmokeTests/AndroidConsumer/README.md', 'Scripts/check_android_new.sh',
                      'Scripts/regenerate_android_verification_metadata.sh']:
             self.assertTrue(all(p.make_plan('pull_request', event(), [path])['jobs'].values()), path)
-        for author, labels in [('dependabot[bot]', ['release-validation']), ('dependabot[bot]', []),
+        for author, labels in [('dependabot[bot]', ['release-validation']), ('dependabot[bot]', ['concurrency-review']),
                                ('contributor', ['release-validation'])]:
             self.assertTrue(all(p.make_plan('pull_request', event(author, labels), ANDROID_177 + WEB)['jobs'].values()))
         for name, data in [('push', {'ref': 'refs/heads/main'}), ('merge_group', {'action': 'checks_requested'})]:
@@ -189,6 +194,38 @@ class PlannerTests(unittest.TestCase):
             self.assertTrue(any(glob_matches(pattern, path) for pattern in patterns), path)
         for script in p.PLATFORM_SCRIPTS:
             self.assertTrue((ROOT / script).is_file(), script)
+
+    def test_dependabot_android_web_only_updates_skip_apple_jobs(self):
+        platform = set(p.PLATFORM_JOBS) | {'policy'}
+        for name, paths in [('npm', NPM_DEPENDABOT), ('one directory', NPM_DEPENDABOT[:2]), ('gradle', GRADLE_DEPENDABOT)]:
+            for action in sorted(p.PR_ACTIONS - {'edited'}):
+                plan = p.make_plan('pull_request', event('dependabot[bot]', ['dependencies', 'web'], action), paths)
+                self.assertEqual(plan['lane'], 'fast', name)
+                self.assertEqual({j for j, v in plan['jobs'].items() if v}, platform, name)
+                self.assertFalse(plan['jobs']['benchmarks'], name)
+                self.assertFalse(plan['jobs']['release-candidate'], name)
+                p.evaluate(plan, results(plan))
+            self.assertTrue(p.dependabot_platform_lane({'dependencies', 'web'}, paths), name)
+        # Labels, shared paths, Markdown, deletion/rename sentinels and missing evidence keep the full lane.
+        for labels, paths in [(['release-validation'], NPM_DEPENDABOT), (['RELEASE-VALIDATION'], NPM_DEPENDABOT),
+                              (['concurrency-review'], NPM_DEPENDABOT), ([], NPM_DEPENDABOT + ['Package.resolved']),
+                              ([], NPM_DEPENDABOT + ['Platforms/Web/README.md']), ([], NPM_DEPENDABOT + ['__full_change_fallback__']),
+                              ([], ['__diff_unavailable_full_fallback__']), ([], [])]:
+            plan = p.make_plan('pull_request', event('dependabot[bot]', labels), paths)
+            self.assertEqual(plan['lane'], 'release-validation', (labels, paths))
+            self.assertTrue(all(plan['jobs'].values()), (labels, paths))
+            self.assertFalse(p.dependabot_platform_lane(set(labels), paths), (labels, paths))
+        plan = p.make_plan('pull_request', event('dependabot[bot]', [], 'edited'), NPM_DEPENDABOT)
+        self.assertEqual(plan['lane'], 'fast')
+
+    def test_dependabot_platform_directories_are_platform_trees(self):
+        # Every Dependabot npm/Gradle directory must stay inside the Android/Web
+        # trees; otherwise its updates would never reach the narrowed lane.
+        config = json.loads((ROOT / '.github/dependabot.yml').read_text())
+        for update in config['updates']:
+            if update['package-ecosystem'] in ('npm', 'gradle'):
+                for directory in update['directories']:
+                    self.assertIn(directory.lstrip('/') + '/', p.PLATFORM_TREES, directory)
 
     def test_all_bot_majors_toolchains_and_labels_require_full(self):
         for action in p.PR_ACTIONS:
