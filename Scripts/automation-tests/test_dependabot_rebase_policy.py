@@ -34,8 +34,8 @@ class FakeAPI:
         self.roles = {'maintainer': 'write', 'owner': 'admin', 'reader': 'read'}
         self.lookups = []
 
-    def pr(self, number, base=OLD, author=BOT, draft=False, repo=p.REPOSITORY):
-        head, ref = format(number, '040x'), f'dependabot/npm_and_yarn/pr-{number}'
+    def pr(self, number, base=OLD, author=BOT, draft=False, repo=p.REPOSITORY, ecosystem='npm_and_yarn'):
+        head, ref = format(number, '040x'), f'dependabot/{ecosystem}/pr-{number}'
         self.prs.append(dict(number=number, user=author, draft=draft, base=dict(ref='main', sha=base),
                              head=dict(sha=head, ref=ref, repo=dict(full_name=repo))))
         self.moves['refs/heads/' + ref] = [dict(after=head, timestamp=stamp(NOW - timedelta(hours=1)))]
@@ -203,6 +203,19 @@ class RebasePolicyTests(unittest.TestCase):
                 self.assertEqual(self.command.posts, [])
         self.run_policy(owner='owner')
         self.assertRequested(163)
+
+    def test_gradle_prs_await_a_human_replacement_and_never_hold_the_queue(self):
+        # The oldest PR is a Gradle ticket that can never pass CI on its own.
+        self.api.pr(160, ecosystem='gradle')
+        self.api.pr(161, base=MAIN, ecosystem='gradle')
+        self.api.run(161, status='in_progress', conclusion=None)
+        self.api.pr(163)
+        self.assertIn('#163', self.run_policy())
+        self.assertRequested(163)
+        self.command.posts.clear()
+        self.api.prs = [pr for pr in self.api.prs if pr['number'] != 163]
+        self.assertEqual(self.run_policy(), 'no behind Dependabot PR needs a rebase')
+        self.assertEqual(self.command.posts, [])
 
     def test_only_same_repository_non_draft_dependabot_prs_are_moved(self):
         self.api.pr(150, author=dict(login='human', id=1, type='User'))

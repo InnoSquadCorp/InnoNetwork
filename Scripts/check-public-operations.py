@@ -36,7 +36,13 @@ def dependabot(root):
         ('gradle', '10:00', 5, 'chore(android-deps)', 'android-minor-patch', 'android'),
         ('npm', '10:30', 5, 'chore(web-deps)', 'web-minor-patch', 'web')]:
         item = by_kind[ecosystem]
-        require(item.get('schedule') == {'interval': 'weekly', 'day': 'monday', 'time': minute, 'timezone': 'Asia/Seoul'}, 'weekly schedule drift')
+        schedule = {'interval': 'weekly', 'day': 'monday', 'time': minute, 'timezone': 'Asia/Seoul'}
+        if ecosystem == 'gradle':
+            # Dependabot cannot write Gradle dependency-verification metadata,
+            # so its Gradle PRs are monthly tickets for a human replacement PR.
+            schedule = {'interval': 'monthly', 'time': minute, 'timezone': 'Asia/Seoul'}
+            require('pull-request-branch-name' not in item, 'Gradle ticket branch prefix must stay dependabot/gradle/')
+        require(item.get('schedule') == schedule, 'update schedule drift')
         require(item.get('open-pull-requests-limit') == limit, 'version PR limit drift')
         require(item.get('commit-message') == {'prefix': prefix}, 'commit prefix drift')
         require(item.get('labels') == ['dependencies', label, 'release-validation'], 'dependency labels drift')

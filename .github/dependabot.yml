@@ -74,8 +74,7 @@
         "/SmokeTests/AndroidConsumer"
       ],
       "schedule": {
-        "interval": "weekly",
-        "day": "monday",
+        "interval": "monthly",
         "time": "10:00",
         "timezone": "Asia/Seoul"
       },

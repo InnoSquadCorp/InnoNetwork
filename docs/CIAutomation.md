@@ -190,7 +190,9 @@ The standalone OpenAPI tool's remote dependency is included in Dependabot.
 
 ## Dependabot and trusted coordinator
 
-Actions run weekly Monday 09:00 Asia/Seoul, Swift Monday 09:30. Minor/patch updates
+Actions run weekly Monday 09:00 Asia/Seoul, Swift Monday 09:30, Web Monday 10:30.
+Gradle runs monthly and is always replaced by a maintainer, as described
+below. Minor/patch updates
 are grouped by ecosystem; SwiftSyntax/toolchain and majors stay individual, not
 ignored. All are eligible only after the same full exact-head validation.
 Existing open Dependabot PRs are not closed, edited or merged by this change.
@@ -279,7 +281,8 @@ schedule, it waits while any Dependabot PR is rebasing, running CI or waiting
 for auto-merge, then comments `@dependabot rebase` on the oldest behind PR.
 Rebasing every PR at once lets only one merge and spends full CI on the rest.
 A failed CI, a green PR still open an hour later, or a command left unanswered
-for an hour releases the queue to the next PR.
+for an hour releases the queue to the next PR. Gradle PRs are skipped, as the
+next section explains.
 
 Dependabot answers only users with push access, so the command cannot come
 from `GITHUB_TOKEN` or a GitHub App. The comment is posted with the optional
@@ -296,6 +299,58 @@ so a refused command is never posted again on every wake. Commands count only
 after main actually moved to its current SHA, taken from the repository
 activity record, not the commit date, which can predate the push. If
 Dependabot still refuses a command, the job warns and moves on.
+
+### Gradle updates land through a human replacement PR
+
+Dependabot cannot write Gradle dependency-verification metadata
+([dependabot-core#1996](https://github.com/dependabot/dependabot-core/issues/1996)).
+`Platforms/Android` and `SmokeTests/AndroidConsumer` set `verify-metadata` to
+true, so every Gradle PR fails CI at its first new artifact. An OkHttp patch
+fails just like an AGP update. A wrapper update also fails
+`check_android_wrapper_integrity.sh`, which pins the distribution URL and the
+distribution and wrapper JAR checksums. #169 hit both and also needed code
+changes: Kotlin 2.4.21 and KSP 2.3.12 deprecations broke the build under
+`allWarningsAsErrors`. #177 replaced it.
+
+Gradle Dependabot PRs are therefore monthly tickets, not merge candidates.
+Gradle dependencies are not submitted to the dependency graph, so these PRs are
+also the only automated signal of Android updates, and they stay enabled. The
+rebase queue skips `dependabot/gradle/` branches, so a ticket neither holds the
+queue nor reruns full CI after every main push. Its CI fails by design, and the
+coordinator never arms it.
+
+A maintainer replaces each ticket:
+
+1. On a branch from current main, apply the ticket's versions. For a wrapper
+   update, run the Gradle `wrapper` task with the official distribution
+   SHA-256. Then pin the new URL and both checksums in
+   `Scripts/check_android_wrapper_integrity.sh`
+2. Run `Scripts/regenerate_android_verification_metadata.sh` with JDK 17. It
+   empties both component lists and runs every Gradle task CI runs in a fresh
+   Gradle user home. A warm cache skips POM and `.module` files that a clean
+   CI runner still verifies. AGP resolves only the host's aapt2 jar, so the
+   script adds the other hosts' jars from Google Maven after checking each
+   against the published SHA-1. Both files must stay strict
+3. Review the component diff. Accepting new groups and transitive artifacts is
+   the decision these files record. Fix any code the update breaks, then run
+   `Scripts/check_cross_platform.sh`
+4. Open the replacement PR and link the ticket. Dependabot closes the ticket
+   once main has its versions; otherwise close it by hand
+
+Regenerating the metadata in CI and pushing it to the Dependabot branch was
+rejected:
+
+- A `GITHUB_TOKEN` push starts no CI, so the coordinator would never see an
+  exact-head validation. It would need a new push-capable credential
+- Generation runs the new plugins and compiler before anything verifies them.
+  The writer would either run them while holding that credential or consume a
+  PR artifact, and privileged workflows here never do either
+- Hashes accepted with no review would make strict verification
+  trust-on-first-use for every bot update, and the coordinator would merge them
+- Dependabot stops rebasing a branch with a pushed commit unless the commit
+  says `[dependabot skip]`. Then every rebase drops the commit, so each rebase
+  runs CI twice
+- It still cannot fix updates that need code changes, like #169
 
 ### Existing native integration profile
 

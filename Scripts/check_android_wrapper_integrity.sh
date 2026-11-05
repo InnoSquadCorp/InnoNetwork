@@ -7,6 +7,8 @@ wrapper_dir="$repo_root/Platforms/Android/gradle/wrapper"
 properties="$wrapper_dir/gradle-wrapper.properties"
 wrapper_jar="$wrapper_dir/gradle-wrapper.jar"
 
+# A wrapper update changes these pins in a human replacement PR; see
+# "Gradle updates land through a human replacement PR" in docs/CIAutomation.md.
 expected_url='https\://services.gradle.org/distributions/gradle-9.5.1-bin.zip'
 expected_distribution_sha='bafc141b619ad6350fd975fc903156dd5c151998cc8b058e8c1044ab5f7b031f'
 expected_wrapper_sha='497c8c2a7e5031f6aa847f88104aa80a93532ec32ee17bdb8d1d2f67a194a9c7'
