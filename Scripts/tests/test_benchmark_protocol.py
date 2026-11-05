@@ -452,4 +452,30 @@ if {mode!r} != 'exit': time.sleep(30)
         with self.assertRaises(ValueError): p.verify_comparison(self.root,'current','a'*40,0)
 
 
+    def test_receipt_accepts_only_the_fixed_inconclusive_and_confirmation_schedule(self):
+        def row(ops):
+            return {'version':2,'results':[{'group':'events','name':'task-event-fanout-single',
+                    'iterations':300000,'elapsedSeconds':300000/ops,'operationsPerSecond':ops}]}
+        base=[row(300000)]*7
+        head=[row(300000*(1+delta/100)) for delta in (-40,-30,0,0,0,0,0)]
+        for pairs,status in ((3,3),(7,0)):
+            with self.subTest(pairs=pairs):
+                for side,rows in (('base',base),('head',head)):
+                    for index,value in enumerate(rows[:pairs],start=1): p.write_json(self.root/f'{side}-{index}.json',value)
+                report=p.build_comparison_report(base[:pairs],head[:pairs],{p.EVENT},20,primary_pairs=3)
+                output=self.root/'results.json';p.write_json(output,report)
+                receipt=p.comparison_receipt(report,output,[self.root/f'base-{i}.json' for i in range(1,pairs+1)],
+                    [self.root/f'head-{i}.json' for i in range(1,pairs+1)],'current','a'*40)
+                p.write_json(self.root/'protocol/comparison.json',receipt)
+                self.assertEqual(receipt['exit_code'],status)
+                p.verify_comparison(self.root,'current','a'*40,status)
+                for other in {0,1,3}-{status}:
+                    with self.assertRaises(ValueError): p.verify_comparison(self.root,'current','a'*40,other)
+                with self.assertRaises(ValueError): p.verify_comparison(self.root,'current','a'*40,2)
+        # A report claiming another pair schedule cannot be verified.
+        tampered=json.loads(output.read_text());tampered['baseline']['pairCount']=5
+        p.write_json(output,tampered)
+        with self.assertRaises(ValueError): p.verify_comparison(self.root,'current','a'*40,0)
+
+
 if __name__=='__main__': unittest.main()

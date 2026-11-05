@@ -151,7 +151,9 @@ The `CI` workflow must pass all of the following:
     emits parseable results. Regression enforcement lives in the dedicated
     `Benchmarks` workflow: pull requests, scheduled runs, and manual runs all
     build base and head on the same hosted runner, interleave three samples per
-    revision, and enforce the guarded median comparison at 20%. Pull requests
+    revision, and enforce the guarded median comparison at 20%. A guard whose
+    pairs disagree (median beyond 20%, some pair within it) is re-judged once on
+    seven pairs after four fixed confirmation pairs. Pull requests
     compare against their base SHA; non-PR and release runs compare against the
     reviewed revision in `Benchmarks/Baselines/source-revision.txt`. This avoids
     treating hosted-runner generation or load differences as source regressions.
@@ -362,7 +364,9 @@ package view when a generated `.xcodeproj` or `.xcworkspace` is present beside
 The base and candidate production sources are built separately on one runner,
 but both use the candidate benchmark harness. Three samples per revision are
 interleaved and compared by median, so harness methodology and machine class do
-not masquerade as implementation regressions. The runtime benchmark disables
+not masquerade as implementation regressions. A regression is conclusive when all
+three pairs exceed the limit; when the pairs disagree, four more pairs with the
+same binaries decide by the median of all seven. The runtime benchmark disables
 default traits because macro compilation is measured by the separate repeated
 macro-build baseline rather than this runtime throughput gate.
 

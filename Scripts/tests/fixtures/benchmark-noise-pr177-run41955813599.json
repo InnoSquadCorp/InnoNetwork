@@ -1,0 +1,807 @@
+{
+ "base": [
+  {
+   "generatedAt": "2026-11-05T07:11:55Z",
+   "results": [
+    {
+     "elapsedSeconds": 6.210735667,
+     "group": "events",
+     "iterations": 300000,
+     "name": "task-event-fanout-single",
+     "operationsPerSecond": 48303.456480045366,
+     "peakResidentBytes": 7176192,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 9.578281291,
+     "group": "persistence",
+     "iterations": 1050,
+     "name": "append-log-compaction",
+     "operationsPerSecond": 109.62300731203281,
+     "peakResidentBytes": 228376576,
+     "residentDeltaBytes": 183762944
+    },
+    {
+     "elapsedSeconds": 3.81644425,
+     "group": "persistence",
+     "iterations": 1000,
+     "name": "download-persistence-restore",
+     "operationsPerSecond": 262.02400310184015,
+     "peakResidentBytes": 301121536,
+     "residentDeltaBytes": 68501504
+    },
+    {
+     "elapsedSeconds": 3.8416986250000003,
+     "group": "websocket",
+     "iterations": 300000000,
+     "name": "websocket-close-disposition-classify",
+     "operationsPerSecond": 78090456.66615766,
+     "peakResidentBytes": 301383680,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 4.229385417,
+     "group": "websocket",
+     "iterations": 50000000,
+     "name": "websocket-ping-context-create",
+     "operationsPerSecond": 11822048.612317331,
+     "peakResidentBytes": 301400064,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 3.180779625,
+     "group": "websocket",
+     "iterations": 10000000,
+     "name": "websocket-send-queue-reserve",
+     "operationsPerSecond": 3143883.3176001622,
+     "peakResidentBytes": 301400064,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 3.19368525,
+     "group": "websocket",
+     "iterations": 20000000,
+     "name": "websocket-lifecycle-transition-table",
+     "operationsPerSecond": 6262357.882637307,
+     "peakResidentBytes": 301400064,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 1.8377477500000001,
+     "group": "client",
+     "iterations": 20000,
+     "name": "request-pipeline",
+     "operationsPerSecond": 10882.88640266326,
+     "peakResidentBytes": 304021504,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 2.060088333,
+     "group": "client",
+     "iterations": 20000,
+     "name": "request-coalescing-shared-get",
+     "operationsPerSecond": 9708.32157030618,
+     "peakResidentBytes": 304037888,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 3.4671348330000002,
+     "group": "cache",
+     "iterations": 10000000,
+     "name": "response-cache-lookup",
+     "operationsPerSecond": 2884225.875734784,
+     "peakResidentBytes": 304054272,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 2.911409583,
+     "group": "cache",
+     "iterations": 10000000,
+     "name": "response-cache-revalidation",
+     "operationsPerSecond": 3434762.342746606,
+     "peakResidentBytes": 304054272,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 6.343699917,
+     "group": "client",
+     "iterations": 50000,
+     "name": "decoding-interceptor-chain-1",
+     "operationsPerSecond": 7881.83562498106,
+     "peakResidentBytes": 304087040,
+     "residentDeltaBytes": 16384
+    },
+    {
+     "elapsedSeconds": 6.8015375,
+     "group": "client",
+     "iterations": 50000,
+     "name": "decoding-interceptor-chain-3",
+     "operationsPerSecond": 7351.2790306603465,
+     "peakResidentBytes": 304087040,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 5.961663292,
+     "group": "client",
+     "iterations": 50000,
+     "name": "decoding-interceptor-chain-8",
+     "operationsPerSecond": 8386.921157908293,
+     "peakResidentBytes": 304087040,
+     "residentDeltaBytes": 0
+    }
+   ],
+   "version": 2
+  },
+  {
+   "generatedAt": "2026-11-05T07:15:31Z",
+   "results": [
+    {
+     "elapsedSeconds": 5.340169209,
+     "group": "events",
+     "iterations": 300000,
+     "name": "task-event-fanout-single",
+     "operationsPerSecond": 56177.99516434761,
+     "peakResidentBytes": 7258112,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 7.540234709,
+     "group": "persistence",
+     "iterations": 1050,
+     "name": "append-log-compaction",
+     "operationsPerSecond": 139.25295969192092,
+     "peakResidentBytes": 228311040,
+     "residentDeltaBytes": 183238656
+    },
+    {
+     "elapsedSeconds": 3.960134208,
+     "group": "persistence",
+     "iterations": 1000,
+     "name": "download-persistence-restore",
+     "operationsPerSecond": 252.51669450491514,
+     "peakResidentBytes": 298418176,
+     "residentDeltaBytes": 68206592
+    },
+    {
+     "elapsedSeconds": 3.358082583,
+     "group": "websocket",
+     "iterations": 300000000,
+     "name": "websocket-close-disposition-classify",
+     "operationsPerSecond": 89336695.1482146,
+     "peakResidentBytes": 298680320,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 3.6944670840000002,
+     "group": "websocket",
+     "iterations": 50000000,
+     "name": "websocket-ping-context-create",
+     "operationsPerSecond": 13533751.651636044,
+     "peakResidentBytes": 298696704,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 3.147674625,
+     "group": "websocket",
+     "iterations": 10000000,
+     "name": "websocket-send-queue-reserve",
+     "operationsPerSecond": 3176948.4433290176,
+     "peakResidentBytes": 298696704,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 2.919436916,
+     "group": "websocket",
+     "iterations": 20000000,
+     "name": "websocket-lifecycle-transition-table",
+     "operationsPerSecond": 6850636.12451765,
+     "peakResidentBytes": 298696704,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 1.6980187089999998,
+     "group": "client",
+     "iterations": 20000,
+     "name": "request-pipeline",
+     "operationsPerSecond": 11778.433237510342,
+     "peakResidentBytes": 301268992,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 1.955374708,
+     "group": "client",
+     "iterations": 20000,
+     "name": "request-coalescing-shared-get",
+     "operationsPerSecond": 10228.218621307851,
+     "peakResidentBytes": 301268992,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 3.423300292,
+     "group": "cache",
+     "iterations": 10000000,
+     "name": "response-cache-lookup",
+     "operationsPerSecond": 2921157.6978418347,
+     "peakResidentBytes": 301285376,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 2.6442534159999997,
+     "group": "cache",
+     "iterations": 10000000,
+     "name": "response-cache-revalidation",
+     "operationsPerSecond": 3781785.792349337,
+     "peakResidentBytes": 301285376,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 4.361985416,
+     "group": "client",
+     "iterations": 50000,
+     "name": "decoding-interceptor-chain-1",
+     "operationsPerSecond": 11462.6701447917,
+     "peakResidentBytes": 301318144,
+     "residentDeltaBytes": 16384
+    },
+    {
+     "elapsedSeconds": 4.645526167,
+     "group": "client",
+     "iterations": 50000,
+     "name": "decoding-interceptor-chain-3",
+     "operationsPerSecond": 10763.043453544711,
+     "peakResidentBytes": 301318144,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 4.485005209,
+     "group": "client",
+     "iterations": 50000,
+     "name": "decoding-interceptor-chain-8",
+     "operationsPerSecond": 11148.259069948386,
+     "peakResidentBytes": 301318144,
+     "residentDeltaBytes": 0
+    }
+   ],
+   "version": 2
+  },
+  {
+   "generatedAt": "2026-11-05T07:16:32Z",
+   "results": [
+    {
+     "elapsedSeconds": 5.36781,
+     "group": "events",
+     "iterations": 300000,
+     "name": "task-event-fanout-single",
+     "operationsPerSecond": 55888.71439190284,
+     "peakResidentBytes": 7290880,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 7.72613975,
+     "group": "persistence",
+     "iterations": 1050,
+     "name": "append-log-compaction",
+     "operationsPerSecond": 135.90227901326793,
+     "peakResidentBytes": 227901440,
+     "residentDeltaBytes": 183140352
+    },
+    {
+     "elapsedSeconds": 3.930983334,
+     "group": "persistence",
+     "iterations": 1000,
+     "name": "download-persistence-restore",
+     "operationsPerSecond": 254.3892749050256,
+     "peakResidentBytes": 298631168,
+     "residentDeltaBytes": 67338240
+    },
+    {
+     "elapsedSeconds": 3.051449875,
+     "group": "websocket",
+     "iterations": 300000000,
+     "name": "websocket-close-disposition-classify",
+     "operationsPerSecond": 98313920.3622016,
+     "peakResidentBytes": 298893312,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 3.343254875,
+     "group": "websocket",
+     "iterations": 50000000,
+     "name": "websocket-ping-context-create",
+     "operationsPerSecond": 14955485.558067122,
+     "peakResidentBytes": 298909696,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 2.777544042,
+     "group": "websocket",
+     "iterations": 10000000,
+     "name": "websocket-send-queue-reserve",
+     "operationsPerSecond": 3600302.9470594437,
+     "peakResidentBytes": 298909696,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 2.673872084,
+     "group": "websocket",
+     "iterations": 20000000,
+     "name": "websocket-lifecycle-transition-table",
+     "operationsPerSecond": 7479789.373499439,
+     "peakResidentBytes": 298909696,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 1.734302459,
+     "group": "client",
+     "iterations": 20000,
+     "name": "request-pipeline",
+     "operationsPerSecond": 11532.013863102064,
+     "peakResidentBytes": 301531136,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 1.858482,
+     "group": "client",
+     "iterations": 20000,
+     "name": "request-coalescing-shared-get",
+     "operationsPerSecond": 10761.470920891352,
+     "peakResidentBytes": 301531136,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 2.649573666,
+     "group": "cache",
+     "iterations": 10000000,
+     "name": "response-cache-lookup",
+     "operationsPerSecond": 3774192.1005339576,
+     "peakResidentBytes": 301547520,
+     "residentDeltaBytes": -26525696
+    },
+    {
+     "elapsedSeconds": 2.06907825,
+     "group": "cache",
+     "iterations": 10000000,
+     "name": "response-cache-revalidation",
+     "operationsPerSecond": 4833069.991432175,
+     "peakResidentBytes": 301547520,
+     "residentDeltaBytes": -79134720
+    },
+    {
+     "elapsedSeconds": 4.056155417,
+     "group": "client",
+     "iterations": 50000,
+     "name": "decoding-interceptor-chain-1",
+     "operationsPerSecond": 12326.94383219192,
+     "peakResidentBytes": 301547520,
+     "residentDeltaBytes": -180224
+    },
+    {
+     "elapsedSeconds": 4.246370959,
+     "group": "client",
+     "iterations": 50000,
+     "name": "decoding-interceptor-chain-3",
+     "operationsPerSecond": 11774.760255937405,
+     "peakResidentBytes": 301547520,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 3.713951291,
+     "group": "client",
+     "iterations": 50000,
+     "name": "decoding-interceptor-chain-8",
+     "operationsPerSecond": 13462.750607732729,
+     "peakResidentBytes": 301547520,
+     "residentDeltaBytes": 0
+    }
+   ],
+   "version": 2
+  }
+ ],
+ "head": [
+  {
+   "generatedAt": "2026-11-05T07:13:12Z",
+   "results": [
+    {
+     "elapsedSeconds": 10.434806167,
+     "group": "events",
+     "iterations": 300000,
+     "name": "task-event-fanout-single",
+     "operationsPerSecond": 28749.935092110085,
+     "peakResidentBytes": 7323648,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 9.628947917,
+     "group": "persistence",
+     "iterations": 1050,
+     "name": "append-log-compaction",
+     "operationsPerSecond": 109.04618127035613,
+     "peakResidentBytes": 227934208,
+     "residentDeltaBytes": 182583296
+    },
+    {
+     "elapsedSeconds": 3.82363975,
+     "group": "persistence",
+     "iterations": 1000,
+     "name": "download-persistence-restore",
+     "operationsPerSecond": 261.530914359806,
+     "peakResidentBytes": 299073536,
+     "residentDeltaBytes": 67567616
+    },
+    {
+     "elapsedSeconds": 3.623060542,
+     "group": "websocket",
+     "iterations": 300000000,
+     "name": "websocket-close-disposition-classify",
+     "operationsPerSecond": 82802922.14890622,
+     "peakResidentBytes": 299335680,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 3.244198333,
+     "group": "websocket",
+     "iterations": 50000000,
+     "name": "websocket-ping-context-create",
+     "operationsPerSecond": 15412128.0106089,
+     "peakResidentBytes": 299352064,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 3.028285541,
+     "group": "websocket",
+     "iterations": 10000000,
+     "name": "websocket-send-queue-reserve",
+     "operationsPerSecond": 3302198.509555939,
+     "peakResidentBytes": 299352064,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 2.908068459,
+     "group": "websocket",
+     "iterations": 20000000,
+     "name": "websocket-lifecycle-transition-table",
+     "operationsPerSecond": 6877417.18669079,
+     "peakResidentBytes": 299352064,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 2.091285542,
+     "group": "client",
+     "iterations": 20000,
+     "name": "request-pipeline",
+     "operationsPerSecond": 9563.495562099573,
+     "peakResidentBytes": 301891584,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 1.88228,
+     "group": "client",
+     "iterations": 20000,
+     "name": "request-coalescing-shared-get",
+     "operationsPerSecond": 10625.41173470472,
+     "peakResidentBytes": 301891584,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 3.061821166,
+     "group": "cache",
+     "iterations": 10000000,
+     "name": "response-cache-lookup",
+     "operationsPerSecond": 3266030.070941119,
+     "peakResidentBytes": 301907968,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 2.380038291,
+     "group": "cache",
+     "iterations": 10000000,
+     "name": "response-cache-revalidation",
+     "operationsPerSecond": 4201613.073963775,
+     "peakResidentBytes": 301907968,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 5.015385333,
+     "group": "client",
+     "iterations": 50000,
+     "name": "decoding-interceptor-chain-1",
+     "operationsPerSecond": 9969.32372693526,
+     "peakResidentBytes": 301940736,
+     "residentDeltaBytes": 16384
+    },
+    {
+     "elapsedSeconds": 5.084774,
+     "group": "client",
+     "iterations": 50000,
+     "name": "decoding-interceptor-chain-3",
+     "operationsPerSecond": 9833.278725858809,
+     "peakResidentBytes": 301940736,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 4.9265635,
+     "group": "client",
+     "iterations": 50000,
+     "name": "decoding-interceptor-chain-8",
+     "operationsPerSecond": 10149.06232305744,
+     "peakResidentBytes": 301940736,
+     "residentDeltaBytes": 0
+    }
+   ],
+   "version": 2
+  },
+  {
+   "generatedAt": "2026-11-05T07:14:24Z",
+   "results": [
+    {
+     "elapsedSeconds": 7.5864122080000005,
+     "group": "events",
+     "iterations": 300000,
+     "name": "task-event-fanout-single",
+     "operationsPerSecond": 39544.38432486504,
+     "peakResidentBytes": 7258112,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 8.712900792,
+     "group": "persistence",
+     "iterations": 1050,
+     "name": "append-log-compaction",
+     "operationsPerSecond": 120.51095554354157,
+     "peakResidentBytes": 227131392,
+     "residentDeltaBytes": 182157312
+    },
+    {
+     "elapsedSeconds": 4.566878709,
+     "group": "persistence",
+     "iterations": 1000,
+     "name": "download-persistence-restore",
+     "operationsPerSecond": 218.96793493317188,
+     "peakResidentBytes": 299433984,
+     "residentDeltaBytes": 68468736
+    },
+    {
+     "elapsedSeconds": 3.526072167,
+     "group": "websocket",
+     "iterations": 300000000,
+     "name": "websocket-close-disposition-classify",
+     "operationsPerSecond": 85080504.81996842,
+     "peakResidentBytes": 299712512,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 3.950609292,
+     "group": "websocket",
+     "iterations": 50000000,
+     "name": "websocket-ping-context-create",
+     "operationsPerSecond": 12656275.603170935,
+     "peakResidentBytes": 299728896,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 3.595613417,
+     "group": "websocket",
+     "iterations": 10000000,
+     "name": "websocket-send-queue-reserve",
+     "operationsPerSecond": 2781166.6161662894,
+     "peakResidentBytes": 299728896,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 3.908665959,
+     "group": "websocket",
+     "iterations": 20000000,
+     "name": "websocket-lifecycle-transition-table",
+     "operationsPerSecond": 5116835.311533461,
+     "peakResidentBytes": 299728896,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 2.162354459,
+     "group": "client",
+     "iterations": 20000,
+     "name": "request-pipeline",
+     "operationsPerSecond": 9249.177403250149,
+     "peakResidentBytes": 302333952,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 1.927055833,
+     "group": "client",
+     "iterations": 20000,
+     "name": "request-coalescing-shared-get",
+     "operationsPerSecond": 10378.526484551525,
+     "peakResidentBytes": 302333952,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 3.139831917,
+     "group": "cache",
+     "iterations": 10000000,
+     "name": "response-cache-lookup",
+     "operationsPerSecond": 3184883.8614121266,
+     "peakResidentBytes": 302956544,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 2.5700513750000002,
+     "group": "cache",
+     "iterations": 10000000,
+     "name": "response-cache-revalidation",
+     "operationsPerSecond": 3890972.802051476,
+     "peakResidentBytes": 302956544,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 4.749304334,
+     "group": "client",
+     "iterations": 50000,
+     "name": "decoding-interceptor-chain-1",
+     "operationsPerSecond": 10527.857657394756,
+     "peakResidentBytes": 302989312,
+     "residentDeltaBytes": 16384
+    },
+    {
+     "elapsedSeconds": 4.629943083,
+     "group": "client",
+     "iterations": 50000,
+     "name": "decoding-interceptor-chain-3",
+     "operationsPerSecond": 10799.26882548245,
+     "peakResidentBytes": 302989312,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 4.082496542,
+     "group": "client",
+     "iterations": 50000,
+     "name": "decoding-interceptor-chain-8",
+     "operationsPerSecond": 12247.407801968444,
+     "peakResidentBytes": 302989312,
+     "residentDeltaBytes": 0
+    }
+   ],
+   "version": 2
+  },
+  {
+   "generatedAt": "2026-11-05T07:17:30Z",
+   "results": [
+    {
+     "elapsedSeconds": 5.643840292,
+     "group": "events",
+     "iterations": 300000,
+     "name": "task-event-fanout-single",
+     "operationsPerSecond": 53155.295770017154,
+     "peakResidentBytes": 7241728,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 7.439200542,
+     "group": "persistence",
+     "iterations": 1050,
+     "name": "append-log-compaction",
+     "operationsPerSecond": 141.14419877135234,
+     "peakResidentBytes": 228802560,
+     "residentDeltaBytes": 184008704
+    },
+    {
+     "elapsedSeconds": 2.842540666,
+     "group": "persistence",
+     "iterations": 1000,
+     "name": "download-persistence-restore",
+     "operationsPerSecond": 351.79795735594234,
+     "peakResidentBytes": 299253760,
+     "residentDeltaBytes": 67076096
+    },
+    {
+     "elapsedSeconds": 2.5592490420000003,
+     "group": "websocket",
+     "iterations": 300000000,
+     "name": "websocket-close-disposition-classify",
+     "operationsPerSecond": 117221886.21610509,
+     "peakResidentBytes": 299515904,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 2.886567625,
+     "group": "websocket",
+     "iterations": 50000000,
+     "name": "websocket-ping-context-create",
+     "operationsPerSecond": 17321610.471537106,
+     "peakResidentBytes": 299532288,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 2.6126032500000003,
+     "group": "websocket",
+     "iterations": 10000000,
+     "name": "websocket-send-queue-reserve",
+     "operationsPerSecond": 3827599.923562829,
+     "peakResidentBytes": 299532288,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 2.420764792,
+     "group": "websocket",
+     "iterations": 20000000,
+     "name": "websocket-lifecycle-transition-table",
+     "operationsPerSecond": 8261851.81893541,
+     "peakResidentBytes": 299532288,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 1.515411334,
+     "group": "client",
+     "iterations": 20000,
+     "name": "request-pipeline",
+     "operationsPerSecond": 13197.736846278596,
+     "peakResidentBytes": 302137344,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 2.262056458,
+     "group": "client",
+     "iterations": 20000,
+     "name": "request-coalescing-shared-get",
+     "operationsPerSecond": 8841.512301458215,
+     "peakResidentBytes": 302137344,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 2.627543209,
+     "group": "cache",
+     "iterations": 10000000,
+     "name": "response-cache-lookup",
+     "operationsPerSecond": 3805836.557034522,
+     "peakResidentBytes": 302153728,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 1.944409541,
+     "group": "cache",
+     "iterations": 10000000,
+     "name": "response-cache-revalidation",
+     "operationsPerSecond": 5142949.460563257,
+     "peakResidentBytes": 302153728,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 3.718994334,
+     "group": "client",
+     "iterations": 50000,
+     "name": "decoding-interceptor-chain-1",
+     "operationsPerSecond": 13444.494804116042,
+     "peakResidentBytes": 302186496,
+     "residentDeltaBytes": 16384
+    },
+    {
+     "elapsedSeconds": 3.5889207499999998,
+     "group": "client",
+     "iterations": 50000,
+     "name": "decoding-interceptor-chain-3",
+     "operationsPerSecond": 13931.764862737637,
+     "peakResidentBytes": 302186496,
+     "residentDeltaBytes": 0
+    },
+    {
+     "elapsedSeconds": 3.8775435,
+     "group": "client",
+     "iterations": 50000,
+     "name": "decoding-interceptor-chain-8",
+     "operationsPerSecond": 12894.761851156538,
+     "peakResidentBytes": 302186496,
+     "residentDeltaBytes": 0
+    }
+   ],
+   "version": 2
+  }
+ ],
+ "source": {
+  "baseCommit": "7c2f5509546fbc58b80b7712a2b153b1eb51ca95",
+  "headCommit": "37e796ea4197b9b394e8866e2924df190258d80a",
+  "jobId": 127010390218,
+  "note": "Android-only Gradle update; Sources/, Package.swift, Package.resolved and the benchmark harness are identical in base and head. Only guarded runtime rows are kept; values are copied unchanged from the uploaded base-N/head-N reports.",
+  "pullRequest": 177,
+  "repository": "InnoSquadCorp/InnoNetwork",
+  "runId": 41955813599
+ }
+}

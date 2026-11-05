@@ -18,6 +18,8 @@ Usage: bash Scripts/run_same_runner_benchmarks.sh [options]
 
 Build and interleave three release-mode benchmark sample pairs for a base
 revision and the current working tree, then enforce the paired-median guard.
+A guard whose pairs disagree about a regression gets four confirmation pairs
+and is re-judged on all seven pairs.
 
   --base-revision SHA       Override the reviewed source revision (for example,
                             with a possibly divergent pull-request base SHA).
@@ -180,7 +182,8 @@ mkdir -p "$protocol_dir"
 invocation_id="${INNO_BENCHMARK_INVOCATION_ID:-$(python3 -c 'import uuid; print(uuid.uuid4().hex)')}"
 # These destinations belong to this collector. Old output must never receive a
 # fresh receipt when a build, guard contract, parser or comparison fails.
-rm -f "$output_dir/results.json" "$protocol_dir/comparison.json"
+rm -f "$output_dir/results.json" "$protocol_dir/comparison.json" \
+  "$output_dir"/base-[4-7].json "$output_dir"/head-[4-7].json
 
 worktree_parent="$(mktemp -d "${TMPDIR:-/tmp}/innonetwork-benchmark-base.XXXXXX")"
 base_worktree="$worktree_parent/base"
@@ -268,31 +271,57 @@ run_sample base "$output_dir/base-2.json"
 run_sample base "$output_dir/base-3.json"
 run_sample head "$output_dir/head-3.json"
 
-comparison_arguments=(
-  python3 Scripts/compare_benchmark_runs.py
-  --base "$output_dir/base-1.json"
-  --base "$output_dir/base-2.json"
-  --base "$output_dir/base-3.json"
-  --head "$output_dir/head-1.json"
-  --head "$output_dir/head-2.json"
-  --head "$output_dir/head-3.json"
-  --output "$output_dir/results.json"
-  --receipt "$protocol_dir/comparison.json"
-  --invocation-id "$invocation_id"
-  --source-head "$head_revision"
-  --max-regression-percent "$max_regression_percent"
-)
-if [[ -n "$regression_reason" ]]; then
-  comparison_arguments+=(--regression-reason "$regression_reason")
-fi
+compare_pairs() {
+  local pairs="$1"
+  local index
+  local comparison_arguments=(python3 Scripts/compare_benchmark_runs.py)
+  for ((index = 1; index <= pairs; index++)); do
+    comparison_arguments+=(--base "$output_dir/base-$index.json" --head "$output_dir/head-$index.json")
+  done
+  comparison_arguments+=(
+    --primary-pairs 3
+    --output "$output_dir/results.json"
+    --receipt "$protocol_dir/comparison.json"
+    --invocation-id "$invocation_id"
+    --source-head "$head_revision"
+    --max-regression-percent "$max_regression_percent"
+  )
+  if [[ -n "$regression_reason" ]]; then
+    comparison_arguments+=(--regression-reason "$regression_reason")
+  fi
+  INNO_BENCHMARK_SCOPE="$scope" python3 Scripts/run_with_guarded_benchmarks.py -- "${comparison_arguments[@]}"
+}
+
 # Only exit 1 WITH the comparator's fresh, bound receipt is a valid measured
 # regression. The wrapper also uses 1 for invalid guard contracts; verification
 # below rejects those before rendering or launching independent controls.
 # Invalid data (2), failed builds, timeouts and cancellation stop immediately.
 set +e
-INNO_BENCHMARK_SCOPE="$scope" python3 Scripts/run_with_guarded_benchmarks.py -- "${comparison_arguments[@]}"
+compare_pairs 3
 comparison_status=$?
 set -e
+if ((comparison_status == 3)); then
+  # Exit 3 means some guard's paired median exceeds the limit while one of its
+  # pairs stays inside it. Accept it only with this invocation's bound receipt,
+  # then measure one fixed round of four more pairs with the same binaries,
+  # continuing the alternating order. The comparator re-judges only those
+  # guards on all seven pairs; conclusive primary results are kept as they are.
+  python3 "$protocol" verify-comparison --directory "$output_dir" \
+    --invocation-id "$invocation_id" --source-head "$head_revision" --exit-code 3
+  echo "same-runner-benchmarks: primary verdict inconclusive; measuring 4 confirmation pairs" >&2
+  run_sample head "$output_dir/head-4.json"
+  run_sample base "$output_dir/base-4.json"
+  run_sample base "$output_dir/base-5.json"
+  run_sample head "$output_dir/head-5.json"
+  run_sample head "$output_dir/head-6.json"
+  run_sample base "$output_dir/base-6.json"
+  run_sample base "$output_dir/base-7.json"
+  run_sample head "$output_dir/head-7.json"
+  set +e
+  compare_pairs 7
+  comparison_status=$?
+  set -e
+fi
 if ((comparison_status > 1)); then
   exit "$comparison_status"
 fi

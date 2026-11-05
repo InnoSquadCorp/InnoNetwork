@@ -20,7 +20,8 @@ import subprocess
 import sys
 import time
 
-from compare_benchmark_runs import (build_comparison_report, comparison_receipt, finite_numbers,
+from compare_benchmark_runs import (CONFIRMATION_PAIRS, EXIT_INCONCLUSIVE, PRIMARY_PAIRS,
+                                    build_comparison_report, comparison_receipt, finite_numbers,
                                     load_report, result_map)
 
 SCHEMA = 1
@@ -392,15 +393,23 @@ def load_manifest(path):
 
 def verify_comparison(directory, invocation_id, source_head, exit_code):
     directory = Path(directory)
-    require(exit_code in (0, 1), "comparison was not a valid guard verdict")
+    require(exit_code in (0, 1, EXIT_INCONCLUSIVE), "comparison was not a valid guard verdict")
     output = directory / "results.json"
     report = load_report(output)
     result_map(report, "completed comparison")
     finite_numbers(report)
-    require(isinstance(report.get("baseline", {}).get("guardFailures"), list), "missing guard verdict")
+    baseline = report.get("baseline", {})
+    require(isinstance(baseline.get("guardFailures"), list), "missing guard verdict")
+    pairs = baseline.get("pairCount")
+    require(type(pairs) is int and pairs in (PRIMARY_PAIRS, PRIMARY_PAIRS + CONFIRMATION_PAIRS)
+            and baseline.get("primaryPairCount") == PRIMARY_PAIRS,
+            "comparison does not use the fixed primary and confirmation pair schedule")
+    # Only a primary-only comparison may defer its verdict to confirmation.
+    require(exit_code != EXIT_INCONCLUSIVE or pairs == PRIMARY_PAIRS,
+            "a confirmed comparison cannot remain inconclusive")
     expected = comparison_receipt(report, output,
-                                  [directory / f"base-{index}.json" for index in range(1, 4)],
-                                  [directory / f"head-{index}.json" for index in range(1, 4)],
+                                  [directory / f"base-{index}.json" for index in range(1, pairs + 1)],
+                                  [directory / f"head-{index}.json" for index in range(1, pairs + 1)],
                                   invocation_id, source_head)
     require(expected["exit_code"] == exit_code, "comparison exit disagrees with guard failures")
     require(load_report(directory / "protocol/comparison.json") == expected,
