@@ -34,6 +34,10 @@ REQUEST_TTL = timedelta(hours=1)
 START_GRACE = timedelta(minutes=30)
 # Native auto-merge follows a green validation within minutes.
 MERGE_GRACE = timedelta(hours=1)
+# Dependabot cannot write Gradle dependency-verification metadata, so its
+# Gradle PRs never pass CI and land through a human replacement PR. Rebasing
+# one would spend a full CI run and hold the queue for nothing.
+HUMAN_REPLACED = "dependabot/gradle/"
 
 
 def policy_module():
@@ -116,6 +120,8 @@ def plan(api, now):
     for pr in sorted(api.pages(p.route("pulls?state=open&base=main")), key=lambda x: x["number"]):
         head_repo = pr.get("head", {}).get("repo") or {}
         if not p.bot(pr) or pr.get("draft") is not False or head_repo.get("full_name") != p.REPOSITORY:
+            continue
+        if pr["head"]["ref"].startswith(HUMAN_REPLACED):
             continue
         number, head, base = pr["number"], pr["head"]["sha"], pr["base"]["sha"]
         if base == main_sha:

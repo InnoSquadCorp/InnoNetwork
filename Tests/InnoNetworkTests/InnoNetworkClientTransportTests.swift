@@ -9,7 +9,12 @@ import Testing
 private final class OpenAPIClientTransportURLProtocol: URLProtocol {
     enum ResponseSpec: Sendable {
         case http(statusCode: Int, headers: [String: String]?, chunks: [Data])
+        /// A redirect the transport is expected to follow; URLSession stops
+        /// this load and dispatches the target request itself.
         case redirect(statusCode: Int, target: URL)
+        /// A redirect the transport is expected to decline. URLSession does
+        /// not end a declined load, so the stub fails it explicitly.
+        case rejectedRedirect(statusCode: Int, target: URL)
         case nonHTTP(data: Data)
     }
 
@@ -52,12 +57,12 @@ private final class OpenAPIClientTransportURLProtocol: URLProtocol {
         }
 
         Self.record(request: request, url: url)
-        guard let response = Self.dequeue(url: url) else {
+        guard let spec = Self.dequeue(url: url) else {
             client?.urlProtocol(self, didFailWithError: URLError(.unknown))
             return
         }
 
-        switch response {
+        switch spec {
         case .http(let statusCode, let headers, let chunks):
             guard
                 let httpResponse = HTTPURLResponse(
@@ -75,7 +80,8 @@ private final class OpenAPIClientTransportURLProtocol: URLProtocol {
                 client?.urlProtocol(self, didLoad: chunk)
             }
             client?.urlProtocolDidFinishLoading(self)
-        case .redirect(let statusCode, let target):
+        case .redirect(let statusCode, let target),
+            .rejectedRedirect(let statusCode, let target):
             guard
                 let response = HTTPURLResponse(
                     url: url,
@@ -94,9 +100,13 @@ private final class OpenAPIClientTransportURLProtocol: URLProtocol {
                 wasRedirectedTo: redirectedRequest,
                 redirectResponse: response
             )
-            // Terminate the source protocol load after emitting the redirect.
-            // URLSession owns the target request from this point onward.
-            client?.urlProtocol(self, didFailWithError: URLError(.cancelled))
+            // Do not end a followed redirect here. URLSession occasionally
+            // applies a terminal event reported after `wasRedirectedTo` to
+            // the task itself, completing it with this stale error instead
+            // of the target response.
+            if case .rejectedRedirect = spec {
+                client?.urlProtocol(self, didFailWithError: URLError(.cancelled))
+            }
         case .nonHTTP(let data):
             let response = URLResponse(
                 url: url,
@@ -305,7 +315,7 @@ struct InnoNetworkClientTransportTests {
         let target = URL(string: "http://api.example.com/plain-target")!
         OpenAPIClientTransportURLProtocol.register(
             url: source,
-            response: .redirect(statusCode: 302, target: target)
+            response: .rejectedRedirect(statusCode: 302, target: target)
         )
         let transport = InnoNetworkClientTransport(session: makeOpenAPIClientTransportURLSession())
 
@@ -331,7 +341,7 @@ struct InnoNetworkClientTransportTests {
         let target = URL(string: "https://user:password@edge.example.net/private")!
         OpenAPIClientTransportURLProtocol.register(
             url: source,
-            response: .redirect(statusCode: 302, target: target)
+            response: .rejectedRedirect(statusCode: 302, target: target)
         )
         let transport = InnoNetworkClientTransport(session: makeOpenAPIClientTransportURLSession())
 
@@ -358,7 +368,7 @@ struct InnoNetworkClientTransportTests {
         let target = URL(string: "https://edge.example.net/create")!
         OpenAPIClientTransportURLProtocol.register(
             url: source,
-            response: .redirect(statusCode: 307, target: target)
+            response: .rejectedRedirect(statusCode: 307, target: target)
         )
         let transport = InnoNetworkClientTransport(session: makeOpenAPIClientTransportURLSession())
 

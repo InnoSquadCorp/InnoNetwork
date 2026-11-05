@@ -152,7 +152,11 @@ exceptions. Reuse a configured `OkHttpClient`/session for normal applications.
 The build targets Android 5.0 (API 21) and newer, compiles against API 37, and
 emits Java 11-compatible bytecode. CI covers JDK 17 and 21. Dependency
 verification is strict; the wrapper URL, distribution checksum, validation flag,
-and wrapper JAR checksum are repository gates. Local publication produces
+and wrapper JAR checksum are repository gates. Dependabot cannot update the
+verification files, so after changing a dependency or the wrapper, run
+`../../Scripts/regenerate_android_verification_metadata.sh` with JDK 17 and
+review the diff (see [Gradle updates](../../docs/CIAutomation.md#gradle-updates-land-through-a-human-replacement-pr)).
+Local publication produces
 AAR/JAR binaries, sources, Dokka documentation, POM/Gradle metadata, and
 checksums without claiming a remote registry release.
 

@@ -82,6 +82,8 @@ class PublicOperationsTests(unittest.TestCase):
                     ('gradle', lambda item: item['groups']['android-minor-patch'].update({'update-types': ['major']})),
                     ('npm', lambda item: item.update(ignore=[{'dependency-name': '*'}])),
                     ('npm', lambda item: item['schedule'].update(interval='daily')),
+                    ('gradle', lambda item: item['schedule'].update(interval='weekly', day='monday')),
+                    ('gradle', lambda item: item.update({'pull-request-branch-name': {'separator': '-'}})),
                     ('swift', lambda item: item['groups']['swift-minor-patch'].pop('exclude-patterns'))]:
                 with self.subTest(ecosystem=ecosystem, change=change):
                     config = json.loads(json.dumps(original))

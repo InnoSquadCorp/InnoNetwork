@@ -597,7 +597,7 @@ struct URLProtocolIntegrationTests {
         let target = URL(string: "https://user:password@target.example.com/private")!
         StubURLProtocol.register(
             url: source,
-            response: .redirect(statusCode: 302, location: target)
+            response: .rejectedRedirect(statusCode: 302, location: target)
         )
 
         let client = DefaultNetworkClient(
@@ -624,7 +624,7 @@ struct URLProtocolIntegrationTests {
         let target = URL(string: "http://redirect-target-\(UUID().uuidString).example.com/final")!
         StubURLProtocol.register(
             url: source,
-            response: .redirect(statusCode: 302, location: target)
+            response: .rejectedRedirect(statusCode: 302, location: target)
         )
 
         let client = DefaultNetworkClient(
@@ -1067,7 +1067,15 @@ private final class StubURLProtocol: URLProtocol {
         /// `urlProtocolDidFinishLoading`. The client must cancel the task to
         /// make `stopLoading()` observable.
         case unfinished(statusCode: Int, data: Data, headers: [String: String])
+        /// A redirect the client is expected to follow. The stub only reports
+        /// the redirect; URLSession stops this load and dispatches the target
+        /// request through a new protocol instance. If the client declines
+        /// instead, nothing ends the load until the request times out.
         case redirect(statusCode: Int, location: URL)
+        /// A redirect the client is expected to decline. URLSession neither
+        /// stops nor completes a load whose redirect was declined, so the
+        /// stub ends it with `URLError(.cancelled)`.
+        case rejectedRedirect(statusCode: Int, location: URL)
     }
 
     nonisolated(unsafe) private static var responses: [String: ResponseSpec] = [:]
@@ -1169,7 +1177,8 @@ private final class StubURLProtocol: URLProtocol {
             if case .success = spec {
                 client?.urlProtocolDidFinishLoading(self)
             }
-        case .redirect(let statusCode, let location):
+        case .redirect(let statusCode, let location),
+            .rejectedRedirect(let statusCode, let location):
             guard
                 let response = HTTPURLResponse(
                     url: url,
@@ -1188,10 +1197,14 @@ private final class StubURLProtocol: URLProtocol {
                 wasRedirectedTo: nextRequest,
                 redirectResponse: response
             )
-            // Per URLProtocol contract, terminate this load after emitting
-            // the redirect; URLSession dispatches a new request for the
-            // target URL through the same protocol class.
-            client?.urlProtocol(self, didFailWithError: URLError(.cancelled))
+            // Do not end a followed redirect here. URLSession occasionally
+            // applies a terminal event reported after `wasRedirectedTo` to
+            // the task itself, completing it with this stale error instead
+            // of the target response. Only a declined redirect has no target
+            // load for that event to replace.
+            if case .rejectedRedirect = spec {
+                client?.urlProtocol(self, didFailWithError: URLError(.cancelled))
+            }
         case .none:
             client?.urlProtocol(self, didFailWithError: URLError(.unknown))
         }
