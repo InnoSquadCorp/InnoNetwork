@@ -3,6 +3,7 @@ import copy
 import importlib.util
 import json
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 import unittest
@@ -20,6 +21,55 @@ def event(author='contributor', labels=(), action='opened'):
 
 def results(plan):
     return {'ci-plan': {'result': 'success'}, **{j: {'result': 'success' if v else 'skipped'} for j, v in plan['jobs'].items()}}
+
+
+# Changed files of PR #177 (AGP 9.5.0 / Kotlin 2.4.21 / Gradle 9.8.2 human replacement).
+ANDROID_177 = [
+    'Platforms/Android/gradle/libs.versions.toml', 'Platforms/Android/gradle/verification-metadata.xml',
+    'Platforms/Android/gradle/wrapper/gradle-wrapper.jar', 'Platforms/Android/gradle/wrapper/gradle-wrapper.properties',
+    'Platforms/Android/gradlew', 'Platforms/Android/gradlew.bat', 'Platforms/Android/innonetwork-client/build.gradle.kts',
+    'Platforms/Android/innonetwork-kotlinx-serialization/build.gradle.kts', 'Platforms/Android/innonetwork-ksp/build.gradle.kts',
+    'Platforms/Android/innonetwork-ksp/src/main/kotlin/com/innosquad/innonetwork/ksp/InnoNetworkSymbolProcessor.kt',
+    'Platforms/Android/innonetwork/build.gradle.kts', 'Scripts/check_android_wrapper_integrity.sh',
+    'SmokeTests/AndroidConsumer/build.gradle.kts', 'SmokeTests/AndroidConsumer/gradle/verification-metadata.xml',
+]
+WEB = [
+    'Platforms/Web/package.json', 'Platforms/Web/package-lock.json', 'Platforms/Web/src/session.ts',
+    'Platforms/Web/api/public.d.ts', 'SmokeTests/WebConsumer/package-lock.json', 'SmokeTests/ReactConsumer/src/App.tsx',
+    'SmokeTests/WebTarballConsumer/package.json', 'SmokeTests/BrowserConsumer/index.html', 'Scripts/check_web_public_api.sh',
+]
+
+
+def workflow_jobs(name):
+    jobs, current = {}, None
+    for line in (ROOT / '.github/workflows' / name).read_text().split('\njobs:\n', 1)[1].splitlines():
+        match = re.fullmatch(r'  ([a-z][a-z0-9-]*):', line)
+        if match:
+            current = match.group(1)
+            jobs[current] = []
+        elif current:
+            jobs[current].append(line)
+    return {job: '\n'.join(lines) for job, lines in jobs.items()}
+
+
+def cross_platform_pr_paths():
+    lines = (ROOT / '.github/workflows/cross-platform.yml').read_text().splitlines()
+    start = lines.index('  pull_request:')
+    if lines[start + 1] != '    paths:':
+        raise AssertionError('cross-platform.yml pull_request must be path filtered')
+    patterns = []
+    for line in lines[start + 2:]:
+        match = re.fullmatch(r'      - "([^"]+)"', line)
+        if not match:
+            break
+        patterns.append(match.group(1))
+    return patterns
+
+
+def glob_matches(pattern, path):
+    # GitHub path filters: `**` crosses directories, `*` stays inside one.
+    regex = re.escape(pattern).replace(r'\*\*', '.*').replace(r'\*', '[^/]*')
+    return re.fullmatch(regex, path) is not None
 
 
 class PlannerTests(unittest.TestCase):
@@ -64,6 +114,81 @@ class PlannerTests(unittest.TestCase):
         for path in paths:
             plan = p.make_plan('pull_request', event(), [path])
             self.assertEqual(plan['jobs']['codeql'], plan['jobs']['codeql-cross-platform'], path)
+
+    def test_android_and_web_only_changes_skip_apple_jobs(self):
+        platform = set(p.PLATFORM_JOBS) | {'policy'}
+        docs = {'documentation', 'docs-contract-sync'}
+        cases = {'android (#177)': (ANDROID_177, platform), 'web': (WEB, platform),
+                 'android and web': (ANDROID_177 + WEB, platform),
+                 'android with README': (ANDROID_177 + ['Platforms/Android/README.md'], platform | docs)}
+        for name, (paths, expected) in cases.items():
+            plan = p.make_plan('pull_request', event(), paths)
+            self.assertEqual({j for j, v in plan['jobs'].items() if v}, expected, name)
+            self.assertFalse(plan['jobs']['benchmarks'], name)
+            self.assertFalse(plan['jobs']['build-and-test'], name)
+            p.evaluate(plan, results(plan))
+            for job in expected:
+                broken = copy.deepcopy(plan)
+                broken['jobs'][job] = False
+                with self.assertRaises(ValueError): p.evaluate(broken, results(broken))
+        for path in ANDROID_177 + WEB:
+            self.assertEqual(p.path_impact(path), (set(p.PLATFORM_JOBS), 'Android/Web native package outside SwiftPM'), path)
+
+    def test_platform_changes_mixed_with_swift_shared_or_unproven_paths_stay_full(self):
+        for extra in ['Sources/InnoNetwork/RequestExecutor.swift', 'Tests/InnoNetworkTests/A.swift', 'Package.swift',
+                      'Package.resolved', 'Scripts/format.sh', 'Scripts/android_verification_metadata.py',
+                      'SmokeTests/InnoNetworkDocSmoke/main.swift', 'Examples/CoreSmoke/Package.swift',
+                      '.github/workflows/ci.yml', '.github/actions/swiftpm-cache/action.yml', 'unknown.file',
+                      '__full_change_fallback__', '__diff_unavailable_full_fallback__', 'Platforms/RELEASING.md']:
+            for platform in ('Platforms/Android/gradle/libs.versions.toml', 'Platforms/Web/package-lock.json'):
+                plan = p.make_plan('pull_request', event(), [platform, extra])
+                self.assertTrue(all(plan['jobs'].values()), (platform, extra))
+                p.evaluate(plan, results(plan))
+        # Lookalike roots, other platforms, unlisted scripts and consumer Markdown are not platform evidence.
+        for path in ['Platforms/AndroidTV/build.gradle.kts', 'Platforms/Webkit/a.ts', 'Platforms/iOS/a.swift',
+                     'Platforms/build.gradle.kts', 'SmokeTests/AndroidConsumerX/a.kts', 'SmokeTests/WebConsumer.swift',
+                     'SmokeTests/AndroidConsumer/README.md', 'Scripts/check_android_new.sh',
+                     'Scripts/regenerate_android_verification_metadata.sh']:
+            self.assertTrue(all(p.make_plan('pull_request', event(), [path])['jobs'].values()), path)
+        for author, labels in [('dependabot[bot]', ['release-validation']), ('dependabot[bot]', []),
+                               ('contributor', ['release-validation'])]:
+            self.assertTrue(all(p.make_plan('pull_request', event(author, labels), ANDROID_177 + WEB)['jobs'].values()))
+        for name, data in [('push', {'ref': 'refs/heads/main'}), ('merge_group', {'action': 'checks_requested'})]:
+            plan = p.make_plan(name, data, ANDROID_177)
+            self.assertEqual({j for j, v in plan['jobs'].items() if not v}, {'dependency-review'})
+
+    def test_platform_lane_inputs_stay_outside_swiftpm_and_apple_jobs(self):
+        # Xcode SDK directories such as Developer/Platforms/MacOSX.platform are not repository paths.
+        names = [t.rstrip('/').rsplit('/', 1)[1] for t in p.PLATFORM_TREES if t.startswith('SmokeTests/')]
+        names += sorted(Path(script).name for script in p.PLATFORM_SCRIPTS)
+        marker = re.compile(r'Platforms/(?![A-Za-z]+\.platform\b)|' + '|'.join(map(re.escape, names)))
+        def mentions(text):
+            return sorted(set(marker.findall(text)))
+        def file_mentions(path):
+            return mentions(path.read_bytes().decode('utf-8', errors='replace'))
+        self.assertEqual(file_mentions(ROOT / 'Package.swift'), [])
+        jobs = workflow_jobs('ci.yml')
+        self.assertEqual(set(jobs), set(p.JOBS) | {'ci-plan', 'ci-required'})
+        for job, text in jobs.items():
+            if job not in p.PLATFORM_JOBS | {'ci-plan', 'policy', 'ci-required'}:
+                self.assertEqual(mentions(text), [], job)
+        self.assertNotEqual(mentions(jobs['codeql-cross-platform']), [])
+        for path in [ROOT / '.github/workflows/release-validation.yml', *sorted((ROOT / '.github/actions').rglob('*'))]:
+            if path.is_file():
+                self.assertEqual(file_mentions(path), [], path)
+        # Other readers run only in the always-selected plan/policy jobs or in no CI job.
+        readers = set(p.PLATFORM_SCRIPTS) | {'Scripts/ci-policy.py', 'Scripts/check-public-operations.py',
+                                             'Scripts/regenerate_android_verification_metadata.sh'}
+        for path in sorted((ROOT / 'Scripts').rglob('*')):
+            relative = path.relative_to(ROOT).as_posix()
+            if path.is_file() and not relative.startswith('Scripts/automation-tests/') and relative not in readers:
+                self.assertEqual(file_mentions(path), [], relative)
+        # Narrowing CI never leaves a platform change without its build/test workflow.
+        patterns = cross_platform_pr_paths()
+        for path in [tree + 'sample.kts' for tree in p.PLATFORM_TREES] + sorted(p.PLATFORM_SCRIPTS):
+            self.assertTrue(any(glob_matches(pattern, path) for pattern in patterns), path)
+        for script in p.PLATFORM_SCRIPTS:
+            self.assertTrue((ROOT / script).is_file(), script)
 
     def test_all_bot_majors_toolchains_and_labels_require_full(self):
         for action in p.PR_ACTIONS:

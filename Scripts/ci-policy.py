@@ -30,6 +30,27 @@ WORKFLOW_IMPACT = {
     "dependabot-rebase.yml": set(),
     "dependabot-ready.yml": set(),
 }
+# Native Android/Web package trees, their consumer smoke trees, and the scripts
+# only their lanes run. No SwiftPM target or resource reaches them (Package.swift
+# names explicit Sources/, Tests/, Benchmarks/ and SmokeTests/InnoNetwork* paths)
+# and no Apple job or release validation step reads them. The path-filtered
+# cross-platform.yml workflow builds and tests them. Markdown keeps the docs rules.
+PLATFORM_TREES = (
+    "Platforms/Android/", "Platforms/Web/", "SmokeTests/AndroidConsumer/",
+    "SmokeTests/WebConsumer/", "SmokeTests/WebTarballConsumer/",
+    "SmokeTests/ReactConsumer/", "SmokeTests/BrowserConsumer/",
+)
+PLATFORM_SCRIPTS = frozenset("Scripts/" + name for name in (
+    "check_android_codegen_failures.sh", "check_android_device_smoke.mjs",
+    "check_android_public_api.sh", "check_android_release_artifacts.sh",
+    "check_android_test_counts.sh", "check_android_wrapper_integrity.sh",
+    "check_cross_platform.sh", "check_platform_layout.py", "check_web_public_api.sh",
+    "check_web_tarball_consumer.sh", "prepare_cross_platform_release.sh",
+    "serve_web_browser_smoke.mjs", "tests/test_check_platform_layout.py",
+))
+# CodeQL uploads all three main configurations or none, and only the
+# cross-platform configuration compiles Android/Web. Dependency Review covers npm locks.
+PLATFORM_JOBS = frozenset({"dependency-review", "codeql", "codeql-cross-platform"})
 
 
 def reuse_policy():
@@ -79,6 +100,10 @@ def path_impact(path):
         raise ValueError("invalid changed path")
     if path.startswith("/") or any(p in ("..", ".", "") for p in path.split("/")) or "\\" in path:
         raise ValueError("changed path must be a repository-relative POSIX path")
+    # Before the release-name rule: Gradle's libs.versions.toml is a dependency
+    # catalog, not Swift release metadata.
+    if (path.startswith(PLATFORM_TREES) or path in PLATFORM_SCRIPTS) and not path.endswith(".md"):
+        return set(PLATFORM_JOBS), "Android/Web native package outside SwiftPM"
     if prose_module().RELEASE.search(path):
         return set(JOBS), "release metadata (full fallback)"
     # Source/test/example changes preserve all former gates, even nested docs.
