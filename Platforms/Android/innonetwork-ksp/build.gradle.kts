@@ -5,7 +5,7 @@ plugins {
     `maven-publish`
 }
 
-val dokkaJavadocJar by tasks.registering(Jar::class) {
+val dokkaJavadocJar = tasks.register<Jar>("dokkaJavadocJar") {
     description = "Builds API documentation for Maven publication"
     dependsOn("dokkaGeneratePublicationHtml")
     from(layout.buildDirectory.dir("dokka/html"))
