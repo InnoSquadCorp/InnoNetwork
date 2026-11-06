@@ -171,6 +171,21 @@ measurement/build variation, not attributing the result to a runtime source
 change or declaring the gate passed. The existing fixed controls measure only
 the event-fanout workload and cannot diagnose this compaction failure.
 
+Noise-driven guard failures (2026-11-05). PR #179 (CI policy) and PR #177
+(Android only) failed `client/request-pipeline` (-25.18%, pairs -31.16/-25.18/
++9.36) and `events/task-event-fanout-single` (-29.61%, pairs -40.48/-29.61/
+-4.89) with identical runtime sources. Across the 66 identical-source CI
+comparisons from 2026-10-06 to 2026-11-05, 10 failed (15.2%); all 16 failing
+guards had at least one pair inside the limit, and none had every pair beyond
+it. Within-run pair noise (about 8-18 percentage points standard deviation per
+guard) dominates between-run noise (about 3-9), so more pairs in the same job
+are effective.
+The comparator now reports such guards as inconclusive (exit 3, bound receipt)
+and the runner measures one fixed round of four more pairs; only those guards
+are re-judged by the 20% limit on the median of all seven pairs. A guard whose
+three pairs all exceed 20% still fails without confirmation. See
+[Benchmarks](../Benchmarks/README.md#inconclusive-guards-and-the-confirmation-round).
+
 ## Candidate validation and publication
 
 CI invokes `release-validation.yml` with `publish: false`. It has only read

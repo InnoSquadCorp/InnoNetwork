@@ -14,6 +14,18 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+# The primary measurement is three interleaved base/head pairs. A guarded
+# benchmark whose paired median exceeds the limit while at least one pair stays
+# inside it is inconclusive: the pairs disagree about the regression. The
+# runner then measures exactly CONFIRMATION_PAIRS more pairs with the same
+# binaries and the comparator re-judges only those guards on all pairs. The
+# confirmation size is fixed so it cannot be tuned until a run passes.
+PRIMARY_PAIRS = 3
+CONFIRMATION_PAIRS = 4
+EXIT_INCONCLUSIVE = 3
+
+
 def load_report(path: Path) -> dict:
     def unique(pairs):
         result = {}
@@ -57,9 +69,17 @@ def file_identity(path):
     return {"path": str(path.resolve()), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
 
 
+def verdict_exit_code(baseline: dict) -> int:
+    if baseline["guardFailures"]:
+        return 1
+    if baseline.get("inconclusiveGuards"):
+        return EXIT_INCONCLUSIVE
+    return 0
+
+
 def comparison_receipt(report, output, bases, heads, invocation_id, source_head):
     return {"schema": 1, "invocation_id": invocation_id, "source_head": source_head,
-            "exit_code": 1 if report["baseline"]["guardFailures"] else 0,
+            "exit_code": verdict_exit_code(report["baseline"]),
             "output": file_identity(output),
             "base": [file_identity(path) for path in bases],
             "head": [file_identity(path) for path in heads]}
@@ -185,6 +205,7 @@ def build_comparison_report(
     guarded: set[Identifier],
     max_regression_percent: float,
     regression_reason: str | None = None,
+    primary_pairs: int | None = None,
 ) -> dict:
     if type(max_regression_percent) not in (int, float) or not math.isfinite(max_regression_percent) or max_regression_percent < 0:
         raise ValueError("regression percentage must be finite and non-negative")
@@ -193,6 +214,16 @@ def build_comparison_report(
 
     base = aggregate_reports(base_reports, "base")
     head = aggregate_reports(head_reports, "head")
+    pair_count = len(base_reports)
+    if primary_pairs is None:
+        primary_pairs = pair_count
+    if type(primary_pairs) is not int or primary_pairs < 3 or primary_pairs % 2 == 0:
+        raise ValueError("primary pair count must be an odd integer of at least 3")
+    confirmation_pairs = pair_count - primary_pairs
+    if confirmation_pairs not in (0, CONFIRMATION_PAIRS):
+        raise ValueError(
+            f"confirmation requires exactly {CONFIRMATION_PAIRS} pairs after the primary pairs"
+        )
     if base["version"] != head["version"]:
         raise ValueError("base and head reports use different schema versions")
 
@@ -210,6 +241,8 @@ def build_comparison_report(
 
     deltas: list[dict] = []
     failures: list[dict] = []
+    inconclusive: list[dict] = []
+    confirmed: list[dict] = []
     base_sample_maps = [
         result_map(report, f"base sample {index}")[1]
         for index, report in enumerate(base_reports, start=1)
@@ -248,11 +281,34 @@ def build_comparison_report(
         # runner phase drift cannot turn two matching implementations into a
         # regression merely because their independent medians land in
         # different phases.
-        delta = float(statistics.median(paired_deltas))
-        paired_delta_spread = max(paired_deltas) - min(paired_deltas)
-        if not all(math.isfinite(value) for value in [unpaired_delta, delta, paired_delta_spread, *paired_deltas]):
+        primary_deltas = paired_deltas[:primary_pairs]
+        primary_delta = float(statistics.median(primary_deltas))
+        paired_delta_spread = max(primary_deltas) - min(primary_deltas)
+        if not all(math.isfinite(value) for value in [unpaired_delta, primary_delta, paired_delta_spread, *paired_deltas]):
             raise ValueError("non-finite comparison delta")
         is_guarded = value in guarded
+        delta = primary_delta
+        primary_verdict = None
+        verdict = None
+        if is_guarded:
+            # A regression is conclusive only when every primary pair exceeds
+            # the limit. When the median does but some pair does not, the
+            # pairs disagree about whether there is a regression at all; on
+            # hosted runners that is usually scheduling noise.
+            if primary_delta >= -max_regression_percent:
+                primary_verdict = "pass"
+            elif max(primary_deltas) < -max_regression_percent:
+                primary_verdict = "regression"
+            else:
+                primary_verdict = "inconclusive"
+            verdict = primary_verdict
+            if primary_verdict == "inconclusive" and confirmation_pairs:
+                # Judge the same 20% limit on every measured pair, primary
+                # ones included. Confirmation never selects samples and never
+                # revisits a conclusive primary pass or regression.
+                delta = float(statistics.median(paired_deltas))
+                verdict = "regression" if delta < -max_regression_percent else "pass"
+        identifier_value = {"group": value[0], "name": value[1]}
         deltas.append(
             {
                 "group": value[0],
@@ -260,34 +316,67 @@ def build_comparison_report(
                 "baselineOperationsPerSecond": baseline_ops,
                 "currentOperationsPerSecond": current_ops,
                 "deltaPercent": delta,
+                "primaryDeltaPercent": primary_delta,
+                "pairedDeltasPercent": paired_deltas,
                 "unpairedMedianDeltaPercent": unpaired_delta,
                 "pairedDeltaSpreadPercent": paired_delta_spread,
                 "baselineRelativeSpreadPercent": baseline.get("relativeSpreadPercent"),
                 "currentRelativeSpreadPercent": result.get("relativeSpreadPercent"),
                 "isGuarded": is_guarded,
                 "maxRegressionPercent": max_regression_percent if is_guarded else None,
+                "primaryGuardVerdict": primary_verdict,
+                "guardVerdict": verdict,
             }
         )
-        if is_guarded and delta < -max_regression_percent:
+        if verdict == "regression":
             failures.append(
                 {
-                    "identifier": {"group": value[0], "name": value[1]},
+                    "identifier": identifier_value,
                     "deltaPercent": delta,
+                    "primaryDeltaPercent": primary_delta,
+                    "pairCount": pair_count if primary_verdict == "inconclusive" else primary_pairs,
                     "maxRegressionPercent": max_regression_percent,
                     "regressionReason": regression_reason,
                 }
             )
+        elif verdict == "inconclusive":
+            inconclusive.append(
+                {
+                    "identifier": identifier_value,
+                    "primaryDeltaPercent": primary_delta,
+                    "pairedDeltasPercent": primary_deltas,
+                    "maxRegressionPercent": max_regression_percent,
+                }
+            )
+        if primary_verdict == "inconclusive" and confirmation_pairs:
+            confirmed.append(
+                {
+                    "identifier": identifier_value,
+                    "primaryDeltaPercent": primary_delta,
+                    "deltaPercent": delta,
+                    "pairCount": pair_count,
+                    "guardVerdict": verdict,
+                }
+            )
+    if confirmation_pairs and not confirmed:
+        raise ValueError("confirmation pairs require an inconclusive primary guard")
 
+    description = f"same-runner paired median ({primary_pairs} base/head pairs"
+    if confirmation_pairs:
+        description += f" + {confirmation_pairs} confirmation pairs"
     head["baseline"] = {
-        "baselinePath": (
-            f"same-runner paired median ({len(base_reports)} base/head pairs)"
-        ),
+        "baselinePath": description + ")",
         "enforceBaseline": True,
         "maxRegressionPercent": max_regression_percent,
         "guardThresholds": [],
         "regressionReason": regression_reason,
+        "pairCount": pair_count,
+        "primaryPairCount": primary_pairs,
+        "confirmationPairCount": confirmation_pairs,
         "deltas": deltas,
         "guardFailures": failures,
+        "inconclusiveGuards": inconclusive,
+        "confirmedGuards": confirmed,
     }
     finite_numbers(head)
     return head
@@ -300,6 +389,12 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--guard-benchmark", action="append", default=[], type=parse_identifier)
     parser.add_argument("--max-regression-percent", required=True, type=float)
+    parser.add_argument(
+        "--primary-pairs",
+        type=int,
+        help="number of leading pairs that form the primary verdict; the "
+        f"remaining {CONFIRMATION_PAIRS} pairs only re-judge inconclusive guards",
+    )
     parser.add_argument("--receipt", type=Path)
     parser.add_argument("--invocation-id")
     parser.add_argument("--source-head")
@@ -334,6 +429,7 @@ def main() -> int:
             set(arguments.guard_benchmark),
             arguments.max_regression_percent,
             arguments.regression_reason,
+            arguments.primary_pairs,
         )
         arguments.output.parent.mkdir(parents=True, exist_ok=True)
         arguments.output.write_text(
@@ -350,18 +446,35 @@ def main() -> int:
         print(f"benchmark comparison failed: {error}", file=sys.stderr)
         return 2
 
-    failures = report["baseline"]["guardFailures"]
-    if failures:
-        for failure in failures:
-            value = failure["identifier"]
+    baseline = report["baseline"]
+    for item in baseline["confirmedGuards"]:
+        value = item["identifier"]
+        print(
+            f"{value['group']}/{value['name']} re-judged on {item['pairCount']} pairs: "
+            f"primary median {item['primaryDeltaPercent']:+.2f}%, "
+            f"all-pair median {item['deltaPercent']:+.2f}% -> {item['guardVerdict']}",
+            file=sys.stderr,
+        )
+    for failure in baseline["guardFailures"]:
+        value = failure["identifier"]
+        print(
+            f"{value['group']}/{value['name']} regressed by "
+            f"{abs(failure['deltaPercent']):.2f}% "
+            f"(limit {failure['maxRegressionPercent']:.2f}%)",
+            file=sys.stderr,
+        )
+    if not baseline["guardFailures"]:
+        for item in baseline["inconclusiveGuards"]:
+            value = item["identifier"]
+            pairs = ", ".join(f"{delta:+.2f}%" for delta in item["pairedDeltasPercent"])
             print(
-                f"{value['group']}/{value['name']} regressed by "
-                f"{abs(failure['deltaPercent']):.2f}% "
-                f"(limit {failure['maxRegressionPercent']:.2f}%)",
+                f"{value['group']}/{value['name']} is inconclusive: paired median "
+                f"{item['primaryDeltaPercent']:+.2f}% exceeds the "
+                f"{item['maxRegressionPercent']:.2f}% limit but the pairs disagree "
+                f"({pairs}); {CONFIRMATION_PAIRS} confirmation pairs are required",
                 file=sys.stderr,
             )
-        return 1
-    return 0
+    return verdict_exit_code(baseline)
 
 
 if __name__ == "__main__":

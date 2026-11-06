@@ -39,6 +39,9 @@ JSON의 기준은 `Baselines/json-source-revision.txt`의 `b358692`이며,
 
 두 lane 모두 같은 runner에서 동일한 후보 harness로 기준/후보를 세 번
 교차 측정하고 paired delta 중앙값, 20% threshold를 사용합니다.
+중앙값은 한도를 넘었지만 한도 안에 남은 pair가 있는 guard는 판정 불가로 보고,
+같은 바이너리로 4쌍을 한 번 더 측정한 뒤 7쌍 전체의 중앙값으로 다시 판정합니다
+([판정 불가와 확인 측정](#inconclusive-guards-and-the-confirmation-round)).
 JSON guard 목록은 `json-guarded-benchmarks.txt`이며 모든 측정 결과에
 해당 항목이 없으면 실패합니다. JSON 변경이 없는 실행도 생략하지 않습니다.
 원격 CI에서의 최초 실행과 toolchain별 변동성은 별도 확인이 필요합니다.
@@ -239,7 +242,8 @@ function dispatch.
   summary 생성을 확인합니다.
 - PR benchmark workflow는 base와 head를 같은 runner에서 각각 세 번,
   교차 순서의 `--quick` profile로 측정하고 paired delta 중앙값을 비교한 뒤 guarded
-  benchmark set을 `20%` threshold로 검사합니다.
+  benchmark set을 `20%` threshold로 검사합니다. 세 pair가 모두 한도를 넘으면
+  바로 실패하고, pair끼리 엇갈리면 확인 측정 4쌍을 추가해 7쌍으로 다시 판정합니다.
   JSON summary에서 Markdown comment를 렌더링해 guarded benchmark delta,
   per-benchmark threshold, regression reason을 PR에 남깁니다.
 - `decoding-interceptor-chain-{1,3,8}` guard도 PR에서는 quick profile의
@@ -275,11 +279,52 @@ Guarded benchmark set:
 - `cache/response-cache-revalidation`: conditional revalidation preparation baseline.
 
 
+## Inconclusive guards and the confirmation round
+
+Hosted macOS runners add large per-sample noise. Between 2026-10-06 and
+2026-11-05, 66 CI comparisons had identical `Sources/`, `Package.swift`,
+`Package.resolved` and benchmark harness in base and head, and 10 of them (15%)
+still failed the 20% guard. Each of those 16 guard failures had at least one
+primary pair inside the limit; most pair spreads were 20-78%.
+
+The comparator therefore gives each guard one of three primary verdicts:
+
+| Primary pairs (3) | Verdict | Effect |
+|---|---|---|
+| paired median within 20% | `pass` | final |
+| every pair beyond 20% | `regression` | final, exit 1 |
+| median beyond 20%, some pair within it | `inconclusive` | exit 3 |
+
+Exit 3 is accepted only with this invocation's bound receipt. The runner then
+measures exactly four more interleaved pairs (head/base, base/head, head/base,
+base/head) with the same binaries and full suite, and re-runs the comparator on
+all seven pairs. Only the inconclusive guards are re-judged, by the same 20%
+limit applied to the median of all seven pairs, primary pairs included. A
+conclusive primary `pass` or `regression` is never revisited, the comparator
+rejects a confirmation round when nothing was inconclusive, and the round size
+is fixed, so samples cannot be added until a run passes. The JSON lane follows
+the same rule. `results.json` records `primaryGuardVerdict`, `guardVerdict`,
+every pair delta, `pairCount` and `confirmedGuards`; the receipt binds all seven
+input reports.
+
+Replaying the recorded identical-source runs with other runs' pairs standing in
+for confirmation reduced false failures from 15.2% to under 1% of runs (0.6-0.7%
+across replays). Per guard, detection of a regression injected into the same
+recorded pairs moved from 82.5% to 80.4% at 25%, 95.7% to 95.5% at 30%, and
+stayed at 100% at 40%. A regression of exactly 20% sits on the limit and is
+detected about half the time either way (50.9% to 39.0%). The replay treats
+confirmation pairs as independent of the primary run; pairs in the same job
+share its run-level noise, so the real false-failure rate can be somewhat
+higher. A confirmation round adds about 10 minutes for the
+runtime lane (eight full-suite samples) and about 4 minutes for the JSON lane,
+only when a guard is inconclusive.
+
 ## CI sample provenance and bounded diagnostics
 
-The original 20% paired-median guard, three interleaved base/head pairs and
-300,000 complete single-listener deliveries are unchanged. The runner records
-actual build/sample argv, compiler/Xcode/SDK/OS, source Git objects and measured
+The original 20% paired-median guard, three interleaved primary base/head pairs
+and 300,000 complete single-listener deliveries are unchanged; only an
+inconclusive guard adds the fixed confirmation round described above. The
+runner records actual build/sample argv, compiler/Xcode/SDK/OS, source Git objects and measured
 file hashes, compiled binary SHA-256, report SHA-256, process-boundary clocks,
 child CPU time and context-switch counts under `protocol/`. Observer work is
 outside Swift's timed measurement closure; process CPU/wall observations cover

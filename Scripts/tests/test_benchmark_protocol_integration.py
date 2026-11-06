@@ -48,6 +48,12 @@ if mode=='events' and os.environ.get('FAKE_DIAG_EXIT'): raise SystemExit(int(os.
 if mode=='json': group,name,count='json','parse-preserved',20000
 else: group,name,count='events','task-event-fanout-single',300000
 ops=210000000 if side=='head' and os.environ.get('FAKE_FAIL_LANE')==('json' if mode=='json' else 'runtime') else 300000000
+if side=='head' and mode=='runtime' and os.environ.get('FAKE_HEAD_SCALES'):
+    # Scale the n-th runtime head sample, so pairs can disagree like noisy CI.
+    counter=pathlib.Path(os.environ['FAKE_COUNTER_DIR'])/'head-runtime.count'
+    index=int(counter.read_text()) if counter.exists() else 0
+    counter.write_text(str(index+1))
+    ops=int(ops*float(os.environ['FAKE_HEAD_SCALES'].split(',')[index]))
 value={'version':2,'results':[{'group':group,'name':name,'iterations':count,'elapsedSeconds':count/ops,'operationsPerSecond':ops}]}
 output=pathlib.Path(args[args.index('--json-path')+1]);output.parent.mkdir(parents=True,exist_ok=True);output.write_text(json.dumps(value))
 '''.replace('PYTHON',sys.executable)
@@ -98,6 +104,39 @@ else:print('fixture-sdk')
                 receipt=json.loads((self.output/'protocol/guard-status.json').read_text())
                 self.assertEqual(receipt[lane+'_guard_exit'],1)
                 self.assertEqual(receipt['diagnostic_exit'],0)
+                self.assertTrue((self.output/'json/results.json').is_file())
+
+    def run_noisy(self,scales):
+        counter=Path(self.temp.name)/'counter';shutil.rmtree(counter,ignore_errors=True);counter.mkdir()
+        return self.run_protocol(FAKE_HEAD_SCALES=scales,FAKE_COUNTER_DIR=str(counter))
+
+    def test_conclusive_regression_fails_without_confirmation_samples(self):
+        result=self.run_protocol(FAKE_FAIL_LANE='runtime')
+        self.assertEqual(result.returncode,1,result.stdout+result.stderr)
+        report=json.loads((self.output/'results.json').read_text())['baseline']
+        self.assertEqual(report['pairCount'],3)
+        self.assertEqual(report['deltas'][0]['guardVerdict'],'regression')
+        self.assertFalse((self.output/'base-4.json').exists())
+        self.assertNotIn('confirmation pairs',result.stderr)
+
+    def test_inconclusive_primary_runs_one_fixed_confirmation_round(self):
+        # Primary pairs -40%, -30%, 0%: the median exceeds 20% but pairs disagree.
+        for scales,status,verdict in [('0.6,0.7,1,1,1,1,1',0,'pass'),('0.6,0.7,1,0.7,0.7,0.7,0.7',1,'regression')]:
+            with self.subTest(scales=scales):
+                result=self.run_noisy(scales)
+                self.assertEqual(result.returncode,status,result.stdout+result.stderr)
+                self.assertIn('primary verdict inconclusive; measuring 4 confirmation pairs',result.stderr)
+                report=json.loads((self.output/'results.json').read_text())['baseline']
+                self.assertEqual((report['pairCount'],report['confirmationPairCount']),(7,4))
+                row=report['deltas'][0]
+                self.assertEqual((row['primaryGuardVerdict'],row['guardVerdict']),('inconclusive',verdict))
+                self.assertEqual([round(value) for value in row['pairedDeltasPercent'][:3]],[-40,-30,0])
+                receipt=json.loads((self.output/'protocol/comparison.json').read_text())
+                self.assertEqual(len(receipt['base']),7);self.assertEqual(receipt['exit_code'],status)
+                self.assertTrue((self.output/'protocol/head-7-process.json').is_file())
+                self.assertFalse((self.output/'base-8.json').exists())
+                self.assertEqual(json.loads((self.output/'protocol/guard-status.json').read_text())['runtime_guard_exit'],status)
+                self.assertIn('Confirmed inconclusive guards',(self.output/'summary.md').read_text())
                 self.assertTrue((self.output/'json/results.json').is_file())
 
     def test_build_or_primary_process_failure_aborts_before_diagnostics(self):

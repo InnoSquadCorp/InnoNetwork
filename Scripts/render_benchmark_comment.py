@@ -19,6 +19,8 @@ def main() -> int:
     baseline = baseline_section(report)
     deltas = baseline.get("deltas") or []
     failures = baseline.get("guardFailures") or []
+    inconclusive = baseline.get("inconclusiveGuards") or []
+    confirmed = baseline.get("confirmedGuards") or []
     regression_reason = baseline.get("regressionReason")
 
     lines: list[str] = [
@@ -32,6 +34,11 @@ def main() -> int:
         lines.append(
             f"- Guard failures: `{len(failures)}`"
         )
+        if baseline.get("confirmationPairCount"):
+            lines.append(
+                f"- Confirmation: `{len(confirmed)}` inconclusive guard(s) re-judged on "
+                f"`{baseline.get('pairCount')}` pairs"
+            )
         if regression_reason:
             lines.append(f"- Regression reason: {regression_reason}")
     else:
@@ -46,8 +53,8 @@ def main() -> int:
         lines.extend(
             [
                 "",
-                "| Benchmark | Paired median delta | Pair spread | Spread (head/base) | Threshold | Current ops/s | Baseline ops/s |",
-                "|---|---:|---:|---:|---:|---:|---:|",
+                "| Benchmark | Paired median delta | Pair spread | Spread (head/base) | Threshold | Verdict | Current ops/s | Baseline ops/s |",
+                "|---|---:|---:|---:|---:|---|---:|---:|",
             ]
         )
         for item in ordered[:12]:
@@ -71,9 +78,34 @@ def main() -> int:
                 else "-"
             )
             guard = " (guard)" if item.get("isGuarded") else ""
+            verdict = item.get("guardVerdict") or "-"
+            if item.get("primaryGuardVerdict") == "inconclusive" and verdict != "inconclusive":
+                verdict += " (confirmed)"
             lines.append(
                 f"| `{name}`{guard} | {delta:+.2f}% | {paired_spread_text} | {spread_text} | {threshold_text} "
-                f"| {current:.2f} | {baseline_ops:.2f} |"
+                f"| {verdict} | {current:.2f} | {baseline_ops:.2f} |"
+            )
+
+    if confirmed:
+        lines.extend(["", "### Confirmed inconclusive guards"])
+        for item in confirmed:
+            identifier = item.get("identifier") or {}
+            name = f"{identifier.get('group', '?')}/{identifier.get('name', '?')}"
+            lines.append(
+                f"- `{name}`: primary median {item.get('primaryDeltaPercent', 0.0):+.2f}% with "
+                f"disagreeing pairs; {item.get('pairCount')}-pair median "
+                f"{item.get('deltaPercent', 0.0):+.2f}% -> {item.get('guardVerdict')}."
+            )
+
+    if inconclusive and not failures:
+        lines.extend(["", "### Inconclusive guards"])
+        for item in inconclusive:
+            identifier = item.get("identifier") or {}
+            name = f"{identifier.get('group', '?')}/{identifier.get('name', '?')}"
+            pairs = ", ".join(f"{delta:+.2f}%" for delta in item.get("pairedDeltasPercent") or [])
+            lines.append(
+                f"- `{name}`: median {item.get('primaryDeltaPercent', 0.0):+.2f}% but pairs disagree "
+                f"({pairs}); confirmation pairs are required."
             )
 
     if failures:
