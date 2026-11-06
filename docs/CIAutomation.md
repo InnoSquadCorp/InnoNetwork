@@ -24,6 +24,9 @@ extra jobs all fail.
 - Sources, tests, examples, smoke tests, benchmarks, package/lock/tooling changes:
   every former CI protection plus CodeQL, TSAN, same-runner benchmarks, DocC and
   read-only release candidate validation
+- Android/Web packages, their consumer smoke trees and the scripts only their
+  lanes run, except Markdown: policy, Dependency Review and CodeQL. See
+  [Android and Web changes](#android-and-web-changes)
 - Prose/SPI/site docs: docs contract checks, full DocC site and policy tests
 - Known individual workflows: their mapped lanes and policy tests
 - Dependabot of every update type, or a `release-validation` label: full lane
@@ -41,6 +44,31 @@ Scheduled/manual CodeQL, TSAN and benchmark entry points remain; their former
 PR work now lives in CI and cannot escape the aggregate. Benchmark PR comments
 are replaced by preserved artifacts, so PR benchmark code no longer holds
 issue/pull-request write credentials. Scheduled trend append remains separate.
+
+## Android and Web changes
+
+`Platforms/Android`, `Platforms/Web`, the `SmokeTests` Android, Web,
+WebTarball, React and Browser consumers, and the scripts listed in
+`PLATFORM_SCRIPTS` in `Scripts/ci-policy.py` are not SwiftPM inputs.
+`Package.swift` names every target path (`Sources/`, `Tests/`, `Benchmarks/`,
+`SmokeTests/InnoNetwork*`), and no Apple job in `ci.yml`, step in
+`release-validation.yml` or composite action refers to these paths. A change
+confined to them selects the policy job, Dependency Review (npm locks are in
+the dependency graph) and both CodeQL jobs. `codeql-cross-platform` is the only
+`ci.yml` job that compiles Android and Web, and the Swift CodeQL job comes with
+it because CodeQL uploads all three configurations or none (see below). The
+path-filtered `cross-platform.yml` workflow still builds and tests the change.
+For the 15 files of #177 this skips benchmarks, build and test, the consumer
+lanes and the release candidate.
+
+The rule runs before the release-name rule, because Gradle's
+`libs.versions.toml` is a dependency catalog, not Swift release metadata.
+Markdown keeps the docs rules. A Swift, shared or unknown path in the same PR,
+or any deletion, rename or mode change, still selects the full lane. So do
+Dependabot PRs and the `release-validation` label, since the Dependabot
+coordinator's proof expects the full job set. `test_ci_policy.py` fails when an
+Apple job, `Package.swift` or another script starts reading these paths, or
+when `cross-platform.yml` stops covering one of them.
 
 ## Ready events and equivalent-tree main verification
 
