@@ -343,6 +343,20 @@ after main actually moved to its current SHA, taken from the repository
 activity record, not the commit date, which can predate the push. If
 Dependabot still refuses a command, the job warns and moves on.
 
+### Retrying CI that never got a runner
+
+GitHub-hosted macOS capacity sometimes never assigns a runner. The job is
+cancelled with "The job was not acquired by Runner of type hosted even after
+multiple attempts", `CI Required` fails, and the PR stays red although none of
+its code ran. The rebase queue releases such a failed current-base PR to the
+next one, so nothing else would retry it. `ci-runner-retry.yml` runs after every
+completed PR CI run and reruns its failed jobs only when each failure is a job
+cancelled before any runner took it, with that annotation, or a gate that only
+aggregates other jobs (`CI Required`, `Consumer Smoke`). Any other failure
+leaves the run alone. The third attempt is the last, so a longer outage is left
+to a human. The workflow checks out only the trusted default-main `Scripts`,
+holds no secret, and its token can only rerun jobs.
+
 ### Gradle updates land through a human replacement PR
 
 Dependabot cannot write Gradle dependency-verification metadata
