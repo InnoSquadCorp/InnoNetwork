@@ -38,7 +38,7 @@ includeBuild("/absolute/path/to/InnoNetwork/Platforms/Android")
 ```
 
 Apply the `com.google.devtools.ksp` plugin in modules using `ksp(...)`. The
-verified toolchain is Kotlin 2.4.21, KSP 2.3.12, AGP 9.5.0, and JDK 17. For
+verified toolchain is Kotlin 2.4.21, KSP 2.3.13, AGP 9.5.1, and JDK 17. For
 local Maven installation, run the repository's `Scripts/check_cross_platform.sh`
 and add a Maven repository pointing to
 `/absolute/path/to/InnoNetwork/Platforms/Android/build/preview-repository` in the
