@@ -548,6 +548,17 @@ Ready requirement and cannot arm bot auto-merge. API/permission errors,
 malformed identities, foreign ancestry, invalid provenance and ambiguous
 reporter failures still fail the whole plan without publishing partial targets.
 
+A refresh writer that stops inside its request step, for example at the job
+timeout, cannot tell later writers whether its rerun request landed, so they
+refuse to request again. A landed request starts a new reporter attempt and
+moves the reporter's update time. Ten minutes after that step ended, a later
+writer treats it as unanswered when the reporter is still on the same attempt
+and was last updated before the step began, and requests the rerun itself. The
+writer job allows 20 minutes: the claim and the request each verify the full
+proof and the writer history, about four minutes apiece, and the earlier
+five-minute limit stopped every request before it reran the reporter. Green
+Dependabot PRs then stayed blocked until someone reran the reporter by hand.
+
 Bootstrap remains a separately authorized maintainer action:
 
 1. After deploying the change to trusted main, read the latest bulk planner
