@@ -12,6 +12,20 @@ p = importlib.util.module_from_spec(spec); spec.loader.exec_module(p)
 GENERATED = shutil.ignore_patterns('.git', '.build', 'build', '.gradle', 'node_modules', 'output', '__pycache__')
 
 
+def next_major(version):
+    return f'{int(version.split(".")[0]) + 1}.0.0'
+
+
+def lock_pin(identity, version):
+    """Rewrite one pin's locked version, whichever version Dependabot left there."""
+    text = (ROOT / 'Package.resolved').read_text()
+    pin = next(p for p in json.loads(text)['pins'] if p['identity'] == identity)
+    current = pin['state']['version']
+    start = text.index(f'"identity" : "{identity}"')
+    old = text[start:text.index(f'"version" : "{current}"', start) + len(f'"version" : "{current}"')]
+    return 'Package.resolved', old, old[:-len(current) - 1] + version(current) + '"'
+
+
 class PublicOperationsTests(unittest.TestCase):
     def test_current_contract(self): p.validate(ROOT)
 
@@ -21,9 +35,9 @@ class PublicOperationsTests(unittest.TestCase):
                    ('.github/actions/consumer-cache/action.yml', '55cc8345863c7cc4c66a329aec7e433d2d1c52a9', 'v6'),('.github/dependabot.yml', '"weekly"', '"daily"'),
                    ('.github/dependabot.yml', '"minor",', '"major",'),
                    ('.github/dependabot.yml', '"github.com/swiftlang/swift-syntax"', '"none"'),
-                   ('Package.resolved', '"604.0.0"', '"605.0.0"'),
-                   ('Package.resolved', '"5.0.0"', '"6.0.0"'),
-                   ('Package.resolved', '"1.8.0"', '"1.5.0"'),
+                   lock_pin('swift-syntax', next_major),
+                   lock_pin('swift-crypto', next_major),
+                   lock_pin('swift-http-types', lambda version: '0.0.1'),
                    ('.spi.yml', 'https://innosquadcorp.github.io/InnoNetwork/', 'https://invalid.example/'),
                    ('docs/public-docc-products.txt', 'InnoNetworkTrust\n', ''),
                    ('docs/site/index.html', './InnoNetworkMacroSupport/documentation/innonetworkmacrosupport', './missing-macro-support'),

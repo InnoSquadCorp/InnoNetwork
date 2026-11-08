@@ -18,6 +18,9 @@ ENFORCE_STEP = "Enforce Ready snapshot"
 CLAIM_STEP = "Claim verified native Ready refresh"
 REQUEST_STEP = "Request verified native Ready refresh"
 UNSTARTED = {"queued", "pending", "waiting", "requested"}
+# A rerun request moves the reporter's attempt and update time at once; reads
+# lag that by seconds, never by this much.
+UNANSWERED_AFTER = timedelta(minutes=10)
 BINDING = re.compile(r"Ready v1 pr:([1-9][0-9]*) head:([a-f0-9]{40}) head-repo:([1-9][0-9]*) base-repo:([1-9][0-9]*) base:main source:([a-f0-9]{40})")
 
 
@@ -414,6 +417,33 @@ def stamp(p, value, label):
     return moment
 
 
+def moment(value):
+    if not isinstance(value, str):
+        return None
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return parsed if parsed.tzinfo is not None else None
+
+
+def unanswered(job, step, reporter, target):
+    """Whether a stopped prior request provably never reran the reporter.
+
+    The job timeout or a lost runner can stop the request step anywhere, so the
+    step alone cannot say whether its rerun POST landed. A landed POST starts a
+    new reporter attempt and moves the reporter's update time. A reporter still
+    on the target attempt and last updated before that step began was not rerun
+    by it, once reads have had time to catch up with any write.
+    """
+    if step is None or job.get("status") != "completed" or step.get("status") != "completed" or \
+            step.get("conclusion") not in {"cancelled", "failure"}:
+        return False
+    if reporter.get("run_attempt") != target["attempt"] or reporter.get("status") != "completed":
+        return False
+    began, ended, updated = moment(step.get("started_at")), moment(step.get("completed_at")), moment(reporter.get("updated_at"))
+    if began is None or ended is None or updated is None:
+        return False
+    return updated < began and datetime.now(timezone.utc) - ended >= UNANSWERED_AFTER
+
+
 def reject_prior_claim(api, p, target, reporter):
     """Reject an uncertain prior request; raise Deferred if an older writer has not started."""
     writer_id = int(os.environ["GITHUB_RUN_ID"])
@@ -463,7 +493,9 @@ def reject_prior_claim(api, p, target, reporter):
             continue
         # A writer that stopped before its request leaves that step skipped.
         step = next((s for s in steps if s.get("name") == REQUEST_STEP), None)
-        p.require(step is not None and step.get("conclusion") == "skipped",
+        if step is not None and step.get("conclusion") == "skipped":
+            continue
+        p.require(unanswered(job, step, reporter, target),
                   "prior refresh attempt exists/uncertain: explicitly rerun reporter for a new source attempt")
     if deferred:
         raise Deferred(deferred)
@@ -528,7 +560,8 @@ def refresh(api, p, target, enabled):
         api.mutate("POST", p.route(f"actions/jobs/{target['job']}/rerun"), {})
     except Exception:
         # A lost reply is not permission to POST again. Observed writer job
-        # history conservatively blocks another automatic request for this tuple.
+        # history blocks another automatic request for this tuple until the
+        # reporter provably did not move (see unanswered).
         pass
     for index in range(4):
         live = api.get(p.route(f"actions/runs/{target['run']}"))
