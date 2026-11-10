@@ -542,6 +542,45 @@ class NativeReadyTests(unittest.TestCase):
             with self.assertRaisesRegex(p.Rejected, 'prior refresh'): n.refresh(self.api, p, target, False)
             mutation.assert_not_called()
 
+    def test_stopped_request_unblocks_only_once_the_reporter_provably_did_not_move(self):
+        # A job timeout stopped the prior writer inside its request step. The
+        # reporter kept its attempt and update time, so no rerun ever landed.
+        target = self.writer()
+        now = datetime.now(timezone.utc)
+        iso = lambda value: value.isoformat().replace('+00:00', 'Z')
+        prior = self.api.ready_jobs[(READY_RUN, 1)][0]
+        prior.update(status='completed', conclusion='cancelled')
+        step = dict(name=n.REQUEST_STEP, status='completed', conclusion='cancelled',
+                    started_at=iso(now - timedelta(minutes=30)), completed_at=iso(now - timedelta(minutes=29)))
+        prior['steps'] = [step]
+        self.api.native_run['updated_at'] = iso(now - timedelta(hours=5))
+        current = dict(self.api.ready_run, id=READY_RUN + 1)
+        self.api.ready_runs.append(current)
+        self.api.refresh_writers.append(current)
+        self.api.ready_jobs[(READY_RUN + 1, 1)] = [dict(id=7778, name=n.claim_name(target), status='in_progress',
+            conclusion=None, started_at=self.api.native_run['created_at'],
+            steps=[dict(name=n.REQUEST_STEP, status='in_progress', conclusion=None)])]
+        reporter, intact = self.api.native_run, (dict(step), dict(self.api.native_run), dict(prior))
+        with mock.patch.dict(os.environ, GITHUB_RUN_ID=str(READY_RUN + 1)):
+            for outcome in ['cancelled', 'failure']:
+                step['conclusion'] = outcome
+                with self.subTest(outcome=outcome):
+                    n.reject_prior_claim(self.api, p, target, reporter)
+            for change in [lambda: reporter.update(updated_at=iso(now - timedelta(minutes=29, seconds=30))),
+                           lambda: reporter.update(run_attempt=2),
+                           lambda: reporter.update(status='in_progress'),
+                           lambda: reporter.pop('updated_at'),
+                           lambda: step.update(completed_at=iso(now - timedelta(minutes=5))),
+                           lambda: step.update(conclusion='success'),
+                           lambda: step.pop('started_at'),
+                           lambda: prior.update(status='in_progress')]:
+                for item, saved in zip([step, reporter, prior], intact):
+                    item.clear(); item.update(saved)
+                change()
+                with self.subTest(change=change), self.assertRaisesRegex(p.Rejected, 'prior refresh'):
+                    n.reject_prior_claim(self.api, p, target, reporter)
+        self.assertFalse(self.api.mutations)
+
     def test_queued_claims_defer_or_pass_and_contradictory_ones_block(self):
         target = self.writer()
         current_started = datetime.fromisoformat(self.api.native_run['created_at'].replace('Z', '+00:00'))

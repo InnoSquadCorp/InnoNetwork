@@ -82,7 +82,10 @@ jobs:
       cancel-in-progress: false
       queue: max
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # The claim and the request each verify the full proof and the writer
+    # history (about four minutes apiece), so five minutes cut the request off
+    # before it reran the reporter.
+    timeout-minutes: 20
     permissions:
       contents: read
       actions: write
