@@ -87,6 +87,9 @@ class Transcript:
         self.checks.append(self.native_check)
         self.source_blobs = {}
         self.refresh_writers = []
+        # Android/Web lane evidence; set by platform().
+        self.files, self.compare_status = None, 'ahead'
+        self.cross_workflow, self.cross_runs, self.cross_jobs = None, [], {}
 
     def get(self, route):
         self.reads.append(route)
@@ -100,6 +103,11 @@ class Transcript:
         elif suffix == 'actions/workflows/ci.yml': value = self.workflow
         elif suffix == 'actions/workflows/dependabot-auto-merge.yml': value = self.ready_workflow
         elif suffix == 'actions/workflows/dependabot-ready.yml': value = self.native_workflow
+        elif suffix == 'actions/workflows/cross-platform.yml' and self.cross_workflow: value = self.cross_workflow
+        elif suffix == f'compare/{self.base}...{HEAD}' and self.files is not None:
+            value = dict(status=self.compare_status, merge_base_commit=dict(sha=BASE), files=self.files)
+        elif suffix.startswith('actions/runs/') and suffix.count('/') == 2 and int(suffix.rsplit('/', 1)[1]) in {r['id'] for r in self.cross_runs}:
+            value = next(r for r in self.cross_runs if r['id'] == int(suffix.rsplit('/', 1)[1]))
         elif suffix.startswith('compare/'):
             value = dict(status='identical' if self.base == BASE else 'ahead', merge_base_commit=dict(sha=BASE))
         elif suffix.startswith('contents/'):
@@ -122,6 +130,9 @@ class Transcript:
         elif suffix.startswith('actions/workflows/dependabot-ready.yml/runs?event='): value = self.native_runs
         elif suffix.startswith('actions/workflows/dependabot-auto-merge.yml/runs?event='): value = self.ready_runs
         elif suffix.startswith('actions/workflows/dependabot-auto-merge.yml/runs?created='): value = self.refresh_writers
+        elif suffix.startswith('actions/workflows/cross-platform.yml/runs?event='): value = self.cross_runs
+        elif suffix.startswith('actions/runs/') and '/attempts/' in suffix and int(suffix.split('/')[2]) in {r['id'] for r in self.cross_runs}:
+            value = self.cross_jobs.get((int(suffix.split('/')[2]), int(suffix.split('/')[4])), [])
         elif suffix.startswith('actions/runs/') and '/attempts/' in suffix and int(suffix.split('/')[2]) in {r['id'] for r in self.native_runs}:
             value = self.native_jobs.get((int(suffix.split('/')[2]), int(suffix.split('/')[4])), [])
         elif suffix.startswith('actions/runs/') and '/attempts/' in suffix and int(suffix.split('/')[2]) != RUN:
@@ -171,6 +182,60 @@ class Transcript:
             return copy.deepcopy(check)
         if route.endswith('/dispatches'): return None
         raise AssertionError('Unexpected mutation: ' + route)
+
+
+CROSS_RUN = 970
+NPM_FILES = [dict(filename=directory + '/' + name, status='modified') for directory in (
+    'Platforms/Web', 'SmokeTests/WebConsumer', 'SmokeTests/WebTarballConsumer', 'SmokeTests/ReactConsumer')
+    for name in ('package.json', 'package-lock.json')]
+
+
+def platform(api, call=0, smoke=0):
+    """Rewrite the full transcript as a Dependabot npm run of the Android/Web CI lane."""
+    inventory = p.platform_inventories()
+    calls = [{'Release Candidate'}, {'Release Candidate / Validate ${{ matrix.runtime }} Build', 'Release Candidate / Validate Release'}]
+    smokes = sorted({name for names in inventory for name in names if 'Consumer' in name and 'Smoke' in name})
+    names = list(p.PLATFORM_CORE) + sorted(p.PLATFORM_SKIPPED) + sorted(calls[call]) + [smokes[smoke]]
+    assert set(names) in inventory
+    ran = {job['name']: job for job in api.jobs}
+    api.checks = [c for c in api.checks if c['check_suite']['id'] != 400]
+    api.jobs = []
+    for index, name in enumerate(names):
+        check_id, job_id = 3000 + index, 4000 + index
+        result = 'success' if name in p.PLATFORM_CORE else 'skipped'
+        api.jobs.append(dict(id=job_id, name=name, status='completed', conclusion=result,
+                             check_run_url=f'https://api.github.com/repos/{p.REPOSITORY}/check-runs/{check_id}',
+                             steps=ran[name]['steps'] if result == 'success' else []))
+        api.checks.append(dict(id=check_id, name=name, status='completed', conclusion=result,
+                               app=dict(id=p.APP), head_sha=HEAD, check_suite=dict(id=400),
+                               details_url=f'https://github.com/{p.REPOSITORY}/actions/runs/{RUN}/job/{job_id}'))
+    api.pr['labels'] = [dict(name='dependencies'), dict(name='web')]
+    api.files = copy.deepcopy(NPM_FILES)
+    api.cross_workflow = dict(id=13, path=p.CROSS_PLATFORM_PATH, state='active')
+    api.cross_run = dict(id=CROSS_RUN, run_number=31, run_attempt=1, workflow_id=13, path=p.CROSS_PLATFORM_PATH,
+                         check_suite_id=410, event='pull_request', head_sha=HEAD, head_repository=api.repo,
+                         repository=api.repo, status='completed', conclusion='success',
+                         pull_requests=[dict(number=NUMBER, head=dict(sha=HEAD), base=dict(sha=BASE))])
+    api.cross_runs = [api.cross_run]
+    jobs = []
+    for index, (name, steps) in enumerate(p.CROSS_PLATFORM.items()):
+        check_id, job_id = 5000 + index, 6000 + index
+        node_24_only = name.startswith('Web') and name != p.NODE_24
+        steps = [dict(name=step, status='completed',
+                      conclusion='skipped' if node_24_only and step in p.NODE_24_STEPS else 'success') for step in steps]
+        jobs.append(dict(id=job_id, name=name, status='completed', conclusion='success',
+                         check_run_url=f'https://api.github.com/repos/{p.REPOSITORY}/check-runs/{check_id}',
+                         steps=[dict(name='Set up job', status='completed', conclusion='success'), *steps,
+                                dict(name='Complete job', status='completed', conclusion='success')]))
+        api.checks.append(dict(id=check_id, name=name, status='completed', conclusion='success',
+                               app=dict(id=p.APP), head_sha=HEAD, check_suite=dict(id=410),
+                               details_url=f'https://github.com/{p.REPOSITORY}/actions/runs/{CROSS_RUN}/job/{job_id}'))
+    api.cross_jobs = {(CROSS_RUN, 1): jobs}
+    return api
+
+
+def cross_job(api, name):
+    return next(j for j in api.cross_jobs[(CROSS_RUN, 1)] if j['name'] == name)
 
 
 def failed_native(api):
@@ -336,6 +401,132 @@ class DependabotPolicyTests(unittest.TestCase):
         p.proof(self.api, NUMBER)  # Pages, main-tip-only and origin guard are PR non-targets.
         for name in ['CI Required', 'Build and Test (SwiftPM) — Xcode 26.0.1', 'Build DocC Site']:
             self.reject(lambda a: next(j for j in a.jobs if j['name'] == name).update(conclusion='skipped'))
+
+    def reject_platform(self, alter):
+        api = platform(Transcript())
+        alter(api)
+        with self.assertRaises((p.Rejected, KeyError, TypeError, ValueError)):
+            p.proof(api, NUMBER)
+        self.assertFalse(api.mutations)
+
+    def test_dependabot_android_web_lane_accepts_exact_cross_platform_success(self):
+        for call in (0, 1):
+            for smoke in (0, 1):
+                with self.subTest(call=call, smoke=smoke):
+                    api = platform(Transcript(), call, smoke)
+                    first, second = p.proof(api, NUMBER), p.proof(api, NUMBER)
+                    p.same(first, second)
+                    self.assertEqual((first['lane'], first['platform'], first['run']),
+                                     ('platform', dict(run=CROSS_RUN, attempt=1), RUN))
+                    self.assertFalse(api.mutations)
+        # The full lane stays acceptable and reads no diff or Cross-platform evidence.
+        self.assertEqual(p.proof(self.api, NUMBER)['lane'], 'full')
+        self.assertFalse([r for r in self.api.reads if f'...{HEAD}' in r or 'cross-platform' in r])
+        # The advisory npm audit may fail; Node 22/26 skip the Node 24-only steps.
+        api = platform(Transcript())
+        next(s for s in cross_job(api, p.NODE_24)['steps'] if s['name'] == p.ADVISORY_STEP)['conclusion'] = 'failure'
+        p.proof(api, NUMBER)
+        api = platform(Transcript())
+        api.files = api.files[:1] + [dict(filename='SmokeTests/ReactConsumer/package-lock.json', status='added')]
+        p.proof(api, NUMBER)
+
+    def test_android_web_lane_requires_the_planner_rule_on_api_evidence(self):
+        changes = [lambda a: a.pr['labels'].append(dict(name='release-validation')),
+                   lambda a: a.pr['labels'].append(dict(name='Concurrency-Review')),
+                   lambda a: a.pr.pop('labels'), lambda a: a.pr.update(labels=[dict(name=1)]),
+                   lambda a: a.files.append(dict(filename='Package.resolved', status='modified')),
+                   lambda a: a.files.append(dict(filename='Platforms/Web/README.md', status='modified')),
+                   lambda a: a.files.append(dict(filename='.github/workflows/cross-platform.yml', status='modified')),
+                   lambda a: a.files.append(dict(filename='Scripts/ci-policy.py', status='modified')),
+                   lambda a: a.files[0].update(status='removed'),
+                   lambda a: a.files[0].update(status='renamed', previous_filename='Sources/A.swift'),
+                   lambda a: a.files[0].update(status='changed'), lambda a: a.files[0].update(status='copied'),
+                   lambda a: a.files[0].update(filename='../Platforms/Web/package.json'),
+                   lambda a: a.files[0].pop('filename'), lambda a: a.files.clear(),
+                   lambda a: a.files.extend(dict(filename=f'Platforms/Web/f{i}.json', status='added') for i in range(300)),
+                   lambda a: setattr(a, 'compare_status', 'identical'), lambda a: setattr(a, 'compare_status', 'behind'),
+                   lambda a: setattr(a, 'files', 'Platforms/Web/package.json')]
+        for change in changes:
+            with self.subTest(change=change): self.reject_platform(change)
+
+    def test_android_web_lane_ci_inventory_is_exact(self):
+        def job(name):
+            return lambda a: next(j for j in a.jobs if j['name'] == name)
+        def drop(name):
+            # Job and native check vanish together, so only the inventory notices.
+            def change(a):
+                a.jobs.remove(job(name)(a))
+                a.checks.remove(next(c for c in a.checks if c['name'] == name))
+            return change
+        def add(name):
+            def change(a):
+                a.jobs.append(dict(job('Run Benchmarks')(a), id=4999, name=name,
+                                   check_run_url=f'https://api.github.com/repos/{p.REPOSITORY}/check-runs/3999'))
+                a.checks.append(dict(next(c for c in a.checks if c['name'] == 'Run Benchmarks'), id=3999, name=name,
+                                     details_url=f'https://github.com/{p.REPOSITORY}/actions/runs/{RUN}/job/4999'))
+            return change
+        changes = [drop('CodeQL / java-kotlin'), drop('Run Benchmarks'), drop('CI Required'), add('Unreviewed Job'),
+                   add('Release Candidate / Validate Release'), add('Build and Test (SwiftPM) — Xcode 26.0.1'),
+                   lambda a: job('CodeQL / Swift (swift)')(a).update(conclusion='skipped'),
+                   lambda a: job('Dependency Review')(a).update(conclusion='skipped', steps=[]),
+                   lambda a: job('CI Required')(a).update(steps=[]),
+                   lambda a: job('Run Benchmarks')(a).update(conclusion='success'),
+                   lambda a: job('Run Benchmarks')(a).update(steps=[dict(name='Run', status='completed', conclusion='skipped')]),
+                   lambda a: job('Run Benchmarks')(a).update(name='Run Benchmarks (macOS)'),
+                   lambda a: a.jobs.remove(job('Run Benchmarks')(a)),
+                   lambda a: a.jobs.remove(job('CodeQL / java-kotlin')(a)),
+                   lambda a: a.jobs.append(dict(job('Release Candidate')(a), id=4999, name='Release Candidate / Validate Release')),
+                   lambda a: a.jobs.append(copy.deepcopy(a.jobs[-1])),
+                   lambda a: next(c for c in a.checks if c['name'] == 'Run Benchmarks').update(conclusion='success'),
+                   lambda a: next(c for c in a.checks if c['name'] == 'Build DocC Site').update(check_suite=dict(id=999))]
+        for change in changes:
+            with self.subTest(change=change): self.reject_platform(change)
+
+    def test_android_web_lane_requires_exact_head_cross_platform_success(self):
+        def check(name):
+            return lambda a: next(c for c in a.checks if c['name'] == name)
+        def step(job, name):
+            return lambda a: next(s for s in cross_job(a, job)['steps'] if s['name'] == name)
+        changes = [lambda a: a.cross_runs.clear(), lambda a: a.cross_workflow.update(state='disabled_manually'),
+                   lambda a: a.cross_workflow.update(path=p.CI_PATH), lambda a: a.cross_run.update(conclusion='failure'),
+                   lambda a: a.cross_run.update(status='in_progress', conclusion=None),
+                   lambda a: a.cross_run.update(event='push'), lambda a: a.cross_run.update(head_sha='d' * 40),
+                   lambda a: a.cross_run.update(workflow_id=10), lambda a: a.cross_run.update(path=p.CI_PATH),
+                   lambda a: a.cross_run.update(pull_requests=[]), lambda a: a.cross_run.update(head_repository=dict(id=101)),
+                   lambda a: a.cross_run['pull_requests'][0]['base'].update(sha='d' * 40),
+                   lambda a: a.cross_run['pull_requests'][0]['head'].update(sha='d' * 40),
+                   lambda a: a.cross_runs.append(dict(a.cross_run, id=CROSS_RUN + 1, run_number=32,
+                                                      status='in_progress', conclusion=None)),
+                   lambda a: a.cross_jobs[(CROSS_RUN, 1)].pop(),
+                   lambda a: a.cross_jobs[(CROSS_RUN, 1)].append(copy.deepcopy(a.cross_jobs[(CROSS_RUN, 1)][0])),
+                   lambda a: cross_job(a, 'Android 1.0 / JDK 17').update(conclusion='skipped'),
+                   lambda a: cross_job(a, 'Web 1.0 / Node 22').update(check_run_url='https://evil.test/1'),
+                   lambda a: check('Web 1.0 / Node 26')(a).update(check_suite=dict(id=999)),
+                   lambda a: check('Web 1.0 / Node 26')(a).update(app=dict(id=123)),
+                   lambda a: check('Web 1.0 / Node 26')(a).update(head_sha=BASE),
+                   lambda a: check('Web 1.0 / Node 26')(a).update(details_url='https://evil.test'),
+                   lambda a: cross_job(a, 'Android 1.0 / JDK 21')['steps'].remove(step('Android 1.0 / JDK 21', 'Verify Android public API')(a)),
+                   lambda a: step('Android 1.0 / JDK 21', 'Set up JDK')(a).update(conclusion='skipped'),
+                   lambda a: step(p.NODE_24, 'Verify Chromium, Firefox, and WebKit runtimes')(a).update(conclusion='skipped'),
+                   lambda a: step('Web 1.0 / Node 22', p.ADVISORY_STEP)(a).update(conclusion='failure'),
+                   lambda a: step('Web 1.0 / Node 22', 'Test and build Web package')(a).update(conclusion='skipped'),
+                   lambda a: step(p.NODE_24, 'Test and build Web package')(a).update(status='in_progress', conclusion=None)]
+        for change in changes:
+            with self.subTest(change=change): self.reject_platform(change)
+
+    def test_android_web_lane_arms_natively_and_detects_cross_platform_races(self):
+        api = platform(Transcript())
+        failed_native(api)
+        self.assertIn('read-only Ready receipt refresh', p.coordinate(api, NUMBER, True))
+        native = [m for m in api.mutations if m[0] == 'graphql']
+        self.assertEqual(len(native), 1)
+        self.assertEqual(native[0][2]['head'], HEAD)
+        api = platform(Transcript())
+        first = p.proof(api, NUMBER)
+        api.cross_run['run_attempt'] = 2
+        api.cross_jobs[(CROSS_RUN, 2)] = api.cross_jobs[(CROSS_RUN, 1)]
+        with self.assertRaisesRegex(p.Rejected, 'raced'):
+            p.same(first, p.proof(api, NUMBER))
 
     def test_additional_page_two_check_and_status_failures(self):
         for state in ['queued', 'in_progress', 'failure', 'cancelled', 'skipped', 'neutral']:
@@ -1007,20 +1198,23 @@ def workflow_jobs(text):
     return jobs
 
 
-def workflow_inventory():
-    """Independent expanded GitHub job/step names from native YAML."""
-    paths = ['ci.yml', 'release-validation.yml']
-    docs = json.loads(subprocess.check_output(['ruby', '-ryaml', '-rjson', '-e',
+def workflow_documents(*paths):
+    return json.loads(subprocess.check_output(['ruby', '-ryaml', '-rjson', '-e',
         'puts ARGV.to_h { |p| [File.basename(p), YAML.safe_load(File.read(p), aliases: false)] }.to_json',
         *[str(ROOT / '.github/workflows' / name) for name in paths]], text=True))
+
+
+def workflow_inventory(owners=None):
+    """Independent expanded GitHub job/step names from native YAML."""
+    docs = workflow_documents('ci.yml', 'release-validation.yml')
     inventory = {}
-    def expand(document, prefix=''):
+    def expand(document, prefix='', owner=None):
         for key, job in document['jobs'].items():
             name = job.get('name', key)
             if key == 'ci-required': name = 'CI Required'
             if key == 'consumer-smoke': name = 'Consumer Smoke'
             if 'uses' in job:
-                expand(docs[job['uses'].rsplit('/', 1)[1]], prefix + name + ' / ')
+                expand(docs[job['uses'].rsplit('/', 1)[1]], prefix + name + ' / ', owner or key)
                 continue
             matrix = job.get('strategy', {}).get('matrix', {})
             if 'include' in matrix: rows = matrix['include']
@@ -1042,6 +1236,7 @@ def workflow_inventory():
                 if label in inventory: raise AssertionError('duplicate job name: ' + label)
                 steps = [child for step in job['steps'] for child in (step['parallel'] if 'parallel' in step else [step])]
                 inventory[label] = [render(step['name']) for step in steps if 'name' in step]
+                if owners is not None: owners[label] = owner or key
     expand(docs['ci.yml'])
     return inventory
 
@@ -1061,6 +1256,42 @@ class WorkflowInventoryTests(unittest.TestCase):
         self.assertLessEqual(skipped, p.ALLOWED_STEP_SKIP)
         for name, step in p.ALLOWED_STEP_SKIP:
             self.assertIn(step, workflow[name], (name, step))
+
+    def test_android_web_lane_inventory_matches_the_ci_workflow_and_planner(self):
+        ci = p.sibling('ci_policy', 'ci-policy.py')
+        metadata = p.sibling('ci_metadata_policy', 'ci-metadata-policy.py')
+        owners = {}
+        workflow_inventory(owners)
+        selected = {job for job, run in ci.make_plan('pull_request', dict(action='opened', pull_request=dict(
+            user=dict(login='dependabot[bot]'), labels=[])), [f['filename'] for f in NPM_FILES])['jobs'].items() if run}
+        self.assertEqual(selected, set(ci.PLATFORM_JOBS) | {'policy'})
+        ran = selected | {'ci-plan', 'ci-required'}
+        self.assertEqual(set(p.PLATFORM_CORE), {label for label, key in owners.items() if key in ran})
+        # Every other job reports one skipped name: its unexpanded YAML name.
+        jobs = workflow_documents('ci.yml')['ci.yml']['jobs']
+        self.assertEqual(p.PLATFORM_SKIPPED, {job.get('name', key) for key, job in jobs.items()
+                                              if key not in ran | {'consumer-smoke', 'release-candidate'}})
+        self.assertEqual({key for key, job in jobs.items() if 'uses' in job}, {'release-candidate'})
+        # These are the spellings GitHub recorded for skipped jobs in metadata-only runs.
+        self.assertLessEqual(p.PLATFORM_SKIPPED, metadata.DIRECT)
+        expected = [set(p.PLATFORM_CORE) | p.PLATFORM_SKIPPED | call | smoke
+                    for call in metadata.CALLS[0] for smoke in ({'Consumer Smoke'}, metadata.AGGREGATES[0][1])]
+        self.assertCountEqual(map(frozenset, p.platform_inventories()), map(frozenset, expected))
+
+    def test_cross_platform_inventory_matches_the_workflow(self):
+        jobs = workflow_documents('cross-platform.yml')['cross-platform.yml']['jobs']
+        expected = {}
+        for job in jobs.values():
+            (dimension, values), = job['strategy']['matrix'].items()
+            for value in values:
+                expected[job['name'].replace('${{ matrix.' + dimension + ' }}', value)] = [s['name'] for s in job['steps']]
+        self.assertEqual(p.CROSS_PLATFORM, expected)
+        web = jobs['web']['steps']
+        self.assertEqual({s['name'] for s in web if 'if' in s}, p.NODE_24_STEPS)
+        self.assertTrue(all(s['if'] == "matrix.node == '24'" for s in web if 'if' in s))
+        self.assertEqual([s['name'] for s in web if s.get('continue-on-error')], [p.ADVISORY_STEP])
+        self.assertFalse([s for s in jobs['android']['steps'] if 'if' in s or 'continue-on-error' in s])
+        self.assertIn(p.NODE_24, p.CROSS_PLATFORM)
 
 
 

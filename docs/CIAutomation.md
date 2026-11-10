@@ -29,7 +29,9 @@ extra jobs all fail.
   [Android and Web changes](#android-and-web-changes)
 - Prose/SPI/site docs: docs contract checks, full DocC site and policy tests
 - Known individual workflows: their mapped lanes and policy tests
-- Dependabot of every update type, or a `release-validation` label: full lane
+- Dependabot of every update type, or a `release-validation` label: full lane,
+  except Dependabot updates confined to Android/Web inputs. See
+  [Dependabot Android/Web updates](#dependabot-androidweb-updates)
 - `concurrency-review`: explicitly requests TSAN even for an otherwise narrow PR
 - Main/manual/merge queue: full lane, except PR-only dependency comparison
 
@@ -64,11 +66,57 @@ lanes and the release candidate.
 The rule runs before the release-name rule, because Gradle's
 `libs.versions.toml` is a dependency catalog, not Swift release metadata.
 Markdown keeps the docs rules. A Swift, shared or unknown path in the same PR,
-or any deletion, rename or mode change, still selects the full lane. So do
-Dependabot PRs and the `release-validation` label, since the Dependabot
-coordinator's proof expects the full job set. `test_ci_policy.py` fails when an
+or any deletion, rename or mode change, still selects the full lane. So does
+the `release-validation` label. Dependabot PRs follow the stricter rule below.
+`test_ci_policy.py` fails when an
 Apple job, `Package.swift` or another script starts reading these paths, or
 when `cross-platform.yml` stops covering one of them.
+
+## Dependabot Android/Web updates
+
+The full Dependabot lane dates from #133, before the Android and Web packages
+(#159) existed. Every Dependabot ecosystem then changed Swift or CI inputs.
+Its rule is that no title or version heuristic narrows a bot update; it was
+not a claim that Apple jobs validate npm changes. They cannot: no Apple job
+reads these paths (see above). Full CI on a Web update spent about 250 job
+minutes, mostly macOS, and two of its jobs measure runner benchmarks:
+`Run Benchmarks` and the quick benchmarks in `Release Candidate / Validate
+Release`, which failed #170 run `41957883321`. Its Web build and test came
+only from `cross-platform.yml`, which the coordinator accepted when present
+and green but did not require.
+
+So a Dependabot PR takes the same Android/Web lane as a human PR when
+`dependabot_platform_lane` in `Scripts/ci-policy.py` holds: every changed path
+is a non-Markdown Android/Web input (no deletion, rename or mode change, no
+empty diff) and the PR has neither the `release-validation` nor the
+`concurrency-review` label. The planner and the coordinator use this same
+function. The npm Dependabot entry no longer adds `release-validation`, so a
+maintainer can still force the full lane by adding that label. Gradle PRs keep
+it: they are replacement tickets (see below).
+
+The coordinator never reads the PR's plan, code or artifacts. Trusted main
+code recomputes eligibility from the PR API labels and the immutable exact
+`compare/<main>...<head>` file list (the planner's merge-base diff, which must
+be complete: under 300 files, added or modified only). With an eligible diff it
+accepts, besides the full 34-job run, a run whose seven jobs `CI Plan`, policy,
+Dependency Review, the three CodeQL configurations and `CI Required` succeeded
+and every other job is skipped, has no steps and carries one of the names GitHub
+records for a skipped job (unexpanded matrix; the reusable release workflow and
+dynamic `Consumer Smoke` name each have two recorded spellings). It then also
+requires the latest exact-head `Cross-platform` run, bound to this PR, current
+main and head, to have succeeded with all five Android/Web jobs, their native
+checks and every step. Only the advisory npm audit may fail, and only the Node
+24 job runs the audit, browser and React steps. A label, shared path, deleted
+file, missing or failed Cross-platform run, or any other job set blocks.
+
+Accepted risks: Dependency Review and both CodeQL jobs remain the supply-chain
+and static analysis evidence; none of the skipped jobs install npm packages.
+Main push CI after such a merge cannot reuse PR evidence (it requires all 34 PR
+jobs) and runs every job fresh. The coordinator wakes on CI, not on
+Cross-platform. Cross-platform normally finishes first, otherwise the hourly
+reconciliation picks it up. Skipped-job names are taken from recorded
+metadata-only runs; if a narrowed run reports another spelling, the
+coordinator blocks rather than merges.
 
 ## Ready events and equivalent-tree main verification
 
@@ -237,13 +285,15 @@ Actions run weekly Monday 09:00 Asia/Seoul, Swift Monday 09:30, Web Monday 10:30
 Gradle runs monthly and is always replaced by a maintainer, as described
 below. Minor/patch updates
 are grouped by ecosystem; SwiftSyntax/toolchain and majors stay individual, not
-ignored. All are eligible only after the same full exact-head validation.
+ignored. All are eligible only after the same full exact-head validation,
+except [Android/Web-only updates](#dependabot-androidweb-updates).
 Existing open Dependabot PRs are not closed, edited or merged by this change.
 
 The default is standby: `DEPENDABOT_AUTO_MERGE_ENABLED` must be exactly `true`
 before any bot auto-merge is enabled. The coordinator checks same-repository
 Dependabot login/id/type, current main/base/head and exact test-merge parents,
-latest CI run and attempt, all 34 concrete jobs and validation steps, associated
+latest CI run and attempt, all 34 concrete jobs and validation steps (or the
+Android/Web lane's seven plus exact-head Cross-platform success), associated
 GitHub Actions app IDs, paginated check/status results and reviews. A failed,
 pending, skipped, duplicate, foreign or stale result blocks. This includes
 third-party checks, so CodeRabbit does not publish its review progress check:

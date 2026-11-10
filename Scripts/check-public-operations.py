@@ -45,7 +45,11 @@ def dependabot(root):
         require(item.get('schedule') == schedule, 'update schedule drift')
         require(item.get('open-pull-requests-limit') == limit, 'version PR limit drift')
         require(item.get('commit-message') == {'prefix': prefix}, 'commit prefix drift')
-        require(item.get('labels') == ['dependencies', label, 'release-validation'], 'dependency labels drift')
+        # The release-validation label forces the full CI lane. Web updates
+        # touch only Android/Web inputs and take the narrowed lane instead
+        # (ci-policy.py dependabot_platform_lane); Gradle PRs are tickets.
+        labels = ['dependencies', label] + ([] if ecosystem == 'npm' else ['release-validation'])
+        require(item.get('labels') == labels, 'dependency labels drift')
         groups = item.get('groups', {})
         require(set(groups) == {group}, 'low-risk group inventory drift')
         expected = {'patterns': ['*'], 'update-types': ['minor', 'patch']}
