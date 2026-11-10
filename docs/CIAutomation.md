@@ -327,6 +327,14 @@ A failed CI, a green PR still open an hour later, or a command left unanswered
 for an hour releases the queue to the next PR. Gradle PRs are skipped, as the
 next section explains.
 
+A native auto-merge pushes main with `GITHUB_TOKEN`, and that push wakes no
+workflow, so the queue's main-push trigger never fires after a bot merge. The
+hourly schedule is best effort and has fired only every few hours, which left
+every other bot PR behind main for that long. The coordinator's post-merge job
+therefore dispatches `dependabot-rebase.yml` right after a bot merge, alongside
+the main snapshot and CI. A duplicate wake only re-plans, so a lost dispatch
+reply is left to the schedule.
+
 Dependabot answers only users with push access, so the command cannot come
 from `GITHUB_TOKEN` or a GitHub App. The comment is posted with the optional
 `DEPENDABOT_COMMAND_TOKEN` secret: a fine-grained token of a user with push

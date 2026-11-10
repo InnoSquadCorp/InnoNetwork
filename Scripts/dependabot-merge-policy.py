@@ -1022,6 +1022,14 @@ def post_merge(api, enabled=False, expected_sha=None, expected_pr=None):
                              "workflow_runs")
         require(any(r.get("event") == "workflow_dispatch" for r in observed),
                 "snapshot dispatch outcome uncertain; no retry")
+    # The native merge pushes with GITHUB_TOKEN, which wakes no workflow, so
+    # the rebase queue would wait for its sparse schedule (hours apart in
+    # practice) while every other bot PR stays behind. A duplicate wake only
+    # re-plans, so a lost reply is left to that schedule.
+    try:
+        api.mutate("POST", route("actions/workflows/dependabot-rebase.yml/dispatches"), {"ref": "main"})
+    except Exception as error:
+        print(f"::warning::rebase queue dispatch outcome unknown ({type(error).__name__}); its schedule will wake it")
     try:
         api.mutate("POST", route("actions/workflows/ci.yml/dispatches"),
                    {"ref": "main", "inputs": {"dependabot_merge_pr": str(number)}})
@@ -1029,7 +1037,7 @@ def post_merge(api, enabled=False, expected_sha=None, expected_pr=None):
         observed = api.pages(route(f"actions/workflows/ci.yml/runs?branch=main&head_sha={main}"), "workflow_runs")
         require(any(r.get("event") == "workflow_dispatch" and r.get("display_title") == PREFIX + str(number)
                     for r in observed), "dispatch outcome uncertain; no retry")
-    return "verified current-main snapshot and CI dispatched"
+    return "verified current-main snapshot, rebase queue and CI dispatched"
 
 
 def targets(api, event_name, event):
