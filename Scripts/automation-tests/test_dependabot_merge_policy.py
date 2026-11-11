@@ -2,6 +2,7 @@
 import copy
 from datetime import datetime, timezone
 import importlib.util
+import io
 import json
 import os
 import re
@@ -9,6 +10,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 import unittest
+import urllib.error
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -1110,6 +1112,46 @@ class DependabotPolicyTests(unittest.TestCase):
         with mock.patch.object(api, 'request', return_value=(dict(total_count=2, jobs=[{}]), {})):
             with self.assertRaises(p.Rejected): api.pages(p.route('actions/runs/1/jobs'), 'jobs')
         with self.assertRaises(p.Rejected): api.request('GET', 'repos/foreign/project/pulls/1')
+
+    def test_rate_limit_refusals_are_named_and_never_retried(self):
+        # A bare 403 cannot tell an exhausted GITHUB_TOKEN budget from a
+        # missing permission, so the refusal logs GitHub's limit headers.
+        api = p.GitHub('test-token')
+        for code, headers, expected in [
+                (403, {'x-ratelimit-resource': 'core', 'x-ratelimit-remaining': '0', 'x-ratelimit-limit': '1000',
+                       'x-ratelimit-reset': '1794360000'}, 'x-ratelimit-remaining=0 x-ratelimit-limit=1000'),
+                (429, {'retry-after': '60'}, 'retry-after=60'),
+                (403, {}, 'no rate-limit headers')]:
+            error = urllib.error.HTTPError('https://api.github.com/', code, 'Forbidden', headers, None)
+            self.addCleanup(error.close)
+            with self.subTest(code=code, headers=headers), \
+                    mock.patch.object(p.urllib.request, 'urlopen', side_effect=error) as urlopen, \
+                    mock.patch('sys.stderr', new_callable=io.StringIO) as stderr:
+                with self.assertRaises(urllib.error.HTTPError):
+                    api.mutate('POST', p.route('actions/workflows/ci.yml/dispatches'), {'ref': 'main'})
+                self.assertEqual(urlopen.call_count, 1)
+                self.assertIn(f'::warning::GitHub API refused POST with HTTP {code}: ', stderr.getvalue())
+                self.assertIn(expected, stderr.getvalue())
+        # Callers such as the 404 role lookup handle other refusals themselves.
+        error = urllib.error.HTTPError('https://api.github.com/', 404, 'Not Found', {}, None)
+        self.addCleanup(error.close)
+        with mock.patch.object(p.urllib.request, 'urlopen', side_effect=error), \
+                mock.patch('sys.stderr', new_callable=io.StringIO) as stderr:
+            with self.assertRaises(urllib.error.HTTPError):
+                api.get(p.route('pulls/1'))
+            self.assertEqual(stderr.getvalue(), '')
+
+    def test_coordinator_coalesces_only_pending_notification_wakes_per_head(self):
+        source = (ROOT / p.COORDINATOR_PATH).read_text()
+        header = source.split('\njobs:\n', 1)[0]
+        self.assertIn("group: ${{ github.event_name == 'workflow_run' && format('dependabot-auto-merge-wake-{0}', "
+                      "github.event.workflow_run.head_sha) || format('dependabot-auto-merge-run-{0}', github.run_id) }}",
+                      header)
+        # A running wake is never cancelled, and only one group shape is
+        # shared: PR events, pushes, schedules and dispatches each keep a run.
+        self.assertIn('\n  cancel-in-progress: false\n', header)
+        self.assertNotIn('queue:', header)
+        self.assertEqual(header.count('group:'), 1)
 
     def test_graphql_thread_page_two_blocker_and_invalid_cursor(self):
         first = self.api.graphql('', {})

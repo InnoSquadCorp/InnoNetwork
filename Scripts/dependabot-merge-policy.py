@@ -472,6 +472,17 @@ def require(condition, reason):
         raise Rejected(reason)
 
 
+LIMIT_HEADERS = ("x-ratelimit-resource", "x-ratelimit-remaining", "x-ratelimit-limit", "x-ratelimit-reset",
+                 "retry-after")
+
+
+def limit_note(method, error):
+    """Say whether a refusal was a rate limit; a bare 403 cannot tell budget from permission."""
+    headers = error.headers or {}
+    found = " ".join(f"{name}={headers.get(name)}" for name in LIMIT_HEADERS if headers.get(name) is not None)
+    return f"::warning::GitHub API refused {method} with HTTP {error.code}: {found or 'no rate-limit headers'}"
+
+
 class GitHub:
     def __init__(self, token=None):
         self.token = token or os.environ.get("GH_TOKEN")
@@ -485,7 +496,13 @@ class GitHub:
                      "Accept": "application/vnd.github+json", "Content-Type": "application/json",
                      "X-GitHub-Api-Version": "2022-11-28"})
         # No mutation retries: an unknown outcome must be read back first.
-        with urllib.request.urlopen(request, timeout=30) as response:
+        try:
+            opened = urllib.request.urlopen(request, timeout=30)
+        except urllib.error.HTTPError as error:
+            if error.code in (403, 429):
+                print(limit_note(method, error), file=sys.stderr)
+            raise
+        with opened as response:
             raw = response.read()
             return (json.loads(raw) if raw else None), response.headers
 

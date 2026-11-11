@@ -401,6 +401,28 @@ after main actually moved to its current SHA, taken from the repository
 activity record, not the commit date, which can predate the push. If
 Dependabot still refuses a command, the job warns and moves on.
 
+### Coordinator API budget
+
+The repository's `GITHUB_TOKEN` allows 1,000 API requests an hour, and the
+coordinator wakes on the request, start and completion of every CI, Ready and
+review-notice run: up to 109 runs in one hour, each re-reading proofs and the
+writer history. Once that budget ran out, the last Ready refresh writer and the
+next scheduled wake failed with `HTTP Error 403`, so green Dependabot PRs kept a
+failed Ready verdict for hours.
+
+Pending notification wakes therefore share one concurrency group per head SHA:
+a newer `workflow_run` wake for the same head replaces a pending one, and a
+running wake is never cancelled. Every wake re-reads GitHub, so the replaced wake
+loses nothing, and a protective wake for a new CI attempt still runs after the
+current one. PR events, pushes, schedules and dispatches keep a run of their own,
+so the schedule's sweep over every open PR is never replaced. A wake that is
+replaced before it starts creates no jobs, so no refresh writer defers to it.
+
+When the API refuses a request with 403 or 429, the policy scripts log GitHub's
+rate-limit headers (`x-ratelimit-remaining`, `x-ratelimit-reset`,
+`retry-after`) before failing as before, so an exhausted budget can be told from
+a missing permission.
+
 ### Retrying CI that never got a runner
 
 GitHub-hosted macOS capacity sometimes never assigns a runner. The job is
