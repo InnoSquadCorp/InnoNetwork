@@ -48,8 +48,31 @@ fi
 # A warm cache reuses parsed module metadata and skips POM and .module files
 # that a clean CI runner still verifies. Resolve everything from scratch.
 gradle_home="$(mktemp -d "${TMPDIR:-/tmp}/innonetwork-gradle-home.XXXXXX")"
-trap 'rm -rf "$gradle_home"' EXIT
 export GRADLE_USER_HOME="$gradle_home"
+
+# The builds leave a Gradle daemon that keeps writing logs and caches into this
+# home, so stop it first; --stop only reaches daemons of this GRADLE_USER_HOME.
+# Cleanup never changes the exit status: a failure keeps its own, and a home
+# that cannot be removed after a successful run is only a warning.
+cleanup() {
+    local status=$?
+    if [[ -d "$gradle_home/daemon" ]]; then
+        "$gradlew" -p "$repo_root/Platforms/Android" --stop --quiet ||
+            echo "Warning: could not stop the Gradle daemon in $gradle_home." >&2
+    fi
+    # A stopped daemon can still be exiting, so retry briefly.
+    local attempt=1
+    until rm -rf "$gradle_home" 2>/dev/null; do
+        if ((attempt == 5)); then
+            echo "Warning: could not remove $gradle_home; delete it by hand." >&2
+            break
+        fi
+        attempt=$((attempt + 1))
+        sleep 1
+    done
+    exit "$status"
+}
+trap cleanup EXIT
 
 # Start from empty components so entries for replaced versions do not survive.
 python3 -B "$helper" clear "${metadata[@]}"
