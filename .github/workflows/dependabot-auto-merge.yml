@@ -15,6 +15,16 @@ on:
 permissions:
   contents: read
 
+# Each CI, Ready and review run wakes this coordinator on request, start and
+# completion, often dozens of times within minutes for one head, and the
+# repository's GITHUB_TOKEN allows 1,000 API requests an hour. Every wake
+# re-reads GitHub, so a pending notification wake for a head is replaced by a
+# newer one; a running wake is never cancelled. PR events, pushes, schedules
+# and dispatches keep their own runs.
+concurrency:
+  group: ${{ github.event_name == 'workflow_run' && format('dependabot-auto-merge-wake-{0}', github.event.workflow_run.head_sha) || format('dependabot-auto-merge-run-{0}', github.run_id) }}
+  cancel-in-progress: false
+
 jobs:
   inspect:
     if: (github.event_name != 'workflow_run' || github.event.workflow_run.path != '.github/workflows/ci.yml' || github.event.workflow_run.event == 'pull_request') && github.repository == 'InnoSquadCorp/InnoNetwork' && github.ref == 'refs/heads/main' && github.workflow_ref == 'InnoSquadCorp/InnoNetwork/.github/workflows/dependabot-auto-merge.yml@refs/heads/main'
