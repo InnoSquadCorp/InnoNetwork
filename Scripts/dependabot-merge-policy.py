@@ -24,8 +24,10 @@ PREFIX = "CI / Dependabot merge #"
 COORDINATOR_SOURCE_STEP = "Resolve authoritative API targets from "
 SKIPPED_REFRESH_NAME = ("matrix.target.pr && format('Ready refresh PR{0} run{1} attempt{2}', "
                         "matrix.target.pr, matrix.target.run, matrix.target.attempt) || 'ready-refresh'")
-# All bot updates, including major/toolchain updates, need the full contract.
-# The native required ready check is separate from these inputs (no cycle).
+# All bot updates, including major/toolchain updates, need the full contract,
+# except updates confined to Android/Web inputs (PLATFORM_CORE below). No
+# title/version heuristic narrows it. The native required ready check is
+# separate from these inputs (no cycle).
 CORE = {'CI Plan': ['Verify actual post-merge main origin',
              'Admit equivalent-tree PR verification for main',
              'Plan exact changed paths',
@@ -413,6 +415,36 @@ CORE['CI and public operations policy'][1:1] = ['Validate native parallel schema
 CORE['CI and public operations policy'].append('Validate prose-only documentation')
 
 FULL_SKIPPED = set()
+# A Dependabot update confined to Android/Web inputs (ci-policy.py
+# dependabot_platform_lane) runs only these CI jobs. No other CI job reads those
+# paths; the path-filtered Cross-platform workflow builds and tests them, so the
+# coordinator then requires its exact-head success too (CROSS_PLATFORM).
+PLATFORM_CORE = ('CI Plan', 'CI and public operations policy', 'Dependency Review', 'CodeQL / Swift (swift)',
+                 'CodeQL / java-kotlin', 'CodeQL / javascript-typescript', 'CI Required')
+# GitHub names a job skipped by its condition before expanding its matrix or
+# evaluating its name, as recorded in metadata-only runs (ci-metadata-policy.py).
+PLATFORM_SKIPPED = {'Lint (swift-format)', 'Lint (Periphery)', 'Build and Test (SwiftPM) — Xcode ${{ matrix.xcode.label }}',
+                    'Upload Core Coverage', 'Test (Bounded Target Shards) — Xcode 26.0.1', 'Docs / Contract Sync',
+                    'Apple Platform Build Smoke', 'Consumer Examples', 'Consumer Macros', 'Consumer OpenAPI',
+                    'Upload Macro Coverage', 'Benchmark Smoke', 'Tests under ThreadSanitizer', 'Run Benchmarks',
+                    'Build DocC Site'}
+CROSS_PLATFORM_PATH = ".github/workflows/cross-platform.yml"
+ANDROID_STEPS = ['Checkout', 'Verify native package layout and negative controls', 'Set up JDK',
+                 'Verify Gradle wrapper integrity before execution', 'Install Android compile SDK',
+                 'Test, lint, and publish Android 1.0 packages locally', 'Verify Maven release artifacts',
+                 'Verify Android public API', 'Build and test Android KSP consumer',
+                 'Verify Android executable test counts', 'Verify Android KSP diagnostics']
+WEB_STEPS = ['Checkout', 'Verify native package layout and negative controls', 'Set up Node',
+             'Test and build Web package', 'Advisory npm vulnerability audit', 'Install native browser engines',
+             'Verify Chromium, Firefox, and WebKit runtimes', 'Verify Web declaration API and packed consumer',
+             'Compile Web consumer smoke', 'Test React lifecycle consumer smoke']
+CROSS_PLATFORM = {**{f'Android 1.0 / JDK {java}': ANDROID_STEPS for java in ('17', '21')},
+                  **{f'Web 1.0 / Node {node}': WEB_STEPS for node in ('22', '24', '26')}}
+# Only the Node 24 job runs these steps. The audit is continue-on-error advice.
+NODE_24 = 'Web 1.0 / Node 24'
+NODE_24_STEPS = {'Advisory npm vulnerability audit', 'Install native browser engines',
+                 'Verify Chromium, Firefox, and WebKit runtimes', 'Test React lifecycle consumer smoke'}
+ADVISORY_STEP = 'Advisory npm vulnerability audit'
 ALLOWED_STEP_SKIP = {('CI Plan', 'Verify actual post-merge main origin'),
  ('Upload Core Coverage', 'Report artifact-only Codecov fallback'),
  ('Upload Macro Coverage', 'Report artifact-only Codecov fallback')}
@@ -486,12 +518,108 @@ class GitHub:
         return response["data"]
 
 
-def validation_runs(api, runs, workflow_id, repository_id, number, head, source):
-    spec = importlib.util.spec_from_file_location("ci_metadata_policy", Path(__file__).with_name("ci-metadata-policy.py"))
+def sibling(name, filename):
+    spec = importlib.util.spec_from_file_location(name, Path(__file__).with_name(filename))
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    return module
+
+
+def validation_runs(api, runs, workflow_id, repository_id, number, head, source):
+    module = sibling("ci_metadata_policy", "ci-metadata-policy.py")
     return module.partition(api, runs, repository=REPOSITORY, repository_id=repository_id,
                             workflow_id=workflow_id, number=number, head=head, source=source, require=require)
+
+
+def platform_inventories():
+    """Every job-name set a CI run of the Android/Web lane can report."""
+    metadata = sibling("ci_metadata_policy", "ci-metadata-policy.py")
+    # The skipped reusable release workflow and dynamic Consumer Smoke name
+    # each have two recorded spellings.
+    calls = [{'Release Candidate'}, {'Release Candidate / Validate ${{ matrix.runtime }} Build',
+                                     'Release Candidate / Validate Release'}]
+    smoke = [{'Consumer Smoke'}, {metadata.METADATA_CONDITION + " && 'Consumer Metadata Only' || 'Consumer Smoke'"}]
+    return [set(PLATFORM_CORE) | PLATFORM_SKIPPED | call | aggregate for call in calls for aggregate in smoke]
+
+
+def platform_lane(api, pr, base, head):
+    """Recompute ci-policy.py's Dependabot Android/Web lane from trusted code.
+
+    Labels come from the PR API and changed files from the immutable exact
+    base...head comparison (the planner's merge-base diff). PR code, plans and
+    artifacts are never read.
+    """
+    labels = pr.get("labels")
+    require(isinstance(labels, list) and all(isinstance(label, dict) and isinstance(label.get("name"), str)
+                                             for label in labels), "missing or malformed PR labels")
+    comparison = api.get(route(f"compare/{base}...{head}"))
+    files = comparison.get("files")
+    # The comparison lists at most 300 files; a full list is shorter.
+    require(comparison.get("status") in {"ahead", "diverged"} and isinstance(files, list) and len(files) < 300,
+            "changed files unavailable or truncated")
+    paths = []
+    for item in files:
+        require(isinstance(item, dict) and isinstance(item.get("filename"), str), "malformed changed file")
+        # Deletions, renames, copies and mode changes keep the full lane.
+        if item.get("status") not in {"added", "modified"}:
+            return False
+        paths.append(item["filename"])
+    try:
+        return sibling("ci_policy", "ci-policy.py").dependabot_platform_lane({l["name"] for l in labels}, paths)
+    except ValueError as error:
+        raise Rejected("invalid changed path: " + str(error)) from error
+
+
+def cross_platform_step(job, step):
+    if step.get("status") != "completed":
+        return False
+    if step.get("conclusion") == "success":
+        return True
+    if job == NODE_24:
+        return step.get("name") == ADVISORY_STEP and step.get("conclusion") == "failure"
+    return job.startswith("Web 1.0 / Node ") and step.get("name") in NODE_24_STEPS and step.get("conclusion") == "skipped"
+
+
+def cross_platform(api, repo, number, head, merge_sha, main, checks):
+    """Exact-head Cross-platform success: the build and test of an Android/Web-only update."""
+    workflow = api.get(route("actions/workflows/cross-platform.yml"))
+    require(workflow.get("path") == CROSS_PLATFORM_PATH and workflow.get("state") == "active",
+            "wrong/inactive Cross-platform workflow")
+    runs = api.pages(route(f"actions/workflows/cross-platform.yml/runs?event=pull_request&head_sha={head}"), "workflow_runs")
+    require(bool(runs), "missing exact-head Cross-platform validation")
+    run = max(runs, key=lambda r: (r["run_number"], r["id"]))
+    run = api.get(route(f"actions/runs/{run['id']}"))
+    require(run.get("workflow_id") == workflow["id"] and run.get("path", "").split("@")[0] == CROSS_PLATFORM_PATH and
+            run.get("event") == "pull_request" and run.get("head_sha") == head and
+            run.get("repository", {}).get("id") == repo["id"] and run.get("head_repository", {}).get("id") == repo["id"] and
+            [p.get("number") for p in run.get("pull_requests", [])] == [number] and
+            type(run.get("run_attempt")) is int and run["run_attempt"] > 0,
+            "wrong Cross-platform origin/head")
+    connection = run["pull_requests"][0]
+    require(connection.get("head", {}).get("sha") == head and connection.get("base", {}).get("sha") == main,
+            "Cross-platform tested an obsolete head/base")
+    require(run.get("status") == "completed" and run.get("conclusion") == "success", "latest Cross-platform incomplete or failed")
+    jobs = api.pages(route(f"actions/runs/{run['id']}/attempts/{run['run_attempt']}/jobs"), "jobs")
+    require(len(jobs) == len(CROSS_PLATFORM) and {j.get("name") for j in jobs} == set(CROSS_PLATFORM),
+            "missing, duplicate or unexpected Cross-platform job")
+    for job in jobs:
+        name = job["name"]
+        require(job.get("status") == "completed" and job.get("conclusion") == "success", "Cross-platform job did not succeed: " + name)
+        check_url = job.get("check_run_url", "")
+        prefix = f"https://api.github.com/repos/{REPOSITORY}/check-runs/"
+        require(isinstance(check_url, str) and check_url.startswith(prefix) and
+                re.fullmatch(r"[1-9][0-9]*", check_url[len(prefix):]) is not None,
+                "missing Cross-platform job/check association")
+        check = checks.get(int(check_url[len(prefix):]), {})
+        require(check.get("name") == name and check.get("app", {}).get("id") == APP and
+                check.get("check_suite", {}).get("id") == run["check_suite_id"] and check.get("head_sha") in {head, merge_sha} and
+                check.get("details_url") == f"https://github.com/{REPOSITORY}/actions/runs/{run['id']}/job/{job['id']}" and
+                check.get("status") == "completed" and check.get("conclusion") == "success",
+                "wrong app/suite/job/head Cross-platform proof: " + name)
+        steps = job.get("steps") or []
+        require(set(CROSS_PLATFORM[name]) <= {s.get("name") for s in steps}, "missing Cross-platform step: " + name)
+        require(all(cross_platform_step(name, s) for s in steps), "failed/pending/skipped Cross-platform step: " + name)
+    return {"run": run["id"], "attempt": run["run_attempt"]}
 
 
 def route(suffix):
@@ -671,8 +799,15 @@ def proof(api, number, notification=None):
                 "obsolete run/attempt notification")
     require(run.get("status") == "completed" and run.get("conclusion") == "success", "latest CI incomplete or failed")
     jobs = api.pages(route(f"actions/runs/{run['id']}/attempts/{run['run_attempt']}/jobs"), "jobs")
-    require(len(jobs) == len(CORE) + len(FULL_SKIPPED) and {j.get("name") for j in jobs} == set(CORE) | FULL_SKIPPED,
-            "missing, duplicate or unexpected full CI job")
+    names = [j.get("name") for j in jobs]
+    if len(names) == len(CORE) + len(FULL_SKIPPED) and set(names) == set(CORE) | FULL_SKIPPED:
+        # The full lane is always acceptable, whatever the change.
+        lane, skipped = "full", FULL_SKIPPED
+    else:
+        require(len(names) == len(set(names)) and set(names) in platform_inventories(),
+                "missing, duplicate or unexpected full CI job")
+        require(platform_lane(api, pr, main, head), "Android/Web CI lane without an eligible Dependabot diff")
+        lane, skipped = "platform", set(names) - set(PLATFORM_CORE)
     checks = []
     for sha in dict.fromkeys((head, merge_sha)):
         checks.extend(api.pages(route(f"commits/{sha}/check-runs?filter=all"), "check_runs"))
@@ -686,7 +821,7 @@ def proof(api, number, notification=None):
     job_ids = set()
     for job in jobs:
         name = job["name"]
-        expected = "skipped" if name in FULL_SKIPPED else "success"
+        expected = "skipped" if name in skipped else "success"
         require(job.get("status") == "completed" and job.get("conclusion") == expected, "job failed/cancelled/missing/unexpected skip: " + name)
         check_url = job.get("check_run_url", "")
         require(check_url.startswith(f"https://api.github.com/repos/{REPOSITORY}/check-runs/"), "missing job/check association")
@@ -698,9 +833,9 @@ def proof(api, number, notification=None):
                 check.get("details_url") == f"https://github.com/{REPOSITORY}/actions/runs/{run['id']}/job/{job['id']}" and
                 check.get("status") == "completed" and check.get("conclusion") == expected,
                 "wrong app/suite/job/head proof: " + name)
-        if name in FULL_SKIPPED:
+        if name in skipped:
             require(not job.get("steps"), "skipped job contains executable steps: " + name)
-        if name in CORE:
+        elif name in CORE:
             steps = job.get("steps", [])
             require(set(CORE[name]) <= {s.get("name") for s in steps}, "missing validation step: " + name)
             require(all(s.get("status") == "completed" and (s.get("conclusion") == "success" or
@@ -731,12 +866,16 @@ def proof(api, number, notification=None):
         extra.setdefault((check.get("head_sha"), check.get("name"), check.get("app", {}).get("id")), check)
     require(all(c.get("status") == "completed" and c.get("conclusion") == "success" for c in extra.values()),
             "additional check pending/failed/skipped")
+    # Without Apple jobs the Android/Web build and test must be present, not
+    # merely successful when GitHub happens to list it.
+    platform = cross_platform(api, repo, number, head, merge_sha, main, by_id) if lane == "platform" else None
     return {"pr": pr, "node": graph["id"], "head": head, "base": main, "merge": merge_sha,
-            "run": run["id"], "attempt": run["run_attempt"]}
+            "run": run["id"], "attempt": run["run_attempt"], "lane": lane, "platform": platform}
 
 
 def same(left, right):
-    require(all(left[k] == right[k] for k in ("head", "base", "merge", "run", "attempt", "node")), "head/base/CI attempt raced")
+    require(all(left[k] == right[k] for k in ("head", "base", "merge", "run", "attempt", "node", "lane", "platform")),
+            "head/base/CI attempt raced")
 
 
 def coordinator_runs(api, number, head):
@@ -1022,6 +1161,14 @@ def post_merge(api, enabled=False, expected_sha=None, expected_pr=None):
                              "workflow_runs")
         require(any(r.get("event") == "workflow_dispatch" for r in observed),
                 "snapshot dispatch outcome uncertain; no retry")
+    # The native merge pushes with GITHUB_TOKEN, which wakes no workflow, so
+    # the rebase queue would wait for its sparse schedule (hours apart in
+    # practice) while every other bot PR stays behind. A duplicate wake only
+    # re-plans, so a lost reply is left to that schedule.
+    try:
+        api.mutate("POST", route("actions/workflows/dependabot-rebase.yml/dispatches"), {"ref": "main"})
+    except Exception as error:
+        print(f"::warning::rebase queue dispatch outcome unknown ({type(error).__name__}); its schedule will wake it")
     try:
         api.mutate("POST", route("actions/workflows/ci.yml/dispatches"),
                    {"ref": "main", "inputs": {"dependabot_merge_pr": str(number)}})
@@ -1029,7 +1176,7 @@ def post_merge(api, enabled=False, expected_sha=None, expected_pr=None):
         observed = api.pages(route(f"actions/workflows/ci.yml/runs?branch=main&head_sha={main}"), "workflow_runs")
         require(any(r.get("event") == "workflow_dispatch" and r.get("display_title") == PREFIX + str(number)
                     for r in observed), "dispatch outcome uncertain; no retry")
-    return "verified current-main snapshot and CI dispatched"
+    return "verified current-main snapshot, rebase queue and CI dispatched"
 
 
 def targets(api, event_name, event):

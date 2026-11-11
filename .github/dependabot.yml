@@ -130,8 +130,7 @@
       },
       "labels": [
         "dependencies",
-        "web",
-        "release-validation"
+        "web"
       ]
     }
   ]

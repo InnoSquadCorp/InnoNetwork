@@ -349,14 +349,20 @@ struct NetworkMonitorTests {
             supportsIPv4: true
         )
         let monitor = SnapshotSequenceMonitor(initial: initial, changes: [connected])
-        let stream = await monitor.snapshots()
+        var snapshots = await monitor.snapshots().makeAsyncIterator()
 
-        var received: [NetworkSnapshot] = []
-        for await snapshot in stream {
-            received.append(snapshot)
-        }
+        // The stream keeps only the newest pending snapshot, so a change that
+        // arrives before the consumer reads the current one replaces it. Read
+        // each snapshot before the monitor reports the next change.
+        let first = await snapshots.next()
+        await monitor.permitNextChange()
+        let second = await snapshots.next()
+        await monitor.permitNextChange()
+        let end = await snapshots.next()
 
-        #expect(received == [initial, connected])
+        #expect(first == initial)
+        #expect(second == connected)
+        #expect(end == nil)
     }
 
     @Test("waitForChange returns nil on timeout when no network change occurs")
@@ -392,10 +398,22 @@ struct NetworkMonitorTests {
 private actor SnapshotSequenceMonitor: NetworkMonitoring {
     private let initial: NetworkSnapshot?
     private var changes: [NetworkSnapshot]
+    private var permits = 0
+    private var pendingWait: CheckedContinuation<Void, Never>?
 
     init(initial: NetworkSnapshot?, changes: [NetworkSnapshot]) {
         self.initial = initial
         self.changes = changes
+    }
+
+    /// Lets one pending or future `waitForChange` report its change.
+    func permitNextChange() {
+        if let pendingWait {
+            self.pendingWait = nil
+            pendingWait.resume()
+        } else {
+            permits += 1
+        }
     }
 
     func currentSnapshot() async -> NetworkSnapshot? {
@@ -408,6 +426,11 @@ private actor SnapshotSequenceMonitor: NetworkMonitoring {
     ) async -> NetworkSnapshot? {
         _ = snapshot
         _ = timeout
+        if permits > 0 {
+            permits -= 1
+        } else {
+            await withCheckedContinuation { pendingWait = $0 }
+        }
         guard !changes.isEmpty else { return nil }
         return changes.removeFirst()
     }

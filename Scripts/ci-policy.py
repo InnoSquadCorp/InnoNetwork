@@ -51,6 +51,9 @@ PLATFORM_SCRIPTS = frozenset("Scripts/" + name for name in (
 # CodeQL uploads all three main configurations or none, and only the
 # cross-platform configuration compiles Android/Web. Dependency Review covers npm locks.
 PLATFORM_JOBS = frozenset({"dependency-review", "codeql", "codeql-cross-platform"})
+PLATFORM_REASON = "Android/Web native package outside SwiftPM"
+# Labels that ask for more than the changed paths select.
+LANE_LABELS = frozenset({"release-validation", "concurrency-review"})
 
 
 def reuse_policy():
@@ -103,7 +106,7 @@ def path_impact(path):
     # Before the release-name rule: Gradle's libs.versions.toml is a dependency
     # catalog, not Swift release metadata.
     if (path.startswith(PLATFORM_TREES) or path in PLATFORM_SCRIPTS) and not path.endswith(".md"):
-        return set(PLATFORM_JOBS), "Android/Web native package outside SwiftPM"
+        return set(PLATFORM_JOBS), PLATFORM_REASON
     if prose_module().RELEASE.search(path):
         return set(JOBS), "release metadata (full fallback)"
     # Source/test/example changes preserve all former gates, even nested docs.
@@ -121,6 +124,20 @@ def path_impact(path):
     if path.startswith(".github/ISSUE_TEMPLATE/") or path in (".github/dependabot.yml", ".github/release.yml", "LICENSE"):
         return set(), "public operations"
     return set(JOBS), "unknown/shared path (full fallback)"
+
+
+def dependabot_platform_lane(labels, paths):
+    """Whether a Dependabot PR may take the Android/Web lane instead of the full one.
+
+    Every changed path must be a non-Markdown Android/Web input, so a deletion,
+    rename or mode change (the changed_paths sentinel), an empty diff or any
+    shared path keeps the full lane, as does an explicit lane label. The trusted
+    Dependabot coordinator calls this with API-read labels and changed files and
+    accepts the narrowed job set only when this same rule selects it.
+    """
+    if LANE_LABELS & {label.lower() for label in labels}:
+        return False
+    return bool(paths) and all(path_impact(path)[1] == PLATFORM_REASON for path in paths)
 
 
 def with_dependencies(selected):
@@ -184,7 +201,13 @@ def make_plan(event_name, event, paths):
         if event["action"] == "edited" and not event.get("changes", {}).get("base"):
             raise ValueError("metadata-only edit must not create a validation plan")
         names = {label["name"].lower() for label in labels}
-        lane = "release-validation" if user["login"] == "dependabot[bot]" or "release-validation" in names else "fast"
+        # Dependabot keeps the full lane unless its update touches only
+        # Android/Web inputs, which no Apple job reads.
+        bot = user["login"] == "dependabot[bot]"
+        if "release-validation" in names or (bot and not dependabot_platform_lane(names, paths)):
+            lane = "release-validation"
+        else:
+            lane = "fast"
         if "concurrency-review" in names:
             requested = ["thread-sanitizer"]
     elif event_name == "push":
