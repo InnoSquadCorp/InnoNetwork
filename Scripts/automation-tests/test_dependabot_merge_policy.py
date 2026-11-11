@@ -847,10 +847,11 @@ class DependabotPolicyTests(unittest.TestCase):
         self.assertIn('dispatched', p.post_merge(self.api, True))
         self.assertEqual(self.api.mutations, [
             ('POST', p.route('actions/workflows/dependency-submission.yml/dispatches'), dict(ref='main')),
+            ('POST', p.route('actions/workflows/dependabot-rebase.yml/dispatches'), dict(ref='main')),
             ('POST', p.route('actions/workflows/ci.yml/dispatches'), dict(ref='main', inputs=dict(dependabot_merge_pr=str(NUMBER))))])
         self.api.post_runs = [dict(head_sha=BASE, event='push', conclusion='failure')]
         self.assertIn('already exists', p.post_merge(self.api, True))
-        self.assertEqual(len(self.api.mutations), 2)
+        self.assertEqual(len(self.api.mutations), 3)
         self.assertIn('standby', p.post_merge(self.api, False))
 
     def test_post_merge_uncertain_snapshot_dispatch_fails_closed_before_ci(self):
@@ -865,7 +866,21 @@ class DependabotPolicyTests(unittest.TestCase):
             self.assertFalse(self.api.mutations)
             self.api.snapshot_runs = [dict(head_sha=BASE, event='workflow_dispatch')]
             self.assertIn('dispatched', p.post_merge(self.api, True))
-        self.assertEqual([m[1] for m in self.api.mutations], [p.route('actions/workflows/ci.yml/dispatches')])
+        self.assertEqual([m[1] for m in self.api.mutations], [p.route('actions/workflows/dependabot-rebase.yml/dispatches'),
+                                                              p.route('actions/workflows/ci.yml/dispatches')])
+
+    def test_post_merge_lost_rebase_wake_still_dispatches_main_ci(self):
+        # A merge push by GITHUB_TOKEN wakes nothing, so the queue is woken
+        # directly; losing that reply must not cost the main CI dispatch.
+        self.merged_bot()
+        original = self.api.mutate
+        def flaky(method, route, payload):
+            if 'dependabot-rebase.yml' in route: raise OSError('dispatch response lost')
+            return original(method, route, payload)
+        with mock.patch.object(self.api, 'mutate', side_effect=flaky):
+            self.assertIn('dispatched', p.post_merge(self.api, True))
+        self.assertEqual([m[1] for m in self.api.mutations], [p.route('actions/workflows/dependency-submission.yml/dispatches'),
+                                                              p.route('actions/workflows/ci.yml/dispatches')])
 
     def merged_bot(self):
         self.api.pr.update(state='closed', merged=True, merged_at='2026-10-01T00:00:00Z', merge_commit_sha=BASE)
