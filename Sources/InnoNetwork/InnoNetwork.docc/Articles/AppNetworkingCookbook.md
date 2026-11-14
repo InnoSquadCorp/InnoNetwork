@@ -138,7 +138,7 @@ it. Completed, resumed, and cancelled tasks clear that data.
 Create a feature-scoped `WebSocketManager` instance for each realtime owner.
 
 ```swift
-let socket = try await networking.realtime.connect(url: socketURL)
+let socket = await networking.realtime.connect(url: socketURL)
 
 Task {
     for await event in await networking.realtime.events(for: socket) {

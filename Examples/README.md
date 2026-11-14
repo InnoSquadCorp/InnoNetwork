@@ -6,8 +6,11 @@ This directory contains practical examples demonstrating how to use InnoNetwork 
 
 InnoNetwork is a Swift package for type-safe network communication using async/await and Swift Concurrency. These examples cover common use cases from basic requests to complex workflows.
 
-> **Release status:** These examples track the released 5.x contract. Do not
-> assume the current example sources compile against the 4.x API.
+> **Release status:** 6.1.1 is the current published release. The example
+> sources in this repository track the repository's working tree and are built
+> against it, so they are not guaranteed to compile against a published tag.
+> To copy an example into a project that depends on 6.1.1, take the example
+> from the `6.1.1` tag.
 
 ## Stability Tiers
 
@@ -15,7 +18,7 @@ Examples are categorized into two tiers, mirroring [API_STABILITY.md](../API_STA
 
 - **Stable** — `BasicRequest`, `Auth`, `ErrorHandling`. The directory layout
   (Swift sources, `README.md`) and compileability against the current package
-  are part of the 5.x SemVer-protected contract and are enforced by
+  are part of the SemVer-protected stable contract and are enforced by
   `Scripts/check_stable_examples.sh`.
 - **Provisionally Stable** — every other example. Their layout tracks the
   Provisionally Stable APIs they illustrate and may evolve in minor
@@ -48,6 +51,9 @@ Comprehensive guide to handling network errors gracefully.
 **Covers:**
 - NetworkError types and meanings
 - Do-catch error handling patterns
+- Coarse classification with `category`, `isRetriableHint`, and `isUserVisible`
+- Policy rejections (`.policyRejected`) and authentication failures (`.authentication`)
+- Payload-free `error.summary` and the operation handle's `failureSummary()`
 - Accessing response data from errors
 - Handling status code errors (404, 500, etc.)
 - Handling network connectivity issues
@@ -93,7 +99,7 @@ CLI chat-style sample for opening a WebSocket, sending text, and observing
 server events.
 
 **Covers:**
-- `WebSocketManager.safeDefaults`
+- `WebSocketConfiguration.advanced` with automatic reconnect disabled
 - Event stream consumption
 - Send/receive loop
 - Manual shutdown
@@ -158,7 +164,7 @@ three shipping products.
 ### [WrapperSmoke](./WrapperSmoke)
 
 Compile-only package that protects wrapper-style integrations built on
-low-level execution hooks. These source shapes are not part of the 5.x Stable
+low-level execution hooks. These source shapes are not part of the Stable
 public contract.
 
 ### [MacroUsage](./MacroUsage)
@@ -198,19 +204,21 @@ targets do.
 
 ### Installation
 
-For a released application, consume the tagged 5.x line:
+For a released application, consume the published 6.1.1 release:
 
 ```swift
 dependencies: [
     .package(
         url: "https://github.com/InnoSquadCorp/InnoNetwork.git",
-        .upToNextMajor(from: "5.0.0")
+        .upToNextMinor(from: "6.1.1")
     )
 ]
 ```
 
-Use `exact: "5.0.0"` instead when a reproducible release build must not accept
-any dependency update.
+Use `.exact("6.1.1")` instead when a reproducible release build must not accept
+any dependency update. The examples in this repository are built against the
+repository's working tree, not against that tag; see the release status note
+at the top of this page.
 
 ### Running the Examples
 

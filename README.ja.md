@@ -4,11 +4,7 @@
 
 InnoNetwork は Apple プラットフォーム向けの型安全な非同期 Swift ネットワークライブラリです。明示的な endpoint 構造体、`@APIDefinition`、`DefaultNetworkClient.request` から始められます。すべての追加製品を事前にリンクする必要はありません。
 
-## 現在のバージョンと範囲
-
-現在の安定版は **6.1.1**、公開日は 2026-10-07 UTC です。6.1.0 からランタイムや公開 API を変えず、文書とツールを修正したパッチです。タグの revision は `44e4ca28c50c03f817231a077c0f3bdfdbc859c8` です。現行の七言語ガイドは同じ導入・例・契約範囲を扱い、詳細は [英語 README](README.md) にあります。
-
-[6.1.1 Release](https://github.com/InnoSquadCorp/InnoNetwork/releases/tag/6.1.1) · [Release notes](docs/releases/6.1.1.md)
+> **このブランチの 7.0 ドラフト。** このブランチには未リリースの 7.0 ドラフトが含まれています。現行リリースは引き続き 6.1.1 で、この README が説明するのも 6.1.1 です。ドラフトの破壊的変更は [7.0 移行ガイド](docs/Migration-7.0.0.md) を参照してください。
 
 ## 要件とインストール
 
@@ -26,28 +22,6 @@ Swift **6.2+** と Swift 6 言語モードが必要です。最低対応 OS は 
 ```
 
 再現性が必要なら `.exact("6.1.1")` を使います。パッチ範囲なら Provisionally Stable API の次の minor での変更を自動採用しません。`Package.resolved` を確認してください。マクロを使わない場合は依存宣言に `traits: []` を追加し、プロトコルを手動実装します。全依存経路で `Macros` を無効にする必要があります。SwiftPM は SwiftSyntax など manifest 上の依存を引き続き解決・取得することがあります。
-
-## 製品の選択
-
-- `InnoNetwork` — 型付き HTTP リクエストとポリシーパイプライン
-
-- `InnoNetworkAuthAWS` — 任意の AWS SigV4 単発署名器。AWS SDK の代替ではない
-
-- `InnoNetworkDownload` — ダウンロード、一時停止・再開、バックグラウンド復元、イベント
-
-- `InnoNetworkUpload` — ファイルアップロード、進捗、復元、サイズ制限付き応答
-
-- `InnoNetworkWebSocket` — 双方向接続、heartbeat、再接続、終了分類
-
-- `InnoNetworkPersistentCache` — RFC のルールを考慮したディスクキャッシュと容量制限
-
-- `InnoNetworkOpenAPI` — 完全な client パイプラインの adapter または軽量 OpenAPI Runtime transport
-
-- `InnoNetworkTrust` — 任意の公開鍵 pinning evaluator
-
-- `InnoNetworkTestSupport` — 利用側テスト用 helper。production target にはリンクしない
-
-`InnoNetworkMacroSupport` はコンパイラホスト専用です。HLS は別の [InnoNetwork-Stream](https://github.com/InnoSquadCorp/InnoNetwork-Stream)、Protobuf は [InnoNetwork-Protobuf](https://github.com/InnoSquadCorp/InnoNetwork-Protobuf) にあります。両方の 6.1.1 は Core 6.1.1 を厳密に固定します。Stream のモジュールは引き続き `InnoNetworkHLS`、`InnoNetworkHLSLive`、`InnoNetworkHLSAVFoundation`、`InnoNetworkHLSAudio` で、`InnoNetworkStream` モジュールはありません。Audio には Swift 6.4 のコンパイル条件と OS 27 の availability 制約があります。Protobuf の推奨 product は `InnoNetwork-Protobuf`、import は `InnoNetworkProtobuf` です。
 
 ## 最初のリクエスト
 
@@ -74,6 +48,34 @@ let client = DefaultNetworkClient(
 let user = try await client.request(GetUser(id: 42))
 print(user.name)
 ```
+
+## 現在のバージョンと範囲
+
+現在の安定版は **6.1.1**、公開日は 2026-10-07 UTC です。6.1.0 からランタイムや公開 API を変えず、文書とツールを修正したパッチです。タグの revision は `44e4ca28c50c03f817231a077c0f3bdfdbc859c8` です。現行の七言語ガイドは同じ導入・例・契約範囲を扱い、詳細は [英語 README](README.md) にあります。
+
+[6.1.1 Release](https://github.com/InnoSquadCorp/InnoNetwork/releases/tag/6.1.1) · [Release notes](docs/releases/6.1.1.md)
+
+## 製品の選択
+
+- `InnoNetwork` — 型付き HTTP リクエストとポリシーパイプライン
+
+- `InnoNetworkAuthAWS` — 任意の AWS SigV4 単発署名器。AWS SDK の代替ではない
+
+- `InnoNetworkDownload` — ダウンロード、一時停止・再開、バックグラウンド復元、イベント
+
+- `InnoNetworkUpload` — ファイルアップロード、進捗、復元、サイズ制限付き応答
+
+- `InnoNetworkWebSocket` — 双方向接続、heartbeat、再接続、終了分類
+
+- `InnoNetworkPersistentCache` — RFC のルールを考慮したディスクキャッシュと容量制限
+
+- `InnoNetworkOpenAPI` — 完全な client パイプラインの adapter または軽量 OpenAPI Runtime transport
+
+- `InnoNetworkTrust` — 任意の公開鍵 pinning evaluator
+
+- `InnoNetworkTestSupport` — 利用側テスト用 helper。production target にはリンクしない
+
+`InnoNetworkMacroSupport` はコンパイラホスト専用です。HLS は別の [InnoNetwork-Stream](https://github.com/InnoSquadCorp/InnoNetwork-Stream)、Protobuf は [InnoNetwork-Protobuf](https://github.com/InnoSquadCorp/InnoNetwork-Protobuf) にあります。両方の 6.1.1 は Core 6.1.1 を厳密に固定します。Stream のモジュールは引き続き `InnoNetworkHLS`、`InnoNetworkHLSLive`、`InnoNetworkHLSAVFoundation`、`InnoNetworkHLSAudio` で、`InnoNetworkStream` モジュールはありません。Audio には Swift 6.4 のコンパイル条件と OS 27 の availability 制約があります。Protobuf の推奨 product は `InnoNetwork-Protobuf`、import は `InnoNetworkProtobuf` です。
 
 ## 設定・認証・セキュリティ
 

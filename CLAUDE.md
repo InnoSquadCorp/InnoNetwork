@@ -128,6 +128,10 @@ swift test --list-tests
 
 # Android/Web release-candidate gate
 Scripts/check_cross_platform.sh
+
+# Breaking changes against the last release must be in Scripts/api-breaks/
+# (also part of Scripts/run_local_release_preflight.sh)
+bash Scripts/check_api_breaking_changes.sh
 ```
 
 ## Architecture
@@ -138,7 +142,7 @@ Scripts/check_cross_platform.sh
 - `APIDefinition.swift` / `APIDefinition+Macro.swift` — endpoint 선언 프로토콜 + `@APIDefinition` 매크로
 - `DefaultNetworkClient.swift` — `NetworkClient` 구현 (불변 final class + Sendable)
 - `RequestExecutor.swift` + `RequestExecutor+Pipeline.swift` / `+Cache.swift` / `+Transport.swift` — 요청 실행 파이프라인
-- `NetworkError.swift` / `NetworkErrorCode.swift` / `SendableUnderlyingError.swift` — 에러 모델 (typed throws 대상)
+- `NetworkError.swift` / `NetworkErrorReasons.swift` / `NetworkError+Classification.swift` / `NetworkErrorCode.swift` / `SendableUnderlyingError.swift` — 에러 모델 (typed throws 대상). 로컬 정책 거절은 `.policyRejected`, 인증 실패는 `.authentication`이며 재시도·브레이커 판단은 `isTransient` 한 곳에서 결정
 - `RetryPolicy.swift` / `RetryCoordinator.swift` / `IdempotencyKeyPolicy.swift` — RFC 9110 idempotency-aware retry
 - `Auth/` — refresh token coordinator (`RefreshTokenPolicy`, `RefreshTokenCoordinator`)
 - `Cache/` — response cache abstractions (RFC 9111 compliance adapter)
@@ -170,11 +174,12 @@ Scripts/check_cross_platform.sh
 - `UploadModels.swift` — 진행률, lifecycle event, bounded response receipt
 - `UploadSessionDelegate.swift` — 진행률·응답·redirect delegate bridge
 
-### Sources/InnoNetwork/V6
-- `OperationNetworkClient.swift` — 6.0 operation-first 실행 계약과 기존 client adapter
-- `NetworkOperation.swift` — 취소 가능한 typed value handle과 bounded lifecycle event
-- `NetworkFailure.swift` — payload를 보존하지 않는 value-only 실패·복구 분류
-- `NetworkClientConfiguration.swift` — secure/production configuration façade와 migration bridge
+### Sources/InnoNetwork/Operation
+- `NetworkClient+Operation.swift` — 모든 클라이언트의 `start(_:replaySafety:deadline:)` / `startUpload(...)`와 공용 실행기
+- `NetworkOperation.swift` — 취소 가능한 typed value handle과 bounded lifecycle event (`value()`는 `NetworkError`를 던짐)
+- `NetworkErrorSummary.swift` — payload를 보존하지 않는 요약값과 복구 권고 (`error.summary`)
+- `NetworkOperationDeadline.swift` — 종단 간 데드라인과 단계 추적
+- `RemovedIn7.swift` — 7.0에서 제거한 이름의 `unavailable` 안내 선언
 
 ### Sibling InnoNetwork-Stream/Sources/InnoNetworkHLS
 - `PlaylistResolver.swift` — bounded UTF-8 playlist fetch + parser
@@ -318,7 +323,7 @@ let manager = try DownloadManager(
 let task = await manager.download(url: url, to: destination)
 
 // AsyncSequence events
-for await event in manager.events(for: task) {
+for await event in await manager.events(for: task) {
     switch event {
     case .progress(let progress):
         print(progress.percentCompleted)

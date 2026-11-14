@@ -1,5 +1,30 @@
 # Roadmap
 
+## 7.0.0 Draft Scope
+
+7.0.0 is an unreleased draft; 6.1.1 remains the current published release.
+The draft is a compatibility reset with one theme — one client, one
+configuration type, one error type — and adds no product or dependency:
+
+- operation handles start on the client itself, and the 6.x operation-client
+  facade, its configuration wrapper and its value-only failure type are
+  removed;
+- `NetworkError` is the only thrown type and names local policy rejections
+  and authentication failures instead of folding them into `underlying`;
+- one transience rule drives the retry hint, the built-in retry policy, the
+  circuit breaker and the recovery recommendation;
+- streaming handshakes use the session refresh and the circuit breaker;
+- downloads validate HTTP status, resume on automatic retry and keep the
+  cause of a terminal failure;
+- a WebSocket connection must stay open for a stability interval before it
+  resets the reconnect budget.
+
+Scope and migration: `docs/releases/7.0.0.md`, `docs/Migration-7.0.0.md` and
+`docs/rfcs/error-model-7.0.md`. Cache, coalescing and custom execution
+policies for streaming, a NIO transport, WebSocket `permessage-deflate`, and
+unifying the Download and WebSocket `safeDefaults` / `advanced` baselines the
+way the core configuration was unified are outside this draft.
+
 ## 6.0.0 Release Boundary
 
 This section records the historical 6.0 scope; 6.1.1 is now published. The approved scope combines the

@@ -31,6 +31,64 @@ buffering, overflow behavior, and metrics integration through
 ``WebSocketObservabilityPack`` — see the [event delivery guide](https://innosquadcorp.github.io/InnoNetwork/InnoNetwork/documentation/innonetwork/eventdeliveryguide)
 in the core module.
 
+### Event streams are bounded
+
+``WebSocketManager/events(for:)`` does not buffer without limit. Every stream
+or listener has its own queue of at most `maxBufferedEventsPerConsumer`
+events, and the task has a partition queue of at most
+`maxBufferedEventsPerPartition` events:
+
+| Configuration | Events per consumer | Events per partition | Overflow |
+| --- | --- | --- | --- |
+| ``WebSocketConfiguration/safeDefaults()`` (`EventDeliveryPolicy.default`) | 256 | 256 | `.dropOldest` |
+| ``WebSocketConfiguration/advanced(connection:liveness:reconnect:messaging:observability:)`` with the default ``WebSocketObservabilityPack`` | 512 | 512 | `.dropOldest` |
+
+A consumer that falls behind therefore loses its **oldest** queued events,
+including `.message` and `.string` frames. The socket is not slowed down and
+the stream delivers no event for the gap. Only the task's final outcome is
+always admitted. Do not treat the stream as a lossless message log: read it
+promptly, move slow work off the iteration, and let the application protocol
+detect gaps (sequence numbers, or a resynchronizing request after a reconnect).
+
+To see drops, pass an `EventPipelineMetricsReporting` reporter. A consumer or
+partition that dropped events reports a nonzero `droppedEventCount`, and each
+aggregate snapshot reports the drops since the previous snapshot in
+`overflowEventCount` and the running total in `totalDroppedEventCount`. Size
+the buffers with an `EventDeliveryPolicy` on ``WebSocketObservabilityPack``:
+
+```swift
+import InnoNetwork
+import InnoNetworkWebSocket
+
+struct DropReporter: EventPipelineMetricsReporting {
+    func report(_ metric: EventPipelineMetric) {
+        switch metric {
+        case .consumerState(let state) where state.droppedEventCount > 0:
+            logger.warning("consumer \(state.consumerID) dropped \(state.droppedEventCount) events")
+        case .aggregateSnapshot(let snapshot) where snapshot.overflowEventCount > 0:
+            logger.warning("\(snapshot.overflowEventCount) events dropped since the last snapshot")
+        default:
+            break
+        }
+    }
+}
+
+let configuration = WebSocketConfiguration.advanced(
+    observability: WebSocketObservabilityPack(
+        eventDeliveryPolicy: EventDeliveryPolicy(
+            maxBufferedEventsPerPartition: 1024,
+            maxBufferedEventsPerConsumer: 1024,
+            overflowPolicy: .dropOldest
+        ),
+        eventMetricsReporter: DropReporter()
+    )
+)
+```
+
+`.dropNewest` keeps the queued events and discards the arriving one instead.
+`EventDeliveryPolicy` and the metrics types are declared in the core
+`InnoNetwork` module.
+
 ### Observing heartbeat attempts
 
 The 6.1.1 contract emits a `.ping` event before each heartbeat or manual ping

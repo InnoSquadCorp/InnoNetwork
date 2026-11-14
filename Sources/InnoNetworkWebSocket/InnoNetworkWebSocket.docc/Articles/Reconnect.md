@@ -92,15 +92,39 @@ deadline (including a delayed timer wake-up), no new connection is started;
 the task fails with `reconnectWindowExceeded` and its pending worker is cleaned
 up. A zero cumulative duration keeps the limit disabled.
 
+## Reconnect budget and the stability interval
+
+`maxAttempts` and `maxTotalDuration` on ``WebSocketReconnectPack`` bound one
+run of reconnect attempts. A connection that opens clears that budget only
+once it has stayed open for `stabilityInterval` (default 10 seconds). A
+connection that drops sooner continues the earlier attempt count and reconnect
+window, so a server that accepts every connection and closes it at once
+exhausts `maxAttempts` instead of being retried forever.
+
+```swift
+let configuration = WebSocketConfiguration.advanced(
+    reconnect: WebSocketReconnectPack(
+        maxAttempts: 8,
+        maxTotalDuration: 120,
+        stabilityInterval: 30  // a connection must stay up 30 s to count as recovered
+    )
+)
+```
+
+Pass `stabilityInterval: 0` to reset the budget on every opened connection.
+``WebSocketConfiguration/safeDefaults()`` uses the same 10-second default.
+
 ## Attempt accounting
 
 `WebSocketTask` tracks two counters:
 
 - ``WebSocketTask/attemptedReconnectCount`` — every reconnect attempt, including ones that
   exceeded the cap before the coordinator yielded `.exceeded`. Useful for "did we ever
-  even try" alarms.
+  even try" alarms. It reads `0` while a connection is open. If that connection drops
+  before the stability interval, the earlier count is restored and keeps growing, so the
+  counter measures attempts since the last connection that stayed up.
 - ``WebSocketTask/successfulReconnectCount`` — attempts that re-entered the `connected`
-  state. Useful for SLO dashboards.
+  state. Useful for SLO dashboards. It is not reset by a successful connection.
 
 When a reconnect budget is exhausted, observers receive exactly one public
 `.error(.maxReconnectAttemptsExceeded)` or

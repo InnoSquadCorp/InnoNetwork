@@ -103,6 +103,41 @@ slot before waiting. Cancellation is checked between session and endpoint
 request interceptors, token application, and request signers so a completed
 callback cannot start the next callback after the caller has cancelled.
 
+## Handshake authentication, circuit breaker, and retry
+
+The handshake is the part of a stream before the server's response is
+accepted, so no body byte has been delivered yet. It behaves like a buffered
+request in three ways:
+
+- **Session refresh.** A handshake rejected with a refreshable status (`401`
+  by default) is replayed once with a refreshed token when the endpoint uses
+  `.optional` or `.required` session authentication and the client has a
+  ``RefreshTokenPolicy``. A second rejection surfaces
+  ``NetworkError/statusCode(_:)``. A refresh that shows the session cannot be
+  renewed surfaces ``NetworkError/authentication(_:)`` with
+  ``NetworkAuthenticationFailure/refreshFailed(_:)``; a refresh that failed
+  because of the network or a transient status of the refresh endpoint keeps
+  that failure's case and follows the retry policy, as described in
+  <doc:AuthRefresh>. Anonymous streams never refresh. A resumed stream can
+  refresh again, because every accepted handshake clears the one-replay
+  marker.
+- **Circuit breaker.** When the client has a ``CircuitBreakerPolicy``, an open
+  circuit rejects the stream before transport with
+  ``NetworkError/policyRejected(_:)`` and
+  ``NetworkPolicyRejection/circuitOpen(_:)``, and the handshake status or
+  transport failure is recorded for the host. Bytes delivered after an
+  accepted handshake are not recorded, because a long-lived stream normally
+  ends by disconnecting.
+- **Retry.** The configured ``RetryPolicy`` applies to a failed handshake.
+  `waitsForNetworkChanges` defers a handshake retry only after a connectivity
+  failure, as it does for buffered requests.
+
+Response caching, request coalescing, and custom execution policies do not
+apply to streams. A handshake that carries a credential header bypasses
+`URLSession`'s own cache in the same way as a buffered request; see
+<doc:CachingStrategies>. After the handshake, reconnecting is governed by the
+endpoint's ``StreamingResumePolicy``, not by the retry policy.
+
 ## Resume a custom NDJSON protocol
 
 For a server that accepts a custom reconnect header:
@@ -131,8 +166,11 @@ Header names are bounded ASCII HTTP tokens; reserved authentication, framing,
 routing, cache, and trace fields are rejected before dispatch. Cursor values
 must be at most 4,096 printable ASCII bytes. An empty cursor clears an initial
 header; malformed/oversized cursors disable recovery for the entire attempt,
-even if a later output supplies a valid cursor. Decoder failures, cancellation,
-TLS/trust failures, and arbitrary errors never trigger mid-stream resume.
+even if a later output supplies a valid cursor. Only a timeout or a
+``NetworkError/reachability(_:_:_:)`` failure, including
+``ReachabilityReason/cellularDataUnavailable``, counts as a transient
+disconnect. Decoder failures, cancellation, TLS/trust failures, and arbitrary
+errors never trigger mid-stream resume.
 
 The default sequence is lossless and backpressured. Explicit lossy buffering
 cannot be combined with either resume policy. `.unbounded` is permitted only

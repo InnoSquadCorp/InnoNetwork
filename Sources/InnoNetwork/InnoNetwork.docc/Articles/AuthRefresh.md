@@ -37,12 +37,114 @@ The default behaviour is:
 - replay the fully adapted request at most once, preserving session and
   endpoint interceptor headers while clearing the prior `Authorization` header
   before reapplying so custom applicators that use `addValue` stay idempotent
-- surface refresh failures to every waiting request, while a *failed* refresh
-  is not cached: the next 401 will start a fresh refresh attempt instead of
-  replaying the previous failure
+- surface a refresh failure to every waiting request, then hold a short
+  failure cooldown (`failureCooldown:`, exponential from 1 s up to 30 s by
+  default). A `401` that arrives during the cooldown fails with the same
+  refresh error instead of calling a known-bad refresh again; after the
+  cooldown the next `401` starts a fresh refresh attempt. Pass
+  `failureCooldown: .disabled` to make every failure immediately retryable
+- apply the same single replay to a `stream(_:)` handshake rejected with a
+  refresh status, before any body byte is delivered
 
 Provide `refreshStatusCodes:` or `applyToken:` only when your API differs from
 standard bearer-token authentication.
+
+## Handle a Failed Refresh
+
+When a session refresh fails in a way that shows the session cannot be
+renewed, the request throws ``NetworkError/authentication(_:)`` with
+``NetworkAuthenticationFailure/refreshFailed(_:)``. Every refresh follows the
+same rule: the replay after a refresh status (`401` by default) and the
+proactive refresh of a `.required` request that has no token yet. That covers:
+
+- a refresh request that the server rejected with a status that is not
+  transient, for example `400 invalid_grant`, `401`, `403`, or `404`;
+- a `URLError` that reports a rejected credential:
+  `.userAuthenticationRequired`, `.userCancelledAuthentication`,
+  `.clientCertificateRejected`, or `.clientCertificateRequired`;
+- a token response that cannot be decoded;
+- an error of your own type thrown by the `refreshToken` closure.
+
+The payload is a ``SendableUnderlyingError`` snapshot of the error the refresh
+operation produced. Replaying the request cannot repair the session, so the
+built-in retry policy never retries this failure, the circuit breaker never
+counts it, and ``NetworkErrorSummary/recovery`` recommends
+``NetworkRecoveryDisposition/reauthenticate``.
+
+```swift
+do {
+    let profile = try await client.request(GetProfile())
+    render(profile)
+} catch NetworkError.authentication(.refreshFailed) {
+    await session.signOut()
+    presentSignIn()
+} catch {
+    present(error)
+}
+```
+
+A refresh that fails for a reason that says nothing about the session keeps
+the refresh error's own case, because the session may still be valid. The
+request then follows the ordinary retry and recovery rules:
+
+- Cancellation stays ``NetworkError/cancelled``.
+- A connectivity failure stays ``NetworkError/reachability(_:_:_:)``, and a
+  timeout stays ``NetworkError/timeout(reason:underlying:)``.
+- A `408`, `429`, or `5xx` from the refresh endpoint stays
+  ``NetworkError/statusCode(_:)``. Its ``Response`` is the refresh endpoint's
+  response, not the response to your request.
+- Any other `URLError` is an unclassified transport error and stays
+  ``NetworkError/underlying(_:_:)``.
+- A configuration failure, including an offline device, stays
+  ``NetworkError/configuration(reason:)``. A local policy rejection, such as an
+  open circuit for the token host, stays ``NetworkError/policyRejected(_:)``,
+  and a trust failure stays ``NetworkError/trustEvaluationFailed(_:)``.
+
+Only an error that comes from a transport — a ``NetworkError`` or a `URLError` —
+can count as transient, and a credential-rejection `URLError` never does. Any
+other error type thrown by the `refreshToken` closure is treated as the
+closure's verdict on the session, so rethrow a `URLError` or ``NetworkError``
+that your token client received instead of wrapping it in your own error type.
+A refresh request sent through an InnoNetwork client already reports its
+status as ``NetworkError/statusCode(_:)``. A token client that checks the HTTP
+status itself can follow the Auth example in the repository: throw
+`URLError(.userAuthenticationRequired)` for `400`, `401`, and `403`, which
+reject the refresh credential, and `URLError(.badServerResponse)` for any other
+unsuccessful status, which keeps the request retryable.
+
+A `401` that arrives during the failure cooldown fails with the stored refresh
+error, classified by the same rules. A `401` that the server returns after a
+successful refresh stays ``NetworkError/statusCode(_:)``.
+
+## URLSession Cache Policy
+
+`URLSession`'s cache keys entries by URL, not by credential. A request that
+reaches transport with a credential header — `Authorization`,
+`Proxy-Authorization`, `Cookie`, `X-API-Key`, `X-Auth-Token`, or a header
+listed in `CachePack(sensitiveHeaderNames:)` — therefore never has its
+response stored in that cache, whatever its cache policy. Under the default
+`.useProtocolCachePolicy` it does not read the cache either: it is sent with
+`.reloadIgnoringLocalCacheData`. Only an explicitly cache-first policy,
+`.returnCacheDataElseLoad` or `.returnCacheDataDontLoad`, opts out of both. The
+check runs after request interceptors and token application, so it covers a
+credential that your own request interceptor adds as well as the token that
+``RefreshTokenPolicy`` applies, whether the configuration comes from
+``NetworkConfiguration/safeDefaults(baseURL:)`` or from `advanced`. The
+library's own response cache (``CachePack``) is not affected.
+
+Configuring `AuthPack(refreshToken:)` also changes one transport default of
+``NetworkConfiguration/advanced(baseURL:resilience:auth:observability:cache:transport:)``.
+When ``TransportPack`` does not set a `cachePolicy`, every request of that
+client uses `.reloadIgnoringLocalCacheData`, so a response fetched with one
+session's token is not served from `URLSession`'s cache after the session
+changes, even when the token travels in a header the library does not
+recognize as a credential. The same default applies when ``CachePack`` sets a
+`responseCachePolicy` other than `.disabled`.
+
+A client that does not use `AuthPack` and sends a credential in a custom
+header should list that header in `CachePack(sensitiveHeaderNames:)`, which
+also keeps its responses out of `URLSession`'s cache, or set
+`TransportPack(cachePolicy: .reloadIgnoringLocalCacheData)`.
 
 ## Isolate Multiple Authentication Realms
 

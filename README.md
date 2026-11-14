@@ -30,177 +30,7 @@ Everything else—including Download, Upload, WebSocket,
 persistent cache, OpenAPI, AWS signing, pinning, and test support—is an
 optional product selected only when that capability is required.
 
-## Current release
-
-**6.1.1** is the latest stable release, [published 2026-10-07 UTC](https://github.com/InnoSquadCorp/InnoNetwork/releases/tag/6.1.1).
-The annotated tag resolves to `44e4ca28c50c03f817231a077c0f3bdfdbc859c8`.
-6.1.1 is a documentation/tooling patch with no runtime or public API changes from
-6.1.0. [6.1.0 is published](https://github.com/InnoSquadCorp/InnoNetwork/releases/tag/6.1.0)
-and introduced the encoded-request boundary. Use a released tag rather than moving `main`.
-
-<details>
-<summary>Historical 6.0 readiness record (not current adoption guidance)</summary>
-
-> **Release readiness:** `6.0.0` is approved for release; readiness is not publication.
-> The previously planned 6.1 candidates are included in this 6.0 release scope.
-
-The old `.upToNextMajor(from: "6.0.0")` example represented the 6.0 baseline;
-it does not guarantee that a retained lockfile resolves the newer 6.1 APIs.
-
-</details>
-
-## AI agent skill
-
-The library-owned [Codex and Claude Code skill](skills/README.md) supports stable
-**6.1.x**, with verified public **6.1.0** as its tested baseline, including the
-encoded request boundary.
-It includes exact-release consumer tests and installation instructions.
-
-## Product Selection Guide
-
-| Product | Use When |
-| --- | --- |
-| `InnoNetwork` | Start here for named typed HTTP endpoints and the async request pipeline. Advanced policy remains opt-in. |
-| `InnoNetworkAuthAWS` | You need the optional AWS SigV4 reference signer. It is a single-shot signer, not an AWS SDK replacement. |
-| `InnoNetworkDownload` | You need foreground/background download lifecycle management with pause, resume, retry, persistence, and event streams. |
-| `InnoNetworkUpload` | You need file-backed foreground/background uploads with progress, restoration, bounded responses, and typed decoding. |
-| `InnoNetworkWebSocket` | You need long-lived bidirectional connections with heartbeat, reconnect, close taxonomy, and event delivery. |
-| `InnoNetworkPersistentCache` | You want `ResponseCache` backed by disk with conservative RFC-aware storage guards and data protection. |
-| `InnoNetworkOpenAPI` | Use `OpenAPIRequest` when generated or hand-written operations should run through the full `DefaultNetworkClient` pipeline. Use `InnoNetworkClientTransport` when an OpenAPI Runtime client needs a thin URLSession-backed transport and the full pipeline is not required. |
-| `InnoNetworkTrust` | You need optional public-key pinning via `PublicKeyPinningEvaluator` and `TrustPolicy.custom(_:)`. |
-| `InnoNetworkTestSupport` | You need consumer-test helpers such as `MockURLSession`, `StubNetworkClient`, or WebSocket recorders. Do not link it into production binaries. |
-
-For application API catalogs, start with an explicit endpoint struct and the
-default-enabled `@APIDefinition` macro. The struct remains the source of truth;
-the macro derives repetitive witnesses and fails the build when method, path,
-payload, response, or auth declarations are incomplete. Use `EndpointBuilder`
-for one-off or runtime-composed requests that do not deserve a named contract.
-
-### Small-app baseline
-
-Start with only the `InnoNetwork` product and
-`DefaultNetworkClient(baseURL:)`. A named endpoint struct plus
-`@APIDefinition` needs no configuration pack or optional product. Add an
-advanced pack only when a concrete retry, auth, cache, transport, or
-observability requirement appears; add Download, Upload, WebSocket, persistent cache,
-OpenAPI, AWS auth, or pinning products only
-for the capability named in the table above. If the application has only one
-or two uncomplicated requests and no shared policy, direct `URLSession` is
-intentionally the smaller choice.
-
-Applications that prefer manual `APIDefinition` conformances can disable the
-macro target with `traits: []`. This is an opt-out for build topology, not a
-second runtime API.
-
-The packages are built around Swift Concurrency, explicit transport
-policies, and operational visibility that can scale from app prototypes
-to production clients.
-
-### InnoNetwork 6 migration
-
-The operation-first `OperationNetworkClient`, configuration, operation handle,
-and value-only failure types previously previewed by `InnoNetworkNext` now ship
-in the root `InnoNetwork` module. Remove the preview product and replace
-`import InnoNetworkNext` with `import InnoNetwork`.
-
-InnoNetwork 6.0 adds an opt-in `NetworkOperationDeadline` to buffered
-operation-first requests. One monotonic duration covers admission, retries,
-transport, and decoding; `NetworkFailure.deadlineStage` reports only the
-coarse stage that exhausted the budget. Existing calls without a deadline keep
-their behavior without an operation-wide deadline.
-
-The four HLS products moved to the independently versioned
-[InnoNetwork-Stream](https://github.com/InnoSquadCorp/InnoNetwork-Stream) package. Their product
-and module names are unchanged, so migration consists of changing the SwiftPM
-package dependency while keeping existing imports.
-
-See the [6.0 migration guide](docs/Migration-6.0.0.md) for the exact package
-manifest diff, replay-safety rules, and tag validation order. Then apply the
-[6.1 encoded-request migration](docs/Migration-EncodedRequests.md) if needed.
-6.1.1 adds no source migration from 6.1.0.
-
-## Why InnoNetwork
-
-Five things that differentiate this library from the usual URLSession
-wrapper or Alamofire-style helper:
-
-- **`typed throws` end-to-end** — `NetworkClient.request(_:)` is declared as
-  `async throws(NetworkError)`, so call-sites get a concrete error type
-  in `catch` without losing classification. Foreign errors are mapped at
-  a single narrow boundary so the typed-throws invariant holds.
-- **Phantom-typed HTTP headers** — `HTTPHeader<Value>` keys carry their
-  value type at compile time (e.g. `.contentType`, `.authorization`,
-  custom phantom keys). Typos and value/type mismatches fail at build,
-  not at runtime.
-- **Explicit session authentication** — every endpoint declares
-  `SessionAuthentication` as `.anonymous`, `.optional`, or `.required`.
-  Required endpoints fail before transport when no refresh policy can provide
-  a token; the single-flight `RefreshTokenPolicy` only refreshes endpoints
-  that opted in and can isolate token, refresh, generation, and cooldown state
-  with a per-request `AuthenticationRealm`.
-- **Single-flight refresh + idempotency-aware retry** — concurrent 401s
-  coalesce into one refresh call (`RefreshTokenCoordinator`). Retries
-  follow RFC 9110: `GET`, `HEAD`, `OPTIONS`, and `TRACE` retry by default;
-  unsafe methods retry only when an `Idempotency-Key` header is present.
-  `Retry-After` is parsed for all three RFC 9110 formats with a
-  maximum-clamp against malicious headers.
-- **RFC 9111-aware cache adapter + first-class test support** — opt into
-  `rfc9111Compliant(wrapping:)` to get the documented directive subset, or
-  drop in `MockURLSession` / `VCRURLSession` / `StubNetworkClient` from
-  `InnoNetworkTestSupport` (a top-level product, not a hidden helper).
-
-Production controls remain composable: use `RateLimitExecutionPolicy` for
-client-side fixed-window pacing and `SemanticNetworkEventAdapter` to translate
-redacted request lifecycle events into exporter-neutral semantic attributes.
-
-See `API_STABILITY.md` for the Stable / Provisionally Stable contract
-around each of these.
-
-> ⚠️ **The root Swift package is Apple-platform-only by design.** It builds on URLSession, `OSAllocatedUnfairLock`, OSLog, and Network.framework, none of which match Apple-platform behaviour on Linux. Linux/server-side Swift is **not** a supported target. Android and Web use separate native packages under `Platforms/`. See [docs/PlatformSupport.md](docs/PlatformSupport.md) for the exact boundary.
-
-> 📚 **API Reference (DocC):** https://innosquadcorp.github.io/InnoNetwork/
-> 🇰🇷 **한국어 문서:** [docs/ko/README.md](docs/ko/README.md)
-
-## Choosing the Right Entry Point
-
-InnoNetwork ships several layers. Pick the highest one that preserves the
-contract your application needs. Most app teams should use macro-assisted,
-explicit `APIDefinition` structs for their API catalog.
-
-```text
-Does this endpoint belong in the application's named API catalog?
-├─ yes ─► @APIDefinition on an explicit struct
-│          (the struct owns inputs, APIResponse, and any custom policy)
-└─ no
-   │
-   Is it a one-off or runtime-composed HTTP request?
-   ├─ yes ─► EndpointBuilder
-   └─ no
-      │
-      Does it need multipart, streaming, or generated OpenAPI transport?
-      ├─ yes ─► MultipartAPIDefinition / StreamingAPIDefinition / InnoNetworkOpenAPI
-      └─ no
-         │
-         Are you building an SDK or library wrapper that needs raw
-         transport hooks (no decoding, no interceptors)?
-         └─ yes ─► LowLevelNetworkClient (@_spi(GeneratedClientSupport))
-                   — minor-version-mutable surface, see API_STABILITY.md
-```
-
-### When NOT to use InnoNetwork
-
-- **Linux / server-side Swift.** InnoNetwork is Apple-platform-only by
-  design (URLSession, `OSAllocatedUnfairLock`, OSLog, Network.framework).
-  Use AsyncHTTPClient or a server framework on Linux.
-- **One-off scripts where URLSession's three-line GET is enough.** The
-  type-safety surface only pays off once you have shared interceptors,
-  retry/coalescing/cache policies, or a fleet of endpoints.
-- **Push-style protocols outside HTTP and WebSocket.** gRPC, MQTT,
-  WebTransport are out of scope; pair InnoNetwork with a dedicated
-  client.
-- **You need synchronous APIs.** The package is built on Swift
-  Concurrency end-to-end; there is no `DispatchQueue`/completion-handler
-  fallback.
+> **7.0 draft on this branch.** This branch carries an unreleased 7.0 draft. 6.1.1 remains the current release and is what this README documents. For the draft's breaking changes, see the [7.0 migration guide](docs/Migration-7.0.0.md).
 
 ## Quick Start
 
@@ -459,6 +289,181 @@ for await event in await manager.events(for: task) {
 }
 ```
 
+## Current release
+
+**6.1.1** is the latest stable release, [published 2026-10-07 UTC](https://github.com/InnoSquadCorp/InnoNetwork/releases/tag/6.1.1).
+The annotated tag resolves to `44e4ca28c50c03f817231a077c0f3bdfdbc859c8`.
+6.1.1 is a documentation/tooling patch with no runtime or public API changes from
+6.1.0. [6.1.0 is published](https://github.com/InnoSquadCorp/InnoNetwork/releases/tag/6.1.0)
+and introduced the encoded-request boundary. Use a released tag rather than moving `main`.
+
+<details>
+<summary>Historical 6.0 readiness record (not current adoption guidance)</summary>
+
+> **Release readiness:** `6.0.0` is approved for release; readiness is not publication.
+> The previously planned 6.1 candidates are included in this 6.0 release scope.
+
+The old `.upToNextMajor(from: "6.0.0")` example represented the 6.0 baseline;
+it does not guarantee that a retained lockfile resolves the newer 6.1 APIs.
+
+</details>
+
+## AI agent skill
+
+The library-owned [Codex and Claude Code skill](skills/README.md) supports stable
+**6.1.x**, with verified public **6.1.0** as its tested baseline, including the
+encoded request boundary.
+It includes exact-release consumer tests and installation instructions.
+
+## Product Selection Guide
+
+| Product | Use When |
+| --- | --- |
+| `InnoNetwork` | Start here for named typed HTTP endpoints and the async request pipeline. Advanced policy remains opt-in. |
+| `InnoNetworkAuthAWS` | You need the optional AWS SigV4 reference signer. It is a single-shot signer, not an AWS SDK replacement. |
+| `InnoNetworkDownload` | You need foreground/background download lifecycle management with pause, resume, retry, persistence, and event streams. |
+| `InnoNetworkUpload` | You need file-backed foreground/background uploads with progress, restoration, bounded responses, and typed decoding. |
+| `InnoNetworkWebSocket` | You need long-lived bidirectional connections with heartbeat, reconnect, close taxonomy, and event delivery. |
+| `InnoNetworkPersistentCache` | You want `ResponseCache` backed by disk with conservative RFC-aware storage guards and data protection. |
+| `InnoNetworkOpenAPI` | Use `OpenAPIRequest` when generated or hand-written operations should run through the full `DefaultNetworkClient` pipeline. Use `InnoNetworkClientTransport` when an OpenAPI Runtime client needs a thin URLSession-backed transport and the full pipeline is not required. |
+| `InnoNetworkTrust` | You need optional public-key pinning via `PublicKeyPinningEvaluator` and `TrustPolicy.custom(_:)`. |
+| `InnoNetworkTestSupport` | You need consumer-test helpers such as `MockURLSession`, `StubNetworkClient`, or WebSocket recorders. Do not link it into production binaries. |
+
+For application API catalogs, start with an explicit endpoint struct and the
+default-enabled `@APIDefinition` macro. The struct remains the source of truth;
+the macro derives repetitive witnesses and fails the build when method, path,
+payload, response, or auth declarations are incomplete. Use `EndpointBuilder`
+for one-off or runtime-composed requests that do not deserve a named contract.
+
+### Small-app baseline
+
+Start with only the `InnoNetwork` product and
+`DefaultNetworkClient(baseURL:)`. A named endpoint struct plus
+`@APIDefinition` needs no configuration pack or optional product. Add an
+advanced pack only when a concrete retry, auth, cache, transport, or
+observability requirement appears; add Download, Upload, WebSocket, persistent cache,
+OpenAPI, AWS auth, or pinning products only
+for the capability named in the table above. If the application has only one
+or two uncomplicated requests and no shared policy, direct `URLSession` is
+intentionally the smaller choice.
+
+Applications that prefer manual `APIDefinition` conformances can disable the
+macro target with `traits: []`. This is an opt-out for build topology, not a
+second runtime API.
+
+The packages are built around Swift Concurrency, explicit transport
+policies, and operational visibility that can scale from app prototypes
+to production clients.
+
+### InnoNetwork 6 migration
+
+The operation-first `OperationNetworkClient`, configuration, operation handle,
+and value-only failure types previously previewed by `InnoNetworkNext` now ship
+in the root `InnoNetwork` module. Remove the preview product and replace
+`import InnoNetworkNext` with `import InnoNetwork`.
+
+InnoNetwork 6.0 adds an opt-in `NetworkOperationDeadline` to buffered
+operation-first requests. One monotonic duration covers admission, retries,
+transport, and decoding; `NetworkFailure.deadlineStage` reports only the
+coarse stage that exhausted the budget. Existing calls without a deadline keep
+their behavior without an operation-wide deadline.
+
+The four HLS products moved to the independently versioned
+[InnoNetwork-Stream](https://github.com/InnoSquadCorp/InnoNetwork-Stream) package. Their product
+and module names are unchanged, so migration consists of changing the SwiftPM
+package dependency while keeping existing imports.
+
+See the [6.0 migration guide](docs/Migration-6.0.0.md) for the exact package
+manifest diff, replay-safety rules, and tag validation order. Then apply the
+[6.1 encoded-request migration](docs/Migration-EncodedRequests.md) if needed.
+6.1.1 adds no source migration from 6.1.0.
+
+## Why InnoNetwork
+
+Five things that differentiate this library from the usual URLSession
+wrapper or Alamofire-style helper:
+
+- **`typed throws` end-to-end** — `NetworkClient.request(_:)` is declared as
+  `async throws(NetworkError)`, so call-sites get a concrete error type
+  in `catch` without losing classification. Foreign errors are mapped at
+  a single narrow boundary so the typed-throws invariant holds.
+- **Phantom-typed HTTP header names** — `HTTPHeaderName<Variant>` records at
+  compile time whether a header name is single-value (e.g. `.contentType`,
+  `.authorization`) or repeatable (e.g. `.setCookie`). Through these names
+  `HTTPHeaders` offers only overwrite semantics for single-value headers and
+  only append semantics for repeatable ones, so appending a second
+  `Authorization` value fails at build, not at runtime. `HTTPHeader` itself is
+  a plain, non-generic name/value pair, and header values stay `String`.
+- **Explicit session authentication** — every endpoint declares
+  `SessionAuthentication` as `.anonymous`, `.optional`, or `.required`.
+  Required endpoints fail before transport when no refresh policy can provide
+  a token; the single-flight `RefreshTokenPolicy` only refreshes endpoints
+  that opted in and can isolate token, refresh, generation, and cooldown state
+  with a per-request `AuthenticationRealm`.
+- **Single-flight refresh + idempotency-aware retry** — concurrent 401s
+  coalesce into one refresh call (`RefreshTokenCoordinator`). Retries
+  follow RFC 9110: `GET`, `HEAD`, `OPTIONS`, and `TRACE` retry by default;
+  unsafe methods retry only when an `Idempotency-Key` header is present.
+  `Retry-After` is parsed for all three RFC 9110 formats with a
+  maximum-clamp against malicious headers.
+- **RFC 9111-aware cache adapter + first-class test support** — opt into
+  `rfc9111Compliant(wrapping:)` to get the documented directive subset, or
+  drop in `MockURLSession` / `VCRURLSession` / `StubNetworkClient` from
+  `InnoNetworkTestSupport` (a top-level product, not a hidden helper).
+
+Production controls remain composable: use `RateLimitExecutionPolicy` for
+client-side fixed-window pacing and `SemanticNetworkEventAdapter` to translate
+redacted request lifecycle events into exporter-neutral semantic attributes.
+
+See `API_STABILITY.md` for the Stable / Provisionally Stable contract
+around each of these.
+
+> ⚠️ **The root Swift package is Apple-platform-only by design.** It builds on URLSession, `OSAllocatedUnfairLock`, OSLog, and Network.framework, none of which match Apple-platform behaviour on Linux. Linux/server-side Swift is **not** a supported target. Android and Web use separate native packages under `Platforms/`. See [docs/PlatformSupport.md](docs/PlatformSupport.md) for the exact boundary.
+
+> 📚 **API Reference (DocC):** https://innosquadcorp.github.io/InnoNetwork/
+> 🇰🇷 **한국어 문서:** [docs/ko/README.md](docs/ko/README.md)
+
+## Choosing the Right Entry Point
+
+InnoNetwork ships several layers. Pick the highest one that preserves the
+contract your application needs. Most app teams should use macro-assisted,
+explicit `APIDefinition` structs for their API catalog.
+
+```text
+Does this endpoint belong in the application's named API catalog?
+├─ yes ─► @APIDefinition on an explicit struct
+│          (the struct owns inputs, APIResponse, and any custom policy)
+└─ no
+   │
+   Is it a one-off or runtime-composed HTTP request?
+   ├─ yes ─► EndpointBuilder
+   └─ no
+      │
+      Does it need multipart, streaming, or generated OpenAPI transport?
+      ├─ yes ─► MultipartAPIDefinition / StreamingAPIDefinition / InnoNetworkOpenAPI
+      └─ no
+         │
+         Are you building an SDK or library wrapper that needs raw
+         transport hooks (no decoding, no interceptors)?
+         └─ yes ─► LowLevelNetworkClient (@_spi(GeneratedClientSupport))
+                   — minor-version-mutable surface, see API_STABILITY.md
+```
+
+### When NOT to use InnoNetwork
+
+- **Linux / server-side Swift.** InnoNetwork is Apple-platform-only by
+  design (URLSession, `OSAllocatedUnfairLock`, OSLog, Network.framework).
+  Use AsyncHTTPClient or a server framework on Linux.
+- **One-off scripts where URLSession's three-line GET is enough.** The
+  type-safety surface only pays off once you have shared interceptors,
+  retry/coalescing/cache policies, or a fleet of endpoints.
+- **Push-style protocols outside HTTP and WebSocket.** gRPC, MQTT,
+  WebTransport are out of scope; pair InnoNetwork with a dedicated
+  client.
+- **You need synchronous APIs.** The package is built on Swift
+  Concurrency end-to-end; there is no `DispatchQueue`/completion-handler
+  fallback.
+
 ## Products
 
 ### `InnoNetwork`
@@ -666,7 +671,7 @@ redirect handling:
   carriers with `additionalSensitiveHeaders` when using the policy outside
   that transport integration; built-in protection remains enabled.
 - Plain `http://` base URLs fail before transport unless the client opts in
-  with `allowsInsecureHTTP = true`.
+  with `TransportPack(allowsInsecureHTTP: true)`.
 - Foreground downloads — the configuration default — re-admit every redirect
   target through the same URL guard. A rejected
   downgrade, unsafe cross-origin replay, or traversal target fails as
@@ -1029,8 +1034,8 @@ Operational items to verify before shipping a client built on InnoNetwork.
   `api.example.com` pins must be operated as separate trust scopes.
 - **App Transport Security (ATS).** The default `safeDefaults` configuration assumes ATS is
   enabled. Avoid `NSAllowsArbitraryLoads` in production `Info.plist`. If a non-HTTPS host is
-  unavoidable, scope an `NSExceptionDomains` entry to that host only and set
-  `allowsInsecureHTTP = true` only on the matching client configuration.
+  unavoidable, scope an `NSExceptionDomains` entry to that host only and pass
+  `TransportPack(allowsInsecureHTTP: true)` only to the matching client configuration.
 - **Custom trust evaluation.** A `TrustEvaluating` implementation runs before request bodies are
   ever decoded, so a rejected challenge becomes `NetworkError.trustEvaluationFailed`. Surface
   the failure to a user-facing recovery path; do not auto-retry on trust failure.
@@ -1086,8 +1091,9 @@ Operational items to verify before shipping a client built on InnoNetwork.
 - **Cancel-on-logout.** Call `DefaultNetworkClient.cancelAll()` when the user logs out,
   switches accounts, or backgrounds. Streaming requests (SSE/NDJSON) only stop when their
   parent task is cancelled.
-- **Retry budget.** `ExponentialBackoffRetryPolicy.maxTotalRetries` is the absolute cap that
-  network-monitor recovery does not reset. Budget per user session, not per request.
+- **Retry budget.** `ExponentialBackoffRetryPolicy.maxTotalRetries` is the absolute cap for
+  one logical request that network-monitor recovery does not reset. It is not shared across
+  requests; bound a failing host with `CircuitBreakerPolicy`.
 - **Retry idempotency.** The built-in retry policy retries `GET`/`HEAD` by
   default. `POST`, upload, and multipart requests retry only when they carry an
   `Idempotency-Key`, unless the client opts into `.methodAgnostic`.
@@ -1101,7 +1107,7 @@ Operational items to verify before shipping a client built on InnoNetwork.
   and `Accept-Language` is included by default; the response `Vary` header
   further refines lookups, `Vary: *` responses are skipped, and
   `Cache-Control: no-store` / `private` / `no-cache` are honoured.
-- **WebSocket reconnect cap.** `maxReconnectAttempts` limits successive automatic attempts.
+- **WebSocket reconnect cap.** `WebSocketReconnectPack(maxAttempts:)` limits successive automatic attempts.
   After exhaustion, surface the failure to the UI rather than reconnect on every app
   foreground.
 

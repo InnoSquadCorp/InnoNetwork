@@ -73,16 +73,66 @@ are assembled together using the [RFC 6265 cookie-octet subset](https://www.rfc-
 
 ## Diagnostics and secrets
 
-Provider and signer errors do not retain arbitrary error descriptions. Failure
-codes use ``RequestSecurityFailure`` in `InnoNetwork.RequestSecurity` through
-`NetworkError.underlying`. Transport retry categories are retained while their
+Provider and signer errors do not retain arbitrary error descriptions. A
+credential-boundary failure is thrown as ``NetworkError/authentication(_:)``
+with ``NetworkAuthenticationFailure/credential(_:)``, whose payload is a
+secret-free ``RequestSecurityFailure``. Match the case and its reason instead
+of comparing an error domain string:
+
+```swift
+do {
+    _ = try await client.request(SecuredHealth(requestSecurity: security))
+} catch NetworkError.authentication(.credential(let reason)) {
+    switch reason {
+    case .credentialExpired, .refreshFailed:
+        presentSignIn()
+    default:
+        report(reason)  // for example .originMismatch or .insufficientScope
+    }
+}
+```
+
+Transport retry categories are retained while their
 arbitrary descriptions are removed. Observers, endpoint logging and the returned
 request snapshot use the unsigned request. Declared secret response header slots
 and query slots in response URLs are redacted.
-The built-in retry policy does not retry credential-boundary failures. The
-operation-first adapter classifies them as configuration failures with
-`doNotRetry`; use the typed `NetworkError` boundary when the detailed provider
-failure code is needed. Ordinary transport/status retries still retain selection.
+The built-in retry policy does not retry credential-boundary failures and the
+circuit breaker does not count them. Their category is
+``NetworkErrorCategory/authentication`` and their stable code is `6002`.
+``NetworkErrorSummary/recovery`` recommends
+``NetworkRecoveryDisposition/reauthenticate`` for an expired credential or a
+failed renewal and ``NetworkRecoveryDisposition/doNotRetry`` for every other
+reason. Ordinary transport/status retries still retain selection.
+
+A provider that cannot reach its own backend has not shown that a credential
+is missing. When credential acquisition or an OAuth renewal fails with a
+transient transport failure — a `URLError` other than a credential rejection
+described below, or a ``NetworkError`` such as a connectivity failure, a
+timeout, or an unclassified transport error — the request reports that
+failure's secret-free classification instead of
+``RequestSecurityFailure/credentialUnavailable`` or
+``RequestSecurityFailure/refreshFailed``. For example, an offline provider
+produces ``NetworkError/reachability(_:_:_:)`` with
+``ReachabilityReason/notConnectedToInternet``; its underlying error keeps the
+domain and code, and its message is "Credential-protected transport failed."
+An offline ``NetworkError/configuration(reason:)`` stays
+``NetworkConfigurationFailureReason/offline(_:)``. These failures follow the
+ordinary retry and recovery rules, so a retry reacquires the credential for the
+same selection. A renewal that fails this way has not reached a verdict, so it
+does not use up the request's single renewal: a retry may renew again.
+
+A `URLError` that reports a rejected credential — `.userAuthenticationRequired`,
+`.userCancelledAuthentication`, `.clientCertificateRejected`, or
+`.clientCertificateRequired` — is not a transport failure; it becomes
+`.credentialUnavailable`, or `.refreshFailed` for a renewal. A transient HTTP
+status that the provider received also becomes `.credentialUnavailable`,
+because a status would expose the provider's response, and so does any other
+provider error (`.refreshFailed` for a renewal). Selection failures are always
+``RequestSecurityFailure/selectionFailed``.
+
+A failure while the credential is acquired, renewed, or signed happens before
+anything reaches the request's host, so the circuit breaker never counts it
+against that host, whatever its case.
 
 VCR recording/replay automatically redacts the dynamically declared header,
 query and cookie fields, and recording forwards the redirect/cache context.
@@ -107,8 +157,9 @@ To renew, optionally conform the provider to ``OAuthCredentialRefreshing``.
 An expired credential with sufficient known grants triggers one renewal before
 dispatch. Identity, scopes, value and expiry are checked again, including after
 other AND credentials and asynchronous signers. One logical request permits at
-most one renewal across all attempts. Invalid/missing scope metadata never
-triggers a permission request or login UI.
+most one renewal across all attempts; a renewal that failed with a transient
+transport failure does not count against it. Invalid/missing scope metadata
+never triggers a permission request or login UI.
 
 A GET/HEAD receiving `401` with one unambiguous Bearer `invalid_token` challenge
 may renew and replay once, reacquiring the complete AND group. Other methods,

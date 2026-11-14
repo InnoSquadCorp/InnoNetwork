@@ -4,11 +4,7 @@
 
 InnoNetwork는 Apple 플랫폼의 타입 안전한 비동기 네트워킹 라이브러리입니다. 명시적인 endpoint 구조체, `@APIDefinition`, `DefaultNetworkClient.request`로 시작하세요. 선택 기능을 위해 처음부터 모든 제품을 연결할 필요는 없습니다.
 
-## 현재 버전과 범위
-
-최신 안정 버전은 **6.1.1**이며 2026-10-07 UTC에 공개되었습니다. 이 패치는 6.1.0 대비 런타임·공개 API 변경 없이 문서와 도구를 수정합니다. 태그 revision은 `44e4ca28c50c03f817231a077c0f3bdfdbc859c8`입니다. 일곱 언어의 현재 안내는 같은 설치·예제·계약 범위를 다루며, 상세 영문 설명은 [README](README.md)에 있습니다.
-
-[6.1.1 Release](https://github.com/InnoSquadCorp/InnoNetwork/releases/tag/6.1.1) · [Release notes](docs/releases/6.1.1.md)
+> **이 브랜치의 7.0 초안.** 이 브랜치에는 미출시 7.0 초안이 들어 있습니다. 현재 릴리스는 여전히 6.1.1이며, 이 README가 설명하는 대상도 6.1.1입니다. 초안의 호환성 변경 사항은 [7.0 마이그레이션 가이드](docs/Migration-7.0.0.md)를 참고하세요.
 
 ## 요구 사항과 설치
 
@@ -26,28 +22,6 @@ Swift **6.2+**, Swift 6 언어 모드가 필요합니다. 지원 하한은 iOS *
 ```
 
 재현성이 필요하면 `.exact("6.1.1")`을 사용하세요. 패치 범위는 Provisionally Stable API의 새 minor 변경을 자동 채택하지 않도록 합니다. `Package.resolved`의 실제 버전을 확인하세요. 기본 `Macros` trait를 끄려면 패키지 의존성에 `traits: []`을 추가하고 프로토콜을 직접 구현합니다. 모든 의존 경로에서 trait가 꺼져야 합니다. SwiftPM은 SwiftSyntax 등 manifest 의존성을 여전히 해석하거나 가져올 수 있습니다.
-
-## 제품 선택
-
-- `InnoNetwork` — 타입 안전한 HTTP 요청과 정책 파이프라인
-
-- `InnoNetworkAuthAWS` — 선택형 AWS SigV4 단일 요청 서명; AWS SDK 대체물이 아님
-
-- `InnoNetworkDownload` — 다운로드, 일시 중지·재개, 백그라운드 복원, 이벤트
-
-- `InnoNetworkUpload` — 파일 기반 업로드, 진행률, 복원, 크기가 제한된 응답
-
-- `InnoNetworkWebSocket` — 양방향 연결, heartbeat, 재연결, 종료 분류
-
-- `InnoNetworkPersistentCache` — RFC 인식 디스크 캐시와 저장소 제한
-
-- `InnoNetworkOpenAPI` — 전체 client 파이프라인 adapter 또는 얇은 OpenAPI Runtime transport
-
-- `InnoNetworkTrust` — 선택형 공개키 pinning evaluator
-
-- `InnoNetworkTestSupport` — 소비자 테스트 전용 helper; 프로덕션 target에 연결하지 않음
-
-`InnoNetworkMacroSupport`는 컴파일러 호스트 전용입니다. HLS는 별도 [InnoNetwork-Stream](https://github.com/InnoSquadCorp/InnoNetwork-Stream), Protobuf는 별도 [InnoNetwork-Protobuf](https://github.com/InnoSquadCorp/InnoNetwork-Protobuf)에 있습니다. 둘의 6.1.1은 Core 6.1.1을 정확히 고정합니다. Stream의 모듈은 `InnoNetworkHLS`, `InnoNetworkHLSLive`, `InnoNetworkHLSAVFoundation`, `InnoNetworkHLSAudio`이며 `InnoNetworkStream` 모듈은 없습니다. Audio는 Swift 6.4 및 OS 27 가용성 조건이 있습니다. Protobuf의 선호 product는 `InnoNetwork-Protobuf`, import 모듈은 `InnoNetworkProtobuf`입니다.
 
 ## 첫 번째 요청
 
@@ -74,6 +48,34 @@ let client = DefaultNetworkClient(
 let user = try await client.request(GetUser(id: 42))
 print(user.name)
 ```
+
+## 현재 버전과 범위
+
+최신 안정 버전은 **6.1.1**이며 2026-10-07 UTC에 공개되었습니다. 이 패치는 6.1.0 대비 런타임·공개 API 변경 없이 문서와 도구를 수정합니다. 태그 revision은 `44e4ca28c50c03f817231a077c0f3bdfdbc859c8`입니다. 일곱 언어의 현재 안내는 같은 설치·예제·계약 범위를 다루며, 상세 영문 설명은 [README](README.md)에 있습니다.
+
+[6.1.1 Release](https://github.com/InnoSquadCorp/InnoNetwork/releases/tag/6.1.1) · [Release notes](docs/releases/6.1.1.md)
+
+## 제품 선택
+
+- `InnoNetwork` — 타입 안전한 HTTP 요청과 정책 파이프라인
+
+- `InnoNetworkAuthAWS` — 선택형 AWS SigV4 단일 요청 서명; AWS SDK 대체물이 아님
+
+- `InnoNetworkDownload` — 다운로드, 일시 중지·재개, 백그라운드 복원, 이벤트
+
+- `InnoNetworkUpload` — 파일 기반 업로드, 진행률, 복원, 크기가 제한된 응답
+
+- `InnoNetworkWebSocket` — 양방향 연결, heartbeat, 재연결, 종료 분류
+
+- `InnoNetworkPersistentCache` — RFC 인식 디스크 캐시와 저장소 제한
+
+- `InnoNetworkOpenAPI` — 전체 client 파이프라인 adapter 또는 얇은 OpenAPI Runtime transport
+
+- `InnoNetworkTrust` — 선택형 공개키 pinning evaluator
+
+- `InnoNetworkTestSupport` — 소비자 테스트 전용 helper; 프로덕션 target에 연결하지 않음
+
+`InnoNetworkMacroSupport`는 컴파일러 호스트 전용입니다. HLS는 별도 [InnoNetwork-Stream](https://github.com/InnoSquadCorp/InnoNetwork-Stream), Protobuf는 별도 [InnoNetwork-Protobuf](https://github.com/InnoSquadCorp/InnoNetwork-Protobuf)에 있습니다. 둘의 6.1.1은 Core 6.1.1을 정확히 고정합니다. Stream의 모듈은 `InnoNetworkHLS`, `InnoNetworkHLSLive`, `InnoNetworkHLSAVFoundation`, `InnoNetworkHLSAudio`이며 `InnoNetworkStream` 모듈은 없습니다. Audio는 Swift 6.4 및 OS 27 가용성 조건이 있습니다. Protobuf의 선호 product는 `InnoNetwork-Protobuf`, import 모듈은 `InnoNetworkProtobuf`입니다.
 
 ## 설정·인증·보안
 

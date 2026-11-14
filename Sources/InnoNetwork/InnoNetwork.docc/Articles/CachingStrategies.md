@@ -61,6 +61,22 @@ Malformed, missing, or duplicate `stale-if-error` values fail closed, as do
 
 When the server responds with `304 Not Modified`, InnoNetwork substitutes the
 cached body before status validation and decoding for conditional cache modes.
+
+A `304` must identify the stored response that the conditional request was
+built from. When its `ETag` or `Last-Modified` identifies a different
+representation, or the merged headers cannot be rebuilt, the request fails with
+``NetworkError/underlying(_:_:)`` whose ``SendableUnderlyingError`` has domain
+`InnoNetwork.ResponseCache` and code `304`. The error's ``Response`` is the
+stored response; its body is redacted unless failure-payload capture is
+enabled. Before the error is reported, InnoNetwork removes the stored entry,
+provided it is still that representation, so a replay — the built-in retry or
+your own — sends an unconditional request and receives a full response. The
+failure is transient. The circuit breaker does not count it, because the `304`
+was already recorded as a successful exchange. A background
+stale-while-revalidate refresh follows the same rule. A `304` that arrives
+after the entry was removed or replaced by another request fails the same way
+but removes nothing.
+
 GET responses with RFC-cacheable whole-response status codes (`200`, `203`,
 `204`, `300`, `301`, `308`, `404`, `405`, `410`, `414`, and `501`) are eligible
 for storage. `206 Partial Content` is intentionally excluded because range
@@ -170,6 +186,62 @@ let configuration = NetworkConfiguration.advanced(
 )
 ```
 
-Open-circuit failures are wrapped in ``CircuitBreakerOpenError`` and surfaced
-through ``NetworkError/underlying(_:_:)`` so no new ``NetworkError`` enum case is
-required.
+While a circuit is open, a request fails before transport with
+``NetworkError/policyRejected(_:)`` and
+``NetworkPolicyRejection/circuitOpen(_:)``. The payload is a
+``CircuitBreakerOpenError`` that carries the `host` and the `retryAfter`
+interval:
+
+```swift
+do {
+    let feed = try await client.request(GetFeed())
+    render(feed)
+} catch NetworkError.policyRejected(.circuitOpen(let open)) {
+    showTemporarilyUnavailable(retryAfter: open.retryAfter)
+}
+```
+
+An open circuit is a local decision, so the built-in retry policy does not
+retry it. The breaker counts `5xx` responses, timeouts, reachability failures,
+and unclassified transport errors. It does not count a policy rejection — a
+response over the body limit, or a full admission or rate-limit queue — or an
+authentication failure, because neither is evidence about the host's health.
+`stream(_:)` handshakes take part in the same per-host breaker.
+
+## URLSession's own cache
+
+`URLSession` keeps a second cache, `URLCache`, which keys entries by URL and
+ignores credential headers. A request that reaches transport carrying
+`Authorization`, `Proxy-Authorization`, `Cookie`, `X-API-Key`, `X-Auth-Token`,
+or a header listed in `CachePack(sensitiveHeaderNames:)` therefore never has
+its response stored in `URLCache`, whatever its cache policy. Under the default
+`.useProtocolCachePolicy` it does not read `URLCache` either: the request is
+sent with `.reloadIgnoringLocalCacheData`. Only an explicitly cache-first
+policy, `.returnCacheDataElseLoad` or `.returnCacheDataDontLoad`, opts out of
+both rules. The check runs after request interceptors and token application,
+so it covers a credential that an interceptor adds, with either preset, and it
+applies to `stream(_:)` handshakes as well. Signed requests and requests that
+use ``RequestSecurity`` always bypass `URLCache`. The library's response cache
+described above is not affected; it partitions entries by a fingerprint of the
+credential.
+
+### Cache policy with the advanced preset
+
+``NetworkConfiguration/advanced(baseURL:resilience:auth:observability:cache:transport:)``
+starts from ``NetworkConfiguration/safeDefaults(baseURL:)``, whose
+`URLRequest.CachePolicy` is `.useProtocolCachePolicy`. When ``TransportPack``
+does not set a `cachePolicy`, requests use `.reloadIgnoringLocalCacheData`
+instead if
+
+- ``CachePack`` sets a `responseCachePolicy` other than `.disabled`, so
+  `URLSession`'s own cache does not answer for, or store beside, the library's
+  response cache; or
+- ``AuthPack`` configures a session refresh policy, so a response fetched with
+  one session's token is not served from `URLSession`'s cache after the session
+  changes, even when the token travels in a header the library does not
+  recognize as a credential.
+
+A credential in a custom header that is not in the list above is not
+recognized. Add the header to `CachePack(sensitiveHeaderNames:)`, which also
+fingerprints it in response-cache keys, or set
+`TransportPack(cachePolicy: .reloadIgnoringLocalCacheData)`.

@@ -40,14 +40,23 @@ deleting cache state; FIFO body entries are rejected without waiting for a
 peer. If an existing
 cache instance encounters the same kind of transient body-read error,
 ``PersistentResponseCache/get(_:)`` returns a miss but preserves the entry for
-a later retry. Only verified missing, invalid, symbolic-link, non-regular, or
-oversized body state is scrubbed.
+a later retry. Only verified missing, invalid, symbolic-link, non-regular,
+oversized, or integrity-mismatched body state is scrubbed.
+
+Each index entry records the exact byte count and SHA-256 digest of its body.
+``PersistentResponseCache/get(_:)`` verifies the bytes it read against both
+before returning them; a body that changed on disk (bit rot, a torn write, or a
+replaced file) is reported as a miss and scrubbed with
+``PersistentResponseCacheEvictionReason/bodyIntegrityMismatch``. The digest is
+an unkeyed corruption check, not tamper protection against a writer that can
+also replace the index. Indexes written before digests were recorded (format
+version 4 and older) cannot be verified and are cold-reset on first open.
 
 Use ``PersistentResponseCache/statistics()`` for storage-pressure snapshots and
 ``PersistentResponseCache/telemetrySnapshot()`` or
 ``PersistentResponseCache/drainTelemetryEvents()`` to inspect scrub and
 eviction totals during rollout. Matching reasons are aggregated between drains,
-with at most one retained event per reason (currently five), even without a
+with at most one retained event per reason (currently six), even without a
 consumer. Counts and bytes saturate at `Int.max`. A drain clears the aggregates,
 not lifetime statistics; event chronology and individual batch boundaries are
 not retained.

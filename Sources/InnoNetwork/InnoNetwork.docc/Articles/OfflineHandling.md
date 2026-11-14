@@ -70,9 +70,13 @@ let configuration = NetworkConfiguration.advanced(
 ```
 
 The interceptor runs on every retry attempt by ``RequestInterceptor``
-contract, so a request issued during a brief outage will retry once
-the path recovers (assuming the configured ``RetryPolicy`` accepts
-the thrown ``NetworkError``).
+contract, so a request issued during a brief outage can retry once
+the path recovers when the configured ``RetryPolicy`` accepts the
+thrown ``NetworkError``. The built-in
+``ExponentialBackoffRetryPolicy`` treats every
+``NetworkError/configuration(reason:)`` failure as terminal, so the
+offline rejection above is retried only by a custom policy that
+returns ``RetryDecision/retry`` for it.
 
 The reason this is a `RequestInterceptor` rather than a
 ``RetryPolicy`` modifier is that **rejecting the request before it
@@ -83,48 +87,86 @@ spent the timeout budget waiting for an unsatisfied path.
 ## Pattern C — Wait-for-recovery on retry
 
 For non-interactive flows (background uploads, telemetry batching)
-where the request *should* succeed eventually, combine
-``NetworkMonitoring/waitForChange(from:timeout:)`` with a custom retry policy:
+where the request *should* succeed eventually, let the retry
+coordinator wait for the network before it retries. The built-in policy
+needs only two arguments:
+
+```swift
+let configuration = NetworkConfiguration.advanced(
+    baseURL: baseURL,
+    resilience: ResiliencePack(
+        retry: ExponentialBackoffRetryPolicy(
+            maxRetries: 3,
+            waitsForNetworkChanges: true,
+            networkChangeTimeout: 30
+        )
+    ),
+    observability: ObservabilityPack(networkMonitor: networkMonitor)
+)
+```
+
+``RetryPolicy/shouldRetry(error:retryIndex:request:response:)`` is
+synchronous, so a policy cannot await the monitor itself. It declares
+the wait through ``RetryPolicy/waitsForNetworkChanges`` and
+``RetryPolicy/networkChangeTimeout``, and the coordinator calls
+``NetworkMonitoring/waitForChange(from:timeout:)`` on the client's
+configured monitor. To add the wait to an existing policy, wrap it:
 
 ```swift
 struct WaitForRecoveryRetryPolicy: RetryPolicy {
     let inner: any RetryPolicy
-    let monitor: any NetworkMonitoring
 
     var maxRetries: Int { inner.maxRetries }
     var maxTotalRetries: Int { inner.maxTotalRetries }
     var retryDelay: TimeInterval { inner.retryDelay }
-    var maxRetryAfterDelay: TimeInterval { inner.maxRetryAfterDelay }
+    var maxRetryAfterDelay: TimeInterval? { inner.maxRetryAfterDelay }
+    var idempotencyPolicy: RetryIdempotencyPolicy { inner.idempotencyPolicy }
+
+    // After a connectivity failure the coordinator waits up to 30 s
+    // for the path to change before the retry delay.
+    var waitsForNetworkChanges: Bool { true }
+    var networkChangeTimeout: TimeInterval? { 30 }
 
     func retryDelay(for retryIndex: Int) -> TimeInterval {
         inner.retryDelay(for: retryIndex)
     }
 
     func shouldRetry(
-        error: Error,
+        error: NetworkError,
         retryIndex: Int,
-        request: URLRequest,
+        request: URLRequest?,
         response: HTTPURLResponse?
-    ) async -> RetryDecision {
-        let snapshot = await monitor.currentSnapshot()
-        if snapshot?.status == .unsatisfied {
-            // Wait up to 30 s for the path to recover before
-            // letting the inner policy decide.
-            _ = await monitor.waitForChange(from: snapshot, timeout: 30)
-        }
-        return await inner.shouldRetry(
+    ) -> RetryDecision {
+        inner.shouldRetry(
             error: error,
             retryIndex: retryIndex,
             request: request,
             response: response
         )
     }
+
+    func shouldResetAttempts(
+        afterNetworkChangeFrom oldSnapshot: NetworkSnapshot?,
+        to newSnapshot: NetworkSnapshot?
+    ) -> Bool {
+        inner.shouldResetAttempts(afterNetworkChangeFrom: oldSnapshot, to: newSnapshot)
+    }
 }
 ```
 
-This decouples the retry budget from the offline-wait time:
-``RetryPolicy/maxRetries`` still bounds attempts, but transient
-offline windows do not burn through the budget on a tight loop.
+The wait applies only after a connectivity failure —
+``NetworkError/reachability(_:_:_:)``, including
+``ReachabilityReason/cellularDataUnavailable``, or an offline
+``NetworkError/configuration(reason:)``. A retry after a `503` or a
+timeout on a working network is not held back, and neither is a retry
+after `URLError.cannotConnectToHost`, which maps to
+``TimeoutReason/connectionTimeout``. The wait happens before
+the backoff delay, so ``RetryPolicy/maxRetries`` still bounds attempts
+while the request waits out a transient offline window instead of
+burning through the budget on a tight loop.
+``RetryPolicy/maxTotalRetries`` never resets, even when
+`shouldResetAttempts` restarts the per-request count after the path
+changes.
 
 ## Why no built-in `OfflineQueuePolicy`?
 
@@ -177,6 +219,23 @@ unless supplied explicitly.
 This pairs naturally with the `allowsCellularAccess` inputs on
 ``TransportPack`` and the optional `DownloadTransferPack` type from
 `InnoNetworkDownload`.
+
+When the only available path is cellular and it cannot carry the request's
+data — cellular data is not allowed for the connection, international data
+roaming is off, or an active voice call blocks data on an EDGE or GPRS
+network — `URLSession` fails with `URLError.dataNotAllowed`,
+`.internationalRoamingOff`, or `.callIsActive`. InnoNetwork reports all three as
+``NetworkError/reachability(_:_:_:)`` with
+``ReachabilityReason/cellularDataUnavailable``; the underlying error keeps the
+exact code. Joining Wi-Fi is a path change, so a retry policy with
+``RetryPolicy/waitsForNetworkChanges`` waits for it, and download retries do
+the same:
+
+```swift
+catch NetworkError.reachability(.cellularDataUnavailable, let underlying, _) {
+    showCellularDataUnavailable(isRoaming: underlying.code == URLError.internationalRoamingOff.rawValue)
+}
+```
 
 ## See also
 

@@ -31,6 +31,79 @@ Versioning.
   keeping the root Swift 6.1.1 package and its optional products aligned with
   current `main` rather than presenting Android/Web as full API mirrors.
 
+- Start operation handles on the client itself for the unreleased 7.0 line:
+  `start(_:replaySafety:deadline:)` on every `NetworkClient` and
+  `EncodedRequestClient`, `startUpload(_:replaySafety:deadline:)` on every
+  `UploadNetworkClient`, and `NetworkOperation.failureSummary()` for the
+  contextual, payload-free `NetworkErrorSummary`.
+- Add `NetworkError.policyRejected(_:)` and `NetworkError.authentication(_:)`
+  with `NetworkPolicyRejection` and `NetworkAuthenticationFailure`, the
+  `NetworkErrorCategory.policy` / `.authentication` buckets,
+  `TimeoutReason.operationDeadline(_:)`, and error codes `4011`, `6001` and
+  `6002`.
+- Add `ReachabilityReason.cellularDataUnavailable`.
+- Add `DownloadTransferPack(acceptableStatusCodes:)`,
+  `DownloadError.unacceptableStatusCode(_:)` and `DownloadError.httpStatusCode`.
+- Add `WebSocketReconnectPack(stabilityInterval:)`.
+- Verify persistent-cache bodies against a recorded byte count and SHA-256
+  digest, reported as `PersistentResponseCacheEvictionReason.bodyIntegrityMismatch`.
+
+### Changed
+
+The entries in this section and in Removed are breaking and belong to the
+unreleased 7.0 line. See `docs/Migration-7.0.0.md`.
+
+- `NetworkOperation.value()` throws `NetworkError` instead of a second error
+  type, and `NetworkOperationEvent.failed` carries a `NetworkErrorSummary`.
+- Report a response over the body limit, an open circuit, a full rate-limit or
+  admission queue and a non-HTTP response as `policyRejected`, and a session
+  that cannot be renewed or a failed request credential as `authentication`,
+  instead of `underlying`. `NetworkError.errorCode` returns their specific
+  codes. A refresh that failed on the network, timed out or received a `408`,
+  `429` or `5xx`, and a credential provider whose own transport failed
+  transiently, keep that failure's own classification. The proactive refresh
+  of a request that has no token yet follows the same rule.
+- Report `URLError.dataNotAllowed`, `.internationalRoamingOff` and
+  `.callIsActive` as `reachability(.cellularDataUnavailable, …)` instead of
+  `underlying`.
+- Decide transience in one place for `isRetriableHint`, the built-in retry
+  policy, the circuit breaker and the recovery recommendation. Policy
+  rejections and authentication failures are no longer retried or counted.
+- `waitsForNetworkChanges` defers a retry only after a connectivity failure,
+  for buffered requests, streaming handshakes and downloads, which share one
+  connectivity table. `URLError.cannotConnectToHost` is a connection timeout,
+  not a connectivity failure.
+- `NetworkConfiguration.advanced(...)` starts from the `safeDefaults`
+  baseline (30-second timeout, protocol cache policy, 256-event buffers) and
+  selects `.reloadIgnoringLocalCacheData` when a response cache policy or a
+  session refresh policy is configured without an explicit transport cache
+  policy.
+- A request or stream handshake that reaches transport with a credential
+  header (`Authorization`, `Proxy-Authorization`, `Cookie`, `X-API-Key`,
+  `X-Auth-Token`, or a header in `CachePack(sensitiveHeaderNames:)`) never has
+  its response stored in `URLSession`'s cache, and under the default
+  `.useProtocolCachePolicy` does not read it either, with either preset. Only
+  an explicitly cache-first policy opts out.
+- A credential provider that cannot be reached no longer counts against the
+  API host's circuit breaker, and a renewal that failed in transit leaves the
+  request's single renewal for a retry.
+- Streaming handshakes replay once through the session refresh and take part
+  in the circuit breaker.
+- Downloads validate the HTTP status before staging the file, resume from
+  resume data on automatic retry, and honor `pause(_:)` during a retry wait,
+  which keeps the latest failed attempt's resume data.
+  `DownloadError.maxRetriesExceeded` carries the last attempt's error.
+- A WebSocket connection that drops before the stability interval continues
+  the earlier reconnect budget instead of resetting it.
+- The persistent cache index format is version 5; a 6.x cache directory is
+  reset on first open.
+
+### Removed
+
+- `OperationNetworkClient`, `NetworkClientConfiguration`, `NetworkFailure` and
+  `NetworkFailureKind`. Each remains as an `unavailable` declaration that
+  names its replacement.
+
 ### Fixed
 
 - Decode Android typed responses on an injectable dispatcher, defaulting to
@@ -71,6 +144,25 @@ Versioning.
   verified historical pre-execution cancellations without accepting stale success.
 - Expose benchmark input/build/binary identity diagnostics while preserving the
   original 20% performance guard and unresolved measured failures.
+
+- Replay the download append log only when another writer changed it. One
+  thousand consecutive persistence mutations previously took 26 seconds of
+  CPU on one store and now take well under a second.
+- Remove the stored response that a `304` cannot be reconciled with before
+  reporting the `InnoNetwork.ResponseCache` failure. A retry sent the same
+  conditional request again and received the same `304`; it is now
+  unconditional.
+- Count reconnects made by the WebSocket manager in
+  `WebSocketTask.successfulReconnectCount`. The counter stayed at zero because
+  a reconnect attempt has already left the `reconnecting` state when its
+  connection opens.
+- Report an inactive VPN path as `NetworkUnsatisfiedReason.vpnInactive` on
+  Swift 6.2 and 6.3 toolchains. The mapping was compiled only from Swift 6.4,
+  so those toolchains reported `.unknown` and warned about a non-exhaustive
+  switch.
+- Give positive waits in the package's own tests a load-tolerant upper bound
+  so `swift test --parallel` no longer fails when two thousand tests start in
+  one process.
 
 ## [6.1.1] - 2026-10-07
 
