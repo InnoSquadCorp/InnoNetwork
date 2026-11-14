@@ -146,9 +146,7 @@ struct CircuitBreakerRegistryHardeningTests {
                     do {
                         return try await registry.prepare(request: request, policy: policy)
                     } catch let error as NetworkError {
-                        guard case .underlying(let underlying, _) = error,
-                            underlying.domain == CircuitBreakerOpenError.errorDomain
-                        else {
+                        guard case .policyRejected(.circuitOpen) = error else {
                             Issue.record("Expected CircuitBreakerOpenError, got \(error)")
                             return nil
                         }

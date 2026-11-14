@@ -4,14 +4,14 @@ import Testing
 
 @testable import InnoNetwork
 
-@Suite("Operation-first client")
-struct OperationNetworkClientTests {
+@Suite("Network operation handle")
+struct NetworkOperationTests {
     @Test("Operation returns a typed value and a bounded lifecycle")
     func returnsTypedValueAndLifecycle() async throws {
         let endpoint = PreviewEndpoint()
         let stub = StubNetworkClient()
         stub.register(PreviewResponse(id: "42"), for: endpoint)
-        let client = OperationNetworkClient(client: stub)
+        let client = stub
 
         let operation = client.start(endpoint)
         let value = try await operation.value()
@@ -33,31 +33,31 @@ struct OperationNetworkClientTests {
             for: endpoint,
             behavior: .delayed(seconds: 60)
         )
-        let operation = OperationNetworkClient(client: stub).start(endpoint)
+        let operation = stub.start(endpoint)
         operation.cancel()
 
-        await #expect(throws: NetworkFailure.self) {
+        await #expect(throws: NetworkError.self) {
             _ = try await operation.value()
         }
         do {
             _ = try await operation.value()
         } catch {
-            #expect(error.kind == .cancelled)
-            #expect(error.recovery == .none)
+            #expect(error.category == .cancellation)
+            #expect(error.summary.recovery == .none)
+            #expect(await operation.failureSummary()?.recovery == NetworkRecoveryDisposition.none)
             #expect(operation.isCancelled)
         }
     }
 
-    @Test("Migration failure mapping removes response payload details")
-    func mapsLegacyConfigurationFailure() {
-        let failure = NetworkFailure(
-            migratingV5: .configuration(reason: .invalidRequest("secret detail"))
-        )
+    @Test("A summary removes payload details")
+    func summaryRemovesPayloadDetails() {
+        let failure = NetworkError.configuration(reason: .invalidRequest("secret detail")).summary
 
-        #expect(failure.kind == .configuration)
+        #expect(failure.category == .configuration)
         #expect(failure.recovery == .doNotRetry)
         #expect(failure.statusCode == nil)
-        #expect(failure.errorDescription == "The request configuration is invalid.")
+        #expect(failure.description == "The request configuration is invalid.")
+        #expect(!String(reflecting: failure).contains("secret detail"))
     }
 
     @Test(
@@ -66,7 +66,7 @@ struct OperationNetworkClientTests {
     )
     func requiresReplaySafetyForRetry(statusCode: Int) async throws {
         let error = makeHTTPFailure(statusCode: statusCode)
-        let client = OperationNetworkClient(client: FailingNetworkClient(error: error))
+        let client = FailingNetworkClient(error: error)
 
         let getFailure = await failure(
             from: client.start(RecoveryEndpoint(method: .get))
@@ -96,7 +96,7 @@ struct OperationNetworkClientTests {
     @Test("Timeout recovery also requires replay safety")
     func requiresReplaySafetyForTimeoutRecovery() async throws {
         let error = NetworkError.timeout(reason: .requestTimeout)
-        let client = OperationNetworkClient(client: FailingNetworkClient(error: error))
+        let client = FailingNetworkClient(error: error)
 
         let getFailure = await failure(
             from: client.start(RecoveryEndpoint(method: .get))
@@ -117,7 +117,7 @@ struct OperationNetworkClientTests {
             underlying,
             nil
         )
-        let client = OperationNetworkClient(client: FailingNetworkClient(error: error))
+        let client = FailingNetworkClient(error: error)
 
         let getFailure = await failure(
             from: client.start(RecoveryEndpoint(method: .get))
@@ -139,19 +139,13 @@ struct OperationNetworkClientTests {
         let anonymous = RecoveryEndpoint(method: .get)
 
         let authenticated401 = await failure(
-            from: OperationNetworkClient(
-                client: FailingNetworkClient(error: makeHTTPFailure(statusCode: 401))
-            ).start(authenticated)
+            from: FailingNetworkClient(error: makeHTTPFailure(statusCode: 401)).start(authenticated)
         )
         let anonymous401 = await failure(
-            from: OperationNetworkClient(
-                client: FailingNetworkClient(error: makeHTTPFailure(statusCode: 401))
-            ).start(anonymous)
+            from: FailingNetworkClient(error: makeHTTPFailure(statusCode: 401)).start(anonymous)
         )
         let authenticated403 = await failure(
-            from: OperationNetworkClient(
-                client: FailingNetworkClient(error: makeHTTPFailure(statusCode: 403))
-            ).start(authenticated)
+            from: FailingNetworkClient(error: makeHTTPFailure(statusCode: 403)).start(authenticated)
         )
 
         #expect(authenticated401.recovery == .reauthenticate)
@@ -159,35 +153,69 @@ struct OperationNetworkClientTests {
         #expect(authenticated403.recovery == .doNotRetry)
     }
 
-    @Test("Context-free migration keeps local limit failures terminal")
-    func keepsResponseBodyLimitTerminal() {
-        let underlying = SendableUnderlyingError(
-            domain: NetworkError.errorDomain,
-            code: NetworkErrorCode.responseBodyLimitExceeded.rawValue,
-            message: "sensitive size detail"
-        )
-        let failure = NetworkFailure(
-            migratingV5: .underlying(underlying, nil)
-        )
+    @Test("A context-free summary never recommends replay")
+    func contextFreeSummaryIsConservative() {
+        let bodyLimit = NetworkError.policyRejected(
+            .responseBodyLimitExceeded(limitBytes: 1_024, observedBytes: 4_096)
+        ).summary
+        #expect(bodyLimit.category == .policy)
+        #expect(bodyLimit.code == NetworkErrorCode.responseBodyLimitExceeded.rawValue)
+        #expect(bodyLimit.recovery == .doNotRetry)
 
-        #expect(failure.kind == .transport)
-        #expect(failure.code == NetworkErrorCode.responseBodyLimitExceeded.rawValue)
-        #expect(failure.recovery == .doNotRetry)
-
-        let contextFreeServerFailure = NetworkFailure(
-            migratingV5: makeHTTPFailure(statusCode: 503)
-        )
+        let contextFreeServerFailure = makeHTTPFailure(statusCode: 503).summary
+        #expect(contextFreeServerFailure.statusCode == 503)
         #expect(contextFreeServerFailure.recovery == .doNotRetry)
     }
 
-    @Test("Configuration facade preserves an incremental migration bridge")
-    func preservesConfigurationBridge() {
-        let legacy = NetworkConfiguration.safeDefaults(
-            baseURL: URL(string: "https://api.example.test")!
+    @Test("An unclassified transport failure follows the same transience rule as the retry hint")
+    func transportFailureRecoveryMatchesRetryHint() async {
+        let error = NetworkError.underlying(
+            SendableUnderlyingError(domain: NSURLErrorDomain, code: NSURLErrorBadServerResponse, message: "bad"),
+            nil
         )
-        let preview = NetworkClientConfiguration(migratingV5: legacy)
+        let client = FailingNetworkClient(error: error)
 
-        _ = preview.legacyConfiguration
+        let getFailure = await failure(from: client.start(RecoveryEndpoint(method: .get)))
+        let postFailure = await failure(from: client.start(RecoveryEndpoint(method: .post)))
+
+        #expect(error.isRetriableHint)
+        #expect(getFailure.category == .transport)
+        #expect(getFailure.recovery == .retry)
+        #expect(postFailure.recovery == .doNotRetry)
+    }
+
+    @Test("Local rejections and failed refreshes have fixed recovery")
+    func policyAndAuthenticationRecovery() async {
+        let rejected = await failure(
+            from: FailingNetworkClient(error: .policyRejected(.admissionQueueFull))
+                .start(RecoveryEndpoint(method: .get))
+        )
+        #expect(rejected.category == .policy)
+        #expect(rejected.recovery == .doNotRetry)
+
+        let cause = SendableUnderlyingError(domain: "app.auth", code: 1, message: "revoked")
+        let refresh = await failure(
+            from: FailingNetworkClient(error: .authentication(.refreshFailed(cause)))
+                .start(RecoveryEndpoint(method: .get))
+        )
+        #expect(refresh.category == .authentication)
+        #expect(refresh.recovery == .reauthenticate)
+        #expect(NetworkError.authentication(.refreshFailed(cause)).summary.recovery == .reauthenticate)
+    }
+
+    @Test("The failed event carries the same contextual summary as the handle")
+    func failedEventCarriesContextualSummary() async {
+        let operation = FailingNetworkClient(error: makeHTTPFailure(statusCode: 503))
+            .start(RecoveryEndpoint(method: .get))
+        let summary = await failure(from: operation)
+
+        var events: [NetworkOperationEvent] = []
+        for await event in operation.events {
+            events.append(event)
+        }
+
+        #expect(summary.recovery == .retry)
+        #expect(events == [.started(id: operation.id), .failed(id: operation.id, summary: summary)])
     }
 
     @Test("An expired operation deadline fails before a delayed request completes")
@@ -199,14 +227,14 @@ struct OperationNetworkClientTests {
             for: endpoint,
             behavior: .delayed(seconds: 60)
         )
-        let operation = OperationNetworkClient(client: stub).start(
+        let operation = stub.start(
             endpoint,
             deadline: NetworkOperationDeadline(after: .zero)
         )
 
         let failure = await failure(from: operation)
 
-        #expect(failure.kind == .timeout)
+        #expect(failure.category == .timeout)
         #expect(failure.code == NetworkErrorCode.timeout.rawValue)
         #expect(failure.deadlineStage == .requestPreparation)
         #expect(failure.recovery == .retry)
@@ -221,14 +249,14 @@ struct OperationNetworkClientTests {
             for: endpoint,
             behavior: .delayed(seconds: 60)
         )
-        let operation = OperationNetworkClient(client: stub).start(
+        let operation = stub.start(
             endpoint,
             deadline: NetworkOperationDeadline(after: .zero)
         )
 
         let failure = await failure(from: operation)
 
-        #expect(failure.kind == .timeout)
+        #expect(failure.category == .timeout)
         #expect(failure.recovery == .doNotRetry)
     }
 
@@ -236,14 +264,14 @@ struct OperationNetworkClientTests {
     func zeroDeadlineDoesNotDispatch() async {
         let base = DeadlineHeldNetworkClient()
         let clock = TestClock()
-        let operation = OperationNetworkClient(client: base, deadlineClock: clock).start(
+        let operation = ClockedClient(base: base, deadlineClock: clock).start(
             PreviewEndpoint(),
             deadline: NetworkOperationDeadline(after: .zero)
         )
 
         let result = await failure(from: operation)
 
-        #expect(result.kind == .timeout)
+        #expect(result.category == .timeout)
         #expect(await base.requestCount == 0)
         #expect(clock.waiterCount == 0)
     }
@@ -252,7 +280,7 @@ struct OperationNetworkClientTests {
     func elapsedDeadlineWinsLateSuccess() async throws {
         let base = DeadlineHeldNetworkClient()
         let clock = TestClock()
-        let operation = OperationNetworkClient(client: base, deadlineClock: clock).start(
+        let operation = ClockedClient(base: base, deadlineClock: clock).start(
             PreviewEndpoint(),
             deadline: NetworkOperationDeadline(after: .seconds(1))
         )
@@ -263,7 +291,7 @@ struct OperationNetworkClientTests {
         await base.release()
         let result = await failure(from: operation)
 
-        #expect(result.kind == .timeout)
+        #expect(result.category == .timeout)
         #expect(result.deadlineStage == .requestPreparation)
         #expect(await base.requestCount == 1)
         clock.advance(by: .zero)
@@ -276,7 +304,7 @@ struct OperationNetworkClientTests {
         let stub = StubNetworkClient()
         stub.register(PreviewResponse(id: "42"), for: endpoint)
         let clock = TestClock()
-        let client = OperationNetworkClient(client: stub, deadlineClock: clock)
+        let client = ClockedClient(base: stub, deadlineClock: clock)
 
         let value = try await client.start(
             endpoint,
@@ -303,7 +331,7 @@ struct OperationNetworkClientTests {
             session: session,
             clock: clock
         )
-        let client = OperationNetworkClient(client: base, deadlineClock: clock)
+        let client = ClockedClient(base: base, deadlineClock: clock)
         let operation = client.start(
             PreviewEndpoint(),
             deadline: NetworkOperationDeadline(after: .seconds(2))
@@ -313,7 +341,7 @@ struct OperationNetworkClientTests {
         clock.advance(by: .seconds(2))
         let failure = await failure(from: operation)
 
-        #expect(failure.kind == .timeout)
+        #expect(failure.category == .timeout)
         #expect(failure.deadlineStage == .retryDelay)
         #expect(await session.requestCount == 1)
     }
@@ -328,7 +356,7 @@ struct OperationNetworkClientTests {
             behavior: .delayed(seconds: 60)
         )
         let clock = TestClock()
-        let operation = OperationNetworkClient(client: stub, deadlineClock: clock).start(
+        let operation = ClockedClient(base: stub, deadlineClock: clock).start(
             endpoint,
             deadline: NetworkOperationDeadline(after: .seconds(60))
         )
@@ -336,7 +364,7 @@ struct OperationNetworkClientTests {
         operation.cancel()
         let failure = await failure(from: operation)
 
-        #expect(failure.kind == .cancelled)
+        #expect(failure.category == .cancellation)
         #expect(failure.deadlineStage == nil)
         #expect(clock.waiterCount == 0)
     }
@@ -347,7 +375,7 @@ struct OperationNetworkClientTests {
     )
     func cancellationReturnsBeforeNoncooperativeBase() async throws {
         let base = CancellationHeldNetworkClient()
-        let operation = OperationNetworkClient(client: base).start(PreviewEndpoint())
+        let operation = base.start(PreviewEndpoint())
         await base.waitUntilStarted()
 
         let valueTask = Task {
@@ -358,7 +386,7 @@ struct OperationNetworkClientTests {
         await base.waitUntilCancelled()
         let result = await valueTask.value
 
-        #expect(result.kind == .cancelled)
+        #expect(result.category == .cancellation)
         await base.release()
     }
 
@@ -370,7 +398,7 @@ struct OperationNetworkClientTests {
     func valueAwaiterCancellationPropagates(delayValueEntry: Bool) async throws {
         let base = CancellationHeldNetworkClient()
         let clock = TestClock()
-        let operation = OperationNetworkClient(client: base, deadlineClock: clock).start(
+        let operation = ClockedClient(base: base, deadlineClock: clock).start(
             PreviewEndpoint(),
             deadline: NetworkOperationDeadline(after: .seconds(60))
         )
@@ -400,7 +428,7 @@ struct OperationNetworkClientTests {
             // Observe cancellation completion before making the deadline eligible.
             let result = await valueTask.value
 
-            #expect(result.kind == .cancelled)
+            #expect(result.category == .cancellation)
             #expect(result.deadlineStage == nil)
             #expect(clock.waiterCount == 0)
             clock.advance(by: .seconds(60))
@@ -428,7 +456,7 @@ struct OperationNetworkClientTests {
             session: session,
             clock: clock
         )
-        let client = OperationNetworkClient(client: base, deadlineClock: clock)
+        let client = ClockedClient(base: base, deadlineClock: clock)
         let long = client.start(
             PreviewEndpoint(),
             deadline: NetworkOperationDeadline(after: .seconds(10))
@@ -457,20 +485,36 @@ struct OperationNetworkClientTests {
     }
 }
 
+/// Awaits a failing operation and returns its contextual summary.
 private func failure<Value: Sendable>(
     from operation: NetworkOperation<Value>,
     onWait: @Sendable () -> Void = {}
-) async -> NetworkFailure {
+) async -> NetworkErrorSummary {
     do {
         _ = try await operation.value(onWait: onWait)
         Issue.record("Expected the operation to fail")
-        return NetworkFailure(
-            kind: .configuration,
-            code: NetworkErrorCode.configurationInvalidRequest.rawValue,
-            recovery: .doNotRetry
-        )
+        return NetworkError.configuration(reason: .invalidRequest("unexpected success")).summary
     } catch {
-        return error
+        return await operation.failureSummary() ?? error.summary
+    }
+}
+
+/// Test adapter that pins the deadline clock for every operation it starts.
+private struct ClockedClient<Base: NetworkClient>: Sendable {
+    let base: Base
+    let deadlineClock: any InnoNetworkClock
+
+    func start<Request: APIDefinition>(
+        _ request: Request,
+        replaySafety: NetworkOperationReplaySafety = .methodDefault,
+        deadline: NetworkOperationDeadline? = nil
+    ) -> NetworkOperation<Request.APIResponse> {
+        base.start(
+            request,
+            replaySafety: replaySafety,
+            deadline: deadline,
+            deadlineClock: deadlineClock
+        )
     }
 }
 

@@ -118,8 +118,22 @@ actor AuthService {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+        guard let http = response as? HTTPURLResponse else {
+            throw URLError(.badServerResponse)
+        }
+        switch http.statusCode {
+        case 200..<300:
+            break
+        case 400, 401, 403:
+            // The server rejected the refresh credential: the session is over.
+            // InnoNetwork reports this as `.authentication(.refreshFailed)`.
             throw URLError(.userAuthenticationRequired)
+        default:
+            // The token service is unavailable or throttling. The session may
+            // still be valid, so report a transient transport failure; the
+            // request then follows the ordinary retry rules instead of
+            // signing the user out.
+            throw URLError(.badServerResponse)
         }
         struct RefreshResponse: Decodable { let accessToken: String }
         let decoded = try JSONDecoder().decode(RefreshResponse.self, from: data)
@@ -181,9 +195,14 @@ struct AuthExampleApp {
         do {
             let profile = try await client.request(GetProfile())
             print("✅ Fetched profile: \(profile)")
+        } catch NetworkError.authentication(.refreshFailed(let cause)) {
+            // The refresh operation itself failed. Replaying the request
+            // cannot repair the session, so this failure is never retried:
+            // sign the user out and ask them to sign in again.
+            print("❌ Session refresh failed: \(cause.message)")
         } catch {
             // A 401 will trigger one refresh + replay automatically.
-            // A second 401 after replay surfaces the real error here.
+            // A second 401 after replay surfaces here as `.statusCode`.
             print("❌ Request failed: \(error)")
         }
     }

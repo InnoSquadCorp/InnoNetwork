@@ -279,15 +279,7 @@ public final class VCRURLSession: URLSessionProtocol, Sendable {
                 (data, response) = try await recordingSession.data(for: request)
             }
             guard let httpResponse = response as? HTTPURLResponse else {
-                throw NetworkError.underlying(
-                    SendableUnderlyingError(
-                        domain: NetworkError.errorDomain,
-                        code: NetworkErrorCode.nonHTTPResponse.rawValue,
-                        message:
-                            "VCRURLSession received a non-HTTP response while recording \(NetworkError.diagnosticURLString(for: request.url))."
-                    ),
-                    nil
-                )
+                throw NetworkError.policyRejected(.nonHTTPResponse)
             }
             let recorded = VCRInteraction(
                 request: sanitizedRequest,

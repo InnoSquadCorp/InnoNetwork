@@ -155,8 +155,12 @@ public struct ExponentialBackoffRetryPolicy: RetryPolicy {
     ///     header. Pass `nil` to honor server hints without an absolute cap.
     ///   - maxDelay: Maximum delay for exponential backoff in seconds.
     ///   - jitterRatio: Jitter ratio applied to the delay (e.g., 0.2 means ±20%). Must be non-negative; negative jitter results are clamped to 0.
-    ///   - waitsForNetworkChanges: Whether to wait for network changes before retrying.
-    ///   - networkChangeTimeout: Timeout for waiting for network changes. If `nil`, waits indefinitely.
+    ///   - waitsForNetworkChanges: Whether a retry that follows a connectivity
+    ///     failure (``NetworkError/reachability(_:_:_:)`` or an offline
+    ///     configuration failure) first waits for the network path to change.
+    ///     Other retryable failures, such as a `503` or a timeout on a working
+    ///     network, are never held back by this setting.
+    ///   - networkChangeTimeout: Timeout for that wait. If `nil`, waits indefinitely.
     ///   - idempotencyPolicy: Controls which HTTP methods the built-in policy
     ///     can retry. Defaults to safe methods plus unsafe methods that carry
     ///     `Idempotency-Key`.
@@ -184,34 +188,11 @@ public struct ExponentialBackoffRetryPolicy: RetryPolicy {
 
     private func isRetryableErrorClass(_ error: NetworkError, retryIndex: Int) -> Bool {
         guard retryIndex < maxRetries else { return false }
-        switch error {
-        case .statusCode(let response):
-            return response.statusCode == 408
-                || response.statusCode == 429
-                || (500...599).contains(response.statusCode)
-        case .underlying(let error, _):
-            // Provider failures require application action. Treating them as
-            // transient transport errors could reacquire a different identity
-            // after a failed selection or repeatedly ask for missing secrets.
-            guard error.domain != "InnoNetwork.RequestSecurity" else { return false }
-            return !NetworkError.isCancellation(error)
-        case .reachability:
-            // Connectivity-class URLErrors (`notConnectedToInternet`,
-            // `dnsLookupFailed`, `cannotFindHost`, `networkConnectionLost`)
-            // were `.underlying` before this branch and retried by default;
-            // preserve that contract after the typed-throws refactor. The
-            // outer policy still honours `waitsForNetworkChanges` so an
-            // offline device does not burn its retry budget against a
-            // closed pipe.
-            return true
-        case .timeout:
-            // Request and connection timeouts are typically transient.
-            return true
-        case .cancelled:
-            return false
-        default:
-            return false
-        }
+        // One rule for the whole library: transient status codes, unclassified
+        // transport errors, reachability failures and timeouts are worth a
+        // replay. A local policy rejection or an authentication failure is
+        // not, because the same request reproduces it.
+        return error.isTransient
     }
 
     public func retryDelay(for retryIndex: Int) -> TimeInterval {

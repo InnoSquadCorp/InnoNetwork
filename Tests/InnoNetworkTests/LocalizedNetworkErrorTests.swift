@@ -86,6 +86,15 @@ struct LocalizedNetworkErrorTests {
                 ),
                 nil
             ),
+            .reachability(
+                .cellularDataUnavailable,
+                SendableUnderlyingError(
+                    domain: NSURLErrorDomain,
+                    code: NSURLErrorDataNotAllowed,
+                    message: "cellular data not allowed"
+                ),
+                nil
+            ),
         ]
 
         for error in cases {
@@ -146,6 +155,7 @@ struct LocalizedNetworkErrorTests {
         "NetworkError.reachability.dnsLookupFailed",
         "NetworkError.reachability.cannotFindHost",
         "NetworkError.reachability.networkConnectionLost",
+        "NetworkError.reachability.cellularDataUnavailable",
         "NetworkError.trust.unsupportedAuthenticationMethod",
         "NetworkError.trust.missingServerTrust",
         "NetworkError.trust.systemTrustEvaluationFailedWithReason",
@@ -153,6 +163,15 @@ struct LocalizedNetworkErrorTests {
         "NetworkError.trust.hostNotPinned",
         "NetworkError.trust.publicKeyExtractionFailed",
         "NetworkError.trust.pinMismatch",
+        "NetworkError.policy.responseBodyLimitExceeded",
+        "NetworkError.policy.circuitOpen",
+        "NetworkError.policy.rateLimitQueueFull",
+        "NetworkError.policy.rateLimitScopeLimitReached",
+        "NetworkError.policy.admissionQueueFull",
+        "NetworkError.policy.admissionWaitExpired",
+        "NetworkError.policy.nonHTTPResponse",
+        "NetworkError.authentication.refreshFailed",
+        "NetworkError.authentication.credential",
     ]
 
     @Test("English catalogue resolves every documented key")

@@ -7,12 +7,12 @@ import InnoNetworkPersistentCache
 import InnoNetworkUpload
 import InnoNetworkWebSocket
 
-private let smokeOperationConfiguration = NetworkClientConfiguration.secure(
+private let smokeOperationConfiguration = NetworkConfiguration.safeDefaults(
     baseURL: URL(string: "https://example.com")!
 )
-private let smokeOperationClientType =
-    OperationNetworkClient<DefaultNetworkClient>.self
-private let smokeFailureKind = NetworkFailureKind.transport
+private let smokeOperationType = NetworkOperation<EmptyResponse>.self
+private let smokeErrorSummaryType = NetworkErrorSummary.self
+private let smokeErrorCategory = NetworkErrorCategory.policy
 private let smokeRecoveryDisposition = NetworkRecoveryDisposition.retry
 private let smokeBoundedTransferType = BoundedNetworkTransfer.self
 private let smokeRetryExecutor = NetworkRetryExecutor()

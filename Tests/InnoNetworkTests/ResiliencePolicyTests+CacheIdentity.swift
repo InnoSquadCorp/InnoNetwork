@@ -165,6 +165,84 @@ extension ResiliencePolicyTests {
         }
     }
 
+    @Test("A 304 with a different ETag drops the stored entry so a replay is unconditional")
+    func mismatchedETagNotModifiedDropsEntryAndReplaysUnconditionally() async throws {
+        let cache = InMemoryResponseCache()
+        let key = resilienceUserCacheKey()
+        await cache.set(
+            key,
+            CachedResponse(
+                data: try JSONEncoder().encode(ResilienceUser(id: 1, name: "cached")),
+                headers: ["ETag": "v1"],
+                storedAt: Date(timeIntervalSinceNow: -60)
+            )
+        )
+        let session = try ResilienceSequenceURLSession(queue: [
+            resilienceQueuedResponse(statusCode: 304, headers: ["ETag": "v2"]),
+            resilienceQueuedResponse(
+                statusCode: 200,
+                body: ResilienceUser(id: 1, name: "fresh"),
+                headers: ["ETag": "v2", "Cache-Control": "max-age=60"]
+            ),
+        ])
+        let client = DefaultNetworkClient(
+            configuration: resilienceMakeLocalizedCacheConfiguration(
+                responseCachePolicy: .cacheFirst(maxAge: .seconds(1)),
+                responseCache: cache,
+                retryPolicy: ExponentialBackoffRetryPolicy(maxRetries: 2, retryDelay: 0, jitterRatio: 0)
+            ),
+            session: session
+        )
+
+        let user = try await client.request(ResilienceGetRequest())
+
+        #expect(user.name == "fresh")
+        let requests = await session.capturedRequests
+        #expect(requests.count == 2)
+        #expect(requests.first?.value(forHTTPHeaderField: "If-None-Match") == "v1")
+        // The replay must not repeat the conditional request that produced
+        // the unusable 304.
+        #expect(requests.last?.value(forHTTPHeaderField: "If-None-Match") == nil)
+        #expect(await cache.get(key)?.etag == "v2")
+    }
+
+    @Test("A mismatched 304 without a retry policy still leaves no stale entry behind")
+    func mismatchedETagNotModifiedWithoutRetryDropsEntry() async throws {
+        let cache = InMemoryResponseCache()
+        let key = resilienceUserCacheKey()
+        await cache.set(
+            key,
+            CachedResponse(
+                data: try JSONEncoder().encode(ResilienceUser(id: 1, name: "cached")),
+                headers: ["ETag": "v1"],
+                storedAt: Date(timeIntervalSinceNow: -60)
+            )
+        )
+        let session = try ResilienceSequenceURLSession(queue: [
+            resilienceQueuedResponse(statusCode: 304, headers: ["ETag": "v2"])
+        ])
+        let client = DefaultNetworkClient(
+            configuration: resilienceMakeLocalizedCacheConfiguration(
+                responseCachePolicy: .cacheFirst(maxAge: .seconds(1)),
+                responseCache: cache
+            ),
+            session: session
+        )
+
+        let error = await #expect(throws: NetworkError.self) {
+            _ = try await client.request(ResilienceGetRequest())
+        }
+
+        guard case .underlying(let underlying, _) = error else {
+            Issue.record("Expected the cache revalidation failure, got \(String(describing: error))")
+            return
+        }
+        #expect(underlying.domain == "InnoNetwork.ResponseCache")
+        // Transient is now true to its word: the next attempt is unconditional.
+        #expect(error?.isRetriableHint == true)
+        #expect(await cache.get(key) == nil)
+    }
+
     @Test("A weak 304 ETag can identify a stored response with the same opaque tag")
     func weakETagNotModifiedMatchesStoredStrongETag() async throws {
         let cache = InMemoryResponseCache()

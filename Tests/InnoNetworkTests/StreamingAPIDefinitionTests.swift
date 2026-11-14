@@ -405,7 +405,7 @@ private final class StreamingResumeHTTPServer: @unchecked Sendable {
         }
         listener.start(queue: queue)
 
-        guard ready.wait(timeout: .now() + 2) == .success,
+        guard ready.wait(timeout: .now() + TestWaitBudget.upperBound(2.0)) == .success,
             let port = listener.port
         else {
             throw URLError(.cannotConnectToHost)
@@ -1053,8 +1053,8 @@ struct StreamingAPIDefinitionTests {
         #expect(await probe.refreshCalls == 1)
     }
 
-    @Test("stream() does not refresh-replay handshake authorization failures")
-    func streamDoesNotRefreshReplayHandshakeAuthorizationFailures() async throws {
+    @Test("stream() refresh-replays one handshake authorization failure")
+    func streamRefreshReplaysOneHandshakeAuthorizationFailure() async throws {
         actor RefreshCounter {
             private(set) var count = 0
             func bump() -> String {
@@ -1071,7 +1071,54 @@ struct StreamingAPIDefinitionTests {
         SequencedStreamingURLProtocol.enqueue(
             url: streamURL,
             steps: [
-                .success(statusCode: 401, data: Data())
+                .success(statusCode: 401, data: Data()),
+                .success(statusCode: 200, data: Data("after-refresh\n".utf8)),
+            ])
+
+        let client = DefaultNetworkClient(
+            configuration: NetworkConfiguration(
+                baseURL: baseURL,
+                refreshTokenPolicy: RefreshTokenPolicy(
+                    currentToken: { "expired" },
+                    refreshToken: { await counter.bump() }
+                )
+            ),
+            session: makeSequencedStreamingURLSession()
+        )
+
+        var values: [String] = []
+        for try await value in client.stream(definition) {
+            values.append(value)
+        }
+
+        let captured = SequencedStreamingURLProtocol.capturedRequests(for: streamURL)
+        #expect(values == ["after-refresh"])
+        #expect(captured.count == 2)
+        #expect(captured.first?.value(forHTTPHeaderField: "Authorization") == "Bearer expired")
+        #expect(captured.last?.value(forHTTPHeaderField: "Authorization") == "Bearer refreshed")
+        #expect(await counter.count == 1)
+    }
+
+    @Test("stream() surfaces a second handshake 401 instead of refreshing again")
+    func streamDoesNotRefreshTwiceForOneHandshake() async throws {
+        actor RefreshCounter {
+            private(set) var count = 0
+            func bump() -> String {
+                count += 1
+                return "refreshed"
+            }
+        }
+
+        let definition = LineCounterStream(sessionAuthentication: .optional)
+        let baseURL = uniqueStreamingBaseURL()
+        let streamURL = baseURL.appendingPathComponent(definition.path)
+        let counter = RefreshCounter()
+
+        SequencedStreamingURLProtocol.enqueue(
+            url: streamURL,
+            steps: [
+                .success(statusCode: 401, data: Data()),
+                .success(statusCode: 401, data: Data()),
             ])
 
         let client = DefaultNetworkClient(
@@ -1087,7 +1134,7 @@ struct StreamingAPIDefinitionTests {
 
         do {
             for try await _ in client.stream(definition) {}
-            Issue.record("Expected stream handshake 401 to throw")
+            Issue.record("Expected the second handshake 401 to throw")
         } catch {
             guard case .statusCode(let response) = error else {
                 Issue.record("Expected NetworkError.statusCode, got \(error)")
@@ -1096,10 +1143,147 @@ struct StreamingAPIDefinitionTests {
             #expect(response.statusCode == 401)
         }
 
-        let captured = SequencedStreamingURLProtocol.capturedRequests(for: streamURL)
-        #expect(captured.count == 1)
-        #expect(captured.first?.value(forHTTPHeaderField: "Authorization") == "Bearer expired")
+        #expect(SequencedStreamingURLProtocol.capturedRequests(for: streamURL).count == 2)
+        #expect(await counter.count == 1)
+    }
+
+    @Test("stream() reports a failed refresh as an authentication failure without retrying")
+    func streamReportsFailedRefreshAsAuthenticationFailure() async throws {
+        struct RefreshRejected: Error {}
+
+        let definition = LineCounterStream(sessionAuthentication: .optional)
+        let baseURL = uniqueStreamingBaseURL()
+        let streamURL = baseURL.appendingPathComponent(definition.path)
+
+        SequencedStreamingURLProtocol.enqueue(
+            url: streamURL,
+            steps: [
+                .success(statusCode: 401, data: Data()),
+                .success(statusCode: 200, data: Data("unreachable\n".utf8)),
+            ])
+
+        let client = DefaultNetworkClient(
+            configuration: NetworkConfiguration(
+                baseURL: baseURL,
+                retryPolicy: ExponentialBackoffRetryPolicy(maxRetries: 3, retryDelay: 0, jitterRatio: 0),
+                refreshTokenPolicy: RefreshTokenPolicy(
+                    currentToken: { "expired" },
+                    refreshToken: { throw RefreshRejected() }
+                )
+            ),
+            session: makeSequencedStreamingURLSession()
+        )
+
+        do {
+            for try await _ in client.stream(definition) {}
+            Issue.record("Expected the failed refresh to throw")
+        } catch {
+            guard case .authentication(.refreshFailed) = error else {
+                Issue.record("Expected an authentication failure, got \(error)")
+                return
+            }
+        }
+
+        #expect(SequencedStreamingURLProtocol.capturedRequests(for: streamURL).count == 1)
+    }
+
+    @Test("stream() does not refresh anonymous handshakes")
+    func streamDoesNotRefreshAnonymousHandshake() async throws {
+        actor RefreshCounter {
+            private(set) var count = 0
+            func bump() -> String {
+                count += 1
+                return "refreshed"
+            }
+        }
+
+        let definition = LineCounterStream()
+        let baseURL = uniqueStreamingBaseURL()
+        let streamURL = baseURL.appendingPathComponent(definition.path)
+        let counter = RefreshCounter()
+
+        SequencedStreamingURLProtocol.enqueue(
+            url: streamURL,
+            steps: [.success(statusCode: 401, data: Data())]
+        )
+
+        let client = DefaultNetworkClient(
+            configuration: NetworkConfiguration(
+                baseURL: baseURL,
+                refreshTokenPolicy: RefreshTokenPolicy(
+                    currentToken: { "expired" },
+                    refreshToken: { await counter.bump() }
+                )
+            ),
+            session: makeSequencedStreamingURLSession()
+        )
+
+        do {
+            for try await _ in client.stream(definition) {}
+            Issue.record("Expected the anonymous handshake 401 to throw")
+        } catch {
+            guard case .statusCode(let response) = error else {
+                Issue.record("Expected NetworkError.statusCode, got \(error)")
+                return
+            }
+            #expect(response.statusCode == 401)
+        }
+
+        #expect(SequencedStreamingURLProtocol.capturedRequests(for: streamURL).count == 1)
         #expect(await counter.count == 0)
+    }
+
+    @Test("Stream handshake failures open the circuit breaker and later streams are rejected locally")
+    func streamHandshakeParticipatesInCircuitBreaker() async throws {
+        let definition = LineCounterStream()
+        let baseURL = uniqueStreamingBaseURL()
+        let streamURL = baseURL.appendingPathComponent(definition.path)
+
+        SequencedStreamingURLProtocol.enqueue(
+            url: streamURL,
+            steps: [
+                .success(statusCode: 503, data: Data()),
+                .success(statusCode: 503, data: Data()),
+                .success(statusCode: 200, data: Data("unreachable\n".utf8)),
+            ])
+
+        let client = DefaultNetworkClient(
+            configuration: NetworkConfiguration(
+                baseURL: baseURL,
+                circuitBreakerPolicy: CircuitBreakerPolicy(
+                    failureThreshold: 2,
+                    windowSize: 2,
+                    resetAfter: .seconds(60)
+                )
+            ),
+            session: makeSequencedStreamingURLSession()
+        )
+
+        for _ in 0..<2 {
+            do {
+                for try await _ in client.stream(definition) {}
+                Issue.record("Expected the 503 handshake to throw")
+            } catch {
+                guard case .statusCode(let response) = error else {
+                    Issue.record("Expected NetworkError.statusCode, got \(error)")
+                    return
+                }
+                #expect(response.statusCode == 503)
+            }
+        }
+
+        do {
+            for try await _ in client.stream(definition) {}
+            Issue.record("Expected the open circuit to reject the stream")
+        } catch {
+            guard case .policyRejected(.circuitOpen) = error else {
+                Issue.record("Expected an open-circuit rejection, got \(error)")
+                return
+            }
+        }
+
+        // The third stream never reached transport.
+        #expect(SequencedStreamingURLProtocol.capturedRequests(for: streamURL).count == 2)
     }
 
     @Test("stream() retries handshake failures through RetryPolicy before reading the body")

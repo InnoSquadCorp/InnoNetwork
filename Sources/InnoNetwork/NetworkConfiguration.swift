@@ -54,41 +54,6 @@ public struct NetworkConfiguration: Sendable {
                 redirectPolicy: DefaultRedirectPolicy()
             )
         }
-
-        static func advancedTuning(baseURL: URL) -> NetworkConfiguration {
-            NetworkConfiguration(
-                internalBaseURL: baseURL,
-                timeout: 60.0,
-                cachePolicy: .reloadIgnoringLocalCacheData,
-                requestPriority: .normal,
-                allowsCellularAccess: true,
-                allowsExpensiveNetworkAccess: true,
-                allowsConstrainedNetworkAccess: true,
-                retryPolicy: nil,
-                networkMonitor: NetworkMonitor.shared,
-                metricsReporter: nil,
-                trustPolicy: .systemDefault,
-                eventObservers: [],
-                eventDeliveryPolicy: EventDeliveryPolicy(
-                    maxBufferedEventsPerPartition: 512,
-                    maxBufferedEventsPerConsumer: 512,
-                    overflowPolicy: .dropOldest
-                ),
-                eventMetricsReporter: nil,
-                acceptableStatusCodes: NetworkConfiguration.defaultAcceptableStatusCodes,
-                requestInterceptors: [],
-                responseInterceptors: [],
-                customExecutionPolicies: [],
-                requestAdmissionPolicy: nil,
-                advancedRateLimitPolicy: nil,
-                idempotencyKeyPolicy: .disabled,
-                responseBodyBufferingPolicy: .streaming(
-                    maxBytes: NetworkConfiguration.defaultResponseBodyByteLimit
-                ),
-                streamingLineByteLimit: NetworkConfiguration.defaultStreamingLineByteLimit,
-                redirectPolicy: DefaultRedirectPolicy()
-            )
-        }
     }
 
     package let baseURL: URL
@@ -384,13 +349,43 @@ public struct NetworkConfiguration: Sendable {
         }
     }
 
+    /// The production baseline: HTTPS admission, system trust, a 30-second
+    /// request timeout, the protocol cache policy, a bounded response body,
+    /// and no automatic retry.
     public static func safeDefaults(baseURL: URL) -> NetworkConfiguration {
         Presets.safeDefaults(baseURL: baseURL)
     }
 
-    /// Composes a configuration from the five thematic packs. Each
-    /// pack is optional; omitted packs leave the underlying tuned
-    /// defaults from `Presets.advancedTuning(baseURL:)` untouched.
+    /// Composes a configuration from the five thematic packs on top of
+    /// ``safeDefaults(baseURL:)``.
+    ///
+    /// Every pack is optional and every pack parameter is an override, so
+    /// `advanced(baseURL:)` with no packs is identical to
+    /// `safeDefaults(baseURL:)`, and adding one pack changes only what that
+    /// pack states.
+    ///
+    /// One default depends on other packs. Requests use
+    /// `.reloadIgnoringLocalCacheData` instead of the protocol cache policy
+    /// when ``TransportPack`` does not set a `cachePolicy` and either
+    ///
+    /// - ``CachePack`` enables a response cache policy, so `URLSession`'s own
+    ///   cache does not answer for, or double-store beside, the library's
+    ///   response cache; or
+    /// - ``AuthPack`` configures a session refresh policy, so a response that
+    ///   was fetched with one session's token is never served from
+    ///   `URLSession`'s cache, which is keyed by URL and not by credential,
+    ///   after the session changes, even when the token travels in a header
+    ///   the library does not recognize as a credential.
+    ///
+    /// Independently of the preset, a request that reaches transport with a
+    /// credential header — `Authorization`, `Proxy-Authorization`, `Cookie`,
+    /// `X-API-Key`, `X-Auth-Token`, or a header listed in
+    /// `responseCacheSensitiveHeaderNames` — never has its response stored in
+    /// `URLSession`'s cache, and under the default `.useProtocolCachePolicy`
+    /// it does not read that cache either. Only an explicitly cache-first
+    /// policy (`.returnCacheDataElseLoad`, `.returnCacheDataDontLoad`) opts
+    /// out. That covers credentials added by request interceptors; signed and
+    /// request-security transports always bypass that cache.
     public static func advanced(
         baseURL: URL,
         resilience: ResiliencePack = ResiliencePack(),
@@ -399,12 +394,17 @@ public struct NetworkConfiguration: Sendable {
         cache: CachePack = CachePack(),
         transport: TransportPack = TransportPack()
     ) -> NetworkConfiguration {
-        var builder = AdvancedBuilder(preset: Presets.advancedTuning(baseURL: baseURL))
+        var builder = AdvancedBuilder(preset: Presets.safeDefaults(baseURL: baseURL))
         resilience.apply(to: &builder)
         auth.apply(to: &builder)
         observability.apply(to: &builder)
         cache.apply(to: &builder)
         transport.apply(to: &builder)
+        let bypassesSessionCache =
+            builder.responseCachePolicy != .disabled || builder.refreshTokenPolicy != nil
+        if bypassesSessionCache, !transport.specifiesCachePolicy {
+            builder.cachePolicy = .reloadIgnoringLocalCacheData
+        }
         return builder.build()
     }
 

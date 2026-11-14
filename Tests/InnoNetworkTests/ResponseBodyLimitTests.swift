@@ -1,4 +1,5 @@
 import Foundation
+import InnoNetworkTestSupport
 import Testing
 
 @testable import InnoNetwork
@@ -128,7 +129,7 @@ struct ResponseBodyLimitTests {
         #expect(received.count == 4_096)
     }
 
-    @Test("Body above the limit throws underlying error with limit and observed bytes")
+    @Test("Body above the limit throws a policy rejection with limit and observed bytes")
     func overLimitThrows() async throws {
         let payload = Data(repeating: 0xCC, count: 5 * 1_024)
         let mockSession = MockURLSession()
@@ -144,16 +145,17 @@ struct ResponseBodyLimitTests {
 
         do {
             _ = try await client.request(DataEcho())
-            Issue.record("Expected response-too-large NetworkError.underlying")
+            Issue.record("Expected a response body limit rejection")
         } catch let error {
-            switch error {
-            case .underlying(let underlying, _)
-            where underlying.code == NetworkErrorCode.responseBodyLimitExceeded.rawValue:
-                #expect(underlying.message.contains("\(payload.count)"))
-                #expect(underlying.message.contains("1024"))
-            default:
-                Issue.record("Expected NetworkError.underlying with responseBodyLimitExceeded code, got \(error)")
-            }
+            #expect(
+                error.policyRejection
+                    == .responseBodyLimitExceeded(
+                        limitBytes: 1_024,
+                        observedBytes: Int64(payload.count)
+                    )
+            )
+            #expect(error.errorDescription?.contains("\(payload.count)") == true)
+            #expect(error.errorDescription?.contains("1024") == true)
         }
     }
 
@@ -461,18 +463,15 @@ struct ResponseBodyLimitTests {
     ) async {
         do {
             try await operation()
-            Issue.record("Expected response-too-large NetworkError.underlying")
+            Issue.record("Expected a response body limit rejection")
         } catch let error as NetworkError {
-            switch error {
-            case .underlying(let underlying, _)
-            where underlying.code == NetworkErrorCode.responseBodyLimitExceeded.rawValue:
-                #expect(underlying.message.contains("\(observed)"))
-                #expect(underlying.message.contains("\(limit)"))
-            default:
-                Issue.record("Expected NetworkError.underlying with responseBodyLimitExceeded code, got \(error)")
-            }
+            #expect(
+                error.policyRejection
+                    == .responseBodyLimitExceeded(limitBytes: limit, observedBytes: observed)
+            )
+            #expect(error.errorCode == NetworkErrorCode.responseBodyLimitExceeded.rawValue)
         } catch {
-            Issue.record("Expected NetworkError.underlying with responseBodyLimitExceeded code, got \(error)")
+            Issue.record("Expected a response body limit rejection, got \(error)")
         }
     }
 
@@ -481,7 +480,7 @@ struct ResponseBodyLimitTests {
         condition: @escaping @Sendable () async -> Bool
     ) async throws {
         let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: timeout)
+        let deadline = clock.now.advanced(by: TestWaitBudget.upperBound(timeout))
         while clock.now < deadline {
             if await condition() {
                 return

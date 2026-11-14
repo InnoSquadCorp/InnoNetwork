@@ -172,7 +172,7 @@ struct DecodingInterceptorTests {
     func operationCancellationDuringDidDecode() async {
         let gate = DecodeCancellationGate()
         let base = makeHeldClient(gate: gate)
-        let operation = OperationNetworkClient(client: base).start(GetEnvelope())
+        let operation = base.start(GetEnvelope())
 
         await gate.waitUntilEntered()
         operation.cancel()
@@ -183,8 +183,8 @@ struct DecodingInterceptorTests {
             _ = try await operation.value()
             Issue.record("Cancelled operation returned success")
         } catch {
-            #expect(error.kind == .cancelled)
-            #expect(error.recovery == .none)
+            #expect(error.category == .cancellation)
+            #expect(error.summary.recovery == .none)
         }
         await base.shutdown()
     }

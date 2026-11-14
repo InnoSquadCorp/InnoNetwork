@@ -154,13 +154,28 @@ extension RequestExecutor {
                 continue
             }
 
-            if let substitution = try await convertNotModifiedIfNeeded(
-                networkResponse,
-                cacheKey: cacheKey,
-                request: request,
-                configuration: configuration,
-                revalidation: revalidation
-            ) {
+            let notModifiedSubstitution: NotModifiedSubstitution?
+            do {
+                notModifiedSubstitution = try await convertNotModifiedIfNeeded(
+                    networkResponse,
+                    cacheKey: cacheKey,
+                    request: request,
+                    configuration: configuration,
+                    revalidation: revalidation
+                )
+            } catch let unreconcilable as UnreconcilableNotModified {
+                // Replaying the same conditional request would receive the
+                // same unusable 304. Without the stored entry the replay is
+                // unconditional, which is what makes this failure transient.
+                await invalidateUnreconcilableEntry(
+                    unreconcilable.storedResponse,
+                    cacheKey: cacheKey,
+                    configuration: configuration,
+                    runtime: runtime
+                )
+                throw unreconcilable.error
+            }
+            if let substitution = notModifiedSubstitution {
                 let revalidatedResponse = responseUpdatingAge(
                     substitution.mergedResponse,
                     to: RFC9111ResponseAge.initialAge(
@@ -212,10 +227,19 @@ extension RequestExecutor {
                 // Replay from the fully adapted request so session and
                 // endpoint interceptors keep their headers/signatures while
                 // the auth policy replaces only the Authorization value.
-                let application = try await refreshCoordinator.recoverAfterAuthenticationFailure(
-                    request: adaptedRequest,
-                    observedGeneration: refreshGeneration ?? 0
-                )
+                let application: RefreshTokenApplication
+                do {
+                    application = try await refreshCoordinator.recoverAfterAuthenticationFailure(
+                        request: adaptedRequest,
+                        observedGeneration: refreshGeneration ?? 0
+                    )
+                } catch {
+                    // The refresh operation itself failed (or is cooling down
+                    // after a failure). Surface that as an authentication
+                    // failure instead of a generic transport error, which
+                    // the retry policy would treat as transient and replay.
+                    throw NetworkError.sessionRefreshFailed(error)
+                }
                 request = application.request
                 refreshGeneration = application.generation
                 try Task.checkCancellation()

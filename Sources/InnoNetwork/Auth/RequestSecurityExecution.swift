@@ -61,6 +61,16 @@ package actor RequestSecurityExecution {
             return credential
         } catch {
             if NetworkError.isCancellation(error) || Task.isCancelled { throw CancellationError() }
+            // A transient transport failure of the provider says nothing
+            // about the grant. Keep its secret-free retry classification
+            // instead of reporting a failed renewal, whose recovery is
+            // reauthentication. The renewal never reached a verdict, so it
+            // does not use up this request's single renewal either: a retry
+            // of the request may renew again.
+            if NetworkError.isTransientTransportFailure(error) {
+                didRefreshOAuth = false
+                throw CredentialRedaction.failure(error)
+            }
             throw RequestSecurityFailure.refreshFailed.networkError
         }
     }
@@ -132,6 +142,9 @@ struct PreparedRequestSecurity: Sendable {
             } catch {
                 if NetworkError.isCancellation(error) || Task.isCancelled { throw CancellationError() }
                 if forceRefresh { throw error }
+                // Same rule as a renewal: an offline or failing transport is
+                // not a missing credential.
+                if NetworkError.isTransientTransportFailure(error) { throw CredentialRedaction.failure(error) }
                 throw RequestSecurityFailure.credentialUnavailable.networkError
             }
             try Task.checkCancellation()
@@ -296,9 +309,17 @@ package struct CredentialRedaction: Sendable {
         case .underlying(let error, _): return .underlying(safe(error), nil)
         case .trustEvaluationFailed:
             return .trustEvaluationFailed(.custom("Credential-protected trust evaluation failed."))
+        case .configuration(reason: .offline):
+            // The device being offline is a connectivity classification, not
+            // a configuration fault; keep it so recovery waits for a network.
+            return .configuration(reason: .offline("Credential-protected transport is offline."))
         case .configuration:
             return .configuration(reason: .invalidRequest("Credential-protected transport configuration failed."))
+        // A status or decoding failure would carry the response, which the
+        // credential boundary never exposes.
         case .statusCode, .decoding: return RequestSecurityFailure.credentialUnavailable.networkError
+        // Both cases are payload-free or already secret-free by construction.
+        case .policyRejected, .authentication: return mapped
         }
     }
 }

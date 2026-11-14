@@ -57,6 +57,85 @@ private actor ScopedCredentialProvider: OAuthCredentialRefreshing {
     }
 }
 
+/// Supplies an already expired credential and fails every renewal with a
+/// transport error, as a provider does when its token endpoint is unreachable.
+private actor TransportFailingRenewalProvider: OAuthCredentialRefreshing {
+    let clock: TestClock
+    let renewalError: URLError
+    var refreshes = 0
+
+    init(clock: TestClock, renewalError: URLError) {
+        self.clock = clock
+        self.renewalError = renewalError
+    }
+
+    func select(alternatives: [[RequestSecurity.Scheme]], origin: URL) -> RequestSecurity.Selection {
+        .init(alternative: 0, realm: "tenant", principal: "user")
+    }
+
+    func credential(for scheme: RequestSecurity.Scheme, selection: RequestSecurity.Selection, origin: URL)
+        -> RequestSecurity.Credential
+    {
+        .init(
+            value: "old-token", realm: selection.realm, principal: selection.principal,
+            grantedScopes: ["Read"], expiresAt: clock.now())
+    }
+
+    func refreshCredential(for scheme: RequestSecurity.Scheme, selection: RequestSecurity.Selection, origin: URL)
+        async throws -> RequestSecurity.Credential
+    {
+        refreshes += 1
+        throw renewalError
+    }
+}
+
+/// Supplies an expired credential and fails the first `failingRenewals`
+/// renewals with a transport error before renewing successfully.
+private actor FlakyRenewalProvider: OAuthCredentialRefreshing {
+    let clock: TestClock
+    var failingRenewals: Int
+    var refreshes = 0
+
+    init(clock: TestClock, failingRenewals: Int) {
+        self.clock = clock
+        self.failingRenewals = failingRenewals
+    }
+
+    func select(alternatives: [[RequestSecurity.Scheme]], origin: URL) -> RequestSecurity.Selection {
+        .init(alternative: 0, realm: "tenant", principal: "user")
+    }
+
+    func credential(for scheme: RequestSecurity.Scheme, selection: RequestSecurity.Selection, origin: URL)
+        -> RequestSecurity.Credential
+    {
+        .init(
+            value: "old-token", realm: selection.realm, principal: selection.principal,
+            grantedScopes: ["Read"], expiresAt: clock.now())
+    }
+
+    func refreshCredential(for scheme: RequestSecurity.Scheme, selection: RequestSecurity.Selection, origin: URL)
+        async throws -> RequestSecurity.Credential
+    {
+        refreshes += 1
+        if failingRenewals > 0 {
+            failingRenewals -= 1
+            throw URLError(.networkConnectionLost)
+        }
+        return .init(
+            value: "fresh-token", realm: selection.realm, principal: selection.principal,
+            grantedScopes: ["Read"], expiresAt: clock.now().addingTimeInterval(100))
+    }
+}
+
+/// An endpoint on the same origin that carries no credential.
+private struct OpenEndpoint: APIDefinition {
+    typealias Parameter = EmptyParameter
+    typealias APIResponse = EmptyResponse
+    var sessionAuthentication: SessionAuthentication { .anonymous }
+    var method: HTTPMethod { .get }
+    var path: String { "/open" }
+}
+
 private struct ScopedCredentialEndpoint: APIDefinition, RequestSecurityProviding {
     typealias Parameter = EmptyParameter
     typealias APIResponse = EmptyResponse
@@ -105,7 +184,7 @@ struct OAuthCredentialTests {
         } catch {
             #expect(scenario != 4)
             let expected: RequestSecurityFailure = scenario == 1 ? .insufficientScope : .scopeMetadataUnavailable
-            #expect((error as? NetworkError)?.underlyingError?.code == expected.rawValue)
+            #expect((error as? NetworkError)?.credentialFailure == expected)
             #expect(session.capturedRequest == nil)
         }
         #expect(await provider.refreshes == 0)
@@ -128,7 +207,7 @@ struct OAuthCredentialTests {
             #expect(scenario != 0)
             let expected: RequestSecurityFailure =
                 scenario == 1 ? .insufficientScope : scenario == 2 ? .identityChanged : .refreshFailed
-            #expect((error as? NetworkError)?.underlyingError?.code == expected.rawValue)
+            #expect((error as? NetworkError)?.credentialFailure == expected)
             #expect(!String(reflecting: error).contains("secret-token"))
             #expect(session.capturedRequest == nil)
         }
@@ -175,7 +254,7 @@ struct OAuthCredentialTests {
             Issue.record("Expired signed token must not dispatch")
         } catch {
             #expect(
-                (error as? NetworkError)?.underlyingError?.code == RequestSecurityFailure.credentialExpired.rawValue)
+                (error as? NetworkError)?.credentialFailure == .credentialExpired)
         }
         #expect(session.capturedRequest == nil)
     }
@@ -273,6 +352,82 @@ struct OAuthCredentialTests {
         ] { #expect(OAuthBearerChallenge.error(in: header) == nil) }
     }
 
+    @Test("a renewal whose transport fails keeps that classification instead of asking to sign in")
+    func renewalTransportFailure() async throws {
+        let clock = TestClock()
+        let provider = TransportFailingRenewalProvider(clock: clock, renewalError: URLError(.notConnectedToInternet))
+        let session = MockURLSession()
+        session.setMockResponse(statusCode: 204)
+
+        let error = await #expect(throws: NetworkError.self) {
+            _ = try await client(session, clock: clock).request(
+                ScopedCredentialEndpoint(requestSecurity: security(provider)))
+        }
+
+        guard case .reachability(.notConnectedToInternet, let underlying, nil) = error else {
+            Issue.record("Expected a connectivity failure, got \(String(describing: error))")
+            return
+        }
+        #expect(underlying.domain == NSURLErrorDomain)
+        #expect(underlying.message == "Credential-protected transport failed.")
+        #expect(error?.credentialFailure == nil)
+        #expect(error?.summary(method: .get, authentication: .anonymous).recovery == .waitForConnectivity)
+        #expect(session.capturedRequest == nil)
+        #expect(await provider.refreshes == 1)
+    }
+
+    @Test("an unreachable credential provider does not open the API host's circuit")
+    func providerFailureDoesNotCountAgainstHost() async throws {
+        let clock = TestClock()
+        let provider = TransportFailingRenewalProvider(clock: clock, renewalError: URLError(.notConnectedToInternet))
+        let session = MockURLSession()
+        session.setMockResponse(statusCode: 204)
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(
+                baseURL: origin.absoluteString,
+                circuitBreakerPolicy: CircuitBreakerPolicy(failureThreshold: 1, windowSize: 1, resetAfter: .seconds(60))
+            ),
+            session: session,
+            clock: clock
+        )
+
+        for _ in 0..<3 {
+            await #expect(throws: NetworkError.self) {
+                _ = try await client.request(ScopedCredentialEndpoint(requestSecurity: security(provider)))
+            }
+        }
+
+        // With a threshold of one, a single counted failure would have opened
+        // the circuit for this host. The token service being down is not
+        // evidence about the API host, so an uncredentialed request still goes.
+        _ = try await client.request(OpenEndpoint())
+        #expect(session.capturedRequestsInOrder.count == 1)
+        #expect(await provider.refreshes == 3)
+    }
+
+    @Test("a renewal that fails in transit does not use up the request's single renewal")
+    func transientRenewalFailureLeavesRenewalForRetry() async throws {
+        let clock = TestClock()
+        let provider = FlakyRenewalProvider(clock: clock, failingRenewals: 1)
+        let session = MockURLSession()
+        session.setMockResponse(statusCode: 204)
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(
+                baseURL: origin.absoluteString,
+                retryPolicy: ExponentialBackoffRetryPolicy(maxRetries: 1, retryDelay: 0, jitterRatio: 0)
+            ),
+            session: session,
+            clock: clock
+        )
+
+        _ = try await client.request(ScopedCredentialEndpoint(requestSecurity: security(provider)))
+
+        // The first renewal could not reach the provider's token endpoint; the
+        // retry renewed instead of failing with `credentialExpired`.
+        #expect(await provider.refreshes == 2)
+        #expect(session.capturedRequest?.value(forHTTPHeaderField: "Authorization") == "Bearer fresh-token")
+    }
+
     @Test("renewal groups and waiters are bounded", arguments: [true, false])
     func refreshBounds(_ separateGroups: Bool) async throws {
         let clock = TestClock()
@@ -303,7 +458,7 @@ struct OAuthCredentialTests {
             }
             Issue.record("Over-budget renewal succeeded")
         } catch {
-            #expect((error as? NetworkError)?.underlyingError?.code == RequestSecurityFailure.refreshFailed.rawValue)
+            #expect((error as? NetworkError)?.credentialFailure == .refreshFailed)
         }
         tasks.forEach { $0.cancel() }
         for task in tasks { _ = await task.result }
@@ -325,7 +480,7 @@ struct OAuthCredentialTests {
     }
 
     private func waitForWaiters(_ count: Int, coordinator: OAuthCredentialRefreshCoordinator) async throws {
-        let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+        let deadline = ContinuousClock.now.advanced(by: TestWaitBudget.upperBound(.seconds(5)))
         while await coordinator.inFlightWaiterCount < count {
             try #require(ContinuousClock.now < deadline, "Refresh waiters did not register")
             try await Task.sleep(for: .milliseconds(1))

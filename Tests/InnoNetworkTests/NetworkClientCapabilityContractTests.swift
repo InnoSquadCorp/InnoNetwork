@@ -109,6 +109,30 @@ struct NetworkClientCapabilityContractTests {
         #expect(await uploadClient.observation().tag == tag)
     }
 
+    @Test("Every conformer can start an operation handle for its own capability")
+    func conformersStartOperationsThroughTheTaggedPrimitive() async {
+        let requestClient = RequestOnlyClient()
+        let uploadClient = UploadOnlyClient()
+
+        let request = requestClient.start(CapabilityRequest())
+        let upload = uploadClient.startUpload(CapabilityUpload())
+
+        await #expect(throws: NetworkError.self) { _ = try await request.value() }
+        await #expect(throws: NetworkError.self) { _ = try await upload.value() }
+
+        // The handle's identifier is the cancellation tag given to the client.
+        #expect(await requestClient.observation().tag == CancellationTag(request.id.uuidString))
+        #expect(await uploadClient.observation().tag == CancellationTag(upload.id.uuidString))
+        #expect(await requestClient.observation().count == 1)
+        #expect(await uploadClient.observation().count == 1)
+        #expect(await upload.failureSummary()?.category == .cancellation)
+
+        var uploadEvents: [NetworkOperationEvent] = []
+        for await event in upload.events { uploadEvents.append(event) }
+        #expect(uploadEvents.first == .started(id: upload.id))
+        #expect(uploadEvents.count == 2)
+    }
+
     @Test("Default and stub clients expose both independent capabilities")
     func concreteClientsExposeBothCapabilities() {
         func acceptsBoth(_ client: any NetworkClient & UploadNetworkClient) {}

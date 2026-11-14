@@ -120,8 +120,8 @@ struct RequestSecurityTests {
             _ = try await client(session).request(endpoint)
             Issue.record("Expected a credential-boundary failure")
         } catch {
-            #expect(error.underlyingError?.domain == "InnoNetwork.RequestSecurity")
-            #expect(error.underlyingError?.code == code.rawValue)
+            #expect(error.category == .authentication)
+            #expect(error.credentialFailure == code)
             #expect(!String(reflecting: error).contains("fixture-secret"))
         }
         #expect(session.capturedRequest == nil)
@@ -319,9 +319,8 @@ struct RequestSecurityTests {
             _ = try await client.request(endpoint)
             Issue.record("Expected credential failure")
         } catch {
-            let failure = NetworkFailure(migratingV5: error)
-            #expect(failure.kind == .configuration)
-            #expect(failure.recovery == .doNotRetry)
+            #expect(error.summary.category == .authentication)
+            #expect(error.summary.recovery == .doNotRetry)
         }
         #expect(await provider.selections == 1)
         #expect(await provider.acquisitions == ["key"])
@@ -441,8 +440,7 @@ struct RequestSecurityTests {
             _ = try await iterator.next()
             Issue.record("Expected unsupported streaming")
         } catch {
-            #expect(
-                error.underlyingError?.code == RequestSecurityFailure.unsupportedExecution.rawValue)
+            #expect(error.credentialFailure == .unsupportedExecution)
         }
         #expect(await provider.selections == before)
     }
@@ -480,8 +478,8 @@ struct RequestSecurityTests {
                 _ = try await client.request(endpoint)
                 Issue.record("Expected session-header conflict")
             } catch {
-                #expect(error.underlyingError?.domain == "InnoNetwork.RequestSecurity")
-                #expect(error.underlyingError?.code == RequestSecurityFailure.credentialConflict.rawValue)
+                #expect(error.category == .authentication)
+                #expect(error.credentialFailure == .credentialConflict)
                 #expect(!String(reflecting: error).contains("session-secret"))
             }
         }

@@ -21,13 +21,8 @@ extension RequestExecutor {
         guard let limit = configuration.responseBodyBufferingPolicy.maxBytes else { return }
         let observed = Int64(clamping: data.count)
         if observed > limit {
-            throw NetworkError.underlying(
-                SendableUnderlyingError(
-                    domain: NetworkError.errorDomain,
-                    code: NetworkErrorCode.responseBodyLimitExceeded.rawValue,
-                    message: "Response body of \(observed) bytes exceeded the configured limit of \(limit) bytes."
-                ),
-                nil
+            throw NetworkError.policyRejected(
+                .responseBodyLimitExceeded(limitBytes: limit, observedBytes: observed)
             )
         }
     }
@@ -188,23 +183,9 @@ extension RequestExecutor {
                 )
             }
         } catch RateLimitAdmissionFailure.queueFull {
-            throw NetworkError.underlying(
-                SendableUnderlyingError(
-                    domain: NetworkError.errorDomain,
-                    code: NetworkErrorCode.rateLimitQueueRejected.rawValue,
-                    message: "The bounded rate-limit queue is full."
-                ),
-                nil
-            )
+            throw NetworkError.policyRejected(.rateLimitQueueFull)
         } catch RateLimitAdmissionFailure.scopeLimitReached {
-            throw NetworkError.underlying(
-                SendableUnderlyingError(
-                    domain: NetworkError.errorDomain,
-                    code: NetworkErrorCode.rateLimitScopeRejected.rawValue,
-                    message: "The bounded rate-limit scope registry is full."
-                ),
-                nil
-            )
+            throw NetworkError.policyRejected(.rateLimitScopeLimitReached)
         } catch RateLimitAdmissionFailure.invalidConfiguration(let message) {
             throw NetworkError.configuration(reason: .invalidRequest(message))
         }
@@ -268,14 +249,7 @@ extension RequestExecutor {
                 requestID: context.requestID,
                 observers: context.eventObservers
             )
-            throw NetworkError.underlying(
-                SendableUnderlyingError(
-                    domain: NetworkError.errorDomain,
-                    code: NetworkErrorCode.requestAdmissionRejected.rawValue,
-                    message: "The bounded request admission queue is full."
-                ),
-                nil
-            )
+            throw NetworkError.policyRejected(.admissionQueueFull)
         } catch RequestAdmissionFailure.queueWaitExpired {
             if let rateReservation { await runtime.rateLimit?.refund(rateReservation) }
             await eventHub.publish(
@@ -291,14 +265,7 @@ extension RequestExecutor {
                 requestID: context.requestID,
                 observers: context.eventObservers
             )
-            throw NetworkError.underlying(
-                SendableUnderlyingError(
-                    domain: NetworkError.errorDomain,
-                    code: NetworkErrorCode.requestAdmissionWaitExpired.rawValue,
-                    message: "The request admission wait expired before transport."
-                ),
-                nil
-            )
+            throw NetworkError.policyRejected(.admissionWaitExpired)
         } catch {
             if let rateReservation { await runtime.rateLimit?.refund(rateReservation) }
             throw error
@@ -352,21 +319,29 @@ extension RequestExecutor {
             if let rateReservation {
                 await runtime.rateLimit?.finish(rateReservation)
             }
-            if NetworkError.isCancellation(error)
-                || (error as? NetworkError)?.underlyingError?.domain == "InnoNetwork.RequestSecurity"
+            let preparationFailure = error as? CredentialPreparationFailure
+            let underlying = preparationFailure?.underlying ?? error
+            let networkError = underlying as? NetworkError
+            if preparationFailure != nil
+                || NetworkError.isCancellation(underlying)
+                || networkError?.isAuthenticationFailure == true
+                || networkError?.isLocalPolicyRejection == true
             {
+                // Cancellation, a credential failure (including a credential
+                // provider that could not be reached), or a response rejected
+                // by a local limit says nothing about the host's health.
                 await runtime.circuitBreakers.abandon(circuitProbe)
             } else {
                 await runtime.circuitBreakers.recordFailure(
                     request: identityRequest,
                     policy: policy,
-                    error: error,
+                    error: underlying,
                     probe: circuitProbe
                 )
             }
             // Tag the error so `runWithCircuitBreaker`'s outer catch knows
             // the circuit breaker has already been notified for this throw.
-            throw CircuitBreakerHandledError(underlying: error)
+            throw CircuitBreakerHandledError(underlying: underlying)
         }
     }
 
@@ -374,6 +349,14 @@ extension RequestExecutor {
     /// by `transportAndRecordCircuit`. The outer wrapper unwraps it before
     /// returning to callers so the public throw shape is unchanged.
     fileprivate struct CircuitBreakerHandledError: Error {
+        let underlying: Error
+    }
+
+    /// Internal sentinel for a failure of the credential-preparation step that
+    /// runs inside `transport` before the request is sent. The breaker
+    /// wrapper releases the probe instead of counting the failure against the
+    /// host, then surfaces `underlying`.
+    fileprivate struct CredentialPreparationFailure: Error {
         let underlying: Error
     }
 
@@ -386,7 +369,15 @@ extension RequestExecutor {
         runtime: RequestExecutionRuntime
     ) async throws -> TransportResult {
         if let preparation = context.credentialPreparation {
-            let secured = try await preparation(request)
+            let secured: URLRequest
+            do {
+                secured = try await preparation(request)
+            } catch {
+                // The credential is acquired, renewed and applied before
+                // anything reaches this host, so even a transport failure of
+                // the credential provider says nothing about the host.
+                throw CredentialPreparationFailure(underlying: error)
+            }
             try Task.checkCancellation()
             var transportContext = context
             transportContext.credentialPreparation = nil
@@ -399,6 +390,13 @@ extension RequestExecutor {
                 } catch { throw CredentialRedaction.failure(error) }
             }
         }
+        // Interceptors and the session token have run by now, so this is the
+        // request that reaches URLSession.
+        let (request, context) = CredentialedURLCacheIsolation.isolate(
+            request,
+            context: context,
+            sensitiveHeaderNames: configuration.responseCacheSensitiveHeaderNames
+        )
         let requestStartedAt = clock.now()
         let attemptStartedAt = Date()
         do {
@@ -421,15 +419,7 @@ extension RequestExecutor {
             try Task.checkCancellation()
 
             guard let httpResponse = response as? HTTPURLResponse else {
-                throw NetworkError.underlying(
-                    SendableUnderlyingError(
-                        domain: NetworkError.errorDomain,
-                        code: NetworkErrorCode.nonHTTPResponse.rawValue,
-                        message:
-                            "Received a non-HTTP response from \(NetworkError.diagnosticURLString(for: request.url)); response was \(type(of: response))."
-                    ),
-                    nil
-                )
+                throw NetworkError.policyRejected(.nonHTTPResponse)
             }
             if !invalidatedAtHeaders {
                 await invalidateUnsafeTargetURIIfNeeded(
@@ -664,14 +654,11 @@ extension RequestExecutor {
                 responseMayCarryBody,
                 response.expectedContentLength > normalizedLimit
             {
-                throw NetworkError.underlying(
-                    SendableUnderlyingError(
-                        domain: NetworkError.errorDomain,
-                        code: NetworkErrorCode.responseBodyLimitExceeded.rawValue,
-                        message:
-                            "Response body of \(response.expectedContentLength) bytes exceeded the configured limit of \(normalizedLimit) bytes."
-                    ),
-                    nil
+                throw NetworkError.policyRejected(
+                    .responseBodyLimitExceeded(
+                        limitBytes: normalizedLimit,
+                        observedBytes: response.expectedContentLength
+                    )
                 )
             }
 
@@ -727,14 +714,11 @@ extension RequestExecutor {
                 responseMayCarryBody,
                 response.expectedContentLength > normalizedLimit
             {
-                throw NetworkError.underlying(
-                    SendableUnderlyingError(
-                        domain: NetworkError.errorDomain,
-                        code: NetworkErrorCode.responseBodyLimitExceeded.rawValue,
-                        message:
-                            "Response body of \(response.expectedContentLength) bytes exceeded the configured limit of \(normalizedLimit) bytes."
-                    ),
-                    nil
+                throw NetworkError.policyRejected(
+                    .responseBodyLimitExceeded(
+                        limitBytes: normalizedLimit,
+                        observedBytes: response.expectedContentLength
+                    )
                 )
             }
 

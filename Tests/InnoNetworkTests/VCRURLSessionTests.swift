@@ -264,15 +264,13 @@ struct VCRURLSessionTests {
             _ = try await replayClient.request(RawDataEndpoint())
             Issue.record("Expected the safe-default response ceiling")
         } catch let error {
-            guard
-                case .underlying(let underlying, _) = error,
-                underlying.code == NetworkErrorCode.responseBodyLimitExceeded.rawValue
-            else {
-                Issue.record("Expected responseBodyLimitExceeded, got \(error)")
-                return
-            }
-            #expect(underlying.message.contains("\(limit)"))
-            #expect(underlying.message.contains("\(payload.count)"))
+            #expect(
+                error.policyRejection
+                    == .responseBodyLimitExceeded(
+                        limitBytes: Int64(limit),
+                        observedBytes: Int64(payload.count)
+                    )
+            )
         }
     }
 

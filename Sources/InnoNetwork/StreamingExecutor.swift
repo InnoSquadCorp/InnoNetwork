@@ -126,10 +126,18 @@ package struct StreamingExecutor: Sendable {
         var resumeState = StreamingResumeState()
         var resumeAttempts = 0
         var handshakeRetryState = StreamingHandshakeRetryState(snapshot: initialNetworkSnapshot)
+        // A handshake rejected with a refreshable status is replayed once
+        // through the session refresh, exactly like a buffered request. The
+        // flag is cleared whenever a handshake is accepted, so a stream that
+        // resumes hours later can refresh again.
+        var replayedAfterRefresh = false
+        var refreshReplayGeneration: UInt64?
 
         while true {
             do {
                 let attemptRetryIndex = resumeAttempts + handshakeRetryState.retryIndex
+                let recoveringFromGeneration = refreshReplayGeneration
+                refreshReplayGeneration = nil
                 let attemptResult = try await runAttempt(
                     request: request,
                     requestID: requestID,
@@ -141,8 +149,10 @@ package struct StreamingExecutor: Sendable {
                     timeoutPolicy: timeoutPolicy,
                     logicalStart: logicalStart,
                     isResuming: resumeAttempts > 0,
+                    recoveringFromGeneration: recoveringFromGeneration,
                     sink: sink
                 )
+                replayedAfterRefresh = false
 
                 switch attemptResult {
                 case .transportFailure(
@@ -233,6 +243,25 @@ package struct StreamingExecutor: Sendable {
                 }
             } catch {
                 let failure = error as? StreamingAttemptFailure
+                if let failure,
+                    !replayedAfterRefresh,
+                    failure.phase == .handshake,
+                    request.sessionAuthentication != .anonymous,
+                    let refreshCoordinator = executionRuntime.refreshCoordinator,
+                    case .statusCode(let rejected)? = failure.error as? NetworkError,
+                    let failedRequest = failure.request,
+                    await refreshCoordinator.shouldRefresh(
+                        statusCode: rejected.statusCode,
+                        request: failedRequest
+                    )
+                {
+                    // No body byte was delivered, so the handshake can be
+                    // replayed safely. The next attempt rebuilds the request
+                    // and takes its token from the refresh coordinator.
+                    replayedAfterRefresh = true
+                    refreshReplayGeneration = failure.refreshGeneration ?? 0
+                    continue
+                }
                 do {
                     if let failure,
                         try await retryHandshakeIfNeeded(
@@ -319,10 +348,12 @@ package struct StreamingExecutor: Sendable {
         timeoutPolicy: StreamingTimeoutPolicy,
         logicalStart: Duration,
         isResuming: Bool,
+        recoveringFromGeneration: UInt64?,
         sink: StreamingOutputSink<T.Output>
     ) async throws -> StreamingAttemptResult {
         var attemptStartedAt: Date?
         var retryRequest: URLRequest?
+        var appliedRefreshGeneration: UInt64?
         do {
             try Task.checkCancellation()
             resumeState.beginAttempt()
@@ -347,7 +378,7 @@ package struct StreamingExecutor: Sendable {
             )
 
             let requestBeforeInterceptors = urlRequest
-            urlRequest = try await withStreamingTimeout(
+            let adapted = try await withStreamingTimeout(
                 phase: .total,
                 phaseBudget: nil,
                 totalBudget: timeoutPolicy.total,
@@ -361,9 +392,12 @@ package struct StreamingExecutor: Sendable {
                     sessionSigners: configuration.requestSigners,
                     endpointSigners: request.requestSigners,
                     sessionAuthentication: request.sessionAuthentication,
-                    refreshCoordinator: executionRuntime.refreshCoordinator
+                    refreshCoordinator: executionRuntime.refreshCoordinator,
+                    recoveringFromGeneration: recoveringFromGeneration
                 )
             }
+            urlRequest = adapted.request
+            appliedRefreshGeneration = adapted.refreshGeneration
             retryRequest = urlRequest
 
             // Streaming applies endpoint/session interceptors, auth tokens,
@@ -399,18 +433,40 @@ package struct StreamingExecutor: Sendable {
             )
             let hasRequestSigners =
                 !configuration.requestSigners.isEmpty || !request.requestSigners.isEmpty
-            let context =
+            let signingContext =
                 hasRequestSigners ? baseContext.restrictingSignedRequestSharing() : baseContext
-            let transportRequest = urlRequest
-            let streamPermit = try await acquireStreamingTransportPermit(
-                request: transportRequest,
-                requestID: requestID,
-                retryIndex: retryIndex,
-                configuration: configuration,
-                executionRuntime: executionRuntime,
-                totalBudget: timeoutPolicy.total,
-                logicalStart: logicalStart
+            let (transportRequest, context) = CredentialedURLCacheIsolation.isolate(
+                urlRequest,
+                context: signingContext,
+                sensitiveHeaderNames: configuration.responseCacheSensitiveHeaderNames
             )
+            // The stream handshake takes part in the host's circuit breaker:
+            // an open circuit rejects it before transport, and its outcome
+            // (status or transport failure) is recorded. Bytes delivered
+            // after an accepted handshake are not breaker evidence, because
+            // a long-lived stream normally ends by disconnecting.
+            let circuitPolicy = configuration.circuitBreakerPolicy
+            let circuitProbe = try await executionRuntime.circuitBreakers.prepare(
+                request: transportRequest,
+                policy: circuitPolicy
+            )
+            let streamPermit: StreamingTransportPermit
+            do {
+                streamPermit = try await acquireStreamingTransportPermit(
+                    request: transportRequest,
+                    requestID: requestID,
+                    retryIndex: retryIndex,
+                    configuration: configuration,
+                    executionRuntime: executionRuntime,
+                    totalBudget: timeoutPolicy.total,
+                    logicalStart: logicalStart
+                )
+            } catch {
+                // A local admission or rate-limit rejection produced no
+                // transport outcome for the host.
+                await executionRuntime.circuitBreakers.abandon(circuitProbe)
+                throw error
+            }
             let streamGrant = streamPermit.admissionGrant
             do {
                 attemptStartedAt = executionRuntime.clock.now()
@@ -443,27 +499,33 @@ package struct StreamingExecutor: Sendable {
                         }
                     )
                 } catch {
+                    await executionRuntime.circuitBreakers.recordFailure(
+                        request: transportRequest,
+                        policy: circuitPolicy,
+                        error: error,
+                        probe: circuitProbe
+                    )
                     throw StreamingAttemptFailure(
                         error: error,
                         startedAt: attemptStartedAt,
                         phase: Self.isExplicitStreamingDeadline(error) ? .terminalDeadline : .handshake,
-                        request: retryRequest
+                        request: retryRequest,
+                        refreshGeneration: appliedRefreshGeneration
                     )
                 }
                 // Stop rejected handshakes and abandoned/erroring decoders too.
                 // Receiving headers does not mean the response body has completed.
                 defer { bytes.task.cancel() }
                 guard let httpResponse = response as? HTTPURLResponse else {
-                    throw NetworkError.underlying(
-                        SendableUnderlyingError(
-                            domain: NetworkError.errorDomain,
-                            code: NetworkErrorCode.nonHTTPResponse.rawValue,
-                            message:
-                                "Received a non-HTTP response on streaming request to \(NetworkError.diagnosticURLString(for: urlRequest.url)); response was \(type(of: response))."
-                        ),
-                        nil
-                    )
+                    await executionRuntime.circuitBreakers.abandon(circuitProbe)
+                    throw NetworkError.policyRejected(.nonHTTPResponse)
                 }
+                await executionRuntime.circuitBreakers.recordStatus(
+                    request: transportRequest,
+                    policy: circuitPolicy,
+                    statusCode: httpResponse.statusCode,
+                    probe: circuitProbe
+                )
                 let responseReceivedAt = executionRuntime.clock.now()
                 if let rateReservation = streamPermit.rateReservation {
                     await executionRuntime.rateLimit?.observe(
@@ -510,7 +572,8 @@ package struct StreamingExecutor: Sendable {
                         error: NetworkError.statusCode(networkResponse),
                         startedAt: attemptStartedAt,
                         phase: .handshake,
-                        request: urlRequest
+                        request: urlRequest,
+                        refreshGeneration: appliedRefreshGeneration
                     )
                 }
 
@@ -580,21 +643,9 @@ package struct StreamingExecutor: Sendable {
                 }
             )
         } catch RateLimitAdmissionFailure.queueFull {
-            throw NetworkError.underlying(
-                SendableUnderlyingError(
-                    domain: NetworkError.errorDomain,
-                    code: NetworkErrorCode.rateLimitQueueRejected.rawValue,
-                    message: "The bounded rate-limit queue is full."
-                ), nil
-            )
+            throw NetworkError.policyRejected(.rateLimitQueueFull)
         } catch RateLimitAdmissionFailure.scopeLimitReached {
-            throw NetworkError.underlying(
-                SendableUnderlyingError(
-                    domain: NetworkError.errorDomain,
-                    code: NetworkErrorCode.rateLimitScopeRejected.rawValue,
-                    message: "The bounded rate-limit scope registry is full."
-                ), nil
-            )
+            throw NetworkError.policyRejected(.rateLimitScopeLimitReached)
         } catch RateLimitAdmissionFailure.invalidConfiguration(let message) {
             throw NetworkError.configuration(reason: .invalidRequest(message))
         }
@@ -693,21 +744,9 @@ package struct StreamingExecutor: Sendable {
             }
             switch error {
             case RequestAdmissionFailure.queueFull:
-                throw NetworkError.underlying(
-                    SendableUnderlyingError(
-                        domain: NetworkError.errorDomain,
-                        code: NetworkErrorCode.requestAdmissionRejected.rawValue,
-                        message: "The bounded streaming admission queue is full."
-                    ), nil
-                )
+                throw NetworkError.policyRejected(.admissionQueueFull)
             case RequestAdmissionFailure.queueWaitExpired:
-                throw NetworkError.underlying(
-                    SendableUnderlyingError(
-                        domain: NetworkError.errorDomain,
-                        code: NetworkErrorCode.requestAdmissionWaitExpired.rawValue,
-                        message: "The streaming admission wait expired."
-                    ), nil
-                )
+                throw NetworkError.policyRejected(.admissionWaitExpired)
             default:
                 throw error
             }
@@ -926,7 +965,12 @@ package struct StreamingExecutor: Sendable {
 
         var nextRetryIndex = state.retryIndex + 1
         var nextSnapshot = state.snapshot
-        if policy.waitsForNetworkChanges, let monitor = configuration.networkMonitor {
+        // Same rule as buffered requests: only a connectivity failure can be
+        // cured by a path change.
+        if policy.waitsForNetworkChanges,
+            networkError.isConnectivityFailure,
+            let monitor = configuration.networkMonitor
+        {
             let snapshotBeforeWait = nextSnapshot
             let monitorTimeout = try boundedNetworkChangeTimeout(
                 configuredTimeout: policy.networkChangeTimeout,
@@ -1190,9 +1234,11 @@ package struct StreamingExecutor: Sendable {
         sessionSigners: [RequestSigner],
         endpointSigners: [RequestSigner],
         sessionAuthentication: SessionAuthentication,
-        refreshCoordinator: RefreshTokenCoordinator?
-    ) async throws -> URLRequest {
+        refreshCoordinator: RefreshTokenCoordinator?,
+        recoveringFromGeneration: UInt64?
+    ) async throws -> (request: URLRequest, refreshGeneration: UInt64?) {
         var current = urlRequest
+        var refreshGeneration: UInt64?
         for interceptor in sessionInterceptors {
             try Task.checkCancellation()
             current = try await interceptor.adapt(current)
@@ -1209,7 +1255,14 @@ package struct StreamingExecutor: Sendable {
             break
         case .optional:
             if let refreshCoordinator {
-                current = try await refreshCoordinator.applyCurrentToken(to: current)
+                let application = try await Self.applySessionToken(
+                    refreshCoordinator,
+                    to: current,
+                    isRequired: false,
+                    recoveringFromGeneration: recoveringFromGeneration
+                )
+                current = application.request
+                refreshGeneration = application.generation
                 try Task.checkCancellation()
             }
         case .required:
@@ -1220,11 +1273,18 @@ package struct StreamingExecutor: Sendable {
                     )
                 )
             }
-            current = try await refreshCoordinator.applyRequiredTokenWithGeneration(to: current).request
+            let application = try await Self.applySessionToken(
+                refreshCoordinator,
+                to: current,
+                isRequired: true,
+                recoveringFromGeneration: recoveringFromGeneration
+            )
+            current = application.request
+            refreshGeneration = application.generation
             try Task.checkCancellation()
         }
         guard !sessionSigners.isEmpty || !endpointSigners.isEmpty else {
-            return current
+            return (current, refreshGeneration)
         }
         current = current.preparingForSignedTransport()
         let body = try BodySource.inline.signingBody(for: current)
@@ -1241,7 +1301,37 @@ package struct StreamingExecutor: Sendable {
             Self.apply(headers: headers, to: &current)
         }
         try Task.checkCancellation()
-        return current
+        return (current, refreshGeneration)
+    }
+
+    /// Applies the session token for one handshake attempt.
+    ///
+    /// A first attempt sends the current token. An attempt that replays a
+    /// rejected handshake asks the refresh coordinator to recover from the
+    /// generation the rejected token belonged to, so it joins or starts
+    /// exactly one refresh and sends the refreshed token. A refresh that
+    /// fails is reported as an authentication failure, which the retry
+    /// policy never replays.
+    private static func applySessionToken(
+        _ refreshCoordinator: RefreshTokenCoordinator,
+        to request: URLRequest,
+        isRequired: Bool,
+        recoveringFromGeneration: UInt64?
+    ) async throws -> RefreshTokenApplication {
+        if let recoveringFromGeneration {
+            do {
+                return try await refreshCoordinator.recoverAfterAuthenticationFailure(
+                    request: request,
+                    observedGeneration: recoveringFromGeneration
+                )
+            } catch {
+                throw NetworkError.sessionRefreshFailed(error)
+            }
+        }
+        if isRequired {
+            return try await refreshCoordinator.applyRequiredTokenWithGeneration(to: request)
+        }
+        return try await refreshCoordinator.applyCurrentTokenWithGeneration(to: request)
     }
 
     private static func apply(headers: HTTPHeaders, to request: inout URLRequest) {
@@ -1297,17 +1387,23 @@ private struct StreamingAttemptFailure: Error {
     let startedAt: Date?
     let phase: Phase
     let request: URLRequest?
+    /// Refresh generation of the session token the failed attempt sent, when
+    /// one was applied. A handshake `401` replays through the refresh
+    /// coordinator from this generation.
+    let refreshGeneration: UInt64?
 
     init(
         error: Error,
         startedAt: Date?,
         phase: Phase,
-        request: URLRequest?
+        request: URLRequest?,
+        refreshGeneration: UInt64? = nil
     ) {
         self.error = error
         self.startedAt = startedAt
         self.phase = phase
         self.request = request
+        self.refreshGeneration = refreshGeneration
     }
 
     init(error: Error, startedAt: Date?) {

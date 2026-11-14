@@ -162,13 +162,29 @@ extension RequestExecutor {
 
                     let response = result.response
                     let terminalState: CacheRevalidationState
-                    if let substitution = try await convertNotModifiedIfNeeded(
-                        response,
-                        cacheKey: cacheKey,
-                        request: revalidationRequest,
-                        configuration: configuration,
-                        revalidation: revalidation
-                    ) {
+                    let notModifiedSubstitution: NotModifiedSubstitution?
+                    do {
+                        notModifiedSubstitution = try await convertNotModifiedIfNeeded(
+                            response,
+                            cacheKey: cacheKey,
+                            request: revalidationRequest,
+                            configuration: configuration,
+                            revalidation: revalidation
+                        )
+                    } catch let unreconcilable as UnreconcilableNotModified {
+                        // Same rule as a foreground revalidation: a stale
+                        // entry the server no longer recognizes would be
+                        // served and fail to revalidate on every request, so
+                        // drop it and let the next request fetch it in full.
+                        await invalidateUnreconcilableEntry(
+                            unreconcilable.storedResponse,
+                            cacheKey: cacheKey,
+                            configuration: configuration,
+                            runtime: runtime
+                        )
+                        throw unreconcilable.error
+                    }
+                    if let substitution = notModifiedSubstitution {
                         try Task.checkCancellation()
                         let revalidatedResponse = responseUpdatingAge(
                             substitution.mergedResponse,
@@ -488,9 +504,12 @@ extension RequestExecutor {
                     cachedETag: cachedETag, notModifiedETag: notModifiedETag
                 )
             else {
-                throw cacheRevalidationFailed(
-                    "The 304 ETag did not identify the conditionally validated stored response.",
-                    cached: preparedCached, request: request
+                throw UnreconcilableNotModified(
+                    error: cacheRevalidationFailed(
+                        "The 304 ETag did not identify the conditionally validated stored response.",
+                        cached: preparedCached, request: request
+                    ),
+                    storedResponse: preparedCached
                 )
             }
         } else if let lastModified = response.response?.value(forHTTPHeaderField: "Last-Modified") {
@@ -498,9 +517,12 @@ extension RequestExecutor {
                 let receivedDate = HTTPDateParser.parse(lastModified, requiresGMTZone: true),
                 receivedDate == HTTPDateParser.parse(cachedValue, requiresGMTZone: true)
             else {
-                throw cacheRevalidationFailed(
-                    "The 304 Last-Modified did not identify the conditionally validated stored response.",
-                    cached: preparedCached, request: request
+                throw UnreconcilableNotModified(
+                    error: cacheRevalidationFailed(
+                        "The 304 Last-Modified did not identify the conditionally validated stored response.",
+                        cached: preparedCached, request: request
+                    ),
+                    storedResponse: preparedCached
                 )
             }
         }
@@ -519,10 +541,13 @@ extension RequestExecutor {
                 headerFields: mergedCachedHeaders(preparedCached.headers, notModifiedResponse: response.response)
             )
         else {
-            throw cacheRevalidationFailed(
-                "Merged 304 Not Modified headers could not be reconstructed.",
-                cached: preparedCached,
-                request: request
+            throw UnreconcilableNotModified(
+                error: cacheRevalidationFailed(
+                    "Merged 304 Not Modified headers could not be reconstructed.",
+                    cached: preparedCached,
+                    request: request
+                ),
+                storedResponse: preparedCached
             )
         }
         return NotModifiedSubstitution(
@@ -743,6 +768,29 @@ extension RequestExecutor {
     ) async -> ResponseCacheMutationCoordinator.WriteToken? {
         guard let targetURI = cacheKey?.url else { return nil }
         return await runtime.cacheMutations.writeToken(for: targetURI)
+    }
+
+    /// Drops the stored response that a `304` could not be reconciled with,
+    /// so that the next attempt sends an unconditional request and receives
+    /// a full response instead of the same unusable `304`.
+    ///
+    /// The entry is removed only while it is still the representation the
+    /// conditional request was built from; a newer entry that another
+    /// request stored meanwhile is kept.
+    func invalidateUnreconcilableEntry(
+        _ storedResponse: CachedResponse,
+        cacheKey: ResponseCacheKey?,
+        configuration: NetworkConfiguration,
+        runtime: RequestExecutionRuntime
+    ) async {
+        guard let cacheKey, let cache = configuration.responseCache else { return }
+        let targetURI = cacheKey.url
+        await runtime.cacheMutations.acquire(targetURI: targetURI)
+        if let current = await cache.get(cacheKey), current.matchesRepresentation(of: storedResponse) {
+            await runtime.cacheMutations.advanceGeneration(for: targetURI)
+            await cache.invalidate(cacheKey)
+        }
+        await runtime.cacheMutations.release(targetURI: targetURI)
     }
 
     func invalidateCacheEntry(

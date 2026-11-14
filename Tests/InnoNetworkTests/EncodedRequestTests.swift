@@ -433,7 +433,7 @@ struct EncodedRequestTests {
                 }
             }
         }
-        let operation = OperationNetworkClient(client: BinaryOnly()).start(request())
+        let operation = BinaryOnly().start(request())
         #expect(try await operation.value() == Data())
         var events: [NetworkOperationEvent] = []
         for await event in operation.events { events.append(event) }
@@ -452,14 +452,14 @@ struct EncodedRequestTests {
                 throw .configuration(reason: .invalidPayload(.unexpectedContent))
             }
         }
-        let operation = OperationNetworkClient(client: WaitingClient(entered: continuation)).start(request())
+        let operation = WaitingClient(entered: continuation).start(request())
         var iterator = entered.makeAsyncIterator()
         #expect(await iterator.next() != nil)
         operation.cancel()
         do {
             _ = try await operation.value()
             Issue.record("Expected cancellation")
-        } catch { #expect(error.kind == .cancelled) }
+        } catch { #expect(error.category == .cancellation) }
         var terminalCount = 0
         for await event in operation.events {
             if case .failed = event { terminalCount += 1 }
@@ -478,13 +478,16 @@ struct EncodedRequestTests {
                 count.withLock { $0 += 1 }
                 return Data()
             })
-        let operation = OperationNetworkClient(client: client).start(value, deadline: .init(after: .zero))
+        let operation = client.start(value, deadline: .init(after: .zero))
         do {
             _ = try await operation.value()
             Issue.record("Expected timeout")
         } catch {
-            #expect(error.kind == .timeout)
-            #expect(error.recovery == .doNotRetry)
+            guard case .timeout(.operationDeadline, _) = error else {
+                Issue.record("Expected an operation deadline, got \(error)")
+                return
+            }
+            #expect(await operation.failureSummary()?.recovery == .doNotRetry)
         }
         #expect(count.withLock { $0 } == 0)
         #expect(session.capturedRequestsInOrder.isEmpty)

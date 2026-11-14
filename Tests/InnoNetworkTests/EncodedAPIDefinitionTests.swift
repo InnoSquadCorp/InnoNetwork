@@ -73,26 +73,19 @@ struct EncodedAPIDefinitionTests {
                 origin: url, alternatives: [[.bearer(id: "named")]], provider: UnusedCredentialProvider()))
         if operationRoute {
             do {
-                _ = try await OperationNetworkClient(client: client).start(endpoint).value()
+                _ = try await client.start(endpoint).value()
                 Issue.record("Unsupported named credentials unexpectedly succeeded")
-            } catch let failure {
-                #expect(failure.kind == .configuration)
-                #expect(failure.recovery == .doNotRetry)
-                let expected = NetworkFailure(
-                    migratingV5: RequestSecurityFailure.unsupportedExecution.networkError)
-                #expect(failure.code == expected.code)
+            } catch {
+                #expect(error.credentialFailure == .unsupportedExecution)
+                #expect(error.summary.category == .authentication)
+                #expect(error.summary.recovery == .doNotRetry)
             }
         } else {
             do {
                 _ = try await client.request(endpoint)
                 Issue.record("Unsupported named credentials unexpectedly succeeded")
             } catch {
-                guard case .underlying(let failure, _) = error else {
-                    Issue.record("Unexpected credential failure: \(error)")
-                    return
-                }
-                #expect(failure.domain == "InnoNetwork.RequestSecurity")
-                #expect(failure.code == RequestSecurityFailure.unsupportedExecution.rawValue)
+                #expect(error.credentialFailure == .unsupportedExecution)
             }
         }
         #expect(count.withLock { $0 } == 0)
@@ -107,7 +100,7 @@ struct EncodedAPIDefinitionTests {
         let count = OSAllocatedUnfairLock(initialState: 0)
         let endpoint = Definition(count: count)
         #expect(try await client.request(endpoint) == Data([42]))
-        #expect(try await OperationNetworkClient(client: client).start(endpoint).value() == Data([42]))
+        #expect(try await client.start(endpoint).value() == Data([42]))
         #expect(count.withLock { $0 } == 2)
     }
 
@@ -120,8 +113,8 @@ struct EncodedAPIDefinitionTests {
             Definition(count: .init(initialState: 0), fails: true),
         ] {
             await #expect(throws: NetworkError.self) { try await client.request(endpoint) }
-            await #expect(throws: NetworkFailure.self) {
-                try await OperationNetworkClient(client: client).start(endpoint).value()
+            await #expect(throws: NetworkError.self) {
+                try await client.start(endpoint).value()
             }
             #expect(endpoint.count.withLock { $0 } == 2)
         }
@@ -132,8 +125,8 @@ struct EncodedAPIDefinitionTests {
         let tags = OSAllocatedUnfairLock(initialState: [CancellationTag?]())
         let client = BinaryOnlyClient(tags: tags)
         let endpoint = Definition(count: .init(initialState: 0))
-        await #expect(throws: NetworkFailure.self) {
-            try await OperationNetworkClient(client: client).start(endpoint, deadline: .init(after: .zero)).value()
+        await #expect(throws: NetworkError.self) {
+            try await client.start(endpoint, deadline: .init(after: .zero)).value()
         }
         #expect(endpoint.count.withLock { $0 } == 0)
         #expect(tags.withLock { $0.isEmpty })

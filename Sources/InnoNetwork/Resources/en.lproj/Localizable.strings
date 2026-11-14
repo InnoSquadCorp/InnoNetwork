@@ -13,11 +13,13 @@
 "NetworkError.timeout.request" = "The request timed out before the server responded.";
 "NetworkError.timeout.resource" = "The resource transfer timed out.";
 "NetworkError.timeout.connection" = "The connection to the server timed out.";
+"NetworkError.timeout.operationDeadline" = "The operation did not finish within its deadline.";
 
 "NetworkError.reachability.notConnectedToInternet" = "The device is not connected to the internet.";
 "NetworkError.reachability.dnsLookupFailed" = "DNS lookup failed before the request could open a connection.";
 "NetworkError.reachability.cannotFindHost" = "The host name could not be resolved.";
 "NetworkError.reachability.networkConnectionLost" = "The network connection was lost mid-request.";
+"NetworkError.reachability.cellularDataUnavailable" = "Cellular data is not available for this request.";
 
 
 "NetworkError.trust.unsupportedAuthenticationMethod" = "Unsupported authentication method: %@";
@@ -27,3 +29,14 @@
 "NetworkError.trust.hostNotPinned" = "No pin configured for host: %@";
 "NetworkError.trust.publicKeyExtractionFailed" = "Failed to extract public key from certificate chain.";
 "NetworkError.trust.pinMismatch" = "Public key pin mismatch for host: %@";
+
+"NetworkError.policy.responseBodyLimitExceeded" = "Response body of %1$@ bytes exceeded the configured limit of %2$@ bytes.";
+"NetworkError.policy.circuitOpen" = "Circuit breaker is open for %1$@. Retry after %2$.1f seconds.";
+"NetworkError.policy.rateLimitQueueFull" = "The bounded rate-limit queue is full.";
+"NetworkError.policy.rateLimitScopeLimitReached" = "The bounded rate-limit scope registry is full.";
+"NetworkError.policy.admissionQueueFull" = "The bounded request admission queue is full.";
+"NetworkError.policy.admissionWaitExpired" = "The request admission wait expired before transport.";
+"NetworkError.policy.nonHTTPResponse" = "The transport delivered a response that is not HTTP.";
+
+"NetworkError.authentication.refreshFailed" = "Session refresh failed: %@";
+"NetworkError.authentication.credential" = "Request credential boundary failed (%ld).";

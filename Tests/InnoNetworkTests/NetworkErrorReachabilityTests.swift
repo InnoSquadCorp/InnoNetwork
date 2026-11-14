@@ -49,6 +49,45 @@ struct NetworkErrorReachabilityTests {
         #expect(underlying.code == URLError.Code.networkConnectionLost.rawValue)
     }
 
+    @Test(
+        "Cellular-data refusals → .reachability(.cellularDataUnavailable), keeping the exact code",
+        arguments: [URLError.Code.dataNotAllowed, .internationalRoamingOff, .callIsActive]
+    )
+    func mapsCellularDataUnavailable(code: URLError.Code) {
+        let mapped = NetworkError.mapTransportError(URLError(code))
+        guard case .reachability(.cellularDataUnavailable, let underlying, nil) = mapped else {
+            Issue.record("Expected .reachability(.cellularDataUnavailable), got \(mapped)")
+            return
+        }
+        #expect(underlying.domain == NSURLErrorDomain)
+        #expect(underlying.code == code.rawValue)
+        #expect(mapped.isConnectivityFailure)
+        #expect(mapped.isRetriableHint)
+    }
+
+    @Test("Download and core read one connectivity table")
+    func valueProjectedConnectivityMatchesTransportMapping() {
+        let codes: [URLError.Code] = [
+            .notConnectedToInternet, .dnsLookupFailed, .cannotFindHost, .networkConnectionLost,
+            .dataNotAllowed, .internationalRoamingOff, .callIsActive,
+            .cannotConnectToHost, .timedOut, .secureConnectionFailed, .badServerResponse, .cancelled,
+        ]
+        for code in codes {
+            let projected = SendableUnderlyingError(domain: NSURLErrorDomain, code: code.rawValue, message: "x")
+            #expect(
+                NetworkError.isConnectivityFailure(projected)
+                    == NetworkError.mapTransportError(URLError(code)).isConnectivityFailure,
+                "\(code.rawValue)"
+            )
+        }
+        let foreign = SendableUnderlyingError(
+            domain: "app.example",
+            code: URLError.Code.notConnectedToInternet.rawValue,
+            message: "same number, other domain"
+        )
+        #expect(NetworkError.isConnectivityFailure(foreign) == false)
+    }
+
     // MARK: - NSError bridge / errorCode
 
     // CONTRACT LOCK: .reachability bridges to NetworkErrorCode.reachability (4002).
