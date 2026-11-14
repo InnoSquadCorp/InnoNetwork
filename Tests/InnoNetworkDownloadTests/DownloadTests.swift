@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import InnoNetworkTestSupport
 import Testing
 import os
 
@@ -235,7 +236,12 @@ struct DownloadTaskTests {
         let task = DownloadTask(url: url, destinationURL: destination)
 
         await task.restoreState(.failed)
-        await task.setError(.maxRetriesExceeded)
+        await task.setError(
+            .maxRetriesExceeded(
+                lastError: SendableUnderlyingError(
+                    domain: NSURLErrorDomain, code: NSURLErrorTimedOut, message: "timed out")
+            )
+        )
         _ = await task.incrementRetryCount()
         _ = await task.incrementTotalRetryCount()
 
@@ -318,7 +324,14 @@ struct DownloadErrorTests {
     @Test("Error descriptions are meaningful")
     func errorDescriptions() {
         #expect(DownloadError.cancelled.errorDescription?.contains("cancelled") == true)
-        #expect(DownloadError.maxRetriesExceeded.errorDescription?.contains("retry") == true)
+        let exhausted = DownloadError.maxRetriesExceeded(
+            lastError: SendableUnderlyingError(domain: NSURLErrorDomain, code: NSURLErrorTimedOut, message: "timed out")
+        )
+        #expect(exhausted.errorDescription?.contains("retry") == true)
+        #expect(exhausted.errorDescription?.contains("timed out") == true)
+        #expect(exhausted.httpStatusCode == nil)
+        #expect(DownloadError.unacceptableStatusCode(403).errorDescription?.contains("403") == true)
+        #expect(DownloadError.unacceptableStatusCode(403).httpStatusCode == 403)
         #expect(DownloadError.invalidURL("test").errorDescription?.contains("test") == true)
     }
 }
@@ -510,7 +523,7 @@ struct DownloadManagerTests {
     }
 
     private func waitForTaskCount(manager: DownloadManager, expectedCount: Int) async -> Bool {
-        let deadline = Date().addingTimeInterval(2.0)
+        let deadline = Date().addingTimeInterval(TestWaitBudget.upperBound(2.0))
         while Date() < deadline {
             if await manager.allTasks().count == expectedCount {
                 return true
@@ -570,7 +583,7 @@ struct DownloadCallbackTests {
     }
 
     private func waitForStates(recorder: DownloadStateRecorder, expectedCount: Int) async -> Bool {
-        let deadline = Date().addingTimeInterval(2.0)
+        let deadline = Date().addingTimeInterval(TestWaitBudget.upperBound(2.0))
         while Date() < deadline {
             if await recorder.count() >= expectedCount {
                 return true
@@ -914,6 +927,74 @@ struct DownloadTaskPersistenceTests {
         #expect(logData.isEmpty)
     }
 
+    @Test("Consecutive mutations do not replay the append log")
+    func consecutiveMutationsSkipLogReplay() async throws {
+        let sessionIdentifier = "test.persistence.fast-path.\(UUID().uuidString)"
+        let baseDirectoryURL = makeBaseDirectoryURL()
+        let replayCount = OSAllocatedUnfairLock(initialState: 0)
+        let persistence = try DownloadTaskPersistence(
+            sessionIdentifier: sessionIdentifier,
+            baseDirectoryURL: baseDirectoryURL,
+            logFileHandleFactory: { descriptor in
+                replayCount.withLock { $0 += 1 }
+                return FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+            }
+        )
+
+        for index in 0..<200 {
+            try await persistence.upsert(
+                id: "task-\(index)",
+                url: URL(string: "https://example.com/\(index).zip")!,
+                destinationURL: URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-\(index).zip")
+            )
+        }
+
+        // Before the fingerprint fast path every mutation replayed the whole
+        // log, so 200 upserts opened it about 200 times and the cost grew
+        // quadratically. Only the first mutations may need a replay now.
+        #expect(replayCount.withLock { $0 } <= 3)
+        #expect(await persistence.allRecords().count == 200)
+    }
+
+    @Test("A mutation observes writes made by another store instance in between")
+    func staleInstanceReplaysAfterForeignWrite() async throws {
+        let sessionIdentifier = "test.persistence.foreign-write.\(UUID().uuidString)"
+        let baseDirectoryURL = makeBaseDirectoryURL()
+        let first = try DownloadTaskPersistence(
+            sessionIdentifier: sessionIdentifier,
+            baseDirectoryURL: baseDirectoryURL
+        )
+        let second = try DownloadTaskPersistence(
+            sessionIdentifier: sessionIdentifier,
+            baseDirectoryURL: baseDirectoryURL
+        )
+        func upsert(_ store: DownloadTaskPersistence, _ id: String) async throws {
+            try await store.upsert(
+                id: id,
+                url: URL(string: "https://example.com/\(id).zip")!,
+                destinationURL: URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-\(id).zip")
+            )
+        }
+
+        try await upsert(first, "a")
+        try await upsert(first, "b")
+        // `second` writes while `first` holds a cached state for the files.
+        try await upsert(second, "c")
+        try await second.remove(id: "a")
+        // The next mutation of `first` must replay instead of trusting its
+        // cached state, or it would resurrect "a" and lose "c" at the next
+        // checkpoint.
+        try await upsert(first, "d")
+
+        #expect(Set(await first.allRecords().map(\.id)) == ["b", "c", "d"])
+
+        let reader = try DownloadTaskPersistence(
+            sessionIdentifier: sessionIdentifier,
+            baseDirectoryURL: baseDirectoryURL
+        )
+        #expect(Set(await reader.allRecords().map(\.id)) == ["b", "c", "d"])
+    }
+
     @Test("Corrupted append log tail replays valid prefix and quarantines the log")
     func corruptedLogTailReplaysValidPrefix() async throws {
         let sessionIdentifier = "test.persistence.log-tail.\(UUID().uuidString)"
@@ -1088,7 +1169,7 @@ struct DownloadDelegateOrderingTests {
         timeout: TimeInterval = 2.0,
         predicate: @escaping @Sendable (DownloadEvent) -> Bool
     ) async -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
+        let deadline = Date().addingTimeInterval(TestWaitBudget.upperBound(timeout))
         while Date() < deadline {
             let events = await recorder.snapshot()
             if events.contains(where: predicate) {
@@ -1123,7 +1204,7 @@ struct DownloadBackgroundCompletionTests {
         #expect(callCount.withLock { $0 } == 0)
 
         harness.injectBackgroundEventsFinished()
-        let deadline = ContinuousClock().now.advanced(by: .seconds(2))
+        let deadline = ContinuousClock().now.advanced(by: TestWaitBudget.upperBound(.seconds(2)))
         while callCount.withLock({ $0 }) == 0, ContinuousClock().now < deadline {
             try? await Task.sleep(for: .milliseconds(10))
         }
@@ -1456,7 +1537,7 @@ struct DownloadListenerLifecycleTests {
         excluding previousIdentifier: Int? = nil,
         timeout: TimeInterval = 2.0
     ) async -> Int? {
-        let deadline = Date().addingTimeInterval(timeout)
+        let deadline = Date().addingTimeInterval(TestWaitBudget.upperBound(timeout))
         while Date() < deadline {
             if let identifier = await manager.runtimeTaskIdentifier(for: task) {
                 if previousIdentifier == nil || identifier != previousIdentifier {
@@ -1473,7 +1554,7 @@ struct DownloadListenerLifecycleTests {
         timeout: TimeInterval,
         predicate: @escaping (DownloadEvent) -> Bool
     ) async -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
+        let deadline = Date().addingTimeInterval(TestWaitBudget.upperBound(timeout))
         while Date() < deadline {
             let events = await recorder.snapshot()
             if events.contains(where: predicate) {

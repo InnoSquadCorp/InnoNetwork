@@ -26,6 +26,10 @@ final class StubDownloadHarness: Sendable {
     let store: InMemoryDownloadTaskStore
     let completionStager: DownloadCompletionStager
     let completionAdmissionGate: DownloadCompletionAdmissionGate
+    /// The production session delegate wired to `manager`. Tests call its
+    /// transport-independent entry points with stub tasks so the real
+    /// delegate, event channel, and manager pipeline all run.
+    let delegate: DownloadSessionDelegate
 
     private let callbacks: DownloadSessionDelegateCallbacks
     private let backgroundCompletionStore: BackgroundCompletionStore
@@ -42,6 +46,7 @@ final class StubDownloadHarness: Sendable {
         clock: any InnoNetworkClock = SystemClock(),
         eventDeliveryPolicy: EventDeliveryPolicy = .default,
         allowsInsecureHTTP: Bool = false,
+        acceptableStatusCodes: Set<Int> = DownloadHTTPStatusFailure.defaultAcceptableStatusCodes,
         backgroundTransfers: Bool = false,
         label: String = "stub",
         sessionIdentifier: String? = nil,
@@ -49,6 +54,7 @@ final class StubDownloadHarness: Sendable {
         suspendsAllDownloadTasks: Bool = false,
         failsRemovesInitially: Bool = false,
         prepopulatedRecords: [DownloadTaskPersistence.Record] = [],
+        initialStub: StubDownloadURLTask? = nil,
         prequeuedStubs: [StubDownloadURLTask] = [],
         preinstalledStubs: [StubDownloadURLTask] = []
     ) throws {
@@ -66,8 +72,10 @@ final class StubDownloadHarness: Sendable {
         }
         // Default stub is enqueued first so it is consumed by the initial
         // `makeDownloadTask(with:)` call. Prequeued stubs are served in
-        // order for subsequent calls (retry / resume).
-        let stubTask = StubDownloadURLTask()
+        // order for subsequent calls (retry / resume). `initialStub` lets a
+        // test give that first attempt a retained request, which a task
+        // rebuilt from resume data needs to pass admission.
+        let stubTask = initialStub ?? StubDownloadURLTask()
         stubSession.enqueue(stubTask)
         for stub in prequeuedStubs {
             stubSession.enqueue(stub)
@@ -91,6 +99,7 @@ final class StubDownloadHarness: Sendable {
             timeoutForResource: 60 * 60 * 24,
             taskInactivityTimeout: taskInactivityTimeout,
             allowsInsecureHTTP: allowsInsecureHTTP,
+            acceptableStatusCodes: acceptableStatusCodes,
             sessionIdentifier: identifier,
             networkMonitor: networkMonitor,
             waitsForNetworkChanges: waitsForNetworkChanges,
@@ -113,8 +122,10 @@ final class StubDownloadHarness: Sendable {
             backgroundCompletionStore: backgroundCompletionStore,
             completionStager: completionStager,
             completionAdmissionGate: completionAdmissionGate,
-            allowsInsecureHTTP: allowsInsecureHTTP
+            allowsInsecureHTTP: allowsInsecureHTTP,
+            acceptableStatusCodes: config.acceptableStatusCodes
         )
+        self.delegate = delegate
         self.completionStager = completionStager
         self.completionAdmissionGate = completionAdmissionGate
         self.callbacks = callbacks
@@ -159,7 +170,8 @@ final class StubDownloadHarness: Sendable {
         currentRequestURL: URL? = nil,
         usesLastRequestURLs: Bool = true,
         location: URL? = nil,
-        error: SendableUnderlyingError? = nil
+        error: SendableUnderlyingError? = nil,
+        resumeData: Data? = nil
     ) async {
         let inferredURL = usesLastRequestURLs ? stubSession.lastURL : nil
         await manager.handleCompletion(
@@ -168,7 +180,8 @@ final class StubDownloadHarness: Sendable {
             originalRequestURL: originalRequestURL ?? inferredURL,
             currentRequestURL: currentRequestURL ?? inferredURL,
             location: location,
-            error: error
+            error: error,
+            resumeData: resumeData
         )
     }
 

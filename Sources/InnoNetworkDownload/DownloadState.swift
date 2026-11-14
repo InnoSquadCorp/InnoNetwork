@@ -82,10 +82,36 @@ public enum DownloadError: Error, Sendable {
     case networkError(SendableUnderlyingError)
     case fileSystemError(SendableUnderlyingError)
     case cancelled
-    case maxRetriesExceeded
+    /// The retry budget is exhausted. `lastError` is the failure of the final
+    /// attempt, so the caller can tell an offline device from a DNS failure,
+    /// a TLS failure, or a server that kept answering `503`.
+    case maxRetriesExceeded(lastError: SendableUnderlyingError)
+    /// The server answered with an HTTP status outside the configured
+    /// acceptable set and another attempt cannot change that answer, for
+    /// example `403` for an expired signed URL or `404` for a missing object.
+    /// Nothing is written to the destination. Statuses that another attempt
+    /// can clear (`408`, `416`, `429`, `5xx`) are retried instead and end as
+    /// ``maxRetriesExceeded(lastError:)`` when the budget runs out.
+    case unacceptableStatusCode(Int)
     case noResumeData
     case restorationMissingSystemTask
     case unknown
+}
+
+extension DownloadError {
+    /// The HTTP status code behind this failure, when a status caused it:
+    /// the code of ``unacceptableStatusCode(_:)``, or the status of the final
+    /// attempt of ``maxRetriesExceeded(lastError:)``.
+    public var httpStatusCode: Int? {
+        switch self {
+        case .unacceptableStatusCode(let statusCode):
+            return statusCode
+        case .maxRetriesExceeded(let lastError):
+            return DownloadHTTPStatusFailure.statusCode(from: lastError)
+        default:
+            return nil
+        }
+    }
 }
 
 extension DownloadError: LocalizedError {
@@ -99,8 +125,10 @@ extension DownloadError: LocalizedError {
             return "File system error: \(error.message)"
         case .cancelled:
             return "Download was cancelled"
-        case .maxRetriesExceeded:
-            return "Maximum retry attempts exceeded"
+        case .maxRetriesExceeded(let lastError):
+            return "Maximum retry attempts exceeded. Last error: \(lastError.message)"
+        case .unacceptableStatusCode(let statusCode):
+            return "The server responded with HTTP status \(statusCode)"
         case .noResumeData:
             return "No resume data available"
         case .restorationMissingSystemTask:

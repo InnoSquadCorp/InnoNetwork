@@ -10,14 +10,46 @@ public struct DownloadTransferPack: Sendable {
     private let taskInactivityTimeout: Duration?
     private let allowsCellularAccess: Bool
     private let allowsInsecureHTTP: Bool
+    private let acceptableStatusCodes: Set<Int>
 
+    /// Creates a transfer pack.
+    ///
+    /// - Parameters:
+    ///   - maxConnectionsPerHost: Maximum simultaneous connections the session
+    ///     opens to one host.
+    ///   - timeoutForRequest: Seconds a transfer may wait for more data before
+    ///     the request times out.
+    ///   - timeoutForResource: Seconds the whole transfer may take. Defaults
+    ///     to 24 hours.
+    ///   - taskInactivityTimeout: Per-task watchdog that fails a transfer
+    ///     reporting no progress for this long. Values below 100 milliseconds
+    ///     are raised to that floor; `nil` disables the watchdog.
+    ///   - allowsCellularAccess: Whether transfers may use cellular
+    ///     connectivity. Defaults to `false`; opt in when the product accepts
+    ///     the cellular transfer cost.
+    ///   - allowsInsecureHTTP: Whether plain `http` download sources are
+    ///     accepted. Defaults to `false`.
+    ///   - acceptableStatusCodes: HTTP status codes that count as a
+    ///     successfully finished transfer. Defaults to `200..<300`, which
+    ///     includes the `206 Partial Content` a resumed download returns. A
+    ///     response with any other status is never saved to the destination:
+    ///     `408`, `429`, and `500...599` are retried under the retry pack's
+    ///     budget, as is a `416` (a resumed transfer whose range the server
+    ///     rejected restarts from the beginning). Every other status fails
+    ///     the task immediately with
+    ///     ``DownloadError/unacceptableStatusCode(_:)``. A retried status that
+    ///     outlasts the budget fails with
+    ///     ``DownloadError/maxRetriesExceeded(lastError:)``; read the status
+    ///     from ``DownloadError/httpStatusCode`` in both cases. Responses that
+    ///     are not HTTP are not validated.
     public init(
         maxConnectionsPerHost: Int = 6,
         timeoutForRequest: TimeInterval = 60,
         timeoutForResource: TimeInterval = 60 * 60 * 24,
         taskInactivityTimeout: Duration? = nil,
         allowsCellularAccess: Bool = false,
-        allowsInsecureHTTP: Bool = false
+        allowsInsecureHTTP: Bool = false,
+        acceptableStatusCodes: Set<Int> = Set(200..<300)
     ) {
         self.maxConnectionsPerHost = maxConnectionsPerHost
         self.timeoutForRequest = timeoutForRequest
@@ -25,6 +57,7 @@ public struct DownloadTransferPack: Sendable {
         self.taskInactivityTimeout = taskInactivityTimeout
         self.allowsCellularAccess = allowsCellularAccess
         self.allowsInsecureHTTP = allowsInsecureHTTP
+        self.acceptableStatusCodes = acceptableStatusCodes
     }
 
     package func apply(to builder: inout DownloadConfiguration.AdvancedBuilder) {
@@ -34,6 +67,7 @@ public struct DownloadTransferPack: Sendable {
         builder.taskInactivityTimeout = taskInactivityTimeout
         builder.allowsCellularAccess = allowsCellularAccess
         builder.allowsInsecureHTTP = allowsInsecureHTTP
+        builder.acceptableStatusCodes = acceptableStatusCodes
     }
 }
 

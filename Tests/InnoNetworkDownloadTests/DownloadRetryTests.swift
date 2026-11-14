@@ -254,6 +254,134 @@ struct DownloadRetryTests {
         await harness.manager.cancel(task)
     }
 
+    @Test("A retry after a non-connectivity failure does not wait for a network change")
+    func nonConnectivityFailureSkipsNetworkWait() async throws {
+        let snapshot = NetworkSnapshot(status: .satisfied, interfaceTypes: [.wifi])
+        let monitor = MockNetworkMonitor(
+            currentSnapshot: snapshot,
+            nextChangeSnapshot: nil
+        )
+        let harness = try StubDownloadHarness(
+            maxRetryCount: 3,
+            maxTotalRetries: 5,
+            retryDelay: 0,
+            networkMonitor: monitor,
+            waitsForNetworkChanges: true,
+            networkChangeTimeout: 30,
+            label: "retry-no-netwait"
+        )
+        harness.stubSession.enqueue(StubDownloadURLTask())  // retry stub
+        let task = await harness.startDownload()
+
+        let firstIdentifier = try #require(
+            await waitForRuntimeTaskIdentifier(manager: harness.manager, task: task)
+        )
+
+        // A timeout on a working network: waiting 30 seconds for a path
+        // change that is not coming would stall every retry.
+        await harness.injectCompletion(
+            taskIdentifier: firstIdentifier,
+            location: nil,
+            error: SendableUnderlyingError(
+                domain: NSURLErrorDomain,
+                code: URLError.timedOut.rawValue,
+                message: "timed out"
+            )
+        )
+
+        _ = try #require(
+            await waitForRuntimeTaskIdentifier(
+                manager: harness.manager,
+                task: task,
+                excluding: firstIdentifier
+            )
+        )
+        #expect(await monitor.waitForChangeCallCount == 0)
+        #expect(await task.retryCount == 1)
+
+        await harness.manager.cancel(task)
+    }
+
+    @Test("Exhausting the retry budget reports the last attempt's failure")
+    func exhaustedBudgetCarriesLastError() async throws {
+        let harness = try StubDownloadHarness(
+            maxRetryCount: 1,
+            maxTotalRetries: 1,
+            retryDelay: 0,
+            label: "retry-last-error"
+        )
+        harness.stubSession.enqueue(StubDownloadURLTask())  // retry stub
+        let task = await harness.startDownload()
+
+        let firstIdentifier = try #require(
+            await waitForRuntimeTaskIdentifier(manager: harness.manager, task: task)
+        )
+        await harness.injectCompletion(
+            taskIdentifier: firstIdentifier,
+            location: nil,
+            error: SendableUnderlyingError(
+                domain: NSURLErrorDomain,
+                code: URLError.timedOut.rawValue,
+                message: "first attempt timed out"
+            )
+        )
+        let secondIdentifier = try #require(
+            await waitForRuntimeTaskIdentifier(
+                manager: harness.manager,
+                task: task,
+                excluding: firstIdentifier
+            )
+        )
+        await harness.injectCompletion(
+            taskIdentifier: secondIdentifier,
+            location: nil,
+            error: SendableUnderlyingError(
+                domain: NSURLErrorDomain,
+                code: URLError.secureConnectionFailed.rawValue,
+                message: "TLS handshake failed"
+            )
+        )
+
+        #expect(await waitForTaskState(task, timeout: 5.0) { $0.isTerminal })
+        guard case .maxRetriesExceeded(let lastError)? = await task.error else {
+            Issue.record("Expected maxRetriesExceeded, got \(String(describing: await task.error))")
+            return
+        }
+        #expect(lastError.domain == NSURLErrorDomain)
+        #expect(lastError.code == URLError.secureConnectionFailed.rawValue)
+        #expect(lastError.message == "TLS handshake failed")
+    }
+
+    @Test(
+        "Only connectivity failures are classified for the network wait",
+        arguments: [
+            (URLError.Code.notConnectedToInternet, true),
+            (.networkConnectionLost, true),
+            (.dnsLookupFailed, true),
+            (.cannotFindHost, true),
+            (.dataNotAllowed, true),
+            (.internationalRoamingOff, true),
+            (.callIsActive, true),
+            // A refused connection means the host is down, not that the
+            // device is offline; the core maps it to a connection timeout.
+            (.cannotConnectToHost, false),
+            (.timedOut, false),
+            (.secureConnectionFailed, false),
+            (.badServerResponse, false),
+        ]
+    )
+    func connectivityClassification(code: URLError.Code, expected: Bool) {
+        let error = SendableUnderlyingError(domain: NSURLErrorDomain, code: code.rawValue, message: "x")
+        #expect(NetworkError.isConnectivityFailure(error) == expected)
+        #expect(
+            NetworkError.isConnectivityFailure(error)
+                == NetworkError.mapTransportError(URLError(code)).isConnectivityFailure
+        )
+
+        let status = DownloadHTTPStatusFailure.make(statusCode: 503, url: nil)
+        #expect(NetworkError.isConnectivityFailure(status) == false)
+    }
+
     @Test("maxTotalRetries cap enforces terminal failure even after network resets")
     func maxTotalRetriesCapEnforced() async throws {
         let initialSnapshot = NetworkSnapshot(status: .satisfied, interfaceTypes: [.wifi])

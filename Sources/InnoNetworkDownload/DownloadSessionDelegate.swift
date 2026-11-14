@@ -8,6 +8,7 @@ package final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegat
     private let completionStager: DownloadCompletionStager
     package let completionAdmissionGate: DownloadCompletionAdmissionGate
     private let allowsInsecureHTTP: Bool
+    private let acceptableStatusCodes: Set<Int>
     private let rejectedRedirectTaskIdentifiers = OSAllocatedUnfairLock<Set<Int>>(initialState: [])
 
     package init(
@@ -15,13 +16,15 @@ package final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegat
         backgroundCompletionStore: BackgroundCompletionStore,
         completionStager: DownloadCompletionStager = DownloadCompletionStager(),
         completionAdmissionGate: DownloadCompletionAdmissionGate = DownloadCompletionAdmissionGate(),
-        allowsInsecureHTTP: Bool = false
+        allowsInsecureHTTP: Bool = false,
+        acceptableStatusCodes: Set<Int> = DownloadHTTPStatusFailure.defaultAcceptableStatusCodes
     ) {
         self.callbacks = callbacks
         self.backgroundCompletionStore = backgroundCompletionStore
         self.completionStager = completionStager
         self.completionAdmissionGate = completionAdmissionGate
         self.allowsInsecureHTTP = allowsInsecureHTTP
+        self.acceptableStatusCodes = acceptableStatusCodes
         super.init()
     }
 
@@ -96,7 +99,38 @@ package final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegat
         downloadTask: URLSessionDownloadTask,
         didFinishDownloadingTo location: URL
     ) {
+        handleFinishedDownload(downloadTask, location: location)
+    }
+
+    /// Transport-independent body of `didFinishDownloadingTo`. Foreground
+    /// attempts and background-session attempts redelivered after a relaunch
+    /// both arrive here, so admission decisions made in this method apply to
+    /// restored tasks as well. Package tests drive it with a stub task.
+    package func handleFinishedDownload(
+        _ downloadTask: any DownloadURLTask,
+        location: URL
+    ) {
         guard !isRejectedRedirectTask(downloadTask.taskIdentifier) else {
+            return
+        }
+        if let statusCode = (downloadTask.response as? HTTPURLResponse)?.statusCode,
+            !acceptableStatusCodes.contains(statusCode)
+        {
+            // A download task does not fail on 4xx/5xx: Foundation hands over
+            // the error body as if it were the requested file. Never stage
+            // it. Foundation removes its temporary file once this callback
+            // returns; a non-HTTP response keeps the unvalidated behavior.
+            callbacks.handleCompletion(
+                taskIdentifier: downloadTask.taskIdentifier,
+                taskDescription: downloadTask.taskDescription,
+                originalRequestURL: downloadTask.originalRequest?.url,
+                currentRequestURL: downloadTask.currentRequest?.url,
+                location: nil,
+                error: DownloadHTTPStatusFailure.make(
+                    statusCode: statusCode,
+                    url: downloadTask.currentRequest?.url
+                )
+            )
             return
         }
         let taskDescription = downloadTask.taskDescription ?? ""
@@ -165,17 +199,39 @@ package final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegat
         task: URLSessionTask,
         didCompleteWithError error: Error?
     ) {
-        if rejectedRedirectTaskIdentifiers.withLock({ $0.remove(task.taskIdentifier) != nil }) {
+        handleCompletedAttempt(
+            taskIdentifier: task.taskIdentifier,
+            taskDescription: task.taskDescription,
+            originalRequestURL: task.originalRequest?.url,
+            currentRequestURL: task.currentRequest?.url,
+            error: error
+        )
+    }
+
+    /// Transport-independent body of `didCompleteWithError`. Package tests
+    /// drive it with the values a stub attempt would report.
+    package func handleCompletedAttempt(
+        taskIdentifier: Int,
+        taskDescription: String?,
+        originalRequestURL: URL?,
+        currentRequestURL: URL?,
+        error: Error?
+    ) {
+        if rejectedRedirectTaskIdentifiers.withLock({ $0.remove(taskIdentifier) != nil }) {
             return
         }
         if let error = error {
             callbacks.handleCompletion(
-                taskIdentifier: task.taskIdentifier,
-                taskDescription: task.taskDescription,
-                originalRequestURL: task.originalRequest?.url,
-                currentRequestURL: task.currentRequest?.url,
-                location: nil,
-                error: SendableUnderlyingError(error)
+                taskIdentifier: taskIdentifier,
+                taskDescription: taskDescription,
+                originalRequestURL: originalRequestURL,
+                currentRequestURL: currentRequestURL,
+                payload: nil,
+                error: SendableUnderlyingError(error),
+                // `SendableUnderlyingError` is a value projection of the
+                // NSError and drops its userInfo, so the resume blob has to
+                // be lifted out here, before the error is wrapped.
+                resumeData: DownloadAttemptResumeData.extract(from: error)
             )
         }
     }
@@ -242,16 +298,127 @@ package enum DownloadRedirectAdmissionFailure {
 }
 
 
+/// Resume data Foundation attaches to a failed download attempt.
+package enum DownloadAttemptResumeData {
+    /// Returns the blob stored under `NSURLSessionDownloadTaskResumeData`,
+    /// or `nil` when the failure carries none (the server does not support
+    /// range requests, nothing was received yet, the status was rejected).
+    package static func extract(from error: Error) -> Data? {
+        let userInfo = (error as NSError).userInfo
+        guard let resumeData = userInfo[NSURLSessionDownloadTaskResumeData] as? Data,
+            !resumeData.isEmpty
+        else {
+            return nil
+        }
+        return resumeData
+    }
+
+    /// Whether `resumeData` is safe to hand to
+    /// `URLSession.downloadTask(withResumeData:)`.
+    ///
+    /// Foundation's blob is a property list whose root is a dictionary. It
+    /// tolerates a malformed dictionary by returning a task without a URL,
+    /// which resumed-task admission rejects, but raises an Objective-C
+    /// exception for any other property-list root. A blob read back from
+    /// persistence is untrusted, so reject that shape before Foundation
+    /// sees it and let the caller restart from the source URL instead.
+    package static func isStructurallyUsable(_ resumeData: Data) -> Bool {
+        guard !resumeData.isEmpty,
+            let propertyList = try? PropertyListSerialization.propertyList(
+                from: resumeData,
+                options: [],
+                format: nil
+            )
+        else {
+            return false
+        }
+        return propertyList is [String: Any]
+    }
+
+    /// Whether a task Foundation rebuilt from opaque resume data still
+    /// targets the admitted logical source. Shared by `resume(_:)` and the
+    /// automatic retry so both apply one admission rule.
+    package static func admits(
+        _ urlTask: any DownloadURLTask,
+        expectedURL: URL,
+        allowsInsecureHTTP: Bool
+    ) -> Bool {
+        guard
+            let originalURL = urlTask.originalRequest?.url,
+            let currentURL = urlTask.currentRequest?.url,
+            originalURL == expectedURL,
+            currentURL == expectedURL
+        else {
+            return false
+        }
+        do {
+            try NetworkURLAdmission.validate(
+                expectedURL,
+                policy: .http(allowsInsecure: allowsInsecureHTTP)
+            )
+            return true
+        } catch {
+            return false
+        }
+    }
+}
+
+
+/// Typed failure for a finished attempt whose HTTP status is outside the
+/// configured acceptable set. `code` is the HTTP status code itself, so the
+/// classification survives the value projection carried by
+/// ``DownloadError/networkError(_:)``.
+package enum DownloadHTTPStatusFailure {
+    package static let domain = "InnoNetworkDownload.HTTPStatus"
+    /// Successful responses, including the 206 a resumed transfer returns.
+    package static let defaultAcceptableStatusCodes = Set(200..<300)
+
+    package static func make(statusCode: Int, url: URL?) -> SendableUnderlyingError {
+        let target = NetworkError.diagnosticURLString(for: url)
+        return SendableUnderlyingError(
+            domain: domain,
+            code: statusCode,
+            message: "Download from \(target) finished with unacceptable HTTP status \(statusCode)."
+        )
+    }
+
+    package static func statusCode(from error: SendableUnderlyingError) -> Int? {
+        guard error.domain == domain else { return nil }
+        return error.code
+    }
+
+    /// Statuses another attempt can clear. Every other unacceptable status
+    /// is deterministic for the same request and fails the task at once.
+    ///
+    /// - `408`, `429`, `500...599`: request timeout, throttling, and
+    ///   server-side failures.
+    /// - `416`: only a range request can be answered this way, and only an
+    ///   attempt rebuilt from resume data sends one. The status failure
+    ///   carries no resume data, so the retry restarts from the source URL
+    ///   instead of turning an unusable resume point into a terminal error.
+    package static func isRetryable(statusCode: Int) -> Bool {
+        switch statusCode {
+        case 408, 416, 429, 500...599:
+            return true
+        default:
+            return false
+        }
+    }
+}
+
+
 package final class DownloadSessionDelegateCallbacks: Sendable {
     package typealias ProgressHandler = @Sendable (Int, Int64, Int64, Int64) -> Void
+    /// The trailing `Data?` is the resume data Foundation attached to a
+    /// failed attempt, when it produced any.
     package typealias CompletionHandler =
-        @Sendable (Int, String?, URL?, URL?, DownloadCompletionPayload?, SendableUnderlyingError?) -> Void
+        @Sendable (Int, String?, URL?, URL?, DownloadCompletionPayload?, SendableUnderlyingError?, Data?) -> Void
     package typealias BackgroundEventsFinishedHandler =
         @Sendable ((@Sendable () -> Void)?) -> Void
     package typealias InvalidationHandler = @Sendable (SendableUnderlyingError?) -> Void
 
     private enum PendingLifecycleEvent {
-        case completion(Int, String?, URL?, URL?, DownloadCompletionPayload?, SendableUnderlyingError?)
+        case completion(Int, String?, URL?, URL?, DownloadCompletionPayload?, SendableUnderlyingError?, Data?)
         case backgroundEventsFinished((@Sendable () -> Void)?)
     }
 
@@ -295,7 +462,8 @@ package final class DownloadSessionDelegateCallbacks: Sendable {
                     let originalRequestURL,
                     let currentRequestURL,
                     let payload,
-                    let error
+                    let error,
+                    let resumeData
                 ):
                     onCompletion(
                         taskIdentifier,
@@ -303,7 +471,8 @@ package final class DownloadSessionDelegateCallbacks: Sendable {
                         originalRequestURL,
                         currentRequestURL,
                         payload,
-                        error
+                        error,
+                        resumeData
                     )
                 case .backgroundEventsFinished(let completion):
                     onBackgroundEventsFinished(completion)
@@ -327,7 +496,7 @@ package final class DownloadSessionDelegateCallbacks: Sendable {
             state -> ([DownloadCompletionPayload], [@Sendable () -> Void]) in
             let payloads = state.pendingLifecycleEvents.compactMap {
                 event -> DownloadCompletionPayload? in
-                guard case .completion(_, _, _, _, let payload, _) = event else { return nil }
+                guard case .completion(_, _, _, _, let payload, _, _) = event else { return nil }
                 return payload
             }
             let completions = state.pendingLifecycleEvents.compactMap {
@@ -374,7 +543,8 @@ package final class DownloadSessionDelegateCallbacks: Sendable {
         originalRequestURL: URL? = nil,
         currentRequestURL: URL? = nil,
         payload: DownloadCompletionPayload?,
-        error: SendableUnderlyingError?
+        error: SendableUnderlyingError?,
+        resumeData: Data? = nil
     ) {
         let handler = handlersLock.withLock { state -> CompletionHandler? in
             guard let completion = state.completion, !state.isDrainingPendingLifecycleEvents else {
@@ -385,7 +555,8 @@ package final class DownloadSessionDelegateCallbacks: Sendable {
                         originalRequestURL,
                         currentRequestURL,
                         payload,
-                        error
+                        error,
+                        resumeData
                     )
                 )
                 return nil
@@ -398,7 +569,8 @@ package final class DownloadSessionDelegateCallbacks: Sendable {
             originalRequestURL,
             currentRequestURL,
             payload,
-            error
+            error,
+            resumeData
         )
     }
 
@@ -410,7 +582,8 @@ package final class DownloadSessionDelegateCallbacks: Sendable {
         originalRequestURL: URL? = nil,
         currentRequestURL: URL? = nil,
         location: URL?,
-        error: SendableUnderlyingError?
+        error: SendableUnderlyingError?,
+        resumeData: Data? = nil
     ) {
         handleCompletion(
             taskIdentifier: taskIdentifier,
@@ -418,7 +591,8 @@ package final class DownloadSessionDelegateCallbacks: Sendable {
             originalRequestURL: originalRequestURL,
             currentRequestURL: currentRequestURL,
             payload: location.map(DownloadCompletionPayload.legacy),
-            error: error
+            error: error,
+            resumeData: resumeData
         )
     }
 

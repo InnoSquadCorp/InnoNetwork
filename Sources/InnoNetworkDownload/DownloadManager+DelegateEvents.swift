@@ -23,7 +23,8 @@ extension DownloadManager {
             let originalRequestURL,
             let currentRequestURL,
             let payload,
-            let error
+            let error,
+            let resumeData
         ):
             await handleCompletion(
                 taskIdentifier: taskIdentifier,
@@ -31,7 +32,8 @@ extension DownloadManager {
                 originalRequestURL: originalRequestURL,
                 currentRequestURL: currentRequestURL,
                 payload: payload,
-                error: error
+                error: error,
+                resumeData: resumeData
             )
         case .restorationBoundary:
             break
@@ -72,7 +74,8 @@ extension DownloadManager {
         originalRequestURL: URL? = nil,
         currentRequestURL: URL? = nil,
         payload: DownloadCompletionPayload?,
-        error: SendableUnderlyingError?
+        error: SendableUnderlyingError?,
+        resumeData: Data? = nil
     ) async {
         let mappedTask = await runtimeRegistry.downloadTask(for: taskIdentifier)
         let describedTask: DownloadTask?
@@ -187,7 +190,10 @@ extension DownloadManager {
         if let error {
             await runtimeRegistry.removeAttemptRuntime(taskIdentifier: taskIdentifier)
             await rejectCompletionPayload(payload)
-            await scheduleFailureHandling(task: task, error: error)
+            // Only an ordinary transport failure of the correlated source
+            // may hand its resume data to the retry. The admission failures
+            // above never do: their attempt did not belong to this task.
+            await scheduleFailureHandling(task: task, error: error, resumeData: resumeData)
             return
         }
 
@@ -313,7 +319,8 @@ extension DownloadManager {
         originalRequestURL: URL? = nil,
         currentRequestURL: URL? = nil,
         location: URL?,
-        error: SendableUnderlyingError?
+        error: SendableUnderlyingError?,
+        resumeData: Data? = nil
     ) async {
         await handleCompletion(
             taskIdentifier: taskIdentifier,
@@ -321,13 +328,15 @@ extension DownloadManager {
             originalRequestURL: originalRequestURL,
             currentRequestURL: currentRequestURL,
             payload: location.map(DownloadCompletionPayload.legacy),
-            error: error
+            error: error,
+            resumeData: resumeData
         )
     }
 
     func scheduleFailureHandling(
         task: DownloadTask,
-        error: SendableUnderlyingError
+        error: SendableUnderlyingError,
+        resumeData: Data? = nil
     ) async {
         let jobID = UUID()
         let admission = DownloadFailureAdmissionGate()
@@ -337,6 +346,7 @@ extension DownloadManager {
             await failureCoordinator.handleError(
                 task: task,
                 error: error,
+                resumeData: resumeData,
                 onAdmissionComplete: { admission.complete() }
             ) { task in
                 await transferCoordinator.startDownload(task, mode: .automaticRetry)

@@ -33,9 +33,18 @@ package struct DownloadFailureCoordinator {
         self.clock = clock
     }
 
+    /// Admits one failed attempt: fails the task for deterministic errors or
+    /// an exhausted budget, otherwise persists a retry plan and restarts
+    /// after its wait.
+    ///
+    /// - Parameter resumeData: Resume data Foundation attached to the failed
+    ///   attempt. When a retry is scheduled it is retained on the task and on
+    ///   the durable retry marker so the next attempt continues the transfer
+    ///   instead of restarting from byte 0.
     package func handleError(
         task: DownloadTask,
         error: SendableUnderlyingError,
+        resumeData: Data? = nil,
         onAdmissionComplete: @escaping @Sendable () -> Void = {},
         restart: @Sendable (DownloadTask) async -> Void
     ) async {
@@ -46,6 +55,21 @@ package struct DownloadFailureCoordinator {
             await markTaskFailed(
                 task,
                 reason: .invalidURL(invalidURL),
+                onLifecycleAdmissionComplete: onAdmissionComplete
+            )
+            return
+        }
+        if let statusCode = DownloadHTTPStatusFailure.statusCode(from: error),
+            !DownloadHTTPStatusFailure.isRetryable(statusCode: statusCode)
+        {
+            // The server answered this exact request with a deterministic
+            // refusal (expired signature, missing object, ...). Asking again
+            // returns the same status, so surface the typed status failure
+            // without spending retry budget. Retryable statuses fall through
+            // to the ordinary retry path below.
+            await markTaskFailed(
+                task,
+                reason: .unacceptableStatusCode(statusCode),
                 onLifecycleAdmissionComplete: onAdmissionComplete
             )
             return
@@ -86,7 +110,7 @@ package struct DownloadFailureCoordinator {
         else {
             await markTaskFailed(
                 task,
-                reason: .maxRetriesExceeded,
+                reason: .maxRetriesExceeded(lastError: error),
                 onLifecycleAdmissionComplete: onAdmissionComplete
             )
             return
@@ -94,7 +118,13 @@ package struct DownloadFailureCoordinator {
         let updatedTotalRetryCount = await task.incrementTotalRetryCount()
         let updatedRetryCount = await task.incrementRetryCount()
         let retryPlan: DownloadTaskPersistence.RetryPlan
+        // Only a connectivity failure can be cured by a path change. A
+        // retryable HTTP status, a timeout, or a TLS failure on a working
+        // network goes straight to backoff instead of idling for the whole
+        // `networkChangeTimeout` before every attempt. The table is the
+        // core's, so downloads and requests agree on what "offline" means.
         if configuration.waitsForNetworkChanges,
+            NetworkError.isConnectivityFailure(error),
             let monitor = configuration.networkMonitor
         {
             let baseline = await monitor.currentSnapshot()
@@ -110,6 +140,16 @@ package struct DownloadFailureCoordinator {
         } else {
             retryPlan = makeBackoffPlan(retryCount: updatedRetryCount)
         }
+        // Captured before the retry marker becomes durable: from that write
+        // on `pause(_:)` may take the waiting task, and only a task that is
+        // still exactly here may be restarted when the wait ends.
+        let waitingLifecycle = await task.lifecycleSnapshot()
+        // This failure's resume data (or its absence) replaces whatever an
+        // earlier attempt left behind. It must be in place before the retry
+        // marker becomes durable: from that write on, `pause(_:)` may take
+        // the waiting task and persists the task's resume data as its own,
+        // so setting it any later would let a pause record a stale blob.
+        await task.setResumeData(resumeData)
         do {
             let persisted = try await persistence.updateRetryState(
                 id: task.id,
@@ -124,6 +164,10 @@ package struct DownloadFailureCoordinator {
                 onAdmissionComplete()
                 return
             }
+            // Attach the blob to the durable marker so a relaunch during the
+            // wait continues the transfer. A pause that already replaced the
+            // marker has persisted the same blob itself.
+            await persistRetainedResumeData(for: task)
         } catch {
             await markTaskFailed(
                 task,
@@ -137,9 +181,10 @@ package struct DownloadFailureCoordinator {
         // network-change waits, backoff, and restart happen out of band.
         onAdmissionComplete()
 
-        await resumePersistedRetry(
+        await continueRetry(
             task: task,
             plan: retryPlan,
+            waitingLifecycle: waitingLifecycle,
             restart: restart
         )
     }
@@ -150,6 +195,26 @@ package struct DownloadFailureCoordinator {
     package func resumePersistedRetry(
         task: DownloadTask,
         plan: DownloadTaskPersistence.RetryPlan,
+        restart: @Sendable (DownloadTask) async -> Void
+    ) async {
+        let waitingLifecycle = await task.lifecycleSnapshot()
+        await continueRetry(
+            task: task,
+            plan: plan,
+            waitingLifecycle: waitingLifecycle,
+            restart: restart
+        )
+    }
+
+    /// Waits out `plan` and restarts `task`, provided the task is still the
+    /// one that entered the wait. `waitingLifecycle` is that task's snapshot
+    /// from before the retry became durable; a pause, resume, cancellation,
+    /// or manual retry issued during the wait changes it, and this job then
+    /// ends without rewriting the newer durable phase or starting a transfer.
+    private func continueRetry(
+        task: DownloadTask,
+        plan: DownloadTaskPersistence.RetryPlan,
+        waitingLifecycle: DownloadTaskLifecycleSnapshot,
         restart: @Sendable (DownloadTask) async -> Void
     ) async {
         var activePlan = plan
@@ -180,6 +245,7 @@ package struct DownloadFailureCoordinator {
                     )
                 }
                 guard case .value(let newSnapshot) = changeResult else { return }
+                guard await task.lifecycleSnapshot() == waitingLifecycle else { return }
                 if let newSnapshot, newSnapshot != baseline {
                     await task.resetRetryCount()
                 }
@@ -196,6 +262,8 @@ package struct DownloadFailureCoordinator {
                     retryPlan: backoffPlan
                 )
                 guard persisted else { return }
+                // Rewriting the plan resets the marker's resume data.
+                await persistRetainedResumeData(for: task)
             } catch {
                 await markTaskFailed(
                     task,
@@ -228,13 +296,41 @@ package struct DownloadFailureCoordinator {
         }
 
         if Task.isCancelled { return }
-        let lifecycle = await task.lifecycleSnapshot()
-        guard !lifecycle.state.isTerminal,
-            await task.advanceAttempt(ifMatching: lifecycle) != nil
+        // Claim the next attempt atomically against the snapshot this retry
+        // was scheduled for. `pause(_:)` uses the same snapshot to take a
+        // waiting task, so the claim fails once the task has been paused,
+        // resumed into a newer attempt, or finished. A retry scheduled for
+        // an already paused task has nothing to restart either.
+        guard !waitingLifecycle.state.isTerminal,
+            waitingLifecycle.state != .paused,
+            await task.advanceAttempt(ifMatching: waitingLifecycle) != nil
         else {
             return
         }
         await restart(task)
+    }
+
+    /// Attaches the task's retained resume data to its durable retry marker
+    /// through the same resume-state transition a pause uses, so a relaunch
+    /// during the wait can still continue the transfer.
+    ///
+    /// Best effort by design: the retry itself is already durable. If this
+    /// write fails or a newer phase has replaced the marker, the only loss
+    /// is that a relaunched retry restarts from the source URL.
+    private func persistRetainedResumeData(for task: DownloadTask) async {
+        guard let resumeData = await task.resumeData else { return }
+        do {
+            _ = try await persistence.transitionResumeState(
+                id: task.id,
+                from: .retryPending,
+                to: .retryPending,
+                resumeData: resumeData
+            )
+        } catch {
+            Self.logger.error(
+                "Failed to persist retry resume data for task \(task.id, privacy: .private(mask: .hash)): \(String(describing: error), privacy: .private(mask: .hash)). A relaunched retry will restart from the source URL."
+            )
+        }
     }
 
     private func makeBackoffPlan(

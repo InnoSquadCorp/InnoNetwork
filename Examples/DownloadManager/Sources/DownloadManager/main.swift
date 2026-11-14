@@ -111,7 +111,23 @@ for await event in await manager.events(for: task) {
         print("   size on disk: \(size) bytes")
         exit(0)
     case .failed(let error):
-        FileHandle.standardError.write(Data("✗ failed: \(error)\n".utf8))
+        switch error {
+        case .unacceptableStatusCode(let statusCode):
+            // The server answered outside `acceptableStatusCodes` and another
+            // attempt cannot change that (for example 403 or 404). Nothing
+            // was written to the destination.
+            FileHandle.standardError.write(Data("✗ failed: HTTP \(statusCode)\n".utf8))
+        case .maxRetriesExceeded(let lastError):
+            // The retry budget ran out. `lastError` is the final attempt's
+            // failure; `httpStatusCode` is set when that attempt ended on a
+            // retryable status such as 503.
+            let status = error.httpStatusCode.map { " (HTTP \($0))" } ?? ""
+            FileHandle.standardError.write(
+                Data("✗ failed after retries\(status): \(lastError.message)\n".utf8)
+            )
+        default:
+            FileHandle.standardError.write(Data("✗ failed: \(error.localizedDescription)\n".utf8))
+        }
         exit(1)
     @unknown default:
         break

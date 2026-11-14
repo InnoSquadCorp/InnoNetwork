@@ -27,7 +27,7 @@ struct DownloadCompletionStagerTests {
 
         callbacks.setHandlers(
             onProgress: { _, _, _, _ in },
-            onCompletion: { taskIdentifier, _, _, _, payload, _ in
+            onCompletion: { taskIdentifier, _, _, _, payload, _, _ in
                 #expect(taskIdentifier == 42)
                 capturedLocation.withLock { $0 = payload?.locationURL }
             }
@@ -69,7 +69,8 @@ struct DownloadCompletionStagerTests {
                 originalRequestURL: nil,
                 currentRequestURL: nil,
                 payload: .legacy(stagedURL),
-                error: nil
+                error: nil,
+                resumeData: nil
             ),
             manager: nil
         )
@@ -127,7 +128,7 @@ struct DownloadCompletionStagerTests {
         let callbacks = DownloadSessionDelegateCallbacks()
         callbacks.setHandlers(
             onProgress: { _, _, _, _ in },
-            onCompletion: { _, _, _, _, completionPayload, error in
+            onCompletion: { _, _, _, _, completionPayload, error, _ in
                 capturedLocation.withLock { $0 = completionPayload?.locationURL }
                 capturedError.withLock { $0 = error }
             }
@@ -230,7 +231,7 @@ struct DownloadCompletionStagerTests {
         let callbacks = DownloadSessionDelegateCallbacks()
         callbacks.setHandlers(
             onProgress: { _, _, _, _ in },
-            onCompletion: { _, _, _, _, completionPayload, error in
+            onCompletion: { _, _, _, _, completionPayload, error, _ in
                 capturedLocation.withLock { $0 = completionPayload?.locationURL }
                 capturedError.withLock { $0 = error }
             }

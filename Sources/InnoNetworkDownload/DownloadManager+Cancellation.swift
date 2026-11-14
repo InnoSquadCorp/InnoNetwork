@@ -71,7 +71,7 @@ extension DownloadManager {
 
     /// Cancels every registered download whose start carried `tag`.
     ///
-    /// Mirrors ``DefaultNetworkClient/cancelAll(matching:)`` so per-screen
+    /// Mirrors `DefaultNetworkClient.cancelAll(matching:)` so per-screen
     /// or per-feature teardown can interrupt only its own transfers. Tags
     /// are runtime-scoped: tasks restored from a background session carry
     /// no tag and remain reachable through ``cancelAll()`` or per-task

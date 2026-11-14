@@ -15,6 +15,9 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
     private let fileOperations: FileOperations
     private let fsync: @Sendable (Int32) -> Int32
     private var state: StoreState
+    /// Fingerprint of the durable files that `state` was read from or written
+    /// to. `nil` forces the next mutation to replay the files.
+    private var diskFingerprint: DiskFingerprint?
 
     package init(
         sessionIdentifier: String,
@@ -40,6 +43,7 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
             operations: fileOperations
         )
         let initialState: StoreState
+        let initialFingerprint: DiskFingerprint?
         do {
             let lockDescriptor = try Self.acquireDirectoryLockBlocking(
                 directoryDescriptor: anchoredDirectory.descriptor,
@@ -52,6 +56,12 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
                 logFileHandleFactory: logFileHandleFactory,
                 operations: fileOperations,
                 fsync: fsync
+            )
+            // Captured under the lock, after the load (which may quarantine
+            // a corrupt file). Reapplying storage protection below can move
+            // the status-change time; that only costs one extra replay.
+            initialFingerprint = Self.captureDiskFingerprint(
+                directoryDescriptor: anchoredDirectory.descriptor
             )
         } catch {
             close(anchoredDirectory.descriptor)
@@ -81,6 +91,7 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
         self.fileOperations = fileOperations
         self.fsync = fsync
         self.state = initialState
+        self.diskFingerprint = initialFingerprint
     }
 
     deinit {
@@ -672,13 +683,25 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
         )
         let descriptor = try await Self.awaitDirectoryLock(descriptor: descriptorRaw, timeout: 10)
         defer { Self.releaseDirectoryLock(descriptor) }
-        var diskState = try Self.loadState(
-            directoryDescriptor: directoryDescriptor,
-            checkpointDataReader: checkpointDataReader,
-            logFileHandleFactory: logFileHandleFactory,
-            operations: fileOperations,
-            fsync: fsync
-        )
+        // Replaying the checkpoint and the whole log costs time proportional
+        // to the number of logged events, so doing it before every mutation
+        // makes a run of N mutations quadratic. The replay is needed only
+        // when another writer touched the files since this store last read
+        // or wrote them; the fingerprint, compared under the lock, tells.
+        var diskState: StoreState
+        if let observed = Self.captureDiskFingerprint(directoryDescriptor: directoryDescriptor),
+            observed == diskFingerprint
+        {
+            diskState = state
+        } else {
+            diskState = try Self.loadState(
+                directoryDescriptor: directoryDescriptor,
+                checkpointDataReader: checkpointDataReader,
+                logFileHandleFactory: logFileHandleFactory,
+                operations: fileOperations,
+                fsync: fsync
+            )
+        }
 
         let originalState = diskState
         // Transforms number their batch relative to zero; assign durable
@@ -688,6 +711,7 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
         diskState.nextSequence = originalState.nextSequence
         guard !events.isEmpty else {
             state = diskState
+            diskFingerprint = Self.captureDiskFingerprint(directoryDescriptor: directoryDescriptor)
             return
         }
 
@@ -742,6 +766,11 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
         }
 
         state = diskState
+        // Still under the lock: this is the state of the files that `state`
+        // now mirrors. A failure above leaves the previous fingerprint in
+        // place, which no longer matches the files, so the next mutation
+        // replays them instead of trusting a partially applied write.
+        diskFingerprint = Self.captureDiskFingerprint(directoryDescriptor: directoryDescriptor)
     }
 
 }
