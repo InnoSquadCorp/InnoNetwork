@@ -14,16 +14,20 @@ NetworkConfigurationFailureReason.invalidPayload
 NetworkConfigurationFailureReason.invalidRequest
 NetworkConfigurationFailureReason.offline
 
+NetworkError.authentication
 NetworkError.cancelled
 NetworkError.configuration
 NetworkError.decoding
+NetworkError.policyRejected
 NetworkError.reachability
 NetworkError.statusCode
 NetworkError.timeout
 NetworkError.trustEvaluationFailed
 NetworkError.underlying
 
+NetworkErrorCode.authenticationRefreshFailed
 NetworkErrorCode.cancelled
+NetworkErrorCode.circuitOpen
 NetworkErrorCode.configurationInvalidBaseURL
 NetworkErrorCode.configurationInvalidPayload
 NetworkErrorCode.configurationInvalidRequest
@@ -35,6 +39,7 @@ NetworkErrorCode.rateLimitScopeRejected
 NetworkErrorCode.reachability
 NetworkErrorCode.requestAdmissionRejected
 NetworkErrorCode.requestAdmissionWaitExpired
+NetworkErrorCode.requestCredentialFailed
 NetworkErrorCode.responseBodyLimitExceeded
 NetworkErrorCode.statusCode
 NetworkErrorCode.streamFrameTooLarge
@@ -42,6 +47,17 @@ NetworkErrorCode.streamingPhaseTimeout
 NetworkErrorCode.timeout
 NetworkErrorCode.trustEvaluationFailed
 NetworkErrorCode.underlying
+
+NetworkAuthenticationFailure.credential
+NetworkAuthenticationFailure.refreshFailed
+
+NetworkPolicyRejection.admissionQueueFull
+NetworkPolicyRejection.admissionWaitExpired
+NetworkPolicyRejection.circuitOpen
+NetworkPolicyRejection.nonHTTPResponse
+NetworkPolicyRejection.rateLimitQueueFull
+NetworkPolicyRejection.rateLimitScopeLimitReached
+NetworkPolicyRejection.responseBodyLimitExceeded
 
 NetworkDecisionKind.admission
 NetworkDecisionKind.cache
@@ -61,6 +77,7 @@ NetworkOperationDeadlineStage.transport
 NetworkOperationDeadlineStage.unknown
 
 ReachabilityReason.cannotFindHost
+ReachabilityReason.cellularDataUnavailable
 ReachabilityReason.dnsLookupFailed
 ReachabilityReason.networkConnectionLost
 ReachabilityReason.notConnectedToInternet

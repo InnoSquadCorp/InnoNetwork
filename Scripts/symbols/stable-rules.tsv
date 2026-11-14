@@ -5,7 +5,9 @@ prefix	InnoNetwork	EncodedRequest
 prefix	InnoNetwork	EncodedAPIDefinition
 prefix	InnoNetwork	EncodedRequestBody
 prefix	InnoNetwork	EncodedRequestOptions
-prefix	InnoNetwork	EncodedRequestClient
+exact	InnoNetwork	EncodedRequestClient
+exact	InnoNetwork	EncodedRequestClient.request(_:)
+exact	InnoNetwork	EncodedRequestClient.request(_:tag:)
 prefix	InnoNetwork	EncodedCodecMeasurement
 prefix	InnoNetwork	EncodedPayloadFailure
 exact	InnoNetwork	APIDefinition(method:path:auth:)
@@ -16,8 +18,12 @@ prefix	InnoNetwork	TransportPolicy
 prefix	InnoNetwork	RequestEncodingPolicy
 prefix	InnoNetwork	ResponseDecodingStrategy
 prefix	InnoNetwork	DefaultNetworkClient
-prefix	InnoNetwork	NetworkClient
-prefix	InnoNetwork	UploadNetworkClient
+exact	InnoNetwork	NetworkClient
+exact	InnoNetwork	NetworkClient.request(_:)
+exact	InnoNetwork	NetworkClient.request(_:tag:)
+exact	InnoNetwork	UploadNetworkClient
+exact	InnoNetwork	UploadNetworkClient.upload(_:)
+exact	InnoNetwork	UploadNetworkClient.upload(_:tag:)
 exact	InnoNetwork	NetworkConfiguration
 exact	InnoNetwork	NetworkConfiguration.safeDefaults(baseURL:)
 exact	InnoNetwork	NetworkConfiguration.advanced(baseURL:resilience:auth:observability:cache:transport:)

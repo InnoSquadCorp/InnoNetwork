@@ -63,8 +63,11 @@ forbidden_pattern() {
     return
   fi
 
-  if grep -En "$pattern" "$@" > /dev/null; then
-    grep -En "$pattern" "$@" >&2
+  # rg searches directory arguments recursively and skips ignored build
+  # output; without -R, grep would print "Is a directory" and silently pass.
+  local -a grep_args=(-REn --exclude-dir=.build --exclude-dir=.git)
+  if grep "${grep_args[@]}" "$pattern" "$@" > /dev/null; then
+    grep "${grep_args[@]}" "$pattern" "$@" >&2
     fail "forbidden legacy documentation pattern matched: $pattern"
   fi
 }

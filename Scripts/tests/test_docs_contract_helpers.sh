@@ -64,6 +64,10 @@ for engine in default hide-rg; do
     forbidden_pattern "never_present_[0-9]+" "$fixture/doc.md"
   run_case "forbidden_pattern fails on a match ($engine)" 1 "$engine" \
     forbidden_pattern "legacy_marker" "$fixture/doc.md"
+  run_case "forbidden_pattern searches directory arguments ($engine)" 1 "$engine" \
+    forbidden_pattern "legacy_marker" "$fixture"
+  run_case "forbidden_pattern passes on a clean directory ($engine)" 0 "$engine" \
+    forbidden_pattern "never_present_[0-9]+" "$fixture"
 done
 
 rm -rf "$fixture"

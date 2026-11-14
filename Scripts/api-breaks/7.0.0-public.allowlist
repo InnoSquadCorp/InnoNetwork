@@ -1,0 +1,28 @@
+# Consumer-visible breaking changes of 7.0.0 against the published 6.1.1.
+# Each line is an exact diagnostic from
+# `swift package diagnose-api-breaking-changes 6.1.1`, and every declaration it
+# names must also be named in docs/Migration-7.0.0.md.
+#
+# "constructor ... has been removed" for a public initializer that gained a
+# defaulted parameter is a binary-interface change only: existing call sites
+# compile unchanged.
+
+API breakage: constructor WebSocketReconnectPack.init(delay:jitterRatio:maxDelay:maxAttempts:maxTotalDuration:) has been removed
+API breakage: enumelement NetworkErrorCategory.policy has been added as a new enum case
+API breakage: enumelement NetworkErrorCategory.authentication has been added as a new enum case
+API breakage: enumelement TimeoutReason.operationDeadline has been added as a new enum case
+API breakage: enumelement ReachabilityReason.cellularDataUnavailable has been added as a new enum case
+API breakage: enumelement NetworkError.policyRejected has been added as a new enum case
+API breakage: enumelement NetworkError.authentication has been added as a new enum case
+API breakage: enumelement NetworkErrorCode.circuitOpen has been added as a new enum case
+API breakage: enumelement NetworkErrorCode.authenticationRefreshFailed has been added as a new enum case
+API breakage: enumelement NetworkErrorCode.requestCredentialFailed has been added as a new enum case
+API breakage: enumelement NetworkOperationEvent.failed has declared type change from (InnoNetwork.NetworkOperationEvent.Type) -> (Foundation.UUID, InnoNetwork.NetworkFailure) -> InnoNetwork.NetworkOperationEvent to (InnoNetwork.NetworkOperationEvent.Type) -> (Foundation.UUID, InnoNetwork.NetworkErrorSummary) -> InnoNetwork.NetworkOperationEvent
+API breakage: struct NetworkClientConfiguration has been removed
+API breakage: enum NetworkFailureKind has been removed
+API breakage: struct NetworkFailure has been removed
+API breakage: struct OperationNetworkClient has been removed
+API breakage: enumelement PersistentResponseCacheEvictionReason.bodyIntegrityMismatch has been added as a new enum case
+API breakage: enumelement DownloadError.maxRetriesExceeded has declared type change from (InnoNetworkDownload.DownloadError.Type) -> InnoNetworkDownload.DownloadError to (InnoNetworkDownload.DownloadError.Type) -> (InnoNetwork.SendableUnderlyingError) -> InnoNetworkDownload.DownloadError
+API breakage: enumelement DownloadError.unacceptableStatusCode has been added as a new enum case
+API breakage: constructor DownloadTransferPack.init(maxConnectionsPerHost:timeoutForRequest:timeoutForResource:taskInactivityTimeout:allowsCellularAccess:allowsInsecureHTTP:) has been removed

@@ -219,7 +219,8 @@ expected_provisionally=(
 '`MultipartStreamingResponseDecoder` streaming multipart response parsing surface'
 '`InnoNetworkOpenAPI` companion product'
 '`InnoNetworkUpload` companion product and its public file-upload, progress, restoration, bounded response, event, and error symbols'
-'operation-first `NetworkClientConfiguration`, `OperationNetworkClient`,'
+'operation handles started on the client: `NetworkOperation`,'
+'`NetworkPolicyRejection` and `NetworkAuthenticationFailure`, the payloads of'
 'bounded companion transport contracts: `BoundedNetworkTransfer`,'
 '`PersistentResponseCache` statistics and telemetry surfaces'
 '`WebSocketError.unsupportedProtocolFeature`'
@@ -409,13 +410,12 @@ expected_shipping_public_declarations=(
   UploadReceipt
   UploadState
   UploadTask
-  NetworkClientConfiguration
-  NetworkFailure
-  NetworkFailureKind
+  NetworkAuthenticationFailure
+  NetworkErrorSummary
   NetworkOperation
   NetworkOperationEvent
+  NetworkPolicyRejection
   NetworkRecoveryDisposition
-  OperationNetworkClient
   JSONWebSocketMessageCodec
   WebSocketCloseCode
   WebSocketCloseDisposition
@@ -507,8 +507,9 @@ validate_benchmark_docs() {
 validate_doc_smoke_coverage() {
   local doc_smoke="$repo_root/SmokeTests/InnoNetworkDocSmoke/main.swift"
   require_contains 'import InnoNetwork' "$doc_smoke"
-  require_contains 'NetworkClientConfiguration.secure' "$doc_smoke"
-  require_contains 'OperationNetworkClient<DefaultNetworkClient>.self' "$doc_smoke"
+  require_contains 'NetworkConfiguration.safeDefaults' "$doc_smoke"
+  require_contains 'NetworkOperation<EmptyResponse>.self' "$doc_smoke"
+  require_contains 'NetworkErrorSummary.self' "$doc_smoke"
   require_contains 'BoundedNetworkTransfer.self' "$doc_smoke"
   require_contains 'NetworkRetryExecutor()' "$doc_smoke"
   require_contains 'NetworkURLPolicy.http()' "$doc_smoke"
@@ -1711,15 +1712,28 @@ for symbol in "${expected_provisionally[@]}"; do
         "$repo_root/Sources/InnoNetworkUpload/UploadConfiguration.swift"
       continue
       ;;
-    'operation-first `NetworkClientConfiguration`, `OperationNetworkClient`,')
-      require_contains 'public struct OperationNetworkClient' \
-        "$repo_root/Sources/InnoNetwork/V6/OperationNetworkClient.swift"
-      require_contains 'public struct NetworkFailure: Error, Sendable, Equatable' \
-        "$repo_root/Sources/InnoNetwork/V6/NetworkFailure.swift"
+    'operation handles started on the client: `NetworkOperation`,')
+      require_contains 'public func start<Request: APIDefinition>(' \
+        "$repo_root/Sources/InnoNetwork/Operation/NetworkClient+Operation.swift"
+      require_contains 'public struct NetworkErrorSummary: Sendable, Equatable' \
+        "$repo_root/Sources/InnoNetwork/Operation/NetworkErrorSummary.swift"
       require_contains 'public struct NetworkOperation' \
-        "$repo_root/Sources/InnoNetwork/V6/NetworkOperation.swift"
+        "$repo_root/Sources/InnoNetwork/Operation/NetworkOperation.swift"
+      require_contains 'public func value() async throws(NetworkError) -> Value' \
+        "$repo_root/Sources/InnoNetwork/Operation/NetworkOperation.swift"
       require_contains 'import InnoNetwork' \
         "$repo_root/Sources/InnoNetwork/InnoNetwork.docc/MigrationTo6.md"
+      continue
+      ;;
+    '`NetworkPolicyRejection` and `NetworkAuthenticationFailure`, the payloads of')
+      require_contains 'public enum NetworkPolicyRejection: Sendable, Equatable' \
+        "$repo_root/Sources/InnoNetwork/NetworkErrorReasons.swift"
+      require_contains 'public enum NetworkAuthenticationFailure: Sendable, Equatable' \
+        "$repo_root/Sources/InnoNetwork/NetworkErrorReasons.swift"
+      require_contains 'case policyRejected(NetworkPolicyRejection)' \
+        "$repo_root/Sources/InnoNetwork/NetworkError.swift"
+      require_contains 'case authentication(NetworkAuthenticationFailure)' \
+        "$repo_root/Sources/InnoNetwork/NetworkError.swift"
       continue
       ;;
     'bounded companion transport contracts: `BoundedNetworkTransfer`,')
@@ -1853,7 +1867,12 @@ for symbol in "${expected_provisionally[@]}"; do
         "$repo_root/Sources/InnoNetwork/NetworkError.swift"
       require_contains 'case reachability(ReachabilityReason, SendableUnderlyingError, Response?)' \
         "$repo_root/Sources/InnoNetwork/NetworkError.swift"
-      require_contains 'return .reachability(.notConnectedToInternet' \
+      # The single connectivity table that transport mapping and downloads share.
+      require_contains 'package static func reachabilityReason(for code: URLError.Code) -> ReachabilityReason?' \
+        "$repo_root/Sources/InnoNetwork/NetworkError.swift"
+      require_contains 'return .notConnectedToInternet' \
+        "$repo_root/Sources/InnoNetwork/NetworkError.swift"
+      require_contains 'return .reachability(reason, SendableUnderlyingError(urlError), nil)' \
         "$repo_root/Sources/InnoNetwork/NetworkError.swift"
       continue
       ;;
@@ -2093,6 +2112,10 @@ forbidden_pattern 'wraps everything that follows|wraps the core retry/refresh/tr
 
 bash "$repo_root/Scripts/check_public_api_budget.sh"
 bash "$six_release_state_validator"
+# Every consumer-visible entry of the API breakage ledger is named in the
+# migration guide. The comparison itself builds the last release and runs in
+# the release preflight (Scripts/run_local_release_preflight.sh).
+bash "$repo_root/Scripts/check_api_breaking_changes.sh" --ledger-only
 
 if [[ "$static_only" -eq 1 ]]; then
   echo "docs-contract-sync: static checks OK (compiler/symbol-graph checks not run)"
