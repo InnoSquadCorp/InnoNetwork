@@ -187,7 +187,7 @@ extension PersistentResponseCacheTests {
 
         let newKey = ResponseCacheKey(method: "GET", url: "https://example.com/recovered")
         await reopened.set(newKey, CachedResponse(data: Data("new".utf8)))
-        #expect(try indexObject(in: directory)["version"] as? Int == 4)
+        #expect(try indexObject(in: directory)["version"] as? Int == PersistentResponseCache.formatVersion)
     }
 
     @Test("Recovery preserves unrelated files in the cache directory")
