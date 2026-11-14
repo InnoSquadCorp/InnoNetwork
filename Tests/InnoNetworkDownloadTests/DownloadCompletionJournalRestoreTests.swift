@@ -1,4 +1,5 @@
 import Foundation
+import InnoNetworkTestSupport
 import Testing
 
 @testable import InnoNetworkDownload
@@ -373,7 +374,7 @@ private func waitForJournalCondition(
     predicate: @escaping @Sendable () async -> Bool
 ) async -> Bool {
     let clock = ContinuousClock()
-    let deadline = clock.now.advanced(by: timeout)
+    let deadline = clock.now.advanced(by: TestWaitBudget.upperBound(timeout))
     while clock.now < deadline {
         if await predicate() { return true }
         try? await Task.sleep(for: .milliseconds(5))

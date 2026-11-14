@@ -1,4 +1,5 @@
 import Foundation
+import InnoNetworkTestSupport
 import Network
 import Testing
 import os
@@ -383,7 +384,7 @@ private final class WebSocketRedirectLoopbackServer: @unchecked Sendable {
         }
         listener.start(queue: queue)
 
-        guard ready.wait(timeout: .now() + 2) == .success,
+        guard ready.wait(timeout: .now() + TestWaitBudget.upperBound(2.0)) == .success,
             let port = listener.port
         else {
             throw URLError(.cannotConnectToHost)

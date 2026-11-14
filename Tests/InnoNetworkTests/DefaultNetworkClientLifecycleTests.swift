@@ -130,7 +130,7 @@ private func waitForLifecycleCondition(
     timeout: TimeInterval = 1.0,
     predicate: @escaping @Sendable () async -> Bool
 ) async -> Bool {
-    let deadline = Date().addingTimeInterval(timeout)
+    let deadline = Date().addingTimeInterval(TestWaitBudget.upperBound(timeout))
     while Date() < deadline {
         if await predicate() { return true }
         try? await Task.sleep(for: .milliseconds(10))

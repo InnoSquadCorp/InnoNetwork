@@ -93,7 +93,7 @@ extension WebSocketManagerShutdownTests {
                 targetURLTask.completePendingPong(with: URLError(.timedOut))
             }
 
-            let waiterDeadline = ContinuousClock.now + .seconds(1)
+            let waiterDeadline = ContinuousClock.now + TestWaitBudget.upperBound(.seconds(1))
             while await harness.manager.taskLifecycleGateWaiterCount(taskID: target.id) != 1,
                 !callbackReturned.withLock({ $0 }),
                 ContinuousClock.now < waiterDeadline
@@ -315,7 +315,7 @@ extension WebSocketManagerShutdownTests {
             for: task.id
         )
         await workerStartGate.release()
-        let waiterDeadline = ContinuousClock.now + .seconds(1)
+        let waiterDeadline = ContinuousClock.now + TestWaitBudget.upperBound(.seconds(1))
         while await harness.manager.taskLifecycleGateWaiterCount(taskID: task.id) != 1,
             ContinuousClock.now < waiterDeadline
         {
@@ -581,7 +581,7 @@ extension WebSocketManagerShutdownTests {
             taskIdentifier: firstIdentifier,
             error: URLError(.cannotConnectToHost)
         )
-        let reconnectDeadline = ContinuousClock.now + .seconds(1)
+        let reconnectDeadline = ContinuousClock.now + TestWaitBudget.upperBound(.seconds(1))
         var retriedIdentifier: Int?
         while ContinuousClock.now < reconnectDeadline {
             let candidate = await harness.manager.runtimeTaskIdentifier(for: task)
@@ -668,7 +668,7 @@ extension WebSocketManagerShutdownTests {
             }
         )
         #expect(
-            !(await waitForCondition(timeout: 0.05) {
+            !(await observesCondition(during: 0.05) {
                 nestedDisconnectReturned.withLock { $0 }
             })
         )

@@ -208,7 +208,7 @@ package final class TestClock: InnoNetworkClock, @unchecked Sendable {
                     return
                 }
 
-                scheduleConditionTimeout(id: id, timeout: timeout)
+                scheduleConditionTimeout(id: id, timeout: TestWaitBudget.upperBound(timeout))
             }
         } onCancel: {
             finishConditionWaiter(id: id, result: false)

@@ -1,5 +1,6 @@
 import Foundation
 import InnoNetwork
+import InnoNetworkTestSupport
 import Testing
 import os
 
@@ -44,7 +45,7 @@ struct UploadTerminalRetryTests {
         await withTaskCancellationHandler {
             // Observe actual retry admission or its registered terminal waiter.
             // A scheduler yield by itself is never treated as that evidence.
-            let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+            let deadline = ContinuousClock.now.advanced(by: TestWaitBudget.upperBound(.seconds(5)))
             while session.taskCount == 1,
                 await manager.pendingTerminalRetryWaiterCount == 0,
                 ContinuousClock.now < deadline,

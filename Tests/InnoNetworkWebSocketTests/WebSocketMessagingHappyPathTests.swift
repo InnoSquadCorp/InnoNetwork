@@ -1,4 +1,5 @@
 import Foundation
+import InnoNetworkTestSupport
 import Testing
 import os
 
@@ -417,7 +418,7 @@ private func waitFor(
     timeout: TimeInterval,
     _ condition: @Sendable () -> Bool
 ) async -> Bool {
-    let deadline = Date().addingTimeInterval(timeout)
+    let deadline = Date().addingTimeInterval(TestWaitBudget.upperBound(timeout))
     while Date() < deadline {
         if condition() {
             return true
@@ -428,7 +429,7 @@ private func waitFor(
 }
 
 private func waitForGateArrival(_ gate: AsyncGate, timeout: TimeInterval) async -> Bool {
-    let deadline = Date().addingTimeInterval(timeout)
+    let deadline = Date().addingTimeInterval(TestWaitBudget.upperBound(timeout))
     while Date() < deadline {
         if await gate.hasArrived() {
             return true
@@ -439,7 +440,7 @@ private func waitForGateArrival(_ gate: AsyncGate, timeout: TimeInterval) async 
 }
 
 private func waitForPendingReceive(_ stubTask: StubWebSocketURLTask, timeout: TimeInterval) async -> Bool {
-    let deadline = Date().addingTimeInterval(timeout)
+    let deadline = Date().addingTimeInterval(TestWaitBudget.upperBound(timeout))
     while Date() < deadline {
         if stubTask.pendingReceiveCount > 0 {
             return true
@@ -532,7 +533,7 @@ final class StubMessagingHarness: Sendable {
             }
         }
 
-        let deadline = Date().addingTimeInterval(timeout)
+        let deadline = Date().addingTimeInterval(TestWaitBudget.upperBound(timeout))
         while Date() < deadline {
             if recorder.snapshot().contains(where: predicate) {
                 return true
@@ -551,7 +552,7 @@ final class StubMessagingHarness: Sendable {
         equals expected: WebSocketState,
         timeout: TimeInterval = 1.0
     ) async -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
+        let deadline = Date().addingTimeInterval(TestWaitBudget.upperBound(timeout))
         while Date() < deadline {
             if await task.state == expected {
                 return true
@@ -565,7 +566,7 @@ final class StubMessagingHarness: Sendable {
         atLeast count: Int,
         timeout: TimeInterval = 1.0
     ) async -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
+        let deadline = Date().addingTimeInterval(TestWaitBudget.upperBound(timeout))
         while Date() < deadline {
             if stubSession.createdTasks.count >= count {
                 return true
@@ -609,7 +610,7 @@ final class WebSocketEventCollector: Sendable {
     }
 
     func waitForCount(_ count: Int, timeout: TimeInterval) async -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
+        let deadline = Date().addingTimeInterval(TestWaitBudget.upperBound(timeout))
         while Date() < deadline {
             if events.withLock({ $0.count }) >= count {
                 return true

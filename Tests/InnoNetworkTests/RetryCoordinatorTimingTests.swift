@@ -258,7 +258,7 @@ private actor RetryTimingEventStore {
     }
 
     func waitForRetryScheduledDelays(count: Int, timeout: TimeInterval = 1.0) async -> [TimeInterval] {
-        let deadline = Date().addingTimeInterval(timeout)
+        let deadline = Date().addingTimeInterval(TestWaitBudget.upperBound(timeout))
         while retryScheduledDelays().count < count {
             if Date() >= deadline { break }
             try? await Task.sleep(for: .milliseconds(2))
@@ -291,7 +291,7 @@ private actor RetryTimingEventStore {
         count: Int,
         timeout: TimeInterval = 1.0
     ) async -> [(requestID: UUID, errorCode: Int)] {
-        let deadline = Date().addingTimeInterval(timeout)
+        let deadline = Date().addingTimeInterval(TestWaitBudget.upperBound(timeout))
         while requestFailedEntries().count < count {
             if Date() >= deadline { break }
             try? await Task.sleep(for: .milliseconds(2))

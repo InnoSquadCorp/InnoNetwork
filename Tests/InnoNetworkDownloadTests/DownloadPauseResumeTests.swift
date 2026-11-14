@@ -1,4 +1,5 @@
 import Foundation
+import InnoNetworkTestSupport
 import Testing
 
 @testable import InnoNetworkDownload
@@ -510,7 +511,7 @@ private func waitForPauseCondition(
     timeout: TimeInterval = 2.0,
     predicate: @escaping @Sendable () async -> Bool
 ) async -> Bool {
-    let deadline = Date().addingTimeInterval(timeout)
+    let deadline = Date().addingTimeInterval(TestWaitBudget.upperBound(timeout))
     while Date() < deadline {
         if await predicate() {
             return true

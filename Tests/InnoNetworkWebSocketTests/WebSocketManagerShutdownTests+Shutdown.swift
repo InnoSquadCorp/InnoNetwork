@@ -264,7 +264,7 @@ extension WebSocketManagerShutdownTests {
         harness.callbacks.handleInvalidation(nil)
 
         #expect(
-            !(await waitForCondition(timeout: 0.1) {
+            !(await observesCondition(during: 0.1) {
                 shutdownReturned.withLock { $0 }
             })
         )
@@ -460,7 +460,7 @@ extension WebSocketManagerShutdownTests {
         // Even after URLSession invalidation finishes, the strong external
         // boundary remains closed while the already-admitted callback runs.
         #expect(
-            !(await waitForCondition(timeout: 0.25) {
+            !(await observesCondition(during: 0.25) {
                 externalShutdownReturned.withLock { $0 }
             })
         )
@@ -550,7 +550,7 @@ extension WebSocketManagerShutdownTests {
             cleanupReturned.withLock { $0 = true }
         }
 
-        let deadline = ContinuousClock.now + .seconds(1)
+        let deadline = ContinuousClock.now + TestWaitBudget.upperBound(.seconds(1))
         while !(await harness.manager.isEventConsumerAdmissionClosed(taskID: task.id)),
             ContinuousClock.now < deadline
         {
@@ -733,7 +733,7 @@ extension WebSocketManagerShutdownTests {
 
         await adapterGate.waitForArrival()
         var connectingTask: WebSocketTask?
-        let deadline = ContinuousClock.now + .seconds(1)
+        let deadline = ContinuousClock.now + TestWaitBudget.upperBound(.seconds(1))
         while connectingTask == nil, ContinuousClock.now < deadline {
             connectingTask = await harness.manager.allTasks().first
             if connectingTask == nil { await Task.yield() }

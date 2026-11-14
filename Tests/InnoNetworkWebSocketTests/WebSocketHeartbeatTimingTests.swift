@@ -578,7 +578,7 @@ private func waitFor(
     timeout: TimeInterval,
     _ condition: @Sendable () -> Bool
 ) async -> Bool {
-    let deadline = Date().addingTimeInterval(timeout)
+    let deadline = Date().addingTimeInterval(TestWaitBudget.upperBound(timeout))
     while Date() < deadline {
         if condition() { return true }
         try? await Task.sleep(nanoseconds: 5_000_000)
@@ -720,7 +720,7 @@ final class HeartbeatTestHarness: Sendable {
     }
 
     func waitForStubPingCount(atLeast count: Int, timeout: TimeInterval = 1.0) async -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
+        let deadline = Date().addingTimeInterval(TestWaitBudget.upperBound(timeout))
         while Date() < deadline {
             if stubTask.pingCount >= count { return true }
             try? await Task.sleep(nanoseconds: 5_000_000)
@@ -731,7 +731,7 @@ final class HeartbeatTestHarness: Sendable {
     /// Waits until the heartbeat loop has published at least `count` `.pong`
     /// events on `defaultRecorder`.
     func waitForPongCount(atLeast count: Int, timeout: TimeInterval = 1.0) async -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
+        let deadline = Date().addingTimeInterval(TestWaitBudget.upperBound(timeout))
         while Date() < deadline {
             if defaultRecorder.pongCount >= count { return true }
             try? await Task.sleep(nanoseconds: 5_000_000)
@@ -740,7 +740,7 @@ final class HeartbeatTestHarness: Sendable {
     }
 
     func waitForPongContextCount(atLeast count: Int, timeout: TimeInterval = 1.0) async -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
+        let deadline = Date().addingTimeInterval(TestWaitBudget.upperBound(timeout))
         while Date() < deadline {
             if pongContexts.withLock({ $0.count }) >= count { return true }
             try? await Task.sleep(nanoseconds: 5_000_000)
@@ -755,7 +755,7 @@ final class HeartbeatTestHarness: Sendable {
     /// Waits until the heartbeat loop has published at least `count` `.ping`
     /// events on `defaultRecorder`.
     func waitForPingEventCount(atLeast count: Int, timeout: TimeInterval = 1.0) async -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
+        let deadline = Date().addingTimeInterval(TestWaitBudget.upperBound(timeout))
         while Date() < deadline {
             if defaultRecorder.pingCount >= count { return true }
             try? await Task.sleep(nanoseconds: 5_000_000)
@@ -766,7 +766,7 @@ final class HeartbeatTestHarness: Sendable {
     /// Waits until the heartbeat loop has published at least `count`
     /// `.error(.pingTimeout)` events on `defaultRecorder`.
     func waitForPingTimeoutErrorCount(atLeast count: Int, timeout: TimeInterval = 1.0) async -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
+        let deadline = Date().addingTimeInterval(TestWaitBudget.upperBound(timeout))
         while Date() < deadline {
             if defaultRecorder.pingTimeoutErrorCount >= count { return true }
             try? await Task.sleep(nanoseconds: 5_000_000)

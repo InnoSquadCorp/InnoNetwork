@@ -1,4 +1,5 @@
 import Foundation
+import InnoNetworkTestSupport
 import os
 
 @testable import InnoNetworkWebSocket
@@ -306,7 +307,7 @@ final class StubWebSocketURLTask: WebSocketURLTask, @unchecked Sendable {
 
     private func schedulePendingReceiveTimeout(id: UUID, timeout: TimeInterval) {
         Task { [self] in
-            try? await ContinuousClock().sleep(for: .seconds(max(timeout, 0)))
+            try? await ContinuousClock().sleep(for: .seconds(max(TestWaitBudget.upperBound(timeout), 0)))
             finishPendingReceiveWaiter(id: id, result: false)
         }
     }
@@ -426,7 +427,7 @@ final class StubWebSocketURLSession: WebSocketURLSession, @unchecked Sendable {
 
     private func scheduleInvalidationTimeout(id: UUID, timeout: TimeInterval) {
         Task { [self] in
-            try? await ContinuousClock().sleep(for: .seconds(max(timeout, 0)))
+            try? await ContinuousClock().sleep(for: .seconds(max(TestWaitBudget.upperBound(timeout), 0)))
             finishInvalidationWaiter(id: id, result: false)
         }
     }

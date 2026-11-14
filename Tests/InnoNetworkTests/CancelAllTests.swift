@@ -1,4 +1,5 @@
 import Foundation
+import InnoNetworkTestSupport
 import Testing
 import os
 
@@ -76,7 +77,7 @@ struct CancelAllTests {
 
             // Wait until every request has actually entered the URL session
             // so the cancellation has work to interrupt.
-            let waitDeadline = Date().addingTimeInterval(2.0)
+            let waitDeadline = Date().addingTimeInterval(TestWaitBudget.upperBound(2.0))
             while hangingSession.startedRequestCount < parallelism, Date() < waitDeadline {
                 try await Task.sleep(for: .milliseconds(20))
             }

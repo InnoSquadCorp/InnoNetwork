@@ -41,7 +41,7 @@ extension WebSocketManagerShutdownTests {
             workerID: workerID,
             for: task.id
         )
-        let waiterDeadline = ContinuousClock.now + .seconds(1)
+        let waiterDeadline = ContinuousClock.now + TestWaitBudget.upperBound(.seconds(1))
         while await harness.manager.taskLifecycleGateWaiterCount(taskID: task.id) != 1,
             ContinuousClock.now < waiterDeadline
         {
@@ -114,7 +114,7 @@ extension WebSocketManagerShutdownTests {
         // the worker obtained its URLTask but before it can publish.
         await harness.manager.acquireTaskLifecycleGateUnconditionally(taskID: task.id)
         clock.advance(by: .seconds(10))
-        let waiterDeadline = ContinuousClock.now + .seconds(1)
+        let waiterDeadline = ContinuousClock.now + TestWaitBudget.upperBound(.seconds(1))
         while await harness.manager.taskLifecycleGateWaiterCount(taskID: task.id) != 1,
             ContinuousClock.now < waiterDeadline
         {
@@ -752,7 +752,7 @@ extension WebSocketManagerShutdownTests {
             disconnectReturned.withLock { $0 = true }
         }
         #expect(
-            !(await waitForCondition(timeout: 0.05) {
+            !(await observesCondition(during: 0.05) {
                 disconnectReturned.withLock { $0 }
             })
         )
@@ -882,7 +882,7 @@ extension WebSocketManagerShutdownTests {
         await harness.manager.acquireTaskLifecycleGateUnconditionally(taskID: target.id)
         sourceURLTask.scriptReceive(.success(.data(Data("send".utf8))))
 
-        let waiterDeadline = ContinuousClock.now + .seconds(1)
+        let waiterDeadline = ContinuousClock.now + TestWaitBudget.upperBound(.seconds(1))
         while await harness.manager.taskLifecycleGateWaiterCount(taskID: target.id) != 1,
             !callbackReturned.withLock({ $0 }),
             ContinuousClock.now < waiterDeadline
@@ -959,7 +959,7 @@ extension WebSocketManagerShutdownTests {
         await harness.manager.acquireTaskLifecycleGateUnconditionally(taskID: target.id)
         sourceURLTask.scriptReceive(.success(.data(Data("ping".utf8))))
 
-        let waiterDeadline = ContinuousClock.now + .seconds(1)
+        let waiterDeadline = ContinuousClock.now + TestWaitBudget.upperBound(.seconds(1))
         while await harness.manager.taskLifecycleGateWaiterCount(taskID: target.id) != 1,
             !callbackReturned.withLock({ $0 }),
             ContinuousClock.now < waiterDeadline

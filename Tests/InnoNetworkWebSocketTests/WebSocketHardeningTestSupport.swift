@@ -120,12 +120,31 @@ enum ThrowingHandshakeAdapterTestError: Error, Sendable, LocalizedError {
 }
 
 
+/// Observes `condition` for exactly `window` seconds and reports whether it
+/// ever became true.
+///
+/// Use this for negative assertions ("this must not happen"). Unlike
+/// ``waitForCondition(timeout:_:)`` the window is not stretched by
+/// `TestWaitBudget`, because a longer window only slows a passing test.
+@Sendable
+func observesCondition(
+    during window: TimeInterval,
+    _ condition: @Sendable () -> Bool
+) async -> Bool {
+    let deadline = Date().addingTimeInterval(window)
+    while Date() < deadline {
+        if condition() { return true }
+        try? await Task.sleep(nanoseconds: 5_000_000)
+    }
+    return condition()
+}
+
 @Sendable
 func waitForCondition(
     timeout: TimeInterval,
     _ condition: @Sendable () -> Bool
 ) async -> Bool {
-    let deadline = Date().addingTimeInterval(timeout)
+    let deadline = Date().addingTimeInterval(TestWaitBudget.upperBound(timeout))
     while Date() < deadline {
         if condition() { return true }
         try? await Task.sleep(nanoseconds: 5_000_000)

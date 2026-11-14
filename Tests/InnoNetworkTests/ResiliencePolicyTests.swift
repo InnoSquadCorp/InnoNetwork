@@ -1,4 +1,5 @@
 import Foundation
+import InnoNetworkTestSupport
 import Testing
 import os
 
@@ -732,7 +733,7 @@ struct ResiliencePolicyTests {
         condition: @escaping @Sendable () async -> Bool
     ) async throws {
         let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: timeout)
+        let deadline = clock.now.advanced(by: TestWaitBudget.upperBound(timeout))
         while clock.now < deadline {
             if await condition() {
                 return

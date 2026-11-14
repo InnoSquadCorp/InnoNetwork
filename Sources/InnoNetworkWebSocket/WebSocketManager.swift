@@ -64,7 +64,7 @@ public actor WebSocketManager {
     /// executor and (rarely) reorder the lifecycle observed by a single
     /// task. The single consumer Task drains in arrival order so each
     /// task identifier observes a strict FIFO of its own callbacks.
-    nonisolated let delegateEventContinuation: AsyncStream<DelegateEvent>.Continuation
+    nonisolated let delegateEventContinuation: AsyncStream<DelegateQueueItem>.Continuation
 
     /// Handle for the consumer Task that drains `delegateEventContinuation`.
     /// `shutdown()` closes the channel and awaits this task so the delegate
@@ -90,6 +90,17 @@ public actor WebSocketManager {
         case redirectRejected(taskIdentifier: Int, error: WebSocketError)
         case sessionError(taskIdentifier: Int, error: SendableUnderlyingError, statusCode: Int?)
         case pingTimeout(taskIdentifier: Int)
+    }
+
+    /// One element of the lossless delegate queue: a delegate callback for
+    /// the reducer, or a flush marker. The single consumer handles elements
+    /// strictly in order, so a flush marker resumes only after every element
+    /// queued before it has been reduced to completion. Keeping the marker
+    /// out of ``DelegateEvent`` keeps the reducer's input purely domain
+    /// events.
+    enum DelegateQueueItem: Sendable {
+        case event(DelegateEvent)
+        case flush(@Sendable () -> Void)
     }
 
     enum RetryPreparationResult {
@@ -192,7 +203,7 @@ public actor WebSocketManager {
         self.shutdownCompletionBarrier = WebSocketInvalidationBarrier()
 
         let (stream, continuation) = AsyncStream.makeStream(
-            of: DelegateEvent.self,
+            of: DelegateQueueItem.self,
             // Delegate events are reducer inputs, not best-effort UI
             // notifications. Dropping `didOpen`, `didClose`, or error
             // callbacks can leave task state, terminal cleanup, and
@@ -218,9 +229,16 @@ public actor WebSocketManager {
         // `DownloadManager` and guaranteeing an accepted delegate event is
         // never partially interleaved with cleanup.
         let consumerTask = Task { [weak self] in
-            for await event in stream {
-                guard let self else { return }
-                await self.processDelegateEvent(event)
+            for await item in stream {
+                switch item {
+                case .flush(let resume):
+                    // Resumed even after shutdown or deallocation so a waiter
+                    // is never stranded.
+                    resume()
+                case .event(let event):
+                    guard let self else { return }
+                    await self.processDelegateEvent(event)
+                }
             }
         }
         delegateConsumerTaskLock.withLock { $0 = consumerTask }

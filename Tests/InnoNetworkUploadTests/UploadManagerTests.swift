@@ -1,5 +1,6 @@
 import Foundation
 import InnoNetwork
+import InnoNetworkTestSupport
 import Testing
 import os
 
@@ -758,7 +759,7 @@ private func waitForUploadTask(
     timeout: Duration = .seconds(1)
 ) async -> UploadTask? {
     let clock = ContinuousClock()
-    let deadline = clock.now.advanced(by: timeout)
+    let deadline = clock.now.advanced(by: TestWaitBudget.upperBound(timeout))
     while clock.now < deadline {
         if let task = await manager.task(withId: id) { return task }
         try? await Task.sleep(for: .milliseconds(5))

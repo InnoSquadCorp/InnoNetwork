@@ -33,7 +33,7 @@ struct WebSocketDelegateOrderingTests {
             reason: nil
         )
 
-        let observed = try await recorder.waitForEvent(timeout: 2.0) { event in
+        let observed = try await recorder.waitForEvent(timeout: TestWaitBudget.upperBound(2.0)) { event in
             if case .disconnected = event { return true }
             return false
         }
@@ -88,7 +88,7 @@ struct WebSocketDelegateOrderingTests {
         // cycles after the first close may be dropped by the registry
         // (the stub task is removed on .normalClosure), so we just
         // confirm at least one (connected, disconnected) pair lands.
-        _ = try await recorder.waitForEvent(timeout: 1.0) { event in
+        _ = try await recorder.waitForEvent(timeout: TestWaitBudget.upperBound(1.0)) { event in
             if case .disconnected = event { return true }
             return false
         }
@@ -160,7 +160,7 @@ struct WebSocketDelegateOrderingTests {
 
         await gate.release()
 
-        let observedDisconnect = try await recorder.waitForEvent(timeout: 2.0) { event in
+        let observedDisconnect = try await recorder.waitForEvent(timeout: TestWaitBudget.upperBound(2.0)) { event in
             if case .disconnected = event { return true }
             return false
         }
@@ -245,7 +245,7 @@ struct WebSocketDelegateOrderingTests {
         #expect(await streamProbe.didSeeDisconnected)
 
         await gate.release()
-        let observedDisconnect = try await recorder.waitForEvent(timeout: 1.0) { event in
+        let observedDisconnect = try await recorder.waitForEvent(timeout: TestWaitBudget.upperBound(1.0)) { event in
             if case .disconnected = event { return true }
             return false
         }
@@ -307,7 +307,7 @@ private func waitForDelegateGateEntry(
     _ gate: DelegateBackpressureGate,
     timeout: TimeInterval = 1.0
 ) async -> Bool {
-    let deadline = Date().addingTimeInterval(timeout)
+    let deadline = Date().addingTimeInterval(TestWaitBudget.upperBound(timeout))
     while Date() < deadline {
         if await gate.hasEntered {
             return true
@@ -321,7 +321,7 @@ private func waitForStreamFinish(
     _ probe: WebSocketStreamFinishProbe,
     timeout: TimeInterval = 1.0
 ) async -> Bool {
-    let deadline = Date().addingTimeInterval(timeout)
+    let deadline = Date().addingTimeInterval(TestWaitBudget.upperBound(timeout))
     while Date() < deadline {
         if await probe.didFinish {
             return true
