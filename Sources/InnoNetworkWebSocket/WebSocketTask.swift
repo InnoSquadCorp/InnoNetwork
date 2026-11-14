@@ -19,6 +19,10 @@ public actor WebSocketTask: Identifiable {
     private var _closeCode: WebSocketCloseCode?
     private var _closeDisposition: WebSocketCloseDisposition?
     private var _reconnectWindowStartedAt: Date?
+    /// Reconnect budget that was in force when the current connection opened.
+    /// Kept until the connection ends so a connection that drops before the
+    /// stability interval can continue that budget.
+    private var budgetBeforeCurrentConnection: ReconnectBudgetCarry?
     /// Explicit retry retires this handle permanently and creates a fresh
     /// task. Keeping the claim on the task actor makes the one-shot boundary
     /// atomic even when multiple retry calls race on the same owned task.
@@ -36,7 +40,11 @@ public actor WebSocketTask: Identifiable {
     /// transition into `.failed` may briefly see `maxReconnectAttempts + 1`
     /// — that single overshoot represents the rejected attempt that triggered
     /// the `.exceeded` decision. The counter resets to `0` whenever a
-    /// connection becomes ready or `reset()` is called. Use this for "did we
+    /// connection becomes ready or `reset()` is called. If that connection
+    /// drops again before the configured stability interval
+    /// (``WebSocketReconnectPack``'s `stabilityInterval`) the earlier count
+    /// is restored and keeps growing, so the counter measures attempts since
+    /// the last connection that actually stayed up. Use this for "did we
     /// even try recently?" alarms.
     public var attemptedReconnectCount: Int { _attemptedReconnectCount }
 
@@ -169,6 +177,38 @@ public actor WebSocketTask: Identifiable {
     /// or task ``reset()``.
     package func clearReconnectWindow() {
         _reconnectWindowStartedAt = nil
+    }
+
+    /// Records that a connection became ready at `now`: clears the attempt
+    /// counter and the reconnect window, and remembers what they were so
+    /// ``settleReconnectBudget(now:stabilityInterval:)`` can restore them if
+    /// the connection turns out not to be stable.
+    package func noteConnectionOpened(at now: Date) {
+        budgetBeforeCurrentConnection = ReconnectBudgetCarry(
+            attemptedReconnectCount: _attemptedReconnectCount,
+            reconnectWindowStartedAt: _reconnectWindowStartedAt,
+            openedAt: now
+        )
+        resetAttemptedReconnectCount()
+        clearReconnectWindow()
+    }
+
+    /// Decides, when a connection has ended, whether it lasted long enough to
+    /// count as recovered. A connection that stayed open for at least
+    /// `stabilityInterval` keeps the cleared budget. One that dropped sooner
+    /// continues the budget that was in force before it opened, so repeated
+    /// open-then-drop cycles consume the reconnect budget.
+    package func settleReconnectBudget(now: Date, stabilityInterval: TimeInterval) {
+        guard let carry = budgetBeforeCurrentConnection else { return }
+        budgetBeforeCurrentConnection = nil
+        guard stabilityInterval > 0,
+            now.timeIntervalSince(carry.openedAt) < stabilityInterval
+        else {
+            return
+        }
+        _attemptedReconnectCount = carry.attemptedReconnectCount
+        lifecycleState = lifecycleState.withAttempt(carry.attemptedReconnectCount)
+        _reconnectWindowStartedAt = carry.reconnectWindowStartedAt
     }
 
     package var reconnectWindowStartedAt: Date? { _reconnectWindowStartedAt }
@@ -311,6 +351,7 @@ public actor WebSocketTask: Identifiable {
         _closeCode = nil
         _closeDisposition = nil
         _reconnectWindowStartedAt = nil
+        budgetBeforeCurrentConnection = nil
     }
 
     private func syncLifecycleMetadata() {
@@ -329,4 +370,12 @@ extension WebSocketTask: Hashable {
     public nonisolated func hash(into hasher: inout Hasher) {
         hasher.combine(id)
     }
+}
+
+/// The reconnect budget in force when a connection opened, kept so a
+/// connection that does not stay open can continue it.
+private struct ReconnectBudgetCarry: Sendable {
+    let attemptedReconnectCount: Int
+    let reconnectWindowStartedAt: Date?
+    let openedAt: Date
 }

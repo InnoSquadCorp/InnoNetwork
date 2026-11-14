@@ -59,6 +59,7 @@ public struct WebSocketConfiguration: Sendable {
                 maxReconnectDelay: 0,
                 maxReconnectAttempts: 5,
                 reconnectMaxTotalDuration: 0,
+                reconnectStabilityInterval: WebSocketConfiguration.standardReconnectStabilityInterval,
                 allowsCellularAccess: true,
                 allowsInsecureWebSocket: false,
                 requestHeaders: [:],
@@ -85,6 +86,7 @@ public struct WebSocketConfiguration: Sendable {
                 maxReconnectDelay: 0,
                 maxReconnectAttempts: 8,
                 reconnectMaxTotalDuration: 0,
+                reconnectStabilityInterval: WebSocketConfiguration.standardReconnectStabilityInterval,
                 allowsCellularAccess: true,
                 allowsInsecureWebSocket: false,
                 requestHeaders: [:],
@@ -141,14 +143,31 @@ public struct WebSocketConfiguration: Sendable {
     /// attempts within a single disconnect window. The reconnect coordinator
     /// stamps the first attempt and refuses further retries once `now` exceeds
     /// the budget, classifying the result as `.exceeded`.
-    /// Successful reconnects clear the window, so flapping over many days does
-    /// not consume the budget linearly.
+    /// A reconnect that stays open for ``reconnectStabilityInterval`` clears
+    /// the window, so flapping over many days does not consume the budget
+    /// linearly.
     ///
     /// - `> 0`: budget enforced.
     /// - `<= 0`: unlimited (default — preserves legacy behaviour).
     ///
     /// Negative values are clamped to `0` (disabled).
     package let reconnectMaxTotalDuration: TimeInterval
+    /// How long a connection must stay open before it counts as recovered.
+    ///
+    /// The reconnect attempt counter and the reconnect window are cleared
+    /// when a connection opens, but a connection that drops again before this
+    /// interval elapses continues the earlier budget instead of starting a
+    /// new one. Without it, a server that accepts every connection and closes
+    /// it at once would reset the budget on each open and be retried forever.
+    ///
+    /// - `> 0`: a drop sooner than this many seconds keeps counting against
+    ///   `maxReconnectAttempts` and `reconnectMaxTotalDuration`.
+    /// - `0`: every opened connection resets the budget (the pre-7.0 rule).
+    ///
+    /// Negative values are clamped to `0`.
+    package let reconnectStabilityInterval: TimeInterval
+    /// Default for ``reconnectStabilityInterval``: ten seconds.
+    package static let standardReconnectStabilityInterval: TimeInterval = 10
     /// Whether cellular data is allowed for socket connections.
     package let allowsCellularAccess: Bool
     /// Allows plain `ws` connections. Defaults to `false`; production
@@ -215,6 +234,8 @@ public struct WebSocketConfiguration: Sendable {
         /// Cumulative reconnect-window budget in seconds. See
         /// ``WebSocketConfiguration/reconnectMaxTotalDuration``.
         package var reconnectMaxTotalDuration: TimeInterval
+        /// See ``WebSocketConfiguration/reconnectStabilityInterval``.
+        package var reconnectStabilityInterval: TimeInterval
         package var allowsCellularAccess: Bool
         /// Allows plain `ws` connections. Defaults to `false`.
         package var allowsInsecureWebSocket: Bool
@@ -247,6 +268,7 @@ public struct WebSocketConfiguration: Sendable {
             self.maxReconnectDelay = preset.maxReconnectDelay
             self.maxReconnectAttempts = preset.maxReconnectAttempts
             self.reconnectMaxTotalDuration = preset.reconnectMaxTotalDuration
+            self.reconnectStabilityInterval = preset.reconnectStabilityInterval
             self.allowsCellularAccess = preset.allowsCellularAccess
             self.allowsInsecureWebSocket = preset.allowsInsecureWebSocket
             self.requestHeaders = preset.requestHeaders
@@ -272,6 +294,7 @@ public struct WebSocketConfiguration: Sendable {
                 maxReconnectDelay: maxReconnectDelay,
                 maxReconnectAttempts: maxReconnectAttempts,
                 reconnectMaxTotalDuration: reconnectMaxTotalDuration,
+                reconnectStabilityInterval: reconnectStabilityInterval,
                 allowsCellularAccess: allowsCellularAccess,
                 allowsInsecureWebSocket: allowsInsecureWebSocket,
                 requestHeaders: requestHeaders,
@@ -320,6 +343,7 @@ public struct WebSocketConfiguration: Sendable {
         maxReconnectDelay: TimeInterval = 0,
         maxReconnectAttempts: Int = 5,
         reconnectMaxTotalDuration: TimeInterval = 0,
+        reconnectStabilityInterval: TimeInterval = WebSocketConfiguration.standardReconnectStabilityInterval,
         allowsCellularAccess: Bool = true,
         allowsInsecureWebSocket: Bool = false,
         requestHeaders: [String: String] = [:],
@@ -342,6 +366,8 @@ public struct WebSocketConfiguration: Sendable {
         self.maxReconnectDelay = max(0, maxReconnectDelay)
         self.maxReconnectAttempts = max(0, maxReconnectAttempts)
         self.reconnectMaxTotalDuration = max(0, reconnectMaxTotalDuration)
+        self.reconnectStabilityInterval =
+            reconnectStabilityInterval.isFinite ? max(0, reconnectStabilityInterval) : 0
         self.allowsCellularAccess = allowsCellularAccess
         self.allowsInsecureWebSocket = allowsInsecureWebSocket
         self.requestHeaders = requestHeaders

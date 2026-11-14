@@ -48,7 +48,7 @@ public enum WebSocketEvent: Sendable {
 ///
 /// The stream is registered before the replacement transport is resumed, so
 /// events do not encounter a late-registration gap. Delivery remains subject
-/// to the manager's bounded ``EventDeliveryPolicy``.
+/// to the manager's bounded `EventDeliveryPolicy`.
 public struct WebSocketRetryResult: Sendable {
     /// Fresh task created for this explicit retry.
     public let task: WebSocketTask

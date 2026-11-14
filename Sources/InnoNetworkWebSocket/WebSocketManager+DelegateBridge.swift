@@ -96,17 +96,22 @@ extension WebSocketManager {
         else { return }
         let task = callbackContext.task
         let previousState = await task.state
+        let reconnectAttemptsBeforeOpen = await task.attemptedReconnectCount
         let transition = await task.applyLifecycleEvent(
             .didOpen(generation: callbackContext.generation, protocolName: protocolName)
         )
         let didConnect = transition.state.publicState == .connected && !transition.isIgnoredCallback
 
-        if previousState == .reconnecting, didConnect {
+        // A reconnect attempt leaves `.reconnecting` for `.connecting` when its
+        // timer fires and the new transport starts, so the public state at
+        // `didOpen` cannot tell a reconnect from a first connection. The
+        // attempt counter can: it is zero only for a connection that is not
+        // a reconnect.
+        if didConnect, previousState == .reconnecting || reconnectAttemptsBeforeOpen > 0 {
             await task.incrementSuccessfulReconnectCount()
         }
         if didConnect {
-            await task.resetAttemptedReconnectCount()
-            await task.clearReconnectWindow()
+            await reconnectCoordinator.connectionDidOpen(task: task)
             await task.resetPingCounter()
             await task.setAutoReconnectEnabled(true)
             await task.setError(nil)

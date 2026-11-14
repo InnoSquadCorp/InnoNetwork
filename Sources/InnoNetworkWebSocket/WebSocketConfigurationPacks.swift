@@ -70,19 +70,35 @@ public struct WebSocketReconnectPack: Sendable {
     private let maxDelay: TimeInterval
     private let maxAttempts: Int
     private let maxTotalDuration: TimeInterval
+    private let stabilityInterval: TimeInterval
 
+    /// - Parameters:
+    ///   - delay: Base delay before a reconnect attempt, in seconds.
+    ///   - jitterRatio: Symmetric jitter applied to the delay (`0...1`).
+    ///   - maxDelay: Upper bound for the backoff delay; `0` leaves it uncapped.
+    ///   - maxAttempts: Reconnect attempts allowed before the task fails.
+    ///   - maxTotalDuration: Wall-clock budget for one reconnect window; `0`
+    ///     disables it.
+    ///   - stabilityInterval: How long a connection must stay open before it
+    ///     counts as recovered. A connection that drops sooner continues the
+    ///     earlier attempt count and reconnect window instead of starting a
+    ///     new budget, so a server that accepts and immediately closes
+    ///     connections exhausts `maxAttempts`. Pass `0` to reset the budget
+    ///     on every opened connection.
     public init(
         delay: TimeInterval = 0.5,
         jitterRatio: Double = 0.1,
         maxDelay: TimeInterval = 0,
         maxAttempts: Int = 8,
-        maxTotalDuration: TimeInterval = 0
+        maxTotalDuration: TimeInterval = 0,
+        stabilityInterval: TimeInterval = 10
     ) {
         self.delay = delay
         self.jitterRatio = jitterRatio
         self.maxDelay = maxDelay
         self.maxAttempts = maxAttempts
         self.maxTotalDuration = maxTotalDuration
+        self.stabilityInterval = stabilityInterval
     }
 
     package func apply(to builder: inout WebSocketConfiguration.AdvancedBuilder) {
@@ -91,6 +107,8 @@ public struct WebSocketReconnectPack: Sendable {
         builder.maxReconnectDelay = maxDelay
         builder.maxReconnectAttempts = maxAttempts
         builder.reconnectMaxTotalDuration = maxTotalDuration
+        builder.reconnectStabilityInterval =
+            stabilityInterval.isFinite ? max(0, stabilityInterval) : 0
     }
 }
 

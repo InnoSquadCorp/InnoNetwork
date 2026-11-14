@@ -1190,6 +1190,56 @@ private func waitForExplicitRetryReplacement(
 struct WebSocketListenerLifecycleTests {
     // These tests drive delegate callbacks themselves. Use stub transports so
     // real DNS/connect failures cannot race the scripted lifecycle events.
+    @Test("A server that accepts and then drops every connection exhausts the reconnect budget")
+    func flappingServerExhaustsReconnectBudget() async throws {
+        let firstURLTask = StubWebSocketURLTask(taskIdentifier: 9_101)
+        let secondURLTask = StubWebSocketURLTask(taskIdentifier: 9_102)
+        let thirdURLTask = StubWebSocketURLTask(taskIdentifier: 9_103)
+        let harness = StubMessagingHarness(
+            heartbeatInterval: 0,
+            reconnectDelay: 0,
+            maxReconnectAttempts: 2,
+            stubTask: firstURLTask
+        )
+        harness.stubSession.enqueue(secondURLTask)
+        harness.stubSession.enqueue(thirdURLTask)
+        let manager = harness.manager
+
+        let task = try await harness.connectAndReady()
+        var seenIdentifiers: Set<Int> = [firstURLTask.taskIdentifier]
+
+        // Every reconnect opens successfully and is dropped at once, well
+        // inside the default ten-second stability interval. Before 7.0 each
+        // open reset the budget and the loop below would never end.
+        manager.handleError(taskIdentifier: firstURLTask.taskIdentifier, error: URLError(.networkConnectionLost))
+        for (index, expected) in [secondURLTask, thirdURLTask].enumerated() {
+            let identifier = try #require(
+                await waitForRuntimeTaskIdentifier(
+                    manager: manager,
+                    task: task,
+                    excluding: seenIdentifiers,
+                    timeout: 3.0
+                )
+            )
+            #expect(identifier == expected.taskIdentifier)
+            seenIdentifiers.insert(identifier)
+            manager.handleConnected(taskIdentifier: identifier, protocolName: nil)
+            #expect(await waitForWebSocketState(task) { $0 == .connected })
+            #expect(await task.attemptedReconnectCount == 0)
+            #expect(await task.successfulReconnectCount == index + 1)
+            manager.handleError(taskIdentifier: identifier, error: URLError(.networkConnectionLost))
+        }
+
+        #expect(
+            await waitForTaskError(task: task, timeout: 5.0) { error in
+                if case .maxReconnectAttemptsExceeded = error {
+                    return true
+                }
+                return false
+            })
+        #expect(await task.state == .failed)
+    }
+
     @Test("Reconnect runtime chain reaches max reconnect attempts")
     func reconnectRuntimeChainReachesMaxAttempts() async throws {
         let firstURLTask = StubWebSocketURLTask(taskIdentifier: 9_001)
