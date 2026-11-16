@@ -17,7 +17,9 @@ public enum NetworkOperationReplaySafety: String, Sendable, Equatable {
     /// not sufficient because a restarted operation receives a new identifier.
     case stableIdempotencyKey
 
-    /// Never recommend restarting the operation, including for safe methods.
+    /// Never recommend repeating the request, including for safe methods. A
+    /// failure before anything was sent, such as an offline device, still
+    /// recommends ``NetworkRecoveryDisposition/waitForConnectivity``.
     case never
 }
 
