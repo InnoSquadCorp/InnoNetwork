@@ -45,7 +45,7 @@ extension NetworkClient {
             replaySafety: replaySafety,
             deadline: deadline,
             deadlineClock: deadlineClock
-        ) { [self] tag in
+        ) { [self] tag async throws(NetworkError) in
             try await self.request(request, tag: tag)
         }
     }
@@ -77,7 +77,7 @@ extension UploadNetworkClient {
             replaySafety: replaySafety,
             deadline: deadline,
             deadlineClock: deadlineClock
-        ) { [self] tag in
+        ) { [self] tag async throws(NetworkError) in
             try await self.upload(request, tag: tag)
         }
     }
@@ -107,7 +107,7 @@ extension EncodedRequestClient {
             replaySafety: replaySafety,
             deadline: deadline,
             deadlineClock: deadlineClock
-        ) { [self] tag in
+        ) { [self] tag async throws(NetworkError) in
             try await self.request(request, tag: tag)
         }
     }
@@ -137,7 +137,7 @@ extension EncodedRequestClient {
             replaySafety: replaySafety,
             deadline: deadline,
             deadlineClock: deadlineClock
-        ) { [self] tag in
+        ) { [self] tag async throws(NetworkError) in
             let request = try metadata.prepare(definition)
             return try await self.request(request, tag: tag)
         }
@@ -156,7 +156,7 @@ package enum NetworkOperationRunner {
         replaySafety: NetworkOperationReplaySafety,
         deadline: NetworkOperationDeadline?,
         deadlineClock: any InnoNetworkClock,
-        execute: @escaping @Sendable (CancellationTag) async throws -> Output
+        execute: @escaping @Sendable (CancellationTag) async throws(NetworkError) -> Output
     ) -> NetworkOperation<Output> {
         let id = UUID()
         let tag = CancellationTag(id.uuidString)
@@ -206,12 +206,10 @@ package enum NetworkOperationRunner {
             let requestTask = Task<Void, Never> {
                 let result: Result<Output, NetworkError> = await NetworkOperationDeadlineContext.$tracker
                     .withValue(tracker) {
-                        do {
+                        do throws(NetworkError) {
                             return .success(try await execute(tag))
-                        } catch let error as NetworkError {
-                            return .failure(error)
                         } catch {
-                            return .failure(NetworkError.mapTransportError(error))
+                            return .failure(error)
                         }
                     }
                 if let deadlineBudget, deadlineBudget.isExpired(at: deadlineClock.monotonicNow()) {
