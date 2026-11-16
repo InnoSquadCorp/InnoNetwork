@@ -22,6 +22,7 @@ struct NetworkOperationTests {
 
         #expect(value == PreviewResponse(id: "42"))
         #expect(events == [.started(id: operation.id), .succeeded(id: operation.id)])
+        #expect(await operation.failureSummary() == nil)
     }
 
     @Test("Cancellation maps to the value-only failure contract")
@@ -201,6 +202,31 @@ struct NetworkOperationTests {
         #expect(refresh.category == .authentication)
         #expect(refresh.recovery == .reauthenticate)
         #expect(NetworkError.authentication(.refreshFailed(cause)).summary.recovery == .reauthenticate)
+    }
+
+    @Test("An offline failure waits for connectivity whatever the method or replay safety")
+    func offlineRecoveryIgnoresReplaySafety() async {
+        // The request never left the device, so waiting for a network cannot
+        // repeat it.
+        let offline = NetworkError.configuration(reason: .offline("No network."))
+        let client = FailingNetworkClient(error: offline)
+
+        let post = await failure(from: client.start(RecoveryEndpoint(method: .post)))
+        let neverReplayed = await failure(
+            from: client.start(RecoveryEndpoint(method: .get), replaySafety: .never)
+        )
+
+        #expect(post.category == .configuration)
+        #expect(post.recovery == .waitForConnectivity)
+        #expect(neverReplayed.recovery == .waitForConnectivity)
+        #expect(offline.summary.recovery == .waitForConnectivity)
+    }
+
+    @Test("An expired or unrenewable credential asks to reauthenticate; other credential failures do not")
+    func credentialRecovery() {
+        #expect(RequestSecurityFailure.credentialExpired.networkError.summary.recovery == .reauthenticate)
+        #expect(RequestSecurityFailure.refreshFailed.networkError.summary.recovery == .reauthenticate)
+        #expect(RequestSecurityFailure.insufficientScope.networkError.summary.recovery == .doNotRetry)
     }
 
     @Test("The failed event carries the same contextual summary as the handle")

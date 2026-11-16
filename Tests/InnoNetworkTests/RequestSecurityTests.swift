@@ -11,15 +11,17 @@ private actor CredentialProviderFixture: RequestCredentialProvider {
     let failedScheme: String?
     let changedIdentity: Bool
     let value: String
+    let failure: (any Error)?
 
     init(
         alternative: Int = 0, failedScheme: String? = nil, changedIdentity: Bool = false,
-        value: String = "fixture-secret"
+        value: String = "fixture-secret", failure: (any Error)? = nil
     ) {
         self.alternative = alternative
         self.failedScheme = failedScheme
         self.changedIdentity = changedIdentity
         self.value = value
+        self.failure = failure
     }
 
     func select(alternatives: [[RequestSecurity.Scheme]], origin: URL) async throws -> RequestSecurity.Selection {
@@ -32,6 +34,7 @@ private actor CredentialProviderFixture: RequestCredentialProvider {
     {
         acquisitions.append(scheme.id)
         if scheme.id == failedScheme {
+            if let failure { throw failure }
             throw NSError(domain: "Provider", code: 1, userInfo: [NSLocalizedDescriptionKey: "fixture-secret"])
         }
         return .init(
@@ -462,6 +465,26 @@ struct RequestSecurityTests {
             }
             #expect(!String(reflecting: error).contains("fixture-secret"))
         }
+    }
+
+    @Test("an offline credential provider waits for a network instead of asking to sign in")
+    func offlineProvider() async throws {
+        let provider = CredentialProviderFixture(
+            failedScheme: "key", failure: NetworkError.configuration(reason: .offline("fixture-secret")))
+        let session = MockURLSession()
+        let endpoint = CredentialEndpoint(requestSecurity: try security(provider))
+        do {
+            _ = try await client(session).request(endpoint)
+            Issue.record("Expected an offline failure")
+        } catch {
+            guard case .configuration(reason: .offline) = error else {
+                Issue.record("Lost the offline classification")
+                return
+            }
+            #expect(error.summary.recovery == .waitForConnectivity)
+            #expect(!String(reflecting: error).contains("fixture-secret"))
+        }
+        #expect(session.capturedRequest == nil)
     }
 
     @Test("native session default auth headers cannot add or replace the selected identity")
