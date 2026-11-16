@@ -1,6 +1,5 @@
 import Foundation
 import InnoNetwork
-import InnoNetworkTestSupport
 import Testing
 import os
 
@@ -209,8 +208,9 @@ struct UploadManagerTests {
             )
         )
 
-        let restored = await waitForUploadTask(manager: manager, id: "completed-upload")
-        let task = try #require(restored)
+        await drainUploadDelegateEvents(manager, channel)
+
+        let task = try #require(await manager.task(withId: "completed-upload"))
         #expect(await task.state == .completed)
         let receipt = try #require(await task.receipt)
         let decoded = try receipt.decode(using: AnyResponseDecoder<UploadReply>.json(decoder: JSONDecoder()))
@@ -751,18 +751,4 @@ private enum UploadStartOutcome: Sendable, Equatable {
 
 private struct UploadReply: Decodable, Sendable, Equatable {
     let id: String
-}
-
-private func waitForUploadTask(
-    manager: UploadManager,
-    id: String,
-    timeout: Duration = .seconds(1)
-) async -> UploadTask? {
-    let clock = ContinuousClock()
-    let deadline = clock.now.advanced(by: TestWaitBudget.upperBound(timeout))
-    while clock.now < deadline {
-        if let task = await manager.task(withId: id) { return task }
-        try? await Task.sleep(for: .milliseconds(5))
-    }
-    return await manager.task(withId: id)
 }
