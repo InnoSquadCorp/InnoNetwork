@@ -20,7 +20,7 @@ public struct OperationNetworkClient<Base: Sendable>: Sendable {
         message:
             "OperationNetworkClient was removed in 7.0. Call start(_:replaySafety:deadline:) on the client itself, for example client.start(request)."
     )
-    public init(client: Base) {}
+    public init(client _: Base) {}
 }
 
 /// Removed in 7.0. ``NetworkConfiguration`` is the only configuration type.
