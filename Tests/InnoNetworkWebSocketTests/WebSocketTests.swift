@@ -1225,6 +1225,9 @@ struct WebSocketListenerLifecycleTests {
             seenIdentifiers.insert(identifier)
             manager.handleConnected(taskIdentifier: identifier, protocolName: nil)
             #expect(await waitForWebSocketState(task) { $0 == .connected })
+            // The state turns `.connected` before the counters are settled in
+            // the same callback; wait for the callback to finish.
+            await manager.waitForDelegateEventsProcessed()
             #expect(await task.attemptedReconnectCount == 0)
             #expect(await task.successfulReconnectCount == index + 1)
             manager.handleError(taskIdentifier: identifier, error: URLError(.networkConnectionLost))
@@ -1238,6 +1241,54 @@ struct WebSocketListenerLifecycleTests {
                 return false
             })
         #expect(await task.state == .failed)
+    }
+
+    @Test("A first connection that needed handshake retries is not a reconnect")
+    func firstConnectionAfterHandshakeRetriesIsNotAReconnect() async throws {
+        let firstURLTask = StubWebSocketURLTask(taskIdentifier: 9_201)
+        let secondURLTask = StubWebSocketURLTask(taskIdentifier: 9_202)
+        let thirdURLTask = StubWebSocketURLTask(taskIdentifier: 9_203)
+        let harness = StubMessagingHarness(
+            heartbeatInterval: 0,
+            reconnectDelay: 0,
+            maxReconnectAttempts: 3,
+            stubTask: firstURLTask
+        )
+        harness.stubSession.enqueue(secondURLTask)
+        harness.stubSession.enqueue(thirdURLTask)
+        let manager = harness.manager
+
+        let task = await manager.connect(url: URL(string: "wss://stub.invalid/socket")!)
+        // The first handshake times out before the socket has ever opened.
+        manager.handleError(taskIdentifier: firstURLTask.taskIdentifier, error: URLError(.timedOut))
+        let retried = try #require(
+            await waitForRuntimeTaskIdentifier(
+                manager: manager,
+                task: task,
+                excluding: [firstURLTask.taskIdentifier],
+                timeout: 3.0
+            )
+        )
+        #expect(retried == secondURLTask.taskIdentifier)
+        manager.handleConnected(taskIdentifier: retried, protocolName: nil)
+        #expect(await waitForWebSocketState(task) { $0 == .connected })
+        await manager.waitForDelegateEventsProcessed()
+        #expect(await task.successfulReconnectCount == 0)
+
+        // Dropping that connection and connecting again is a reconnect.
+        manager.handleError(taskIdentifier: retried, error: URLError(.networkConnectionLost))
+        let reconnected = try #require(
+            await waitForRuntimeTaskIdentifier(
+                manager: manager,
+                task: task,
+                excluding: [firstURLTask.taskIdentifier, retried],
+                timeout: 3.0
+            )
+        )
+        manager.handleConnected(taskIdentifier: reconnected, protocolName: nil)
+        #expect(await waitForWebSocketState(task) { $0 == .connected })
+        await manager.waitForDelegateEventsProcessed()
+        #expect(await task.successfulReconnectCount == 1)
     }
 
     @Test("Reconnect runtime chain reaches max reconnect attempts")

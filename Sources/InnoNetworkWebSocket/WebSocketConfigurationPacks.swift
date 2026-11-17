@@ -84,7 +84,9 @@ public struct WebSocketReconnectPack: Sendable {
     ///     earlier attempt count and reconnect window instead of starting a
     ///     new budget, so a server that accepts and immediately closes
     ///     connections exhausts `maxAttempts`. Pass `0` to reset the budget
-    ///     on every opened connection.
+    ///     on every opened connection, or `.infinity` to never reset it, so
+    ///     that `maxAttempts` caps the task's whole lifetime. Negative values
+    ///     become `0`, and NaN the standard ten seconds.
     public init(
         delay: TimeInterval = 0.5,
         jitterRatio: Double = 0.1,
@@ -108,7 +110,7 @@ public struct WebSocketReconnectPack: Sendable {
         builder.maxReconnectAttempts = maxAttempts
         builder.reconnectMaxTotalDuration = maxTotalDuration
         builder.reconnectStabilityInterval =
-            stabilityInterval.isFinite ? max(0, stabilityInterval) : 0
+            WebSocketConfiguration.normalizedStabilityInterval(stabilityInterval)
     }
 }
 

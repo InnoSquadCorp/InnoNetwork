@@ -63,9 +63,10 @@ package struct WebSocketReconnectCoordinator {
         // If it did not stay open for the stability interval, that reset is
         // revoked here so a server that accepts and immediately drops
         // connections runs into `maxReconnectAttempts` instead of being
-        // retried forever.
+        // retried forever. How long it stayed open is an interval, so it is
+        // measured on the monotonic clock.
         await task.settleReconnectBudget(
-            now: now,
+            now: clock.monotonicNow(),
             stabilityInterval: configuration.reconnectStabilityInterval
         )
 
@@ -179,7 +180,7 @@ package struct WebSocketReconnectCoordinator {
     /// budget until ``reconnectAction(task:previousState:)`` decides whether
     /// the connection lasted long enough to keep it cleared.
     package func connectionDidOpen(task: WebSocketTask) async {
-        await task.noteConnectionOpened(at: dateProvider())
+        await task.noteConnectionOpened(at: clock.monotonicNow())
     }
 
     package func hasExpiredReconnectWindow(task: WebSocketTask) async -> Bool {

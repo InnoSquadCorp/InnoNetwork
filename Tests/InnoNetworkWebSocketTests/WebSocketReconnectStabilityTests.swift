@@ -1,6 +1,6 @@
 import Foundation
+import InnoNetworkTestSupport
 import Testing
-import os
 
 @testable import InnoNetwork
 @testable import InnoNetworkWebSocket
@@ -14,10 +14,13 @@ struct WebSocketReconnectStabilityTests {
     private struct Fixture {
         let coordinator: WebSocketReconnectCoordinator
         let task: WebSocketTask
-        let now: OSAllocatedUnfairLock<Date>
+        /// Drives both clocks the coordinator reads: the monotonic one that
+        /// measures how long a connection stayed open, and the wall clock of
+        /// the reconnect window.
+        let clock: TestClock
 
         func advance(by interval: TimeInterval) {
-            now.withLock { $0 = $0.addingTimeInterval(interval) }
+            clock.advance(by: .seconds(interval))
         }
     }
 
@@ -26,7 +29,7 @@ struct WebSocketReconnectStabilityTests {
         reconnectMaxTotalDuration: TimeInterval = 0,
         stabilityInterval: TimeInterval = 10
     ) -> Fixture {
-        let now = OSAllocatedUnfairLock<Date>(initialState: Self.start)
+        let clock = TestClock(epoch: Self.start)
         let coordinator = WebSocketReconnectCoordinator(
             configuration: WebSocketConfiguration(
                 reconnectDelay: 0,
@@ -36,10 +39,11 @@ struct WebSocketReconnectStabilityTests {
                 reconnectStabilityInterval: stabilityInterval
             ),
             runtimeRegistry: WebSocketRuntimeRegistry(),
-            dateProvider: { now.withLock { $0 } }
+            clock: clock,
+            dateProvider: { clock.now() }
         )
         let task = WebSocketTask(url: URL(string: "wss://example.invalid/stability")!)
-        return Fixture(coordinator: coordinator, task: task, now: now)
+        return Fixture(coordinator: coordinator, task: task, clock: clock)
     }
 
     @Test("A server that accepts and immediately drops connections exhausts the attempt budget")
@@ -132,7 +136,21 @@ struct WebSocketReconnectStabilityTests {
         #expect(await fixture.task.attemptedReconnectCount == 1)
     }
 
-    @Test("The reconnect pack carries the stability interval and clamps invalid values")
+    @Test("An infinite stability interval never resets the budget, so attempts cap the task's lifetime")
+    func infiniteIntervalNeverResets() async {
+        let fixture = makeFixture(maxReconnectAttempts: 2, stabilityInterval: .infinity)
+
+        #expect(await fixture.coordinator.reconnectAction(task: fixture.task) == .retry)
+        await fixture.coordinator.connectionDidOpen(task: fixture.task)
+        fixture.advance(by: 86_400)
+        #expect(await fixture.coordinator.reconnectAction(task: fixture.task) == .retry)
+        await fixture.coordinator.connectionDidOpen(task: fixture.task)
+        fixture.advance(by: 86_400)
+
+        #expect(await fixture.coordinator.reconnectAction(task: fixture.task) == .exceeded(reason: .attempts))
+    }
+
+    @Test("The reconnect pack carries the stability interval and normalizes invalid values")
     func packPlumbsStabilityInterval() {
         let configured = WebSocketConfiguration.advanced(
             reconnect: WebSocketReconnectPack(stabilityInterval: 42)
@@ -140,13 +158,18 @@ struct WebSocketReconnectStabilityTests {
         let negative = WebSocketConfiguration.advanced(
             reconnect: WebSocketReconnectPack(stabilityInterval: -1)
         )
-        let nonFinite = WebSocketConfiguration.advanced(
+        let infinite = WebSocketConfiguration.advanced(
             reconnect: WebSocketReconnectPack(stabilityInterval: .infinity)
+        )
+        let notANumber = WebSocketConfiguration.advanced(
+            reconnect: WebSocketReconnectPack(stabilityInterval: .nan)
         )
 
         #expect(configured.reconnectStabilityInterval == 42)
         #expect(negative.reconnectStabilityInterval == 0)
-        #expect(nonFinite.reconnectStabilityInterval == 0)
+        // Infinity keeps its meaning, never stable, instead of becoming 0.
+        #expect(infinite.reconnectStabilityInterval == .infinity)
+        #expect(notANumber.reconnectStabilityInterval == 10)
         #expect(WebSocketConfiguration.safeDefaults().reconnectStabilityInterval == 10)
         #expect(WebSocketConfiguration.advanced().reconnectStabilityInterval == 10)
     }
