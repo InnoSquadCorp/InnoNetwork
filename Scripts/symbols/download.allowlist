@@ -15,10 +15,11 @@ InnoNetworkDownload	swift.enum.case	DownloadConfiguration.PersistenceFsyncPolicy
 InnoNetworkDownload	swift.enum.case	DownloadError.cancelled
 InnoNetworkDownload	swift.enum.case	DownloadError.fileSystemError(_:)
 InnoNetworkDownload	swift.enum.case	DownloadError.invalidURL(_:)
-InnoNetworkDownload	swift.enum.case	DownloadError.maxRetriesExceeded
+InnoNetworkDownload	swift.enum.case	DownloadError.maxRetriesExceeded(lastError:)
 InnoNetworkDownload	swift.enum.case	DownloadError.networkError(_:)
 InnoNetworkDownload	swift.enum.case	DownloadError.noResumeData
 InnoNetworkDownload	swift.enum.case	DownloadError.restorationMissingSystemTask
+InnoNetworkDownload	swift.enum.case	DownloadError.unacceptableStatusCode(_:)
 InnoNetworkDownload	swift.enum.case	DownloadError.unknown
 InnoNetworkDownload	swift.enum.case	DownloadEvent.completed(_:)
 InnoNetworkDownload	swift.enum.case	DownloadEvent.failed(_:)
@@ -38,7 +39,7 @@ InnoNetworkDownload	swift.init	DownloadObservabilityPack.init(eventDeliveryPolic
 InnoNetworkDownload	swift.init	DownloadPersistencePack.init(sharedContainerIdentifier:fsyncPolicy:compactionPolicy:baseDirectoryURL:)
 InnoNetworkDownload	swift.init	DownloadRetryPack.init(maxRetryCount:maxTotalRetries:retryDelay:exponentialBackoff:retryJitterRatio:maxRetryDelay:networkMonitor:waitsForNetworkChanges:networkChangeTimeout:)
 InnoNetworkDownload	swift.init	DownloadState.init(rawValue:)
-InnoNetworkDownload	swift.init	DownloadTransferPack.init(maxConnectionsPerHost:timeoutForRequest:timeoutForResource:taskInactivityTimeout:allowsCellularAccess:allowsInsecureHTTP:)
+InnoNetworkDownload	swift.init	DownloadTransferPack.init(maxConnectionsPerHost:timeoutForRequest:timeoutForResource:taskInactivityTimeout:allowsCellularAccess:allowsInsecureHTTP:acceptableStatusCodes:)
 InnoNetworkDownload	swift.method	DownloadConfiguration.backgroundTransfersEnabled()
 InnoNetworkDownload	swift.method	DownloadConfiguration.cellularEnabled()
 InnoNetworkDownload	swift.method	DownloadManager.activeTasks()
@@ -65,6 +66,7 @@ InnoNetworkDownload	swift.property	DownloadConfiguration.PersistenceCompactionPo
 InnoNetworkDownload	swift.property	DownloadConfiguration.PersistenceCompactionPolicy.maxLogBytes
 InnoNetworkDownload	swift.property	DownloadConfiguration.PersistenceCompactionPolicy.tombstoneRatio
 InnoNetworkDownload	swift.property	DownloadError.errorDescription
+InnoNetworkDownload	swift.property	DownloadError.httpStatusCode
 InnoNetworkDownload	swift.property	DownloadManagerError.errorDescription
 InnoNetworkDownload	swift.property	DownloadProgress.bytesWritten
 InnoNetworkDownload	swift.property	DownloadProgress.fractionCompleted

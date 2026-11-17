@@ -127,7 +127,8 @@ public actor DownloadManager {
             backgroundCompletionStore: backgroundCompletionStore,
             completionStager: completionStager,
             completionAdmissionGate: completionAdmissionGate,
-            allowsInsecureHTTP: configuration.allowsInsecureHTTP
+            allowsInsecureHTTP: configuration.allowsInsecureHTTP,
+            acceptableStatusCodes: configuration.acceptableStatusCodes
         )
 
         let sessionConfig = configuration.makeURLSessionConfiguration()
@@ -192,7 +193,8 @@ public actor DownloadManager {
             eventHub: eventHub,
             lifecycleGate: lifecycleGate,
             completionStager: completionStager,
-            completionAdmissionGate: completionAdmissionGate
+            completionAdmissionGate: completionAdmissionGate,
+            allowsInsecureHTTP: configuration.allowsInsecureHTTP
         )
         let restoreCoordinator = DownloadRestoreCoordinator(
             configuration: configuration,
@@ -269,14 +271,16 @@ public actor DownloadManager {
                 originalRequestURL,
                 currentRequestURL,
                 payload,
-                error in
+                error,
+                resumeData in
                 delegateEventChannel.sendCompletion(
                     taskIdentifier: taskIdentifier,
                     taskDescription: taskDescription,
                     originalRequestURL: originalRequestURL,
                     currentRequestURL: currentRequestURL,
                     payload: payload,
-                    error: error
+                    error: error,
+                    resumeData: resumeData
                 )
             },
             onBackgroundEventsFinished: { [delegateEventChannel] completion in
@@ -369,7 +373,7 @@ public actor DownloadManager {
     /// actor so an invalidated manager cannot strand the system wake-up.
     static func removeStagedLocationIfNeeded(from event: DelegateEvent) {
         switch event {
-        case .completion(_, _, _, _, let payload, _):
+        case .completion(_, _, _, _, let payload, _, _):
             guard let payload else { return }
             switch payload {
             case .journaled:
@@ -485,15 +489,11 @@ public actor DownloadManager {
         _ urlTask: any DownloadURLTask,
         expectedURL: URL
     ) -> Bool {
-        guard
-            let originalURL = urlTask.originalRequest?.url,
-            let currentURL = urlTask.currentRequest?.url,
-            originalURL == expectedURL,
-            currentURL == expectedURL
-        else {
-            return false
-        }
-        return admitsDownloadURL(originalURL) && admitsDownloadURL(currentURL)
+        DownloadAttemptResumeData.admits(
+            urlTask,
+            expectedURL: expectedURL,
+            allowsInsecureHTTP: configuration.allowsInsecureHTTP
+        )
     }
 
     /// Wired into the host app's

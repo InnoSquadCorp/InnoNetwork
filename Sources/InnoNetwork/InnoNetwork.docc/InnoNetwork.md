@@ -18,7 +18,10 @@ one-off or runtime-composed requests.
 Use this module when you need:
 
 - typed request definitions with ``APIDefinition``
-- an operation-first request lifecycle through ``OperationNetworkClient``
+- a cancellable request handle with lifecycle events and an end-to-end
+  deadline through ``NetworkOperation``
+- one thrown error type, ``NetworkError``, with a payload-free
+  ``NetworkErrorSummary`` for logs and view state
 - request encoding choices that stay explicit
 - trust policy, retry policy, and observability that can be tuned when production needs it
 
@@ -52,18 +55,30 @@ retain those values.
 ### Essentials
 
 - <doc:GettingStarted>
+- <doc:MigrationTo7>
 - <doc:MigrationTo6>
-- ``NetworkClientConfiguration``
-- ``OperationNetworkClient``
-- ``NetworkOperation``
-- ``NetworkOperationReplaySafety``
-- ``NetworkOperationDeadline``
-- ``NetworkOperationDeadlineStage``
-- ``NetworkFailure``
 - ``DefaultNetworkClient``
 - ``APIDefinition``
 - <doc:UsingMacros>
 - ``NetworkError``
+
+### Operation Handles
+
+- ``NetworkOperation``
+- ``NetworkOperationEvent``
+- ``NetworkOperationReplaySafety``
+- ``NetworkOperationDeadline``
+- ``NetworkOperationDeadlineStage``
+
+### Error Model
+
+- <doc:ErrorClassification>
+- ``NetworkErrorCategory``
+- ``NetworkErrorCode``
+- ``NetworkErrorSummary``
+- ``NetworkRecoveryDisposition``
+- ``NetworkPolicyRejection``
+- ``NetworkAuthenticationFailure``
 
 ### More Request Shapes
 
@@ -96,12 +111,10 @@ retain those values.
 
 - ``HTTPMethod``
 - ``ContentType``
-- ``NetworkErrorCategory``
 - ``MultipartResponseDecoder``
 - ``MultipartPart``
 - ``DecodingInterceptor``
 - <doc:DecodingInterceptorCookbook>
-- <doc:ErrorClassification>
 - <doc:OpenAPIGeneratorAdapter>
 - <doc:OpenAPIGeneratorRecipe>
 - <doc:ObservabilityExporters>

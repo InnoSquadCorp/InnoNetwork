@@ -1,4 +1,5 @@
 import Foundation
+import InnoNetworkTestSupport
 import Testing
 
 @testable import InnoNetworkDownload
@@ -759,7 +760,7 @@ struct DownloadRestoreTests {
         // Setting the handler admits the pending failure to the per-task
         // callback queue. Delivery is intentionally asynchronous so user code
         // never holds the restoration actor; wait for that queue boundary.
-        let deadline = Date().addingTimeInterval(2)
+        let deadline = Date().addingTimeInterval(TestWaitBudget.upperBound(2))
         var matched = false
         while Date() < deadline, !matched {
             let recorded = await observed.snapshot()
@@ -792,7 +793,7 @@ private func waitForRestoreCondition(
     timeout: TimeInterval = 2,
     condition: @escaping @Sendable () async -> Bool
 ) async -> Bool {
-    let deadline = Date().addingTimeInterval(timeout)
+    let deadline = Date().addingTimeInterval(TestWaitBudget.upperBound(timeout))
     while Date() < deadline {
         if await condition() { return true }
         try? await Task.sleep(for: .milliseconds(10))

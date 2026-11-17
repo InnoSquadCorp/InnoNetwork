@@ -14,7 +14,7 @@ token store. Mirrors the pattern most production iOS / macOS apps use:
 
 ## Why the library does not ship a Keychain layer
 
-InnoNetwork keeps its dependency footprint at zero on purpose. Storage
+InnoNetwork leaves credential storage to the application on purpose. Storage
 choices vary across products (Keychain, encrypted files, SwiftData,
 custom HSM bridges, server-pinned session tokens), so the library
 exposes the orchestration primitive (`RefreshTokenPolicy`) and lets

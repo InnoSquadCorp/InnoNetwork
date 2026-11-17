@@ -34,6 +34,9 @@ package struct DownloadTransferCoordinator {
     let lifecycleGate: DownloadLifecycleGate
     let completionStager: DownloadCompletionStager
     let completionAdmissionGate: DownloadCompletionAdmissionGate
+    /// Mirrors `DownloadConfiguration.allowsInsecureHTTP` for the admission
+    /// of an attempt rebuilt from resume data.
+    let allowsInsecureHTTP: Bool
 
     package init(
         session: any DownloadURLSession,
@@ -43,7 +46,8 @@ package struct DownloadTransferCoordinator {
         eventHub: TaskEventHub<DownloadEvent>,
         lifecycleGate: DownloadLifecycleGate,
         completionStager: DownloadCompletionStager = DownloadCompletionStager(),
-        completionAdmissionGate: DownloadCompletionAdmissionGate = DownloadCompletionAdmissionGate()
+        completionAdmissionGate: DownloadCompletionAdmissionGate = DownloadCompletionAdmissionGate(),
+        allowsInsecureHTTP: Bool = false
     ) {
         self.session = session
         self.runtimeRegistry = runtimeRegistry
@@ -55,6 +59,7 @@ package struct DownloadTransferCoordinator {
         self.lifecycleGate = lifecycleGate
         self.completionStager = completionStager
         self.completionAdmissionGate = completionAdmissionGate
+        self.allowsInsecureHTTP = allowsInsecureHTTP
     }
 
     package func startDownload(
@@ -62,6 +67,18 @@ package struct DownloadTransferCoordinator {
         mode: DownloadStartMode
     ) async {
         let initialLifecycle = await task.lifecycleSnapshot()
+        if mode == .automaticRetry {
+            // An automatic retry may only drive a task that is still waiting
+            // on its durable retry marker. `pause(_:)` can take the task
+            // during that wait: a paused task, or one whose marker a pause
+            // or resume has already replaced, belongs to the newer lifecycle
+            // and must not be moved back through `.waiting` by a stale job.
+            guard initialLifecycle.state != .paused,
+                await persistence.record(forID: task.id)?.lifecycle == .retryPending
+            else {
+                return
+            }
+        }
         do {
             try DownloadDestinationPreflight.validate(task.destinationURL)
         } catch {
@@ -148,7 +165,7 @@ package struct DownloadTransferCoordinator {
             return
         }
 
-        let urlTask = session.makeDownloadTask(with: task.url)
+        let urlTask = await makeURLTask(for: task, mode: mode)
         await register(urlTask: urlTask, for: task)
 
         guard
@@ -212,6 +229,39 @@ package struct DownloadTransferCoordinator {
                 await markTaskFailedForPersistence(task, error: error)
             }
         }
+    }
+
+    /// Creates the concrete attempt for a start.
+    ///
+    /// An automatic retry continues from the resume data its failed attempt
+    /// left behind. The blob is consumed here whatever happens next, and the
+    /// attempt falls back to a fresh request for the admitted source URL
+    /// when there is no blob, when it is not structurally usable, or when
+    /// the task Foundation rebuilds from it no longer targets that source.
+    private func makeURLTask(
+        for task: DownloadTask,
+        mode: DownloadStartMode
+    ) async -> any DownloadURLTask {
+        guard mode == .automaticRetry,
+            let resumeData = await task.takeResumeData(),
+            DownloadAttemptResumeData.isStructurallyUsable(resumeData)
+        else {
+            return session.makeDownloadTask(with: task.url)
+        }
+        let resumedTask = session.makeDownloadTask(withResumeData: resumeData)
+        guard
+            DownloadAttemptResumeData.admits(
+                resumedTask,
+                expectedURL: task.url,
+                allowsInsecureHTTP: allowsInsecureHTTP
+            )
+        else {
+            // Resume data is opaque and can carry a different request than
+            // the logical task. Never start or register such a task.
+            resumedTask.cancel()
+            return session.makeDownloadTask(with: task.url)
+        }
+        return resumedTask
     }
 
     package func register(urlTask: any DownloadURLTask, for task: DownloadTask) async {

@@ -9,6 +9,15 @@ struct NotModifiedSubstitution {
     let cached: CachedResponse
 }
 
+/// A `304` whose validators identify a different representation than the
+/// stored response the conditional request was built from. The stored
+/// response can no longer be revalidated, so the pipeline drops it before
+/// surfacing `error`; a replay then fetches a full response.
+struct UnreconcilableNotModified: Error {
+    let error: NetworkError
+    let storedResponse: CachedResponse
+}
+
 /// Cached snapshot that produced conditional request headers for the
 /// transport attempt. A later 304 is valid only while this entry still
 /// exists; otherwise the executor has no representation to substitute.

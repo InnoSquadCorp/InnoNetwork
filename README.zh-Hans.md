@@ -4,11 +4,7 @@
 
 InnoNetwork 是面向 Apple 平台的类型安全异步 Swift 网络库。从显式 endpoint 结构体、`@APIDefinition` 和 `DefaultNetworkClient.request` 开始即可，无需预先链接所有可选产品。
 
-## 当前版本与范围
-
-当前稳定版本为 **6.1.1**，于 2026-10-07 UTC 发布。该补丁修正文档与工具，不改变 6.1.0 的运行时或公共 API。标签对应 `44e4ca28c50c03f817231a077c0f3bdfdbc859c8`。七种语言的当前指南覆盖相同的安装、示例和契约范围；[英文 README](README.md) 提供详细参考。
-
-[6.1.1 Release](https://github.com/InnoSquadCorp/InnoNetwork/releases/tag/6.1.1) · [Release notes](docs/releases/6.1.1.md)
+> **此分支上的 7.0 草案。** 此分支包含尚未发布的 7.0 草案。6.1.1 仍是当前版本，本 README 说明的也是 6.1.1。草案中的破坏性变更请参阅 [7.0 迁移指南](docs/Migration-7.0.0.md)。
 
 ## 要求与安装
 
@@ -26,28 +22,6 @@ InnoNetwork 是面向 Apple 平台的类型安全异步 Swift 网络库。从显
 ```
 
 需要可复现解析时使用 `.exact("6.1.1")`。补丁范围可避免自动采用下一 minor 中暂时稳定 API 的变化。检查 `Package.resolved` 的实际版本。如不使用宏，在包依赖上添加 `traits: []` 并手动实现协议。所有依赖路径都必须禁用 `Macros`；SwiftPM 仍可能解析或下载 SwiftSyntax 等 manifest 依赖。
-
-## 选择产品
-
-- `InnoNetwork` — 类型安全 HTTP 请求与策略流水线
-
-- `InnoNetworkAuthAWS` — 可选 AWS SigV4 单次签名器，不替代 AWS SDK
-
-- `InnoNetworkDownload` — 下载、暂停/恢复、后台恢复与事件
-
-- `InnoNetworkUpload` — 文件上传、进度、恢复与有大小限制的响应
-
-- `InnoNetworkWebSocket` — 双向连接、心跳、重连与关闭分类
-
-- `InnoNetworkPersistentCache` — 遵循 RFC 相关规则的磁盘缓存与容量限制
-
-- `InnoNetworkOpenAPI` — 完整 client 流水线适配器或轻量 OpenAPI Runtime transport
-
-- `InnoNetworkTrust` — 可选公钥固定验证器
-
-- `InnoNetworkTestSupport` — 消费者测试 helper，不应链接到生产 target
-
-`InnoNetworkMacroSupport` 仅供编译器宿主使用。HLS 位于独立的 [InnoNetwork-Stream](https://github.com/InnoSquadCorp/InnoNetwork-Stream)，Protobuf 位于 [InnoNetwork-Protobuf](https://github.com/InnoSquadCorp/InnoNetwork-Protobuf)。两者的 6.1.1 均精确依赖 Core 6.1.1。Stream 模块仍名为 `InnoNetworkHLS`、`InnoNetworkHLSLive`、`InnoNetworkHLSAVFoundation`、`InnoNetworkHLSAudio`；不存在 `InnoNetworkStream` 模块。Audio 受 Swift 6.4 编译条件与 OS 27 可用性约束。Protobuf 首选 product 为 `InnoNetwork-Protobuf`，导入模块为 `InnoNetworkProtobuf`。
 
 ## 第一个请求
 
@@ -74,6 +48,34 @@ let client = DefaultNetworkClient(
 let user = try await client.request(GetUser(id: 42))
 print(user.name)
 ```
+
+## 当前版本与范围
+
+当前稳定版本为 **6.1.1**，于 2026-10-07 UTC 发布。该补丁修正文档与工具，不改变 6.1.0 的运行时或公共 API。标签对应 `44e4ca28c50c03f817231a077c0f3bdfdbc859c8`。七种语言的当前指南覆盖相同的安装、示例和契约范围；[英文 README](README.md) 提供详细参考。
+
+[6.1.1 Release](https://github.com/InnoSquadCorp/InnoNetwork/releases/tag/6.1.1) · [Release notes](docs/releases/6.1.1.md)
+
+## 选择产品
+
+- `InnoNetwork` — 类型安全 HTTP 请求与策略流水线
+
+- `InnoNetworkAuthAWS` — 可选 AWS SigV4 单次签名器，不替代 AWS SDK
+
+- `InnoNetworkDownload` — 下载、暂停/恢复、后台恢复与事件
+
+- `InnoNetworkUpload` — 文件上传、进度、恢复与有大小限制的响应
+
+- `InnoNetworkWebSocket` — 双向连接、心跳、重连与关闭分类
+
+- `InnoNetworkPersistentCache` — 遵循 RFC 相关规则的磁盘缓存与容量限制
+
+- `InnoNetworkOpenAPI` — 完整 client 流水线适配器或轻量 OpenAPI Runtime transport
+
+- `InnoNetworkTrust` — 可选公钥固定验证器
+
+- `InnoNetworkTestSupport` — 消费者测试 helper，不应链接到生产 target
+
+`InnoNetworkMacroSupport` 仅供编译器宿主使用。HLS 位于独立的 [InnoNetwork-Stream](https://github.com/InnoSquadCorp/InnoNetwork-Stream)，Protobuf 位于 [InnoNetwork-Protobuf](https://github.com/InnoSquadCorp/InnoNetwork-Protobuf)。两者的 6.1.1 均精确依赖 Core 6.1.1。Stream 模块仍名为 `InnoNetworkHLS`、`InnoNetworkHLSLive`、`InnoNetworkHLSAVFoundation`、`InnoNetworkHLSAudio`；不存在 `InnoNetworkStream` 模块。Audio 受 Swift 6.4 编译条件与 OS 27 可用性约束。Protobuf 首选 product 为 `InnoNetwork-Protobuf`，导入模块为 `InnoNetworkProtobuf`。
 
 ## 配置、认证与安全
 

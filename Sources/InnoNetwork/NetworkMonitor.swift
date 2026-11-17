@@ -140,10 +140,8 @@ public struct NetworkSnapshot: Sendable, Equatable {
             unsatisfiedReason = .wifiDenied
         case .localNetworkDenied:
             unsatisfiedReason = .localNetworkDenied
-        #if compiler(>=6.4)
         case .vpnInactive:
             unsatisfiedReason = .vpnInactive
-        #endif
         @unknown default:
             unsatisfiedReason = .unknown
         }

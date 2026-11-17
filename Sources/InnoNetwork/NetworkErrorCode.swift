@@ -28,7 +28,10 @@ public enum NetworkErrorCode: Int, Sendable {
     case statusCode = 3001
     case nonHTTPResponse = 3002
 
-    // 4xxx — transport / pipeline failures surfaced through `.underlying`.
+    // 4xxx — transport and pipeline failures. `4001`, `4002`, `4004` and
+    // `4005` identify transport outcomes; the remaining codes identify a
+    // ``NetworkPolicyRejection`` (or, for `4010`, an explicit streaming phase
+    // deadline carried by ``NetworkError/timeout(reason:underlying:)``).
     case underlying = 4001
     case reachability = 4002
     case responseBodyLimitExceeded = 4003
@@ -39,7 +42,15 @@ public enum NetworkErrorCode: Int, Sendable {
     case rateLimitQueueRejected = 4008
     case rateLimitScopeRejected = 4009
     case streamingPhaseTimeout = 4010
+    /// ``NetworkPolicyRejection/circuitOpen(_:)``: the host's circuit breaker is open.
+    case circuitOpen = 4011
 
     // 5xxx — trust evaluation failures.
     case trustEvaluationFailed = 5001
+
+    // 6xxx — authentication failures.
+    /// ``NetworkAuthenticationFailure/refreshFailed(_:)``: the session cannot be renewed.
+    case authenticationRefreshFailed = 6001
+    /// ``NetworkAuthenticationFailure/credential(_:)``: a named request credential failed.
+    case requestCredentialFailed = 6002
 }

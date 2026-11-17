@@ -143,6 +143,14 @@ public struct DownloadConfiguration: Sendable {
     /// the download delegate enforces the default redirect policy. Background
     /// sessions do not expose per-hop redirect decisions to the delegate.
     package let allowsInsecureHTTP: Bool
+    /// HTTP status codes that count as a successfully finished transfer.
+    /// `URLSession` download tasks do not fail on 4xx/5xx, so the session
+    /// delegate consults this set before it admits a finished attempt. A
+    /// status outside the set is reported as a typed
+    /// `DownloadHTTPStatusFailure` and the response body is never staged.
+    /// Defaults to `200..<300`; resumed transfers return 206, which is
+    /// inside. Responses that are not HTTP are not validated.
+    package let acceptableStatusCodes: Set<Int>
     /// Foundation session mode. Foreground mode is the secure default and
     /// enforces admission before every redirect. Background mode preserves
     /// out-of-process continuation, but Foundation follows redirects without
@@ -289,6 +297,8 @@ public struct DownloadConfiguration: Sendable {
         package var allowsCellularAccess: Bool
         /// Allows plain `http` download sources. Defaults to `false`.
         package var allowsInsecureHTTP: Bool
+        /// HTTP status codes accepted as a finished transfer. Defaults to `200..<300`.
+        package var acceptableStatusCodes: Set<Int>
         /// Manager identifier and persistence scope. In background mode this
         /// is also the Foundation background-session identifier.
         ///
@@ -330,6 +340,7 @@ public struct DownloadConfiguration: Sendable {
             self.taskInactivityTimeout = preset.taskInactivityTimeout
             self.allowsCellularAccess = preset.allowsCellularAccess
             self.allowsInsecureHTTP = preset.allowsInsecureHTTP
+            self.acceptableStatusCodes = preset.acceptableStatusCodes
             self.sessionIdentifier = preset.sessionIdentifier
             self.sharedContainerIdentifier = preset.sharedContainerIdentifier
             self.networkMonitor = preset.networkMonitor
@@ -356,6 +367,7 @@ public struct DownloadConfiguration: Sendable {
                 taskInactivityTimeout: taskInactivityTimeout,
                 allowsCellularAccess: allowsCellularAccess,
                 allowsInsecureHTTP: allowsInsecureHTTP,
+                acceptableStatusCodes: acceptableStatusCodes,
                 sessionIdentifier: sessionIdentifier,
                 sharedContainerIdentifier: sharedContainerIdentifier,
                 networkMonitor: networkMonitor,
@@ -419,6 +431,7 @@ public struct DownloadConfiguration: Sendable {
         taskInactivityTimeout: Duration? = nil,
         allowsCellularAccess: Bool = true,
         allowsInsecureHTTP: Bool = false,
+        acceptableStatusCodes: Set<Int> = DownloadHTTPStatusFailure.defaultAcceptableStatusCodes,
         sessionIdentifier: String = "com.innonetwork.download",
         sharedContainerIdentifier: String? = nil,
         networkMonitor: (any NetworkMonitoring)? = NetworkMonitor.shared,
@@ -445,6 +458,7 @@ public struct DownloadConfiguration: Sendable {
         self.taskInactivityTimeout = taskInactivityTimeout.map { max($0, .milliseconds(100)) }
         self.allowsCellularAccess = allowsCellularAccess
         self.allowsInsecureHTTP = allowsInsecureHTTP
+        self.acceptableStatusCodes = acceptableStatusCodes
         self.sessionMode = .foreground
         self.sessionIdentifier = sessionIdentifier
         self.sharedContainerIdentifier = sharedContainerIdentifier
@@ -496,6 +510,7 @@ public struct DownloadConfiguration: Sendable {
         self.taskInactivityTimeout = configuration.taskInactivityTimeout
         self.allowsCellularAccess = allowsCellularAccess ?? configuration.allowsCellularAccess
         self.allowsInsecureHTTP = configuration.allowsInsecureHTTP
+        self.acceptableStatusCodes = configuration.acceptableStatusCodes
         self.sessionMode = sessionMode ?? configuration.sessionMode
         self.sessionIdentifier = configuration.sessionIdentifier
         self.sharedContainerIdentifier = configuration.sharedContainerIdentifier

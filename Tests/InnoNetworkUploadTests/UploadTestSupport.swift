@@ -177,6 +177,25 @@ func makeUploadHarness(
     return (manager, session, channel)
 }
 
+/// Returns once `manager` has reduced every delegate callback sent on
+/// `channel` before this call.
+///
+/// The channel delivers callbacks in order and the manager finishes reducing
+/// one before it reads the next, so the `.backgroundEventsFinished`
+/// acknowledgement sent here completes only after the earlier callbacks. It
+/// assumes no other acknowledgement for this manager is queued or unclaimed:
+/// the channel drops a duplicate, and an unclaimed acknowledgement completes
+/// the next handler at once.
+func drainUploadDelegateEvents(
+    _ manager: UploadManager,
+    _ channel: UploadDelegateEventChannel
+) async {
+    await withCheckedContinuation { continuation in
+        manager.handleBackgroundEvents { continuation.resume() }
+        channel.send(.backgroundEventsFinished)
+    }
+}
+
 func makeTemporaryUploadFile() throws -> URL {
     let directory = FileManager.default.temporaryDirectory
         .appendingPathComponent(UUID().uuidString, isDirectory: true)

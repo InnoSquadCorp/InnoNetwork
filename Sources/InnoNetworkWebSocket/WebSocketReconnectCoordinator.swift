@@ -58,10 +58,20 @@ package struct WebSocketReconnectCoordinator {
             return .terminal
         }
 
-        // Stamp the reconnect-window if this is the first reconnect attempt
-        // after a clean connection. The stamp is cleared by the manager once
-        // a reconnect succeeds or the task is reset.
         let now = dateProvider()
+        // The connection that just ended cleared the budget when it opened.
+        // If it did not stay open for the stability interval, that reset is
+        // revoked here so a server that accepts and immediately drops
+        // connections runs into `maxReconnectAttempts` instead of being
+        // retried forever.
+        await task.settleReconnectBudget(
+            now: now,
+            stabilityInterval: configuration.reconnectStabilityInterval
+        )
+
+        // Stamp the reconnect-window if this is the first reconnect attempt
+        // after a stable connection. The stamp is cleared once a reconnect
+        // succeeds or the task is reset.
         await task.beginReconnectWindowIfNeeded(now: now)
 
         if configuration.reconnectMaxTotalDuration > 0,
@@ -163,6 +173,13 @@ package struct WebSocketReconnectCoordinator {
         }
 
         await runtimeRegistry.setReconnectTask(reconnectTask, workerID: workerID, for: task.id)
+    }
+
+    /// Records that `task`'s connection became ready, clearing its reconnect
+    /// budget until ``reconnectAction(task:previousState:)`` decides whether
+    /// the connection lasted long enough to keep it cleared.
+    package func connectionDidOpen(task: WebSocketTask) async {
+        await task.noteConnectionOpened(at: dateProvider())
     }
 
     package func hasExpiredReconnectWindow(task: WebSocketTask) async -> Bool {

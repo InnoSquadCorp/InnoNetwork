@@ -11,16 +11,6 @@ struct UploadPendingEventIntegrityTests {
         return request
     }
 
-    private static func drain(
-        _ manager: UploadManager,
-        _ channel: UploadDelegateEventChannel
-    ) async {
-        await withCheckedContinuation { continuation in
-            manager.handleBackgroundEvents { continuation.resume() }
-            channel.send(.backgroundEventsFinished)
-        }
-    }
-
     private static func complete(
         _ channel: UploadDelegateEventChannel,
         identifier: Int,
@@ -63,10 +53,10 @@ struct UploadPendingEventIntegrityTests {
         )
         for _ in 0...limit {
             channel.send(.data(taskIdentifier: 71, data: Data([65])))
-            await Self.drain(manager, channel)
+            await drainUploadDelegateEvents(manager, channel)
         }
         Self.complete(channel, identifier: 71, logicalID: "pending-body", request: Self.request())
-        await Self.drain(manager, channel)
+        await drainUploadDelegateEvents(manager, channel)
 
         let task = try #require(await manager.task(withId: "pending-body"))
         #expect(await task.state == .failed)
@@ -93,11 +83,11 @@ struct UploadPendingEventIntegrityTests {
             channel: channel
         )
         channel.send(.data(taskIdentifier: 71, data: Data([65])))
-        await Self.drain(manager, channel)
+        await drainUploadDelegateEvents(manager, channel)
         channel.send(.data(taskIdentifier: 72, data: Data([66])))
-        await Self.drain(manager, channel)
+        await drainUploadDelegateEvents(manager, channel)
         Self.complete(channel, identifier: 71, logicalID: "first", request: Self.request())
-        await Self.drain(manager, channel)
+        await drainUploadDelegateEvents(manager, channel)
 
         let task = try #require(await manager.task(withId: "first"))
         #expect(await task.state == .failed)
@@ -124,11 +114,11 @@ struct UploadPendingEventIntegrityTests {
             channel: channel
         )
         channel.send(.progress(taskIdentifier: 71, bytesSent: 1, totalBytesSent: 1, expected: 2))
-        await Self.drain(manager, channel)
+        await drainUploadDelegateEvents(manager, channel)
         channel.send(.progress(taskIdentifier: 72, bytesSent: 1, totalBytesSent: 1, expected: 2))
-        await Self.drain(manager, channel)
+        await drainUploadDelegateEvents(manager, channel)
         Self.complete(channel, identifier: 71, logicalID: "first", request: Self.request())
-        await Self.drain(manager, channel)
+        await drainUploadDelegateEvents(manager, channel)
 
         let task = try #require(await manager.task(withId: "first"))
         #expect(await task.state == .completed)

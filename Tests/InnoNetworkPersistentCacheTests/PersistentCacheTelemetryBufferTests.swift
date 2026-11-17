@@ -10,6 +10,7 @@ struct PersistentCacheTelemetryBufferTests {
     func alternatingReasons() {
         let reasons: [PersistentResponseCacheEvictionReason] = [
             .storageBudget, .policyRejected, .missingBody, .entryTooLarge, .unreferencedBody,
+            .bodyIntegrityMismatch,
         ]
         var buffer = PersistentCacheTelemetryBuffer()
         for _ in 0..<10_000 {

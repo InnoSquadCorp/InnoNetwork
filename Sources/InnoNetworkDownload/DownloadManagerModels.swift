@@ -43,7 +43,8 @@ extension DownloadManager {
             originalRequestURL: URL?,
             currentRequestURL: URL?,
             payload: DownloadCompletionPayload?,
-            error: SendableUnderlyingError?
+            error: SendableUnderlyingError?,
+            resumeData: Data?
         )
         case restorationBoundary
         case backgroundEventsFinished(completion: (@Sendable () -> Void)?)

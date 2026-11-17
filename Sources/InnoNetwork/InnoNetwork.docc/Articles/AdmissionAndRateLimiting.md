@@ -47,5 +47,33 @@ after a slot is obtained. If quota is no longer available, the slot is released
 before the task waits and competes for admission again, so queued work cannot
 hold transport capacity while it is rate-delayed.
 
+## Rejections
+
+A request that a bounded queue cannot hold fails before transport with
+``NetworkError/policyRejected(_:)``. The payload names the limit that was
+reached:
+
+| Rejection | Meaning |
+|-----------|---------|
+| ``NetworkPolicyRejection/admissionQueueFull`` | The pending-request queue (`maximumPendingRequests`), or the pending-stream queue, is full. |
+| ``NetworkPolicyRejection/admissionWaitExpired`` | The request waited in the admission queue past `maximumQueueWait` (`maximumStreamQueueWait` for a stream). |
+| ``NetworkPolicyRejection/rateLimitQueueFull`` | The rate limiter's pending queue (`maximumPendingRequests`) is full. |
+| ``NetworkPolicyRejection/rateLimitScopeLimitReached`` | The rate limiter's scope registry (`maximumScopes`) has no room for another scope. |
+
+```swift
+do {
+    let feed = try await client.request(GetFeed())
+    render(feed)
+} catch NetworkError.policyRejected(.admissionQueueFull),
+    NetworkError.policyRejected(.rateLimitQueueFull)
+{
+    showBusyState()  // shed load; do not retry in a tight loop
+}
+```
+
+These rejections are local decisions. The built-in retry policy never retries
+them, the circuit breaker never counts them against the host, and their
+category is ``NetworkErrorCategory/policy``.
+
 ``NetworkEvent/decision(_:)`` exposes allowed, delayed, and denied policy
 outcomes without request payloads.

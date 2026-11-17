@@ -112,4 +112,59 @@ package extension URLRequest {
         }
         return prepared
     }
+
+    /// Whether the request carries a credential header: one of
+    /// `HeaderValueNormalizer.defaultSensitiveHeaderNames` (`Authorization`,
+    /// `Proxy-Authorization`, `Cookie`, `X-API-Key`, `X-Auth-Token`) or a
+    /// header the configuration marks as sensitive.
+    func carriesCredentialHeader(sensitiveHeaderNames: Set<String>) -> Bool {
+        guard let fields = allHTTPHeaderFields, !fields.isEmpty else { return false }
+        return fields.keys.contains { name in
+            let lowercased = name.lowercased()
+            return HeaderValueNormalizer.defaultSensitiveHeaderNames.contains(lowercased)
+                || sensitiveHeaderNames.contains { $0.lowercased() == lowercased }
+        }
+    }
+}
+
+/// Keeps `URLSession`'s own cache out of a request that carries a credential.
+///
+/// `URLCache` keys entries by URL and ignores credential headers, so a
+/// response fetched for one identity could otherwise be served to, or stored
+/// for, the next identity that requests the same URL. Signed and
+/// request-security transports already isolate themselves through
+/// `preparingForSignedTransport()` and a restricted request context; this
+/// covers every other way a credential reaches the request — a request
+/// interceptor or a session token — at the last point before transport.
+///
+/// A credentialed request never lets the per-task delegate store its response
+/// in `URLCache`, and under the default `.useProtocolCachePolicy` it does not
+/// read `URLCache` either (`.reloadIgnoringLocalCacheData`). The only
+/// exceptions are the explicitly cache-first policies,
+/// `.returnCacheDataElseLoad` and `.returnCacheDataDontLoad`, which ask for
+/// `URLCache` by name. The library's own response cache, which keys entries
+/// by credential fingerprint, is not affected.
+package enum CredentialedURLCacheIsolation {
+    package static func isolate(
+        _ request: URLRequest,
+        context: NetworkRequestContext,
+        sensitiveHeaderNames: Set<String>
+    ) -> (request: URLRequest, context: NetworkRequestContext) {
+        guard request.carriesCredentialHeader(sensitiveHeaderNames: sensitiveHeaderNames) else {
+            return (request, context)
+        }
+        switch request.cachePolicy {
+        case .returnCacheDataElseLoad, .returnCacheDataDontLoad:
+            // An explicit cache-first choice for this request.
+            return (request, context)
+        case .useProtocolCachePolicy:
+            var isolated = request
+            isolated.cachePolicy = .reloadIgnoringLocalCacheData
+            return (isolated, context.disallowingURLCacheStorage())
+        default:
+            // Already bypasses cached data on load; a reload would still
+            // store the response for the next reader of the shared cache.
+            return (request, context.disallowingURLCacheStorage())
+        }
+    }
 }

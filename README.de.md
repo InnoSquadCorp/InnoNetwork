@@ -4,11 +4,7 @@
 
 InnoNetwork ist eine typsichere asynchrone Swift-Netzwerkbibliothek für Apple-Plattformen. Beginne mit einer expliziten Endpoint-Struktur, `@APIDefinition` und `DefaultNetworkClient.request`. Optionale Produkte müssen nicht vorsorglich eingebunden werden.
 
-## Version und Umfang
-
-Die aktuelle stabile Version ist **6.1.1**, veröffentlicht am 2026-10-07 UTC. Dieser Patch korrigiert Dokumentation und Werkzeuge, ohne Laufzeit oder öffentliche API von 6.1.0 zu ändern. Der Tag verweist auf `44e4ca28c50c03f817231a077c0f3bdfdbc859c8`. Alle sieben aktuellen Sprachfassungen behandeln Installation, Beispiele und Verträge; das [englische README](README.md) enthält die ausführliche Referenz.
-
-[6.1.1 Release](https://github.com/InnoSquadCorp/InnoNetwork/releases/tag/6.1.1) · [Release notes](docs/releases/6.1.1.md)
+> **7.0-Entwurf auf diesem Branch.** Dieser Branch enthält einen unveröffentlichten 7.0-Entwurf. 6.1.1 bleibt die aktuelle Version, und dieses README beschreibt 6.1.1. Die inkompatiblen Änderungen des Entwurfs stehen im [Migrationsleitfaden für 7.0](docs/Migration-7.0.0.md).
 
 ## Voraussetzungen und Installation
 
@@ -26,28 +22,6 @@ Erforderlich sind Swift **6.2+** und Swift-6-Sprachmodus. Mindestversionen: iOS 
 ```
 
 Für reproduzierbare Auflösung verwende `.exact("6.1.1")`. Der Patchbereich übernimmt keine Änderungen vorläufig stabiler APIs aus einem neuen Minor automatisch. Prüfe `Package.resolved`. Ohne Makros ergänzt du `traits: []` an der Paketabhängigkeit und implementierst das Protokoll manuell. Alle Abhängigkeitspfade müssen `Macros` deaktivieren; SwiftPM kann Manifest-Abhängigkeiten wie SwiftSyntax trotzdem auflösen oder herunterladen.
-
-## Produkte auswählen
-
-- `InnoNetwork` — Typsichere HTTP-Anfragen und Richtlinien-Pipeline
-
-- `InnoNetworkAuthAWS` — Optionaler AWS-SigV4-Einzelsignierer; kein Ersatz für das AWS SDK
-
-- `InnoNetworkDownload` — Downloads, Pause/Fortsetzung, Hintergrundwiederherstellung und Ereignisse
-
-- `InnoNetworkUpload` — Dateibasierte Uploads, Fortschritt, Wiederherstellung und begrenzte Antworten
-
-- `InnoNetworkWebSocket` — Bidirektionale Verbindungen, Heartbeat, Wiederverbindung und Abschlussklassifikation
-
-- `InnoNetworkPersistentCache` — RFC-bewusster Festplatten-Cache mit Speichergrenzen
-
-- `InnoNetworkOpenAPI` — Adapter für die vollständige Pipeline oder schlanker OpenAPI-Runtime-Transport
-
-- `InnoNetworkTrust` — Optionaler Evaluator für Public-Key-Pinning
-
-- `InnoNetworkTestSupport` — Hilfen für Consumer-Tests; nicht in Produktion einbinden
-
-`InnoNetworkMacroSupport` gehört nur auf den Compiler-Host. HLS liegt in [InnoNetwork-Stream](https://github.com/InnoSquadCorp/InnoNetwork-Stream), Protobuf in [InnoNetwork-Protobuf](https://github.com/InnoSquadCorp/InnoNetwork-Protobuf). Beide 6.1.1-Releases binden Core exakt an 6.1.1. Stream-Module heißen weiterhin `InnoNetworkHLS`, `InnoNetworkHLSLive`, `InnoNetworkHLSAVFoundation` und `InnoNetworkHLSAudio`; ein Modul `InnoNetworkStream` existiert nicht. Audio ist durch Swift-6.4-Compilerbedingungen und OS-27-Verfügbarkeit begrenzt. Das bevorzugte Protobuf-Produkt heißt `InnoNetwork-Protobuf`, der Import `InnoNetworkProtobuf`.
 
 ## Erste Anfrage
 
@@ -74,6 +48,34 @@ let client = DefaultNetworkClient(
 let user = try await client.request(GetUser(id: 42))
 print(user.name)
 ```
+
+## Version und Umfang
+
+Die aktuelle stabile Version ist **6.1.1**, veröffentlicht am 2026-10-07 UTC. Dieser Patch korrigiert Dokumentation und Werkzeuge, ohne Laufzeit oder öffentliche API von 6.1.0 zu ändern. Der Tag verweist auf `44e4ca28c50c03f817231a077c0f3bdfdbc859c8`. Alle sieben aktuellen Sprachfassungen behandeln Installation, Beispiele und Verträge; das [englische README](README.md) enthält die ausführliche Referenz.
+
+[6.1.1 Release](https://github.com/InnoSquadCorp/InnoNetwork/releases/tag/6.1.1) · [Release notes](docs/releases/6.1.1.md)
+
+## Produkte auswählen
+
+- `InnoNetwork` — Typsichere HTTP-Anfragen und Richtlinien-Pipeline
+
+- `InnoNetworkAuthAWS` — Optionaler AWS-SigV4-Einzelsignierer; kein Ersatz für das AWS SDK
+
+- `InnoNetworkDownload` — Downloads, Pause/Fortsetzung, Hintergrundwiederherstellung und Ereignisse
+
+- `InnoNetworkUpload` — Dateibasierte Uploads, Fortschritt, Wiederherstellung und begrenzte Antworten
+
+- `InnoNetworkWebSocket` — Bidirektionale Verbindungen, Heartbeat, Wiederverbindung und Abschlussklassifikation
+
+- `InnoNetworkPersistentCache` — RFC-bewusster Festplatten-Cache mit Speichergrenzen
+
+- `InnoNetworkOpenAPI` — Adapter für die vollständige Pipeline oder schlanker OpenAPI-Runtime-Transport
+
+- `InnoNetworkTrust` — Optionaler Evaluator für Public-Key-Pinning
+
+- `InnoNetworkTestSupport` — Hilfen für Consumer-Tests; nicht in Produktion einbinden
+
+`InnoNetworkMacroSupport` gehört nur auf den Compiler-Host. HLS liegt in [InnoNetwork-Stream](https://github.com/InnoSquadCorp/InnoNetwork-Stream), Protobuf in [InnoNetwork-Protobuf](https://github.com/InnoSquadCorp/InnoNetwork-Protobuf). Beide 6.1.1-Releases binden Core exakt an 6.1.1. Stream-Module heißen weiterhin `InnoNetworkHLS`, `InnoNetworkHLSLive`, `InnoNetworkHLSAVFoundation` und `InnoNetworkHLSAudio`; ein Modul `InnoNetworkStream` existiert nicht. Audio ist durch Swift-6.4-Compilerbedingungen und OS-27-Verfügbarkeit begrenzt. Das bevorzugte Protobuf-Produkt heißt `InnoNetwork-Protobuf`, der Import `InnoNetworkProtobuf`.
 
 ## Konfiguration, Authentifizierung und Sicherheit
 

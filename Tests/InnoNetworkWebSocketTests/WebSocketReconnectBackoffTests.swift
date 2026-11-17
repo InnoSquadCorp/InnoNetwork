@@ -467,7 +467,7 @@ private func waitFor(
     timeout: TimeInterval,
     _ condition: @Sendable () -> Bool
 ) async -> Bool {
-    let deadline = Date().addingTimeInterval(timeout)
+    let deadline = Date().addingTimeInterval(TestWaitBudget.upperBound(timeout))
     while Date() < deadline {
         if condition() { return true }
         try? await Task.sleep(nanoseconds: 5_000_000)

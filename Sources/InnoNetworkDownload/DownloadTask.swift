@@ -205,6 +205,14 @@ public actor DownloadTask: Identifiable {
         lifecycle.resumeData = data
     }
 
+    /// Hands the retained resume data to the attempt that consumes it, so a
+    /// later attempt can never reuse a blob that already seeded a transfer.
+    func takeResumeData() -> Data? {
+        let resumeData = lifecycle.resumeData
+        lifecycle.resumeData = nil
+        return resumeData
+    }
+
     func setError(_ error: DownloadError?) {
         lifecycle.error = error
     }
@@ -538,6 +546,28 @@ public actor DownloadTask: Identifiable {
             return false
         }
         lifecycle.resumeData = resumeData
+        updateState(.paused)
+        return true
+    }
+
+    /// Pauses a task that owns no concrete attempt because its automatic
+    /// retry is still waiting for backoff or a network change.
+    ///
+    /// There is no transport to cancel and therefore no fresh resume data:
+    /// whatever the failed attempt left behind stays in place for a later
+    /// `resume`. The compare-and-set shares its lifecycle snapshot with the
+    /// pending retry's ``advanceAttempt(ifMatching:)`` claim, so exactly one
+    /// of "pause" and "restart" wins.
+    func transitionToPausedRetainingResumeData(
+        ifMatching expected: DownloadTaskLifecycleSnapshot
+    ) -> Bool {
+        guard !transitionClaims.pendingCancellation,
+            !transitionClaims.terminalTransitionClaimed,
+            lifecycleSnapshot() == expected,
+            lifecycle.state == .downloading
+        else {
+            return false
+        }
         updateState(.paused)
         return true
     }

@@ -14,8 +14,11 @@ struct LargeTimingPolicyTests {
         let baseClock = TestClock()
         let base = StubNetworkClient(clock: baseClock)
         base.register("late", for: LargeTimingEndpoint(), behavior: .delayed(seconds: 60))
-        let operation = OperationNetworkClient(client: base, deadlineClock: deadlineClock).start(
-            LargeTimingEndpoint(), deadline: .init(after: .seconds(Int64.max)))
+        let operation = base.start(
+            LargeTimingEndpoint(),
+            deadline: .init(after: .seconds(Int64.max)),
+            deadlineClock: deadlineClock
+        )
         await withTaskCancellationHandler {
             #expect(await baseClock.waitForEnqueuedCount(atLeast: 1))
             #expect(await deadlineClock.waitForEnqueuedCount(atLeast: 1))
@@ -25,8 +28,8 @@ struct LargeTimingPolicyTests {
             do {
                 _ = try await operation.value()
                 Issue.record("Expected cancellation")
-            } catch let failure as NetworkFailure {
-                #expect(failure.kind == .cancelled)
+            } catch let error as NetworkError {
+                #expect(error.category == .cancellation)
             } catch { Issue.record(error) }
             #expect(deadlineClock.waiterCount == 0)
             #expect(baseClock.waiterCount == 0)

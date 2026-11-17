@@ -1,4 +1,5 @@
 import Foundation
+import InnoNetworkTestSupport
 import Testing
 
 @testable import InnoNetwork
@@ -290,7 +291,7 @@ struct NetworkMetricsTests {
     }
 
     private func waitForMetrics(recorder: MetricsRecorder, count: Int) async -> Bool {
-        let deadline = Date().addingTimeInterval(2.0)
+        let deadline = Date().addingTimeInterval(TestWaitBudget.upperBound(2.0))
         while Date() < deadline {
             if await recorder.count >= count {
                 return true

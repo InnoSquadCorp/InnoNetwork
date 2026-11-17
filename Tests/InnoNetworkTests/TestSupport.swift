@@ -63,3 +63,25 @@ func makeTestNetworkConfiguration(
         responseBodyBufferingPolicy: responseBodyBufferingPolicy
     )
 }
+
+extension NetworkError {
+    /// The credential-boundary reason when this is a request credential failure.
+    var credentialFailure: RequestSecurityFailure? {
+        if case .authentication(.credential(let failure)) = self { return failure }
+        return nil
+    }
+
+    /// The policy rejection payload when a local policy rejected the exchange.
+    var policyRejection: NetworkPolicyRejection? {
+        if case .policyRejected(let rejection) = self { return rejection }
+        return nil
+    }
+
+    /// `(limit, observed)` when the response exceeded the body limit.
+    var responseBodyLimit: (limitBytes: Int64, observedBytes: Int64)? {
+        if case .policyRejected(.responseBodyLimitExceeded(let limitBytes, let observedBytes)) = self {
+            return (limitBytes, observedBytes)
+        }
+        return nil
+    }
+}

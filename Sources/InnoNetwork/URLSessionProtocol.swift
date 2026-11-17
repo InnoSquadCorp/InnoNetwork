@@ -651,14 +651,8 @@ private final class ChunkedTransferBridge: NSObject, URLSessionDataDelegate {
             // fail-closed error the byte-wise collector produces.
             dataTask.cancel()
             continuation.finish(
-                throwing: NetworkError.underlying(
-                    SendableUnderlyingError(
-                        domain: NetworkError.errorDomain,
-                        code: NetworkErrorCode.responseBodyLimitExceeded.rawValue,
-                        message:
-                            "Response body of \(observed) bytes exceeded the configured limit of \(limit) bytes."
-                    ),
-                    nil
+                throwing: NetworkError.policyRejected(
+                    .responseBodyLimitExceeded(limitBytes: limit, observedBytes: observed)
                 )
             )
         case .drop:

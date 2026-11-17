@@ -30,6 +30,16 @@ import OSLog
 /// stale body after another task replaced or evicted the entry while disk I/O
 /// was in flight.
 ///
+/// ## Body integrity
+///
+/// Every index entry records the exact byte count and SHA-256 digest of its
+/// body. ``get(_:)`` verifies the bytes it read against both, outside actor
+/// isolation, and treats a mismatch as a miss that scrubs the entry with
+/// ``PersistentResponseCacheEvictionReason/bodyIntegrityMismatch``. The check
+/// detects corruption such as bit rot, a torn write, or a replaced body file.
+/// The digest is unkeyed, so it is not tamper protection against a writer
+/// that can also replace `index.json`.
+///
 /// ## RFC 9111 scope
 ///
 /// This cache is a storage layer, not a complete RFC 9111 implementation by
@@ -45,11 +55,17 @@ import OSLog
 /// `max-age` clamping) on top of the wrapped policy without changing this
 /// storage layer.
 public actor PersistentResponseCache: ResponseCache {
-    /// Version 4 replaces the raw query component stored by version 3 with a
+    /// Version 5 records the exact byte count and SHA-256 digest of every
+    /// body so ``get(_:)`` can verify the bytes it read before serving them.
+    /// Version-4 entries carry neither value and therefore cannot be
+    /// verified, so the open pipeline cold-resets them instead of trusting
+    /// or re-hashing bodies whose original bytes are unknown.
+    ///
+    /// Version 4 replaced the raw query component stored by version 3 with a
     /// per-cache HMAC. Older indexes cannot be migrated without retaining the
     /// query material that this format is designed to remove, so the open
     /// pipeline cold-resets them. Query order remains part of the HMAC input.
-    static let formatVersion = 4
+    static let formatVersion = 5
     /// Bounds untrusted `index.json` reads before JSON decoding. The default
     /// 1,000-entry cache remains comfortably below this ceiling, while a
     /// replaced or corrupt index cannot grow initialization memory without
@@ -99,6 +115,11 @@ public actor PersistentResponseCache: ResponseCache {
         let requiresRevalidation: Bool
         let varyHeaders: [String: String?]?
         let bodyFileName: String
+        /// Exact length of the body bytes staged by `set`. `byteCost` also
+        /// charges header bytes to the budget, so it cannot stand in for it.
+        let bodyByteCount: Int
+        /// SHA-256 digest of the body bytes staged by `set`.
+        let bodySHA256: Data
         var byteCost: Int
         var lastAccessedAt: Date
     }
@@ -112,6 +133,7 @@ public actor PersistentResponseCache: ResponseCache {
         case scrubPolicyRejected = "scrub_policy_rejected"
         case scrubMissingBody = "scrub_missing_body"
         case scrubOversizedBody = "scrub_oversized_body"
+        case scrubBodyIntegrityMismatch = "scrub_body_integrity_mismatch"
         case flushReadMetadata = "flush_read_metadata"
         case invalidateKey = "invalidate_key"
         case invalidateTargetURI = "invalidate_target_uri"
@@ -293,10 +315,13 @@ public actor PersistentResponseCache: ResponseCache {
 
     /// Look up a cached response for `key`. Returns `nil` on miss, deterministic
     /// body corruption, or a transient read failure. Missing, invalid,
-    /// non-regular, and oversized bodies are scrubbed; transient protected-data
-    /// or storage failures preserve the entry for a later retry. The recorded
-    /// `lastAccessedAt` is best-effort persisted; a failure to write the index
-    /// never demotes a successful read to a miss.
+    /// non-regular, and oversized bodies are scrubbed, as are bodies whose
+    /// bytes no longer match the exact length and SHA-256 digest recorded
+    /// when the entry was stored
+    /// (``PersistentResponseCacheEvictionReason/bodyIntegrityMismatch``);
+    /// transient protected-data or storage failures preserve the entry for a
+    /// later retry. The recorded `lastAccessedAt` is best-effort persisted; a
+    /// failure to write the index never demotes a successful read to a miss.
     public func get(_ key: ResponseCacheKey) async -> CachedResponse? {
         let diskKey = DiskKey(key, normalizer: keyNormalizer)
         // Selection-only headers are never persisted in DiskKey. Compare
@@ -317,17 +342,22 @@ public actor PersistentResponseCache: ResponseCache {
         }
         // Body reads (potentially up to `maxEntryBytes`, default 5 MB) run on
         // a detached task so the actor can process unrelated requests while
-        // slow flash blocks the read. The actor remains the single writer of
-        // `index`. Because actors are reentrant across the await, the read
-        // result is applied only if the same body file is still the current
-        // entry when the actor resumes.
-        let data: Data
+        // slow flash blocks the read. The SHA-256 verification of those
+        // bytes runs in the same off-actor step for the same reason. The
+        // actor remains the single writer of `index`. Because actors are
+        // reentrant across the await, the read result — a verified body, an
+        // oversized body, or an integrity mismatch — is applied only if the
+        // same body file is still the current entry when the actor resumes.
+        let outcome: BodyReadOutcome
         do {
-            data = try await storageIO.bodyReader(
-                storage,
-                entry.bodyFileName,
-                bodiesDirectoryURL,
-                configuration.maxEntryBytes
+            outcome = try await Self.readVerifiedBody(
+                using: storageIO,
+                storage: storage,
+                fileName: entry.bodyFileName,
+                bodiesDirectoryURL: bodiesDirectoryURL,
+                maximumByteCount: configuration.maxEntryBytes,
+                expectedByteCount: entry.bodyByteCount,
+                expectedSHA256: entry.bodySHA256
             )
         } catch {
             if Self.shouldScrubBody(after: error), isCurrentEntry(id: id, entry: entry) {
@@ -337,10 +367,24 @@ public actor PersistentResponseCache: ResponseCache {
             recordMiss()
             return nil
         }
-        guard data.count <= configuration.maxEntryBytes else {
+        let data: Data
+        switch outcome {
+        case .verified(let verifiedData):
+            data = verifiedData
+        case .oversized:
             if isCurrentEntry(id: id, entry: entry) {
                 scrubEntry(id: id, entry: entry, reason: .entryTooLarge)
                 persistIndexBestEffort(operation: .scrubOversizedBody)
+            }
+            recordMiss()
+            return nil
+        case .integrityMismatch:
+            // Body file names are unique per `set`, so a matching name means
+            // these are the bytes the recorded digest describes. A stale
+            // mismatch for a replaced or evicted entry is only a miss.
+            if isCurrentEntry(id: id, entry: entry) {
+                scrubEntry(id: id, entry: entry, reason: .bodyIntegrityMismatch)
+                persistIndexBestEffort(operation: .scrubBodyIntegrityMismatch)
             }
             recordMiss()
             return nil
@@ -464,21 +508,12 @@ public actor PersistentResponseCache: ResponseCache {
                 partialResult + header.key.utf8.count + (header.value?.utf8.count ?? 0)
             } ?? 0
         let byteCost = value.data.count + headerByteCost + varyHeaderByteCost
-        let entry = Entry(
-            key: diskKey,
-            statusCode: value.statusCode,
-            headers: value.headers,
-            storedAt: value.storedAt,
-            rfc9111InitialAge: value.rfc9111InitialAge,
-            requiresRevalidation: value.requiresRevalidation,
-            varyHeaders: value.varyHeaders,
-            bodyFileName: bodyFileName,
-            byteCost: byteCost,
-            lastAccessedAt: Date()
-        )
+        let lastAccessedAt = Date()
 
         // Body writes are detached so the actor doesn't block on flash I/O
-        // for an entry that can be up to `maxEntryBytes`. `.atomic` rename
+        // for an entry that can be up to `maxEntryBytes`; the same detached
+        // step hashes the bytes it staged, so the entry (and its recorded
+        // digest) is built only after the await resumes. `.atomic` rename
         // semantics plus a unique body filename let us stage the new bytes
         // without overwriting the previous body. The index is updated only
         // after the staged body exists. The actor is reentrant while the
@@ -487,10 +522,24 @@ public actor PersistentResponseCache: ResponseCache {
         var rollbackIndex: Index?
         var rollbackRunningTotalBytes: Int?
         do {
-            try await Self.writeBodyData(
+            let bodySHA256 = try await Self.writeBodyData(
                 value.data,
                 fileName: bodyFileName,
                 storage: storage
+            )
+            let entry = Entry(
+                key: diskKey,
+                statusCode: value.statusCode,
+                headers: value.headers,
+                storedAt: value.storedAt,
+                rfc9111InitialAge: value.rfc9111InitialAge,
+                requiresRevalidation: value.requiresRevalidation,
+                varyHeaders: value.varyHeaders,
+                bodyFileName: bodyFileName,
+                bodyByteCount: value.data.count,
+                bodySHA256: bodySHA256,
+                byteCost: byteCost,
+                lastAccessedAt: lastAccessedAt
             )
             rollbackIndex = index
             rollbackRunningTotalBytes = runningTotalBytes
@@ -601,7 +650,7 @@ public actor PersistentResponseCache: ResponseCache {
 
     /// Returns totals since the last drain (or initialization), aggregated by
     /// reason in first-observed reason order. At most one event per reason is
-    /// retained (currently five), even if callers never drain. Counts and bytes
+    /// retained (currently six), even if callers never drain. Counts and bytes
     /// saturate at `Int.max`; this is not a chronological event log.
     public func telemetrySnapshot() -> [PersistentResponseCacheTelemetryEvent] {
         telemetryEvents.events

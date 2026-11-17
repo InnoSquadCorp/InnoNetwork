@@ -29,6 +29,19 @@ reasonable. The sample `exit(0)`s on `.completed`, `exit(1)`s on
 parse errors, and `exit(0)`s (with a guidance note) when
 `INNONETWORK_RUN_INTEGRATION` is unset.
 
+## Failure reporting
+
+A download validates the HTTP status before the file is staged, so an error
+body is never saved to the destination. The sample distinguishes two failures:
+
+- `DownloadError.unacceptableStatusCode(_:)` — the server answered outside
+  `DownloadTransferPack(acceptableStatusCodes:)` (default `200..<300`) with a
+  status that another attempt cannot change, such as `403` or `404`.
+- `DownloadError.maxRetriesExceeded(lastError:)` — the retry budget ran out.
+  `lastError` is the failure of the final attempt, and
+  `DownloadError.httpStatusCode` returns its status when that attempt ended on
+  a retryable status (`408`, `416`, `429`, or `5xx`).
+
 ## Configuration
 
 The sample constructs its configuration via

@@ -247,7 +247,7 @@ private func waitForCloseDisposition(
     task: WebSocketTask,
     timeout: Duration
 ) async -> WebSocketCloseDisposition? {
-    let deadline = ContinuousClock.now.advanced(by: timeout)
+    let deadline = ContinuousClock.now.advanced(by: TestWaitBudget.upperBound(timeout))
     while ContinuousClock.now < deadline {
         if let disposition = await task.closeDisposition {
             return disposition
@@ -262,7 +262,7 @@ private func waitForManagerTaskRemoval(
     task: WebSocketTask,
     timeout: Duration
 ) async -> Bool {
-    let deadline = ContinuousClock.now.advanced(by: timeout)
+    let deadline = ContinuousClock.now.advanced(by: TestWaitBudget.upperBound(timeout))
     while ContinuousClock.now < deadline {
         if await manager.task(withId: task.id) == nil {
             return true
@@ -277,7 +277,7 @@ private func waitForPendingReceive(
     timeout: Duration
 ) async -> Bool {
     let clock = ContinuousClock()
-    let deadline = clock.now.advanced(by: timeout)
+    let deadline = clock.now.advanced(by: TestWaitBudget.upperBound(timeout))
     while clock.now < deadline {
         if stubTask.pendingReceiveCount == 1 {
             return true

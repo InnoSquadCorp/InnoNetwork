@@ -12,6 +12,12 @@ in order and compile your application after each step. HLS now belongs to
 InnoNetwork-Stream; Protobuf belongs to InnoNetwork-Protobuf. Their 6.1.1 releases
 pin Core 6.1.1 exactly; do not infer compatibility from matching major numbers.
 
+## Toward the unreleased 7.0 line
+
+7.0.0 is a draft and is not published. Its source migration from 6.x is
+recorded in [the 7.0 migration guide](Migration-7.0.0.md) so integrations can
+be prepared ahead of the release; keep installing 6.1.1 until 7.0.0 is tagged.
+
 ## From InnoNetwork 4.x
 
 Start with the [5.0 migration guide](Migration-5.0.0.md). The required source

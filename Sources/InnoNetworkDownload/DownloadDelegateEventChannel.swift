@@ -163,7 +163,8 @@ final class DownloadDelegateEventChannel: Sendable {
         originalRequestURL: URL? = nil,
         currentRequestURL: URL? = nil,
         payload: DownloadCompletionPayload?,
-        error: SendableUnderlyingError?
+        error: SendableUnderlyingError?,
+        resumeData: Data? = nil
     ) {
         let event = Event.completion(
             taskIdentifier: taskIdentifier,
@@ -171,7 +172,8 @@ final class DownloadDelegateEventChannel: Sendable {
             originalRequestURL: originalRequestURL,
             currentRequestURL: currentRequestURL,
             payload: payload,
-            error: error
+            error: error,
+            resumeData: resumeData
         )
         sendLossless(event)
     }

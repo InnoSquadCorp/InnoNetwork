@@ -1,4 +1,5 @@
 import Foundation
+import InnoNetworkTestSupport
 
 @testable import InnoNetworkDownload
 
@@ -56,7 +57,7 @@ func waitForRuntimeTaskIdentifier(
     excluding previousIdentifier: Int? = nil,
     timeout: TimeInterval = 2.0
 ) async -> Int? {
-    let deadline = Date().addingTimeInterval(timeout)
+    let deadline = Date().addingTimeInterval(TestWaitBudget.upperBound(timeout))
     while Date() < deadline {
         if let identifier = await manager.runtimeTaskIdentifier(for: task) {
             // Stub download task identifiers are monotonic, so a different
@@ -80,7 +81,7 @@ func waitForResumeCount(
     atLeast count: Int,
     timeout: TimeInterval = 2.0
 ) async -> Bool {
-    let deadline = ContinuousClock.now + .seconds(timeout)
+    let deadline = ContinuousClock.now + TestWaitBudget.upperBound(.seconds(timeout))
     while ContinuousClock.now < deadline {
         if task.resumeCount >= count {
             return true
@@ -97,7 +98,7 @@ func waitForTaskState(
     timeout: TimeInterval = 2.0,
     predicate: @escaping @Sendable (DownloadState) -> Bool
 ) async -> Bool {
-    let deadline = Date().addingTimeInterval(timeout)
+    let deadline = Date().addingTimeInterval(TestWaitBudget.upperBound(timeout))
     while Date() < deadline {
         if predicate(await task.state) {
             return true

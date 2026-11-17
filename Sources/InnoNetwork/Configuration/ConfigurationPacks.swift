@@ -229,6 +229,13 @@ public struct TransportPack: Sendable {
         self.acceptLanguageProvider = acceptLanguageProvider
     }
 
+    /// Whether the caller chose a `URLRequest.CachePolicy` explicitly. An
+    /// explicit choice always wins over the response-cache default in
+    /// ``NetworkConfiguration/advanced(baseURL:resilience:auth:observability:cache:transport:)``.
+    package var specifiesCachePolicy: Bool {
+        cachePolicy != nil
+    }
+
     package func apply(to builder: inout NetworkConfiguration.AdvancedBuilder) {
         if let timeout { builder.timeout = timeout }
         if let cachePolicy { builder.cachePolicy = cachePolicy }

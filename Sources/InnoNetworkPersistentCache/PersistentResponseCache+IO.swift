@@ -95,6 +95,70 @@ extension PersistentResponseCache {
         case notRegularFile
     }
 
+    /// Result of reading a body file back and checking it against the index
+    /// entry that references it. Produced outside actor isolation by
+    /// `readVerifiedBody`; the actor decides whether it still applies.
+    enum BodyReadOutcome: Sendable, Equatable {
+        /// The bytes have the recorded length and SHA-256 digest.
+        case verified(Data)
+        /// More than `maxEntryBytes` were available. Classified before the
+        /// integrity check so a body that outgrew the entry limit keeps its
+        /// `entryTooLarge` reason and is never hashed.
+        case oversized
+        /// The length or the SHA-256 digest differs from the index entry.
+        case integrityMismatch
+    }
+
+    /// SHA-256 digest of `data` in the representation stored in the index.
+    static func bodyDigest(of data: Data) -> Data {
+        Data(SHA256.hash(data: data))
+    }
+
+    /// Returns `true` only when `data` has exactly `byteCount` bytes and the
+    /// recorded SHA-256 digest. The length comparison runs first so a
+    /// truncated or extended body is rejected without hashing it.
+    static func bodyData(
+        _ data: Data,
+        hasByteCount byteCount: Int,
+        sha256: Data
+    ) -> Bool {
+        data.count == byteCount && SHA256.hash(data: data) == sha256
+    }
+
+    /// Reads a body through `storageIO` and verifies the bytes against the
+    /// length and digest recorded when the entry was stored.
+    ///
+    /// `@concurrent` keeps the whole step off the cache actor regardless of
+    /// the caller's isolation: hashing a body of up to `maxEntryBytes` must
+    /// not delay unrelated cache calls, including when a test seam supplies a
+    /// reader that does not hop executors itself. Read errors propagate
+    /// unchanged so the caller keeps its transient-versus-structural
+    /// classification.
+    @concurrent
+    static func readVerifiedBody(
+        using storageIO: StorageIO,
+        storage: AnchoredStorage,
+        fileName: String,
+        bodiesDirectoryURL: URL,
+        maximumByteCount: Int,
+        expectedByteCount: Int,
+        expectedSHA256: Data
+    ) async throws -> BodyReadOutcome {
+        let data = try await storageIO.bodyReader(
+            storage,
+            fileName,
+            bodiesDirectoryURL,
+            maximumByteCount
+        )
+        guard data.count <= maximumByteCount else {
+            return .oversized
+        }
+        guard bodyData(data, hasByteCount: expectedByteCount, sha256: expectedSHA256) else {
+            return .integrityMismatch
+        }
+        return .verified(data)
+    }
+
     /// Returns a cache-owned body URL only when `fileName` exactly matches
     /// the format emitted by `set`: a lowercase SHA-256 identifier, a UUID,
     /// and the `.body` suffix. Persisted index contents are untrusted input;
@@ -205,14 +269,19 @@ extension PersistentResponseCache {
     /// thread-safe for the read/write/attribute APIs we use here, so the
     /// detached task always uses the singleton — overriding the actor's
     /// `fileManager` only affects on-actor metadata, not body bytes.
+    ///
+    /// Returns the SHA-256 digest of exactly the bytes handed to the write,
+    /// computed in the same detached task so hashing a large body does not
+    /// run on the actor either. The caller records it in the index entry.
     static func writeBodyData(
         _ data: Data,
         fileName: String,
         storage: AnchoredStorage
-    ) async throws {
+    ) async throws -> Data {
         try validateBodyFileName(fileName)
-        try await Task.detached {
+        return try await Task.detached {
             try storage.writeBody(data, fileName: fileName)
+            return bodyDigest(of: data)
         }.value
     }
 

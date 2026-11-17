@@ -110,7 +110,8 @@ public struct CircuitBreakerPolicy: Sendable, Equatable {
 }
 
 
-/// Error wrapped by ``NetworkError/underlying(_:_:)`` when a circuit is open.
+/// Payload of ``NetworkPolicyRejection/circuitOpen(_:)``, reported through
+/// ``NetworkError/policyRejected(_:)`` when a circuit is open.
 public struct CircuitBreakerOpenError: Error, Sendable, Equatable, LocalizedError, CustomNSError {
     public static let errorDomain = "com.innosquad.innonetwork.circuit-breaker"
 
@@ -195,15 +196,13 @@ package actor CircuitBreakerRegistry {
                 )
                 return probe
             }
-            throw NetworkError.underlying(
-                SendableUnderlyingError(CircuitBreakerOpenError(host: key, retryAfter: until.timeIntervalSince(now))),
-                nil
+            throw NetworkError.policyRejected(
+                .circuitOpen(CircuitBreakerOpenError(host: key, retryAfter: until.timeIntervalSince(now)))
             )
         case .halfOpen(let probeID, let successCount, let resetAfter):
             guard probeID == nil else {
-                throw NetworkError.underlying(
-                    SendableUnderlyingError(CircuitBreakerOpenError(host: key, retryAfter: resetAfter / .seconds(1))),
-                    nil
+                throw NetworkError.policyRejected(
+                    .circuitOpen(CircuitBreakerOpenError(host: key, retryAfter: resetAfter / .seconds(1)))
                 )
             }
             let probe = CircuitBreakerProbe(key: key, id: UUID())
@@ -381,6 +380,10 @@ package actor CircuitBreakerRegistry {
                 return true
             case .trustEvaluationFailed:
                 return policy.countsTransportSecurityFailures
+            case .policyRejected, .authentication:
+                // A local decision or a credential failure is not evidence
+                // about the host's health.
+                return false
             case .underlying(let underlying, _):
                 if NetworkError.isCancellation(underlying) { return false }
                 if isTransportSecurityUnderlying(underlying) {

@@ -256,6 +256,61 @@ extension AppendLogDownloadTaskStore {
         ).map(FileIdentity.init)
     }
 
+    /// What the durable files looked like the last time this store finished
+    /// reading or writing them while it held the directory lock.
+    ///
+    /// Every writer — this store, another store instance in the process, or
+    /// another process sharing the session directory — changes at least one
+    /// of these values: an append grows the log, a compaction replaces the
+    /// checkpoint with a new inode and truncates the log, and any other write
+    /// moves the modification and status-change times. An unchanged
+    /// fingerprint therefore means nobody wrote since, and the in-memory
+    /// state is exactly what replaying the files would produce.
+    struct DiskFingerprint: Equatable, Sendable {
+        struct Entry: Equatable, Sendable {
+            let identity: FileIdentity
+            let size: Int64
+            let modifiedSeconds: Int
+            let modifiedNanoseconds: Int
+            let changedSeconds: Int
+            let changedNanoseconds: Int
+
+            init(_ information: stat) {
+                identity = FileIdentity(information)
+                size = Int64(information.st_size)
+                modifiedSeconds = information.st_mtimespec.tv_sec
+                modifiedNanoseconds = information.st_mtimespec.tv_nsec
+                changedSeconds = information.st_ctimespec.tv_sec
+                changedNanoseconds = information.st_ctimespec.tv_nsec
+            }
+        }
+
+        let checkpoint: Entry?
+        let log: Entry?
+    }
+
+    /// Captures the current fingerprint of the checkpoint and the log. Call
+    /// only while holding the directory lock. Returns `nil` when either
+    /// entry cannot be inspected, which callers must treat as "changed".
+    static func captureDiskFingerprint(directoryDescriptor: Int32) -> DiskFingerprint? {
+        do {
+            return DiskFingerprint(
+                checkpoint: try entryInformation(
+                    directoryDescriptor: directoryDescriptor,
+                    name: checkpointName
+                ).map(DiskFingerprint.Entry.init),
+                log: try entryInformation(
+                    directoryDescriptor: directoryDescriptor,
+                    name: logName
+                ).map(DiskFingerprint.Entry.init)
+            )
+        } catch {
+            // An entry that cannot be inspected is not evidence that the
+            // files are unchanged; force the next mutation to replay them.
+            return nil
+        }
+    }
+
     static func entryInformation(
         directoryDescriptor: Int32,
         name: String

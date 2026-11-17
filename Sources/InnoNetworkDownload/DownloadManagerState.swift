@@ -22,6 +22,9 @@ struct DownloadManagerState {
     var pausingTaskIDs: Set<String> = []
     var resumingTaskIDs: Set<String> = []
     var pausingTaskIdentifiers: [String: Int] = [:]
+    /// Tasks whose retry-wait pause is already visible in memory but not yet
+    /// durable. `resume(_:)` treats them as still pausing.
+    var retryWaitPausingTaskIDs: Set<String> = []
     var deferredFailureTasks: [UUID: Task<Void, Never>] = [:]
 
     // Shutdown admission and drain state.

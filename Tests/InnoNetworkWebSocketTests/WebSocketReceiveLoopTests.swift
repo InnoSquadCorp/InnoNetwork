@@ -119,14 +119,14 @@ struct WebSocketReceiveLoopTests {
         }
 
         stub.scriptReceive(.success(.string("first")))
-        let firstDelivered = try await recorder.waitForEvent(timeout: 5.0) { event in
+        let firstDelivered = try await recorder.waitForEvent(timeout: TestWaitBudget.upperBound(5.0)) { event in
             if case .string(let s) = event, s == "first" { return true }
             return false
         }
         #expect(firstDelivered)
 
         stub.scriptReceive(.success(.data(Data([0x01, 0x02]))))
-        let secondDelivered = try await recorder.waitForEvent(timeout: 5.0) { event in
+        let secondDelivered = try await recorder.waitForEvent(timeout: TestWaitBudget.upperBound(5.0)) { event in
             if case .message(let d) = event, d == Data([0x01, 0x02]) { return true }
             return false
         }
@@ -245,7 +245,7 @@ struct WebSocketReceiveLoopTests {
 
         // Delivery through `originalStub` still publishes.
         originalStub.scriptReceive(.success(.string("from-original")))
-        let originalDelivered = try await recorder.waitForEvent(timeout: 5.0) { event in
+        let originalDelivered = try await recorder.waitForEvent(timeout: TestWaitBudget.upperBound(5.0)) { event in
             if case .string(let s) = event, s == "from-original" { return true }
             return false
         }
@@ -275,7 +275,7 @@ private func waitFor(
     timeout: TimeInterval,
     _ condition: @Sendable () -> Bool
 ) async -> Bool {
-    let deadline = Date().addingTimeInterval(timeout)
+    let deadline = Date().addingTimeInterval(TestWaitBudget.upperBound(timeout))
     while Date() < deadline {
         if condition() { return true }
         try? await Task.sleep(nanoseconds: 5_000_000)

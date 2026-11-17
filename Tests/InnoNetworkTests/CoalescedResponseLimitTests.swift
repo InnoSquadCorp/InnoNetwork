@@ -59,9 +59,7 @@ struct CoalescedResponseLimitTests {
             #expect(data.count == 10)
             return true
         } catch {
-            if case .underlying(let underlying, _) = error {
-                #expect(underlying.code == NetworkErrorCode.responseBodyLimitExceeded.rawValue)
-            } else {
+            if error.responseBodyLimit == nil {
                 Issue.record("Expected a response collection limit failure, got \(error)")
             }
             return false

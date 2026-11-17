@@ -227,11 +227,18 @@ acquiring a 6.x Stable compatibility promise.
 - `InnoNetworkUpload` companion product and its public file-upload, progress, restoration, bounded response, event, and error symbols
   plus the 6.0 pause/resume, durable paused-intent, and
   idempotency-key-guarded retry controls
-- operation-first `NetworkClientConfiguration`, `OperationNetworkClient`,
-  `NetworkOperation`, `NetworkOperationReplaySafety`, and value-only
-  `NetworkFailure` root-module contracts, including the 6.0
-  `NetworkOperationDeadline`, `NetworkOperationDeadlineStage`, deadline-aware
-  `start` overloads, and `NetworkFailure.deadlineStage`
+- operation handles started on the client: `NetworkOperation`,
+  `NetworkOperationEvent`, `NetworkOperationReplaySafety`,
+  `NetworkOperationDeadline`, `NetworkOperationDeadlineStage`, the
+  `start(_:replaySafety:deadline:)` and `startUpload(_:replaySafety:deadline:)`
+  entry points on `NetworkClient`, `EncodedRequestClient` and
+  `UploadNetworkClient`, and the payload-free `NetworkErrorSummary` with
+  `NetworkRecoveryDisposition`. In the unreleased 7.0 draft these replace the
+  6.x `OperationNetworkClient`, `NetworkClientConfiguration` and
+  `NetworkFailure` facade; `NetworkOperation.value()` throws `NetworkError`.
+- `NetworkPolicyRejection` and `NetworkAuthenticationFailure`, the payloads of
+  the 7.0 draft's `NetworkError.policyRejected(_:)` and
+  `NetworkError.authentication(_:)` cases
 - bounded companion transport contracts: `BoundedNetworkTransfer`,
   `NetworkRetryExecutor`, `NetworkURLPolicy`, and `NetworkURLValidator`
 - `PersistentResponseCache` statistics and telemetry surfaces
@@ -668,8 +675,8 @@ below keeps the high-level compatibility classification readable. Historical
 5.x HLS sections document the migration source but are no longer included in
 the current machine-checked inventory.
 
-The machine-checked snapshot currently partitions all 1,764 declarations into
-367 Stable consumer declarations, 1,364 Provisionally Stable consumer
+The machine-checked snapshot currently partitions all 1,769 declarations into
+369 Stable consumer declarations, 1,367 Provisionally Stable consumer
 declarations, and 33 opt-in SPI declarations. The three sets are disjoint and
 exhaustive. `Scripts/symbols/stable-rules.tsv` maps the Stable ledger to symbol
 paths, while the compiler-authored SPI flag is snapshotted in
@@ -753,15 +760,17 @@ Stable.
   `UploadOperation`, `UploadProgress`, `UploadReceipt`, `UploadState`, and
   `UploadTask`.
 
-### InnoNetwork 6 operation contract
+### InnoNetwork operation contract
 
-- `NetworkClientConfiguration`, `NetworkFailure`, `NetworkFailureKind`,
-  `NetworkOperation`, `NetworkOperationDeadline`,
-  `NetworkOperationDeadlineStage`, `NetworkOperationEvent`,
-  `NetworkOperationReplaySafety`, `NetworkRecoveryDisposition`, and
-  `OperationNetworkClient`.
-- These declarations now belong to the root InnoNetwork module. The 5.x
-  InnoNetworkNext product has been removed.
+- `NetworkAuthenticationFailure`, `NetworkErrorSummary`, `NetworkOperation`,
+  `NetworkOperationDeadline`, `NetworkOperationDeadlineStage`,
+  `NetworkOperationEvent`, `NetworkOperationReplaySafety`,
+  `NetworkPolicyRejection`, and `NetworkRecoveryDisposition`.
+- These declarations belong to the root InnoNetwork module. The 5.x
+  InnoNetworkNext product has been removed. The unreleased 7.0 draft removes
+  the 6.x operation-client facade, its configuration wrapper and its
+  value-only failure type; they remain only as unavailable declarations that
+  name their replacements. See [the 7.0 migration guide](docs/Migration-7.0.0.md).
 
 ### Historical 5.x InnoNetworkHLS
 
@@ -1278,6 +1287,32 @@ requires `@_spi` import.
   that no source-compatible replacement exists yet.
 - Internal/Operational items can change without deprecation because they are not
   part of the default SwiftPM import contract.
+
+### 7.0 compatibility reset (unreleased draft)
+
+The unreleased 7.0 draft is a compatibility reset, as 5.0.0 and 6.0.0 were. It
+removes declarations without a preceding deprecation release, which is an
+exception to the policy above and is recorded here for that reason:
+
+- the removed operation-client facade, its configuration wrapper and its
+  value-only failure type stay declared as `unavailable`, so 6.x code fails to
+  compile with a message that names the replacement;
+- two cases are added to the Stable `NetworkErrorCategory` enum, and
+  `NetworkError`, `TimeoutReason`, `ReachabilityReason`, `DownloadError` and
+  `PersistentResponseCacheEvictionReason` gain or change cases, so exhaustive
+  switches must be updated;
+- `NetworkConfiguration.advanced(...)`, a Stable entry point, changes three
+  defaults so that it starts from the `safeDefaults` baseline.
+
+Every change has a before/after call site in
+[the 7.0 migration guide](docs/Migration-7.0.0.md).
+`Scripts/check_api_breaking_changes.sh` compares the package against the
+6.1.1 tag in the release preflight and fails on a breaking change outside the
+ledger in `Scripts/api-breaks/`; the docs-contract job checks that every
+consumer-visible ledger entry is named in the migration guide. The entry points that
+start an operation handle on a client are Provisionally Stable; the request,
+upload and encoded-request requirements of the client protocols keep their
+Stable classification.
 
 ## 4.0.0 Migration Notes
 

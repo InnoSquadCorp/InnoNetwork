@@ -78,3 +78,30 @@ validation is worth the extra write overhead.
 - Whether app-group storage should expose a stricter data-protection default.
 - Whether tombstone ratio should count cancelled/completed rows separately from
   failed rows once product telemetry exists.
+
+## Mutation fast path (7.0)
+
+Until 7.0 every mutation took the directory lock and then replayed the
+checkpoint and the whole event log before applying its change, so that a write
+made by another store instance or another process sharing the session
+directory was always observed. The replay costs time proportional to the
+number of logged events, which made a run of N mutations quadratic: 1,000
+upserts on one store took 26 seconds of CPU.
+
+The store now keeps a fingerprint of the checkpoint and the log — device,
+inode, file type, size, modification time and status-change time of each —
+taken under the lock whenever it finishes reading or writing them. A mutation
+compares the current fingerprint with the stored one while it holds the lock:
+
+- **Unchanged**: nobody wrote since, so the in-memory state is exactly what a
+  replay would produce and the replay is skipped.
+- **Changed, or not inspectable**: the files are replayed as before.
+
+Every cooperating writer changes the fingerprint: an append grows the log, a
+compaction replaces the checkpoint with a new inode and truncates the log.
+A failed mutation leaves the previous fingerprint in place, so a partially
+applied write is replayed, not trusted.
+
+One guarantee is narrower than before. Corruption that changes file contents
+without changing size or timestamps is detected when the store is next opened
+or after another writer changes the files, not at the very next mutation.

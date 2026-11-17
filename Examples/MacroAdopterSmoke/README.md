@@ -17,7 +17,8 @@ sends them through `DefaultNetworkClient` backed by the public
 - an unconditional manual payload pair forwarding a conditional body;
 - unchanged legacy conditional-payload omission, now explicitly warned (a
   compatibility fixture, not recommended endpoint design);
-- the generic operation-client migration using `where Base: NetworkClient`.
+- a generic `NetworkClient` extension that forwards to `start(_:)` and returns
+  the operation handle.
 
 Run it from the repository root:
 

@@ -599,7 +599,7 @@ struct WebSocketManagerTests {
                 }
                 inspectionFinished.signal()
             }
-            if inspectionFinished.wait(timeout: .now() + 1) == .timedOut {
+            if inspectionFinished.wait(timeout: .now() + TestWaitBudget.upperBound(1.0)) == .timedOut {
                 streamConsumerCountAtResume.withLock { count in
                     if count == nil { count = -1 }
                 }
@@ -1156,7 +1156,7 @@ struct WebSocketManagerTests {
         taskID: String,
         timeout: TimeInterval = 2.0
     ) async -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
+        let deadline = Date().addingTimeInterval(TestWaitBudget.upperBound(timeout))
         while Date() < deadline {
             if await manager.task(withId: taskID) == nil {
                 return true
@@ -1172,7 +1172,7 @@ private func waitForExplicitRetryReplacement(
     in box: OSAllocatedUnfairLock<WebSocketTask?>,
     timeout: TimeInterval = 2.0
 ) async -> WebSocketTask? {
-    let deadline = Date().addingTimeInterval(timeout)
+    let deadline = Date().addingTimeInterval(TestWaitBudget.upperBound(timeout))
     while Date() < deadline {
         if let replacement = box.withLock({ $0 }) {
             return replacement
@@ -1190,6 +1190,56 @@ private func waitForExplicitRetryReplacement(
 struct WebSocketListenerLifecycleTests {
     // These tests drive delegate callbacks themselves. Use stub transports so
     // real DNS/connect failures cannot race the scripted lifecycle events.
+    @Test("A server that accepts and then drops every connection exhausts the reconnect budget")
+    func flappingServerExhaustsReconnectBudget() async throws {
+        let firstURLTask = StubWebSocketURLTask(taskIdentifier: 9_101)
+        let secondURLTask = StubWebSocketURLTask(taskIdentifier: 9_102)
+        let thirdURLTask = StubWebSocketURLTask(taskIdentifier: 9_103)
+        let harness = StubMessagingHarness(
+            heartbeatInterval: 0,
+            reconnectDelay: 0,
+            maxReconnectAttempts: 2,
+            stubTask: firstURLTask
+        )
+        harness.stubSession.enqueue(secondURLTask)
+        harness.stubSession.enqueue(thirdURLTask)
+        let manager = harness.manager
+
+        let task = try await harness.connectAndReady()
+        var seenIdentifiers: Set<Int> = [firstURLTask.taskIdentifier]
+
+        // Every reconnect opens successfully and is dropped at once, well
+        // inside the default ten-second stability interval. Before 7.0 each
+        // open reset the budget and the loop below would never end.
+        manager.handleError(taskIdentifier: firstURLTask.taskIdentifier, error: URLError(.networkConnectionLost))
+        for (index, expected) in [secondURLTask, thirdURLTask].enumerated() {
+            let identifier = try #require(
+                await waitForRuntimeTaskIdentifier(
+                    manager: manager,
+                    task: task,
+                    excluding: seenIdentifiers,
+                    timeout: 3.0
+                )
+            )
+            #expect(identifier == expected.taskIdentifier)
+            seenIdentifiers.insert(identifier)
+            manager.handleConnected(taskIdentifier: identifier, protocolName: nil)
+            #expect(await waitForWebSocketState(task) { $0 == .connected })
+            #expect(await task.attemptedReconnectCount == 0)
+            #expect(await task.successfulReconnectCount == index + 1)
+            manager.handleError(taskIdentifier: identifier, error: URLError(.networkConnectionLost))
+        }
+
+        #expect(
+            await waitForTaskError(task: task, timeout: 5.0) { error in
+                if case .maxReconnectAttemptsExceeded = error {
+                    return true
+                }
+                return false
+            })
+        #expect(await task.state == .failed)
+    }
+
     @Test("Reconnect runtime chain reaches max reconnect attempts")
     func reconnectRuntimeChainReachesMaxAttempts() async throws {
         let firstURLTask = StubWebSocketURLTask(taskIdentifier: 9_001)
@@ -1445,11 +1495,14 @@ struct WebSocketListenerLifecycleTests {
             )
         )
 
-        let cancelledErrorDelivered = await waitForEvent(recorder: recorder, timeout: 0.3) { event in
-            if case .error(.cancelled) = event {
-                return true
+        await manager.waitForDelegateEventsProcessed()
+        let cancelledErrorDelivered = await TestWaitBudget.observingAbsence {
+            await waitForEvent(recorder: recorder, timeout: 0.3) { event in
+                if case .error(.cancelled) = event {
+                    return true
+                }
+                return false
             }
-            return false
         }
         #expect(!cancelledErrorDelivered)
 
@@ -1480,11 +1533,14 @@ struct WebSocketListenerLifecycleTests {
             reason: "duplicate-check"
         )
 
-        let duplicateDelivered = await waitForEvent(recorder: recorder, timeout: 0.3) { event in
-            if case .disconnected(.disconnected(let underlying)) = event {
-                return underlying?.message == "duplicate-check"
+        await manager.waitForDelegateEventsProcessed()
+        let duplicateDelivered = await TestWaitBudget.observingAbsence {
+            await waitForEvent(recorder: recorder, timeout: 0.3) { event in
+                if case .disconnected(.disconnected(let underlying)) = event {
+                    return underlying?.message == "duplicate-check"
+                }
+                return false
             }
-            return false
         }
         #expect(!duplicateDelivered)
 
@@ -1495,11 +1551,14 @@ struct WebSocketListenerLifecycleTests {
             reason: "duplicate-check-disconnected"
         )
 
-        let duplicateWhenDisconnected = await waitForEvent(recorder: recorder, timeout: 0.3) { event in
-            if case .disconnected(.disconnected(let underlying)) = event {
-                return underlying?.message == "duplicate-check-disconnected"
+        await manager.waitForDelegateEventsProcessed()
+        let duplicateWhenDisconnected = await TestWaitBudget.observingAbsence {
+            await waitForEvent(recorder: recorder, timeout: 0.3) { event in
+                if case .disconnected(.disconnected(let underlying)) = event {
+                    return underlying?.message == "duplicate-check-disconnected"
+                }
+                return false
             }
-            return false
         }
         #expect(!duplicateWhenDisconnected)
 
@@ -1537,9 +1596,12 @@ struct WebSocketListenerLifecycleTests {
 
         harness.manager.handleConnected(taskIdentifier: harness.stubTaskIdentifier, protocolName: "stale")
 
-        let connectedDelivered = await waitForEvent(recorder: recorder, timeout: 0.3) { event in
-            if case .connected = event { return true }
-            return false
+        await harness.manager.waitForDelegateEventsProcessed()
+        let connectedDelivered = await TestWaitBudget.observingAbsence {
+            await waitForEvent(recorder: recorder, timeout: 0.3) { event in
+                if case .connected = event { return true }
+                return false
+            }
         }
         #expect(!connectedDelivered)
         #expect(await task.state == .disconnecting)
@@ -1881,7 +1943,7 @@ struct WebSocketListenerLifecycleTests {
         excluding: Set<Int> = [],
         timeout: TimeInterval = 2.0
     ) async -> Int? {
-        let deadline = Date().addingTimeInterval(timeout)
+        let deadline = Date().addingTimeInterval(TestWaitBudget.upperBound(timeout))
         while Date() < deadline {
             if let identifier = await manager.runtimeTaskIdentifier(for: task), !excluding.contains(identifier) {
                 return identifier
@@ -1896,7 +1958,7 @@ struct WebSocketListenerLifecycleTests {
         timeout: TimeInterval,
         predicate: @escaping (WebSocketEvent) -> Bool
     ) async -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
+        let deadline = Date().addingTimeInterval(TestWaitBudget.upperBound(timeout))
         while Date() < deadline {
             let events = recorder.snapshot()
             if events.contains(where: predicate) {
@@ -1912,7 +1974,7 @@ struct WebSocketListenerLifecycleTests {
         timeout: TimeInterval = 2.0,
         predicate: @escaping (WebSocketError?) -> Bool
     ) async -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
+        let deadline = Date().addingTimeInterval(TestWaitBudget.upperBound(timeout))
         while Date() < deadline {
             if predicate(await task.error) {
                 return true
@@ -1927,7 +1989,7 @@ struct WebSocketListenerLifecycleTests {
         task: WebSocketTask,
         timeout: TimeInterval = 2.0
     ) async -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
+        let deadline = Date().addingTimeInterval(TestWaitBudget.upperBound(timeout))
         while Date() < deadline {
             let listenerCount = await manager.listenerCount(for: task)
             let runtimeIdentifier = await manager.runtimeTaskIdentifier(for: task)
@@ -1945,7 +2007,7 @@ struct WebSocketListenerLifecycleTests {
         task: WebSocketTask,
         timeout: TimeInterval = 2.0
     ) async -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
+        let deadline = Date().addingTimeInterval(TestWaitBudget.upperBound(timeout))
         while Date() < deadline {
             if await manager.task(withId: task.id) == nil {
                 return true

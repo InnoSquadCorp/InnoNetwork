@@ -46,7 +46,7 @@ struct UploadRestorationRaceTests {
                     error: nil
                 )
             )
-            await Self.drain(manager, channel)
+            await drainUploadDelegateEvents(manager, channel)
         }
         #expect(await manager.allTasks().isEmpty)
 
@@ -85,14 +85,14 @@ struct UploadRestorationRaceTests {
         await gate.waitUntilEntered()
         if completesWhileEnumerating {
             Self.complete(channel, request: request)
-            await Self.drain(manager, channel)
+            await drainUploadDelegateEvents(manager, channel)
             #expect(await manager.task(withId: "once")?.state == .completed)
         }
         await gate.open()
         _ = await restoration.value
         if !completesWhileEnumerating {
             Self.complete(channel, request: request)
-            await Self.drain(manager, channel)
+            await drainUploadDelegateEvents(manager, channel)
         }
 
         let tasks = await manager.allTasks()
@@ -115,13 +115,6 @@ struct UploadRestorationRaceTests {
                 error: nil
             )
         )
-    }
-
-    private static func drain(_ manager: UploadManager, _ channel: UploadDelegateEventChannel) async {
-        await withCheckedContinuation { continuation in
-            manager.handleBackgroundEvents { continuation.resume() }
-            channel.send(.backgroundEventsFinished)
-        }
     }
 }
 

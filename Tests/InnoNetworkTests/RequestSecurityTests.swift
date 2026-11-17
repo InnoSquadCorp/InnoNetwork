@@ -11,15 +11,17 @@ private actor CredentialProviderFixture: RequestCredentialProvider {
     let failedScheme: String?
     let changedIdentity: Bool
     let value: String
+    let failure: (any Error)?
 
     init(
         alternative: Int = 0, failedScheme: String? = nil, changedIdentity: Bool = false,
-        value: String = "fixture-secret"
+        value: String = "fixture-secret", failure: (any Error)? = nil
     ) {
         self.alternative = alternative
         self.failedScheme = failedScheme
         self.changedIdentity = changedIdentity
         self.value = value
+        self.failure = failure
     }
 
     func select(alternatives: [[RequestSecurity.Scheme]], origin: URL) async throws -> RequestSecurity.Selection {
@@ -32,6 +34,7 @@ private actor CredentialProviderFixture: RequestCredentialProvider {
     {
         acquisitions.append(scheme.id)
         if scheme.id == failedScheme {
+            if let failure { throw failure }
             throw NSError(domain: "Provider", code: 1, userInfo: [NSLocalizedDescriptionKey: "fixture-secret"])
         }
         return .init(
@@ -120,8 +123,8 @@ struct RequestSecurityTests {
             _ = try await client(session).request(endpoint)
             Issue.record("Expected a credential-boundary failure")
         } catch {
-            #expect(error.underlyingError?.domain == "InnoNetwork.RequestSecurity")
-            #expect(error.underlyingError?.code == code.rawValue)
+            #expect(error.category == .authentication)
+            #expect(error.credentialFailure == code)
             #expect(!String(reflecting: error).contains("fixture-secret"))
         }
         #expect(session.capturedRequest == nil)
@@ -319,9 +322,8 @@ struct RequestSecurityTests {
             _ = try await client.request(endpoint)
             Issue.record("Expected credential failure")
         } catch {
-            let failure = NetworkFailure(migratingV5: error)
-            #expect(failure.kind == .configuration)
-            #expect(failure.recovery == .doNotRetry)
+            #expect(error.summary.category == .authentication)
+            #expect(error.summary.recovery == .doNotRetry)
         }
         #expect(await provider.selections == 1)
         #expect(await provider.acquisitions == ["key"])
@@ -441,8 +443,7 @@ struct RequestSecurityTests {
             _ = try await iterator.next()
             Issue.record("Expected unsupported streaming")
         } catch {
-            #expect(
-                error.underlyingError?.code == RequestSecurityFailure.unsupportedExecution.rawValue)
+            #expect(error.credentialFailure == .unsupportedExecution)
         }
         #expect(await provider.selections == before)
     }
@@ -466,6 +467,26 @@ struct RequestSecurityTests {
         }
     }
 
+    @Test("an offline credential provider waits for a network instead of asking to sign in")
+    func offlineProvider() async throws {
+        let provider = CredentialProviderFixture(
+            failedScheme: "key", failure: NetworkError.configuration(reason: .offline("fixture-secret")))
+        let session = MockURLSession()
+        let endpoint = CredentialEndpoint(requestSecurity: try security(provider))
+        do {
+            _ = try await client(session).request(endpoint)
+            Issue.record("Expected an offline failure")
+        } catch {
+            guard case .configuration(reason: .offline) = error else {
+                Issue.record("Lost the offline classification")
+                return
+            }
+            #expect(error.summary.recovery == .waitForConnectivity)
+            #expect(!String(reflecting: error).contains("fixture-secret"))
+        }
+        #expect(session.capturedRequest == nil)
+    }
+
     @Test("native session default auth headers cannot add or replace the selected identity")
     func sessionHeaderConflict() async throws {
         for header in ["Authorization", "Cookie", "x-custom-credential"] {
@@ -480,8 +501,8 @@ struct RequestSecurityTests {
                 _ = try await client.request(endpoint)
                 Issue.record("Expected session-header conflict")
             } catch {
-                #expect(error.underlyingError?.domain == "InnoNetwork.RequestSecurity")
-                #expect(error.underlyingError?.code == RequestSecurityFailure.credentialConflict.rawValue)
+                #expect(error.category == .authentication)
+                #expect(error.credentialFailure == .credentialConflict)
                 #expect(!String(reflecting: error).contains("session-secret"))
             }
         }

@@ -20,7 +20,7 @@ extension WebSocketManagerShutdownTests {
             await waitForWebSocketRuntimeTaskIdentifier(manager: harness.manager, task: task)
         )
         harness.manager.handleConnected(taskIdentifier: firstIdentifier, protocolName: nil)
-        let connectedDeadline = ContinuousClock.now + .seconds(1)
+        let connectedDeadline = ContinuousClock.now + TestWaitBudget.upperBound(.seconds(1))
         while await task.state != .connected, ContinuousClock.now < connectedDeadline {
             await Task.yield()
         }
@@ -44,7 +44,7 @@ extension WebSocketManagerShutdownTests {
                 firstURLTask.cancelledCloseCode != nil
             }
         )
-        let removalDeadline = ContinuousClock.now + .seconds(1)
+        let removalDeadline = ContinuousClock.now + TestWaitBudget.upperBound(.seconds(1))
         while await harness.manager.task(withId: task.id) != nil,
             ContinuousClock.now < removalDeadline
         {
@@ -93,7 +93,7 @@ extension WebSocketManagerShutdownTests {
             await waitForWebSocketRuntimeTaskIdentifier(manager: harness.manager, task: task)
         )
         harness.manager.handleConnected(taskIdentifier: firstIdentifier, protocolName: nil)
-        let connectedDeadline = ContinuousClock.now + .seconds(1)
+        let connectedDeadline = ContinuousClock.now + TestWaitBudget.upperBound(.seconds(1))
         while await task.state != .connected, ContinuousClock.now < connectedDeadline {
             await Task.yield()
         }
@@ -113,12 +113,12 @@ extension WebSocketManagerShutdownTests {
             taskIdentifier: firstIdentifier,
             error: URLError(.cannotConnectToHost)
         )
-        let terminalDeadline = ContinuousClock.now + .seconds(1)
+        let terminalDeadline = ContinuousClock.now + TestWaitBudget.upperBound(.seconds(1))
         while await task.state != .failed, ContinuousClock.now < terminalDeadline {
             await Task.yield()
         }
         try #require(await task.state == .failed)
-        let detachedDeadline = ContinuousClock.now + .seconds(1)
+        let detachedDeadline = ContinuousClock.now + TestWaitBudget.upperBound(.seconds(1))
         while await harness.manager.runtimeTaskIdentifier(for: task) != nil,
             ContinuousClock.now < detachedDeadline
         {
@@ -135,7 +135,7 @@ extension WebSocketManagerShutdownTests {
             return replacement
         }
         #expect(
-            !(await waitForCondition(timeout: 0.05) {
+            !(await observesCondition(during: 0.05) {
                 retryReturned.withLock { $0 }
             })
         )
@@ -513,7 +513,7 @@ extension WebSocketManagerShutdownTests {
         let trackedBeforeRetry = await harness.manager.coordinationState.activeShutdownTrackedOperationCount
 
         let retry = Task { await harness.manager.retry(source) }
-        let admissionDeadline = ContinuousClock.now + .seconds(1)
+        let admissionDeadline = ContinuousClock.now + TestWaitBudget.upperBound(.seconds(1))
         while await harness.manager.coordinationState.activeShutdownTrackedOperationCount <= trackedBeforeRetry,
             ContinuousClock.now < admissionDeadline
         {

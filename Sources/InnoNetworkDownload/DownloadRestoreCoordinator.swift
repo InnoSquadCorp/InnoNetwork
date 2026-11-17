@@ -253,7 +253,10 @@ package struct DownloadRestoreCoordinator {
                 let restoredTask = DownloadTask(
                     url: record.url,
                     destinationURL: record.destinationURL,
-                    id: record.id
+                    id: record.id,
+                    // Resume data the failed attempt left on the retry
+                    // marker; the restored retry continues from it.
+                    resumeData: record.resumeData
                 )
                 await restoredTask.restoreRetryCounts(
                     retryCount: record.retryCount ?? 0,

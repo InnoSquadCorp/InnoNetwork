@@ -235,7 +235,20 @@ actor InMemoryDownloadTaskStore: DownloadTaskStore {
             totalRetryCount: totalRetryCount,
             retryPlan: retryPlan
         )
+        if let afterRetryMarkerWritten {
+            // Runs while the marker is durable but before the caller resumes,
+            // which is exactly when a concurrent `pause(_:)` can take the task.
+            await afterRetryMarkerWritten(id)
+        }
         return true
+    }
+
+    /// Called after `updateRetryState` makes a retry marker durable and before
+    /// it returns, so a test can act in the window a concurrent pause uses.
+    private var afterRetryMarkerWritten: (@Sendable (String) async -> Void)?
+
+    func setAfterRetryMarkerWritten(_ hook: (@Sendable (String) async -> Void)?) {
+        afterRetryMarkerWritten = hook
     }
 
     func beginCommit(

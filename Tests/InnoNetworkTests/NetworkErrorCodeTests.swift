@@ -20,6 +20,14 @@ struct NetworkErrorCodeTests {
         #expect(NetworkErrorCode.cancelled.rawValue == 4004)
         #expect(NetworkErrorCode.timeout.rawValue == 4005)
         #expect(NetworkErrorCode.trustEvaluationFailed.rawValue == 5001)
+        #expect(NetworkErrorCode.requestAdmissionRejected.rawValue == 4006)
+        #expect(NetworkErrorCode.requestAdmissionWaitExpired.rawValue == 4007)
+        #expect(NetworkErrorCode.rateLimitQueueRejected.rawValue == 4008)
+        #expect(NetworkErrorCode.rateLimitScopeRejected.rawValue == 4009)
+        #expect(NetworkErrorCode.streamingPhaseTimeout.rawValue == 4010)
+        #expect(NetworkErrorCode.circuitOpen.rawValue == 4011)
+        #expect(NetworkErrorCode.authenticationRefreshFailed.rawValue == 6001)
+        #expect(NetworkErrorCode.requestCredentialFailed.rawValue == 6002)
     }
 
     @Test("2001 is intentionally unused")
@@ -45,6 +53,14 @@ struct NetworkErrorCodeTests {
             NetworkErrorCode.cancelled.rawValue,
             NetworkErrorCode.timeout.rawValue,
             NetworkErrorCode.trustEvaluationFailed.rawValue,
+            NetworkErrorCode.requestAdmissionRejected.rawValue,
+            NetworkErrorCode.requestAdmissionWaitExpired.rawValue,
+            NetworkErrorCode.rateLimitQueueRejected.rawValue,
+            NetworkErrorCode.rateLimitScopeRejected.rawValue,
+            NetworkErrorCode.streamingPhaseTimeout.rawValue,
+            NetworkErrorCode.circuitOpen.rawValue,
+            NetworkErrorCode.authenticationRefreshFailed.rawValue,
+            NetworkErrorCode.requestCredentialFailed.rawValue,
         ]
         #expect(Set(raws).count == raws.count)
     }

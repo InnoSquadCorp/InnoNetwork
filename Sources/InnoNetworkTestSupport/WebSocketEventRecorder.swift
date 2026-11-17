@@ -172,7 +172,7 @@ public final class WebSocketEventRecorder: Sendable {
         timeout: TimeInterval = 5.0
     ) async throws -> Bool {
         guard minimumCount > 0 else { return true }
-        return try await waitForEvents(timeout: timeout) { events in
+        return try await waitForEvents(timeout: TestWaitBudget.upperBound(timeout)) { events in
             var count = 0
             for event in events where predicate(event) {
                 count += 1

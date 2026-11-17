@@ -2,7 +2,7 @@
 
 Minimal CLI sample that opens a WebSocket connection, prints server-sent
 frames, and forwards stdin lines as string frames. Exercises the current
-`WebSocketManager` source surface end-to-end: `safeDefaults`, `connect(url:)`,
+`WebSocketManager` source surface end-to-end: `WebSocketConfiguration.advanced`, `connect(url:)`,
 `events(for:)` stream consumption, `send(_:string:)`,
 `setOnPongHandler(_:)` RTT observability, and `disconnect(_:closeCode:)`.
 
@@ -31,10 +31,12 @@ the sample blocked on stdin.
 
 ## Configuration
 
-- `safeDefaults` — conservative heartbeat / reconnect tuning for
-  interactive clients. This sample keeps that baseline but forces
-  `maxReconnectAttempts = 0` so terminal connection failures exit
-  promptly instead of retrying in the background.
+- `WebSocketConfiguration.advanced(reconnect: WebSocketReconnectPack(maxAttempts: 0))`
+  — the advanced tuning preset (15 s heartbeat, 5 s pong timeout) with
+  automatic reconnect disabled, so terminal connection failures exit
+  promptly instead of retrying in the background. Use
+  `WebSocketConfiguration.safeDefaults()` for the conservative baseline
+  with automatic reconnect.
 - RTT is surfaced via `setOnPongHandler(_:)` in the current source. The 4.0.0
   stable contract guarantees heartbeat event observability; richer pong context
   payloads should be treated as future-candidate API until promoted.

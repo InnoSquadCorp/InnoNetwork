@@ -110,7 +110,7 @@ struct CacheMutationPhysicalResponseTests {
         } catch {
             #expect(mode != "normal")
             if mode == "oversize" {
-                #expect(error.underlyingError?.code == NetworkErrorCode.responseBodyLimitExceeded.rawValue)
+                #expect(error.responseBodyLimit != nil)
             }
         }
         #expect(try await client.request(Endpoint()) == Data("new".utf8))

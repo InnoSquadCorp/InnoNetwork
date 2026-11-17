@@ -38,8 +38,9 @@ private struct ConditionalLegacyPayload {
     #endif
 }
 
-// Compile-checked migration for the Provisionally Stable operation adapter.
-private extension OperationNetworkClient where Base: NetworkClient {
+// Compile-checked generic forwarding: operation handles are created on the
+// client itself, so a wrapper needs only the `NetworkClient` bound.
+private extension NetworkClient {
     func startCompatible<Request: APIDefinition>(_ request: Request) -> NetworkOperation<Request.APIResponse> {
         start(request)
     }
@@ -62,7 +63,7 @@ func runMinorCompatibilitySmoke() async throws {
     session.setMockResponse(statusCode: 200, data: Data("\"ok\"".utf8))
     let client = DefaultNetworkClient(
         configuration: .safeDefaults(baseURL: URL(string: "https://example.com")!), session: session)
-    let value = try await OperationNetworkClient(client: client).startCompatible(endpoint).value()
+    let value = try await client.startCompatible(endpoint).value()
     precondition(value == "ok")
     _ = try await client.request(ConditionalManualPayload())
     let legacy = ConditionalLegacyPayload()

@@ -65,6 +65,17 @@ if [[ -f "$current_migration" ]]; then
     fi
 fi
 
+# The guide for the next major release must keep at least one example that
+# compiles against the API it describes.
+next_major_migration="$repo_root/docs/Migration-7.0.0.md"
+if [[ -f "$next_major_migration" ]]; then
+    next_marker_count="$(grep -Fxc '<!-- compile-check -->' "$next_major_migration" || true)"
+    if (( next_marker_count < 1 )); then
+        echo "Migration-7.0.0.md must retain at least 1 compile-checked example; found $next_marker_count." >&2
+        exit 1
+    fi
+fi
+
 for doc in "${migration_docs[@]}"; do
     doc_name="$(basename "$doc" .md)"
     # Use python3 to pull out marker-tagged ```swift blocks because the

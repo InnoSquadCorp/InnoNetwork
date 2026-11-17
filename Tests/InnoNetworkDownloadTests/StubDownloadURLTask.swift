@@ -31,6 +31,7 @@ final class StubDownloadURLTask: DownloadURLTask, @unchecked Sendable {
     private struct State {
         var state: URLSessionTask.State = .suspended
         var taskDescription: String?
+        var response: URLResponse?
         var resumeCount = 0
         var suspendCount = 0
         var cancelCount = 0
@@ -80,6 +81,10 @@ final class StubDownloadURLTask: DownloadURLTask, @unchecked Sendable {
         set { stateLock.withLock { $0.taskDescription = newValue } }
     }
 
+    var response: URLResponse? {
+        stateLock.withLock { $0.response }
+    }
+
     func resume() {
         stateLock.withLock { state in
             state.resumeCount += 1
@@ -119,6 +124,24 @@ final class StubDownloadURLTask: DownloadURLTask, @unchecked Sendable {
     }
 
     // MARK: Test scripting
+
+    /// Scripts the server response the session delegate observes when this
+    /// attempt reports `didFinishDownloadingTo`.
+    func scriptResponse(_ response: URLResponse?) {
+        stateLock.withLock { $0.response = response }
+    }
+
+    /// Scripts an HTTP response carrying `statusCode` for `url`.
+    func scriptHTTPStatus(_ statusCode: Int, url: URL) {
+        scriptResponse(
+            HTTPURLResponse(
+                url: url,
+                statusCode: statusCode,
+                httpVersion: "HTTP/1.1",
+                headerFields: nil
+            )
+        )
+    }
 
     /// Pre-seeds the response that the next call to
     /// `cancelByProducingResumeData()` will return.
@@ -181,6 +204,9 @@ final class StubDownloadURLSession: DownloadURLSession, @unchecked Sendable {
         var preinstalledTasks: [StubDownloadURLTask] = []
         var lastURL: URL?
         var lastResumeData: Data?
+        /// Every blob handed to `makeDownloadTask(withResumeData:)`, in call
+        /// order, so tests can tell resumed attempts from fresh requests.
+        var resumeDataRequests: [Data] = []
         var didFinishTasksAndInvalidate = false
         var didInvalidateAndCancel = false
         var automaticallyCompletesInvalidation = true
@@ -225,6 +251,7 @@ final class StubDownloadURLSession: DownloadURLSession, @unchecked Sendable {
     func makeDownloadTask(withResumeData data: Data) -> any DownloadURLTask {
         stateLock.withLock { state in
             state.lastResumeData = data
+            state.resumeDataRequests.append(data)
             let next: StubDownloadURLTask
             if !state.queuedTasks.isEmpty {
                 next = state.queuedTasks.removeFirst()
@@ -320,6 +347,7 @@ final class StubDownloadURLSession: DownloadURLSession, @unchecked Sendable {
 
     var lastURL: URL? { stateLock.withLock { $0.lastURL } }
     var lastResumeData: Data? { stateLock.withLock { $0.lastResumeData } }
+    var resumeDataRequests: [Data] { stateLock.withLock { $0.resumeDataRequests } }
     var createdTasks: [StubDownloadURLTask] {
         stateLock.withLock { $0.createdTasks }
     }

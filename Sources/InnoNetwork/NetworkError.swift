@@ -18,8 +18,10 @@ import Foundation
 /// - `URLError.timedOut` → ``requestTimeout``.
 /// - `URLError.cannotConnectToHost` → ``connectionTimeout``.
 /// - `URLError.cannotFindHost`, `URLError.dnsLookupFailed`,
-///   `URLError.networkConnectionLost`, and `URLError.notConnectedToInternet`
-///   classify into ``NetworkError/reachability(_:_:_:)`` with a
+///   `URLError.networkConnectionLost`, `URLError.notConnectedToInternet`,
+///   and the cellular-data refusals (`URLError.dataNotAllowed`,
+///   `.internationalRoamingOff`, `.callIsActive`) classify into
+///   ``NetworkError/reachability(_:_:_:)`` with a
 ///   ``ReachabilityReason`` tag instead of remaining as
 ///   ``NetworkError/underlying(_:_:)``. They are not timeouts: name
 ///   resolution and reachability failures must be distinguishable from a
@@ -36,7 +38,7 @@ import Foundation
 ///   ``requestTimeout``. The single-argument
 ///   ``NetworkError/mapTransportError(_:)`` retains the 4.x behaviour
 ///   (`.requestTimeout` for every `URLError.timedOut`).
-public enum TimeoutReason: Sendable, Equatable {
+public enum TimeoutReason: Sendable, Hashable {
     /// The request timed out before the server responded with the first byte.
     /// Produced from `URLError.timedOut`.
     case requestTimeout
@@ -55,13 +57,18 @@ public enum TimeoutReason: Sendable, Equatable {
     /// `dnsLookupFailed`, `notConnectedToInternet`, …) classify into
     /// ``NetworkError/reachability(_:_:_:)`` instead of mapping here.
     case connectionTimeout
+    /// The end-to-end ``NetworkOperationDeadline`` of a ``NetworkOperation``
+    /// expired. The associated stage is the part of the client lifecycle that
+    /// was running when the budget ran out. Transport timeouts never use this
+    /// reason.
+    case operationDeadline(NetworkOperationDeadlineStage)
 }
 
 
 /// Specific reachability fault that produced a
 /// ``NetworkError/reachability(_:_:_:)``.
 ///
-/// These four `URLError` codes were historically surfaced as a generic
+/// These `URLError` codes were historically surfaced as a generic
 /// ``NetworkError/underlying(_:_:)``, which forced callers to pattern-match
 /// the embedded `URLError` value to recognize a name-resolution or
 /// link-availability failure. The dedicated tag pulls that classification
@@ -83,6 +90,48 @@ public enum ReachabilityReason: Sendable, Equatable {
     /// `URLError.networkConnectionLost`. Treat as transient — the user
     /// briefly lost connectivity (Wi-Fi handoff, cellular gap, …).
     case networkConnectionLost
+    /// The only available path is cellular and it cannot carry this
+    /// request's data right now: cellular data is not allowed for the
+    /// connection, international data roaming is off, or an active voice
+    /// call blocks data on an EDGE or GPRS network. Produced from
+    /// `URLError.dataNotAllowed`, `.internationalRoamingOff`, and
+    /// `.callIsActive`; the underlying error keeps the exact code. A path
+    /// change, such as joining Wi-Fi, can cure it.
+    case cellularDataUnavailable
+}
+
+extension NetworkError {
+    /// The reachability reason for a `URLError` code, or `nil` when the code
+    /// does not mean that the device lacks a usable route to the host.
+    ///
+    /// This is the library's single connectivity table: transport mapping,
+    /// download retries, and every `waitsForNetworkChanges` decision read
+    /// it, so a failure cannot count as a connectivity failure for one
+    /// product and not for another.
+    package static func reachabilityReason(for code: URLError.Code) -> ReachabilityReason? {
+        switch code {
+        case .notConnectedToInternet:
+            return .notConnectedToInternet
+        case .dnsLookupFailed:
+            return .dnsLookupFailed
+        case .cannotFindHost:
+            return .cannotFindHost
+        case .networkConnectionLost:
+            return .networkConnectionLost
+        case .dataNotAllowed, .internationalRoamingOff, .callIsActive:
+            return .cellularDataUnavailable
+        default:
+            return nil
+        }
+    }
+
+    /// Whether a value-projected transport error reports that the device has
+    /// no usable route to the host. Reads the same table as
+    /// ``reachabilityReason(for:)``.
+    package static func isConnectivityFailure(_ error: SendableUnderlyingError) -> Bool {
+        guard error.domain == NSURLErrorDomain else { return false }
+        return reachabilityReason(for: URLError.Code(rawValue: error.code)) != nil
+    }
 }
 
 
@@ -107,30 +156,6 @@ public enum DecodingStage: Sendable, Equatable {
 }
 
 
-/// All execution-level failures the library surfaces to callers.
-///
-/// `NetworkError` is **not** `@frozen` and the project does not promise
-/// to keep that constant: the resilience and observability features in
-/// the roadmap will introduce new failure modes (notably circuit-breaker
-/// trips and richer rate-limit / reachability diagnostics). To stay
-/// forward-compatible against the 5.x line, every exhaustive `switch` over a
-/// `NetworkError` value should include a `@unknown default` arm:
-///
-/// ```swift
-/// catch {
-///     switch error {
-///     case .statusCode(let response):           handleStatus(response)
-///     case .timeout(let reason, _):             handleTimeout(reason)
-///     case .reachability(let reason, _, _):     handleReachability(reason)
-///     case .configuration(reason: .invalidBaseURL(_)),
-///          .configuration(reason: .invalidRequest(_)):
-///                                                handleConfigurationError()
-///     // ... other cases
-///     @unknown default:
-///         assertionFailure("Unhandled NetworkError case — update the switch.")
-///     }
-/// }
-/// ```
 /// Configuration-shaped failure reason carried by ``NetworkError/configuration(reason:)``.
 ///
 /// The 4.0.0 API uses this payload so configuration-shaped failures
@@ -155,6 +180,34 @@ public enum NetworkConfigurationFailureReason: Sendable, Equatable {
     case offline(String)
 }
 
+/// All execution-level failures the library surfaces to callers.
+///
+/// `NetworkError` is the only error type the request, upload, streaming and
+/// operation APIs throw. It is **not** `@frozen`, and a major release may add
+/// cases: 7.0 added ``policyRejected(_:)`` and ``authentication(_:)``. A
+/// `switch` that should keep compiling across such a release ends with an
+/// `@unknown default` arm:
+///
+/// ```swift
+/// catch {
+///     switch error {
+///     case .statusCode(let response):           handleStatus(response)
+///     case .timeout(let reason, _):             handleTimeout(reason)
+///     case .reachability(let reason, _, _):     handleReachability(reason)
+///     case .policyRejected(let rejection):      handleLocalPolicy(rejection)
+///     case .authentication(let failure):        handleAuthentication(failure)
+///     case .configuration(reason: .invalidBaseURL(_)),
+///          .configuration(reason: .invalidRequest(_)):
+///                                                handleConfigurationError()
+///     // ... other cases
+///     @unknown default:
+///         assertionFailure("Unhandled NetworkError case — update the switch.")
+///     }
+/// }
+/// ```
+///
+/// Logs, analytics and UI state that must not hold a response body, headers
+/// or a URL use the payload-free ``summary`` instead of the error itself.
 public enum NetworkError: Error, Sendable {
     /// Consolidated configuration-shaped failure. Carries a typed
     /// ``NetworkConfigurationFailureReason`` payload distinguishing
@@ -171,6 +224,11 @@ public enum NetworkError: Error, Sendable {
     /// Carries a transport-layer error that the built-in mapper did not
     /// classify into a more specific case (e.g. ``timeout(reason:underlying:)``
     /// or ``reachability(_:_:_:)``).
+    ///
+    /// Failures that the library decides locally are not reported here: a
+    /// response over the body limit, an open circuit, or a full admission or
+    /// rate-limit queue is ``policyRejected(_:)``, and a failed session
+    /// refresh or request credential is ``authentication(_:)``.
     ///
     /// Typical `URLError.Code` values that surface here include
     /// `badServerResponse`, `secureConnectionFailed`,
@@ -222,6 +280,23 @@ public enum NetworkError: Error, Sendable {
     /// associated value directly or use `NSError.userInfo[NSUnderlyingErrorKey]`
     /// after bridging.
     case timeout(reason: TimeoutReason, underlying: SendableUnderlyingError? = nil)
+    /// The library declined to send, continue, or accept the exchange because
+    /// a locally configured policy rejected it: a response over the body
+    /// limit, an open circuit breaker, a full rate-limit or admission queue,
+    /// or a response that is not HTTP.
+    ///
+    /// The failure says nothing about the server's health, and replaying the
+    /// same request immediately reproduces it. The built-in retry policy
+    /// never retries it and the circuit breaker never counts it.
+    case policyRejected(NetworkPolicyRejection)
+    /// The request could not be authenticated: the session refresh operation
+    /// failed, or a named request credential could not be selected, acquired,
+    /// or applied.
+    ///
+    /// Replaying the request cannot repair authentication, so the built-in
+    /// retry policy never retries it. A `401` returned by the server after a
+    /// successful refresh stays ``statusCode(_:)``.
+    case authentication(NetworkAuthenticationFailure)
 }
 
 
@@ -269,6 +344,8 @@ extension NetworkError: LocalizedError {
                 return localized("NetworkError.reachability.cannotFindHost")
             case .networkConnectionLost:
                 return localized("NetworkError.reachability.networkConnectionLost")
+            case .cellularDataUnavailable:
+                return localized("NetworkError.reachability.cellularDataUnavailable")
             }
         case .trustEvaluationFailed(let reason):
             return localizedTrustFailureDescription(for: reason)
@@ -282,6 +359,17 @@ extension NetworkError: LocalizedError {
                 return localized("NetworkError.timeout.resource")
             case .connectionTimeout:
                 return localized("NetworkError.timeout.connection")
+            case .operationDeadline:
+                return localized("NetworkError.timeout.operationDeadline")
+            }
+        case .policyRejected(let rejection):
+            return localizedPolicyRejectionDescription(for: rejection)
+        case .authentication(let failure):
+            switch failure {
+            case .refreshFailed(let cause):
+                return localizedFormat("NetworkError.authentication.refreshFailed", cause.message)
+            case .credential(let reason):
+                return localizedFormat("NetworkError.authentication.credential", reason.rawValue)
             }
         }
     }
@@ -328,6 +416,32 @@ private func localizedTrustFailureDescription(for reason: TrustFailureReason) ->
     }
 }
 
+private func localizedPolicyRejectionDescription(for rejection: NetworkPolicyRejection) -> String {
+    switch rejection {
+    case .responseBodyLimitExceeded(let limitBytes, let observedBytes):
+        // Byte counts are rendered as plain digits. Passing the integers to
+        // the localized format would add locale grouping separators, which
+        // makes the value harder to match against logs and server limits.
+        return localizedFormat(
+            "NetworkError.policy.responseBodyLimitExceeded",
+            String(observedBytes),
+            String(limitBytes)
+        )
+    case .circuitOpen(let open):
+        return localizedFormat("NetworkError.policy.circuitOpen", open.host, open.retryAfter)
+    case .rateLimitQueueFull:
+        return localized("NetworkError.policy.rateLimitQueueFull")
+    case .rateLimitScopeLimitReached:
+        return localized("NetworkError.policy.rateLimitScopeLimitReached")
+    case .admissionQueueFull:
+        return localized("NetworkError.policy.admissionQueueFull")
+    case .admissionWaitExpired:
+        return localized("NetworkError.policy.admissionWaitExpired")
+    case .nonHTTPResponse:
+        return localized("NetworkError.policy.nonHTTPResponse")
+    }
+}
+
 // MARK: - Package-internal localization probe
 
 /// Looks up the raw localized string for `key` in the InnoNetwork resource
@@ -366,6 +480,8 @@ public extension NetworkError {
         case .trustEvaluationFailed: return nil
         case .cancelled: return nil
         case .timeout: return nil
+        case .policyRejected: return nil
+        case .authentication: return nil
         }
     }
 
@@ -399,6 +515,10 @@ extension NetworkError {
         case .trustEvaluationFailed: return nil
         case .cancelled: return nil
         case .timeout(_, let underlying): return underlying
+        case .policyRejected(.circuitOpen(let open)): return SendableUnderlyingError(open)
+        case .policyRejected: return nil
+        case .authentication(.refreshFailed(let cause)): return cause
+        case .authentication(.credential): return nil
         }
     }
 }
@@ -433,6 +553,10 @@ extension NetworkError: CustomNSError {
             return NetworkErrorCode.cancelled.rawValue
         case .timeout:
             return NetworkErrorCode.timeout.rawValue
+        case .policyRejected(let rejection):
+            return rejection.code.rawValue
+        case .authentication(let failure):
+            return failure.code.rawValue
         }
     }
 
@@ -524,7 +648,9 @@ public extension NetworkError {
             .reachability(_, _, nil),
             .trustEvaluationFailed,
             .cancelled,
-            .timeout:
+            .timeout,
+            .policyRejected,
+            .authentication:
             return self
         }
     }
@@ -557,7 +683,9 @@ extension NetworkError {
     ///   ``TimeoutReason/connectionTimeout`` (the TCP handshake failed
     ///   inside the connect budget — a captive portal or refused socket).
     /// - `URLError.notConnectedToInternet`, `URLError.dnsLookupFailed`,
-    ///   `URLError.cannotFindHost`, and `URLError.networkConnectionLost`
+    ///   `URLError.cannotFindHost`, `URLError.networkConnectionLost`, and the
+    ///   cellular-data refusals `URLError.dataNotAllowed`,
+    ///   `.internationalRoamingOff` and `.callIsActive`
     ///   classify into ``NetworkError/reachability(_:_:_:)`` with a
     ///   ``ReachabilityReason`` tag. These are *not* timeouts: name
     ///   resolution and link-availability failures must be distinguishable
@@ -677,16 +805,19 @@ extension NetworkError {
             return .cancelled
         }
 
+        if let credentialFailure = error as? RequestSecurityFailure {
+            return .authentication(.credential(credentialFailure))
+        }
+
+        if let openCircuit = error as? CircuitBreakerOpenError {
+            return .policyRejected(.circuitOpen(openCircuit))
+        }
+
         if let urlError = error as? URLError {
+            if let reason = reachabilityReason(for: urlError.code) {
+                return .reachability(reason, SendableUnderlyingError(urlError), nil)
+            }
             switch urlError.code {
-            case .notConnectedToInternet:
-                return .reachability(.notConnectedToInternet, SendableUnderlyingError(urlError), nil)
-            case .dnsLookupFailed:
-                return .reachability(.dnsLookupFailed, SendableUnderlyingError(urlError), nil)
-            case .cannotFindHost:
-                return .reachability(.cannotFindHost, SendableUnderlyingError(urlError), nil)
-            case .networkConnectionLost:
-                return .reachability(.networkConnectionLost, SendableUnderlyingError(urlError), nil)
             case .timedOut:
                 let reason = resolveTimeoutReason(
                     taskInterval: taskInterval,

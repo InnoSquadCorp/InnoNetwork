@@ -1,4 +1,5 @@
 import Foundation
+import InnoNetworkTestSupport
 import Testing
 import os
 
@@ -109,7 +110,12 @@ struct WebSocketHeartbeatTests {
         let task = await manager.connect(url: URL(string: "wss://example.invalid/socket")!)
         let identifier = try #require(await waitForWebSocketRuntimeTaskIdentifier(manager: manager, task: task))
         manager.handleConnected(taskIdentifier: identifier, protocolName: nil)
-        _ = await waitForWebSocketState(task) { $0 == .connected }
+        // Best-effort settle: the real handshake to an unresolvable host can
+        // fail before the injected callback is processed, so the connected
+        // state is allowed not to appear and the nominal window is kept.
+        _ = await TestWaitBudget.observingAbsence {
+            await waitForWebSocketState(task) { $0 == .connected }
+        }
 
         await manager.disconnect(task)
         manager.handleDisconnected(taskIdentifier: identifier, closeCode: .normalClosure, reason: nil)
@@ -189,7 +195,7 @@ struct WebSocketHeartbeatTests {
 
     @Sendable
     private func waitFor(timeout: TimeInterval, _ condition: @Sendable () -> Bool) async -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
+        let deadline = Date().addingTimeInterval(TestWaitBudget.upperBound(timeout))
         while Date() < deadline {
             if condition() { return true }
             try? await Task.sleep(nanoseconds: 5_000_000)

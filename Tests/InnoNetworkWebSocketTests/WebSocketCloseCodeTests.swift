@@ -264,6 +264,11 @@ struct WebSocketHandshakeDispositionClassificationTests {
             URLError.cannotConnectToHost,
             URLError.dnsLookupFailed,
             URLError.secureConnectionFailed,
+            // Cellular-data refusals now reach this through the core
+            // `.reachability(.cellularDataUnavailable)` table.
+            URLError.dataNotAllowed,
+            URLError.internationalRoamingOff,
+            URLError.callIsActive,
         ]
     )
     func transientNetworkErrorsClassifyAsRetryable(_ code: URLError.Code) {

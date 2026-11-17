@@ -227,7 +227,7 @@ func eventHubWaitForCondition(
     timeout: TimeInterval,
     _ condition: () async -> Bool
 ) async -> Bool {
-    let deadline = Date().addingTimeInterval(timeout)
+    let deadline = Date().addingTimeInterval(TestWaitBudget.upperBound(timeout))
     while Date() < deadline {
         if await condition() {
             return true
@@ -283,7 +283,7 @@ func eventHubWaitForClockWaiterCount(
     exactly target: Int,
     timeout: Duration = .seconds(2)
 ) async -> Bool {
-    let deadline = ContinuousClock.now + timeout
+    let deadline = ContinuousClock.now + TestWaitBudget.upperBound(timeout)
     while ContinuousClock.now < deadline {
         if clock.waiterCount == target { return true }
         try? await Task.sleep(for: .milliseconds(10))

@@ -1,4 +1,5 @@
 import Foundation
+import InnoNetworkTestSupport
 import Testing
 
 @testable import InnoNetwork
@@ -721,7 +722,7 @@ struct DownloadManagerHardeningTests {
         timeout: TimeInterval = 1.0,
         predicate: @escaping @Sendable () async -> Bool
     ) async -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
+        let deadline = Date().addingTimeInterval(TestWaitBudget.upperBound(timeout))
         while Date() < deadline {
             if await predicate() {
                 return true

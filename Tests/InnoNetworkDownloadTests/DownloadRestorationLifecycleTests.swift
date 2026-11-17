@@ -1,4 +1,5 @@
 import Foundation
+import InnoNetworkTestSupport
 import Testing
 import os
 
@@ -829,7 +830,7 @@ private func waitForLifecycleCondition(
     predicate: @escaping @Sendable () async -> Bool
 ) async -> Bool {
     let clock = ContinuousClock()
-    let deadline = clock.now.advanced(by: timeout)
+    let deadline = clock.now.advanced(by: TestWaitBudget.upperBound(timeout))
     while clock.now < deadline {
         if await predicate() {
             return true

@@ -1,4 +1,5 @@
 import Foundation
+import InnoNetworkTestSupport
 
 @testable import InnoNetworkWebSocket
 
@@ -9,7 +10,7 @@ func waitForWebSocketRuntimeTaskIdentifier(
     excluding: Set<Int> = [],
     timeout: TimeInterval = 2.0
 ) async -> Int? {
-    let deadline = Date().addingTimeInterval(timeout)
+    let deadline = Date().addingTimeInterval(TestWaitBudget.upperBound(timeout))
     while Date() < deadline {
         if let identifier = await manager.runtimeTaskIdentifier(for: task), !excluding.contains(identifier) {
             return identifier
@@ -26,7 +27,7 @@ func waitForWebSocketState(
     timeout: TimeInterval = 2.0,
     predicate: @escaping @Sendable (WebSocketState) -> Bool
 ) async -> Bool {
-    let deadline = Date().addingTimeInterval(timeout)
+    let deadline = Date().addingTimeInterval(TestWaitBudget.upperBound(timeout))
     while Date() < deadline {
         if predicate(await task.state) {
             return true
@@ -43,7 +44,7 @@ func waitForWebSocketTaskRemoval(
     task: WebSocketTask,
     timeout: TimeInterval = 2.0
 ) async -> Bool {
-    let deadline = Date().addingTimeInterval(timeout)
+    let deadline = Date().addingTimeInterval(TestWaitBudget.upperBound(timeout))
     while Date() < deadline {
         if await manager.task(withId: task.id) == nil {
             return true

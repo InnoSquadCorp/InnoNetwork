@@ -142,15 +142,14 @@ public enum WebSocketCloseDisposition: Sendable, Equatable {
         }
 
         // Remaining transient URLError codes that classify outside the
-        // `.reachability` set (timeouts, captive-portal/socket refusal,
-        // carrier-side blocking, TLS failures the user can recover from).
+        // `.reachability` set (timeouts, captive-portal/socket refusal, TLS
+        // failures the user can recover from). Carrier-side blocking —
+        // `dataNotAllowed`, `internationalRoamingOff`, `callIsActive` — is
+        // `.reachability(.cellularDataUnavailable)` and handled above.
         switch code {
         case .timedOut,
             .cannotConnectToHost,
             .resourceUnavailable,
-            .internationalRoamingOff,
-            .callIsActive,
-            .dataNotAllowed,
             .secureConnectionFailed:
             return true
         default:

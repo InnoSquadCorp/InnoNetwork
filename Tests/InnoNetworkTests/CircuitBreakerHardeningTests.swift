@@ -146,9 +146,7 @@ struct CircuitBreakerRegistryHardeningTests {
                     do {
                         return try await registry.prepare(request: request, policy: policy)
                     } catch let error as NetworkError {
-                        guard case .underlying(let underlying, _) = error,
-                            underlying.domain == CircuitBreakerOpenError.errorDomain
-                        else {
+                        guard case .policyRejected(.circuitOpen) = error else {
                             Issue.record("Expected CircuitBreakerOpenError, got \(error)")
                             return nil
                         }
@@ -437,6 +435,28 @@ struct CircuitBreakerRegistryHardeningTests {
         let trustError = NetworkError.trustEvaluationFailed(.systemTrustEvaluationFailed(reason: "bad"))
 
         await registry.recordFailure(request: request, policy: policy, error: trustError)
+
+        try await registry.prepare(request: request, policy: policy)
+    }
+
+    @Test(
+        "Local policy rejections and authentication failures do not count",
+        arguments: [
+            NetworkError.policyRejected(.admissionQueueFull),
+            NetworkError.authentication(
+                .refreshFailed(SendableUnderlyingError(domain: "app.auth", code: 1, message: "revoked"))
+            ),
+        ]
+    )
+    func localDecisionsNotCountable(_ error: NetworkError) async throws {
+        // Buffered requests drop these before they reach the registry, but
+        // streaming passes its handshake failures straight through, so the
+        // registry must apply the same rule.
+        let registry = CircuitBreakerRegistry()
+        let policy = CircuitBreakerPolicy(failureThreshold: 1, windowSize: 1)
+        let request = URLRequest(url: URL(string: "https://api.example.com/x")!)
+
+        await registry.recordFailure(request: request, policy: policy, error: error)
 
         try await registry.prepare(request: request, policy: policy)
     }

@@ -39,6 +39,7 @@ for path in \
   docs/ROADMAP.md \
   docs/releases/6.0.0.md \
   docs/releases/6.1.0.md \
+  docs/releases/7.0.0.md \
   docs/releases/archive/6.1.0-superseded-roadmap.md \
   docs/site/index.html; do
   mkdir -p "$scratch/$(dirname "$path")"
@@ -81,21 +82,26 @@ cp "$scratch/superseded-record.md" "$scratch/docs/releases/6.1.0.md"
 # The actual historical layout predates the encoded-request inventory. Do not
 # create a synthetic old-layout/new-inventory tree and call it historical.
 sed '/<!-- encoded-request-/d' "$repo_root/API_STABILITY.md" > "$scratch/API_STABILITY.md"
-sed 's/1,764/1,702/g;s/| 367 |/| 307 |/g;s/1,364/1,362/g' \
+# The working tree carries the unreleased 7.0 draft inventory (1,769 / 369 /
+# 1,367); the historical layout predates both it and the 6.1 inventory.
+sed 's/1,769/1,702/g;s/| 369 |/| 307 |/g;s/1,367/1,362/g' \
   "$repo_root/Scripts/symbols/README.md" > "$scratch/Scripts/symbols/README.md"
-sed 's/1764/1702/g' "$repo_root/Scripts/symbols/budgets.tsv" > "$scratch/Scripts/symbols/budgets.tsv"
-sed 's/1764/1702/g;s/367/307/g;s/1364/1362/g' \
+sed 's/1769/1702/g' "$repo_root/Scripts/symbols/budgets.tsv" > "$scratch/Scripts/symbols/budgets.tsv"
+sed 's/1769/1702/g;s/369/307/g;s/1367/1362/g' \
   "$repo_root/Scripts/symbols/tier-budgets.tsv" > "$scratch/Scripts/symbols/tier-budgets.tsv"
 # Historical fixture must also retain the pre-rename companion owner/version.
 for path in docs/Migration-6.0.0.md Sources/InnoNetwork/InnoNetwork.docc/MigrationTo6.md; do
   sed 's/package: "InnoNetwork-Stream"/package: "InnoStream"/g;s/\.exact("6.1.1")/.upToNextMajor(from: "1.0.0")/g' \
     "$repo_root/$path" > "$scratch/$path"
 done
-git -C "$scratch" add docs/releases API_STABILITY.md Scripts/symbols docs/Migration-6.0.0.md Sources/InnoNetwork/InnoNetwork.docc/MigrationTo6.md
+# A historical tag has no 7.0 draft either.
+rm "$scratch/docs/releases/7.0.0.md"
+git -C "$scratch" add -A docs/releases API_STABILITY.md Scripts/symbols docs/Migration-6.0.0.md Sources/InnoNetwork/InnoNetwork.docc/MigrationTo6.md
 git -C "$scratch" commit --quiet -m legacy-layout
 bash "$scratch/Scripts/validate_6_release_state.sh" --expect "$current_state" --ref HEAD
 mv "$scratch/superseded-record.md" "$scratch/docs/releases/archive/6.1.0-superseded-roadmap.md"
 cp "$repo_root/docs/releases/6.1.0.md" "$scratch/docs/releases/6.1.0.md"
+cp "$repo_root/docs/releases/7.0.0.md" "$scratch/docs/releases/7.0.0.md"
 for path in API_STABILITY.md Scripts/symbols/README.md Scripts/symbols/budgets.tsv Scripts/symbols/tier-budgets.tsv docs/Migration-6.0.0.md Sources/InnoNetwork/InnoNetwork.docc/MigrationTo6.md; do
   cp "$repo_root/$path" "$scratch/$path"
 done
@@ -120,13 +126,13 @@ assert_scope_change_rejected() {
 assert_scope_change_rejected docs/releases/6.0.0.md \
   's/1,702 declarations/1,407 declarations/g' 'the superseded 6.0 API count'
 assert_scope_change_rejected Scripts/symbols/budgets.tsv \
-  's/1702/1407/g;s/1764/1407/g' 'an outdated API budget'
+  's/1702/1407/g;s/1764/1407/g;s/1769/1407/g' 'an outdated API budget'
 assert_scope_change_rejected Scripts/symbols/tier-budgets.tsv \
-  's/1362/1068/g;s/1364/1068/g' 'an outdated provisional tier budget'
+  's/1362/1068/g;s/1364/1068/g;s/1367/1068/g' 'an outdated provisional tier budget'
 assert_scope_change_rejected Scripts/symbols/budgets.tsv \
-  's/1764/1765/g' 'an unapproved runtime inventory increase'
+  's/1769/1770/g' 'an unapproved runtime inventory increase'
 assert_scope_change_rejected Scripts/symbols/tier-budgets.tsv \
-  's/367/368/g' 'an unapproved Stable inventory increase'
+  's/369/370/g' 'an unapproved Stable inventory increase'
 assert_scope_change_rejected Scripts/symbols/tier-budgets.tsv \
   's/33/34/g' 'an unapproved SPI inventory increase'
 printf '\nTOTAL\t9999\n' >> "$scratch/Scripts/symbols/budgets.tsv"
@@ -144,6 +150,22 @@ if grep -Fq 'encoded-request-candidate: 6.1.0' "$repo_root/API_STABILITY.md"; th
 fi
 assert_scope_change_rejected docs/ROADMAP.md \
   's/## 6.0.0 Included Capabilities/## 6.1.0 Candidate Scope/' 'a split roadmap'
+# The 7.0 draft may change the inventory but never the publication state.
+assert_scope_change_rejected docs/releases/7.0.0.md \
+  's/release-status: draft/release-status: ready/' 'a 7.0 draft marked ready on the 6.x line'
+assert_scope_change_rejected docs/releases/7.0.0.md \
+  's/^Release date: TBD$/Release date: 2026-12-01/' 'a dated 7.0 draft'
+assert_scope_change_rejected docs/releases/7.0.0.md \
+  's/^Status: Draft (unreleased)$/Status: Published/' 'a 7.0 draft claiming publication'
+# Without the draft, the tree must carry the published 6.1 inventory again.
+mv "$scratch/docs/releases/7.0.0.md" "$scratch/seven-draft.md"
+if bash "$scratch/Scripts/validate_6_release_state.sh" \
+  --expect "$current_state" > "$scratch/rejection.log" 2>&1; then
+  echo "7.0 draft test: accepted the draft inventory without the draft notes" >&2
+  exit 1
+fi
+grep -Fq "1,764" "$scratch/rejection.log"
+mv "$scratch/seven-draft.md" "$scratch/docs/releases/7.0.0.md"
 assert_scope_change_rejected docs/releases/archive/6.1.0-superseded-roadmap.md \
   's/release-status: draft/release-status: ready/' 'publishable superseded notes'
 

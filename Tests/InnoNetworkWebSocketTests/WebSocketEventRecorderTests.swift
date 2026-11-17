@@ -10,7 +10,7 @@ struct WebSocketEventRecorderTests {
     func waitForEventWakesOnRecord() async throws {
         let recorder = WebSocketEventRecorder()
 
-        async let matched = recorder.waitForEvent(timeout: 1.0) { event in
+        async let matched = recorder.waitForEvent(timeout: TestWaitBudget.upperBound(1.0)) { event in
             if case .string("ready") = event { return true }
             return false
         }

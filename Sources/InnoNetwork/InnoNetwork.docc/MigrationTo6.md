@@ -3,6 +3,12 @@
 Adopt the operation, failure, and configuration contracts promoted into the
 core module in InnoNetwork 6.
 
+> Important: This article is the 6.0 migration record, and its operation
+> samples compile against 6.x only. The 7.0 line supersedes it and removes
+> `OperationNetworkClient`, `NetworkClientConfiguration`, and `NetworkFailure`,
+> which the samples below use. 7.0.0 is not published yet; when you move a
+> 6.x integration to the 7.0 line, follow <doc:MigrationTo7>.
+
 Core 6.1.1 and InnoNetwork-Stream 6.1.1 are published. Apply the 6.0 source
 changes below, then the 6.1 encoded-request additions when needed. Resolve
 the published tags and test the complete consumer graph before deployment.
@@ -43,7 +49,7 @@ do {
 }
 ```
 
-``NetworkFailure`` is a value-only boundary: it does not retain response
+`NetworkFailure` is a value-only boundary: it does not retain response
 bodies, headers, URLs, or arbitrary underlying error descriptions. Use
 ``NetworkOperation/events`` for a bounded operation-local start/terminal
 lifecycle, and retain the existing `NetworkEventObserving` integration for
@@ -88,7 +94,7 @@ operation task is dispatched: a zero duration does not start the wrapped
 request, and a late result cannot turn an expired operation into success.
 `deadlineStage` reflects the active execution boundary, including policy
 admission before physical transport. Deadline expiry cancels built-in client
-work; a custom ``NetworkClient`` used through ``OperationNetworkClient`` must
+work; a custom ``NetworkClient`` used through `OperationNetworkClient` must
 cooperate with Swift task cancellation. The operation-first surface is
 buffered, so this API does not claim to bound the lifetime of a separately
 returned streaming sequence.

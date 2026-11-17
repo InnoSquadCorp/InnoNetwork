@@ -13,11 +13,13 @@
 "NetworkError.timeout.request" = "서버가 응답하기 전에 요청 시간이 초과되었습니다.";
 "NetworkError.timeout.resource" = "리소스 전송 시간이 초과되었습니다.";
 "NetworkError.timeout.connection" = "서버와의 연결 시간이 초과되었습니다.";
+"NetworkError.timeout.operationDeadline" = "작업이 제한 시간 안에 끝나지 않았습니다.";
 
 "NetworkError.reachability.notConnectedToInternet" = "기기가 인터넷에 연결되어 있지 않습니다.";
 "NetworkError.reachability.dnsLookupFailed" = "연결을 열기 전에 DNS 조회에 실패했습니다.";
 "NetworkError.reachability.cannotFindHost" = "호스트 이름을 확인할 수 없습니다.";
 "NetworkError.reachability.networkConnectionLost" = "요청 도중 네트워크 연결이 끊겼습니다.";
+"NetworkError.reachability.cellularDataUnavailable" = "이 요청에는 셀룰러 데이터를 사용할 수 없습니다.";
 
 
 "NetworkError.trust.unsupportedAuthenticationMethod" = "지원하지 않는 인증 방식입니다: %@";
@@ -27,3 +29,14 @@
 "NetworkError.trust.hostNotPinned" = "호스트에 대해 핀이 설정되지 않았습니다: %@";
 "NetworkError.trust.publicKeyExtractionFailed" = "인증서 체인에서 공개키를 추출하지 못했습니다.";
 "NetworkError.trust.pinMismatch" = "호스트의 공개키 핀이 일치하지 않습니다: %@";
+
+"NetworkError.policy.responseBodyLimitExceeded" = "응답 본문 %1$@바이트가 설정된 한도 %2$@바이트를 초과했습니다.";
+"NetworkError.policy.circuitOpen" = "%1$@의 서킷 브레이커가 열려 있습니다. %2$.1f초 후에 다시 시도하세요.";
+"NetworkError.policy.rateLimitQueueFull" = "속도 제한 대기열이 가득 찼습니다.";
+"NetworkError.policy.rateLimitScopeLimitReached" = "속도 제한 범위 레지스트리가 가득 찼습니다.";
+"NetworkError.policy.admissionQueueFull" = "요청 승인 대기열이 가득 찼습니다.";
+"NetworkError.policy.admissionWaitExpired" = "전송 전에 요청 승인 대기 시간이 만료되었습니다.";
+"NetworkError.policy.nonHTTPResponse" = "전송 계층이 HTTP가 아닌 응답을 전달했습니다.";
+
+"NetworkError.authentication.refreshFailed" = "세션 갱신에 실패했습니다: %@";
+"NetworkError.authentication.credential" = "요청 자격 증명 처리에 실패했습니다 (%ld).";

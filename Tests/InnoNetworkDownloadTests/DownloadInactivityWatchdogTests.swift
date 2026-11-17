@@ -1,4 +1,5 @@
 import Foundation
+import InnoNetworkTestSupport
 import Testing
 
 @testable import InnoNetwork
@@ -207,7 +208,7 @@ struct DownloadInactivityWatchdogTests {
         task: DownloadTask,
         timeout: TimeInterval = 2.0
     ) async -> Int? {
-        let deadline = Date().addingTimeInterval(timeout)
+        let deadline = Date().addingTimeInterval(TestWaitBudget.upperBound(timeout))
         while Date() < deadline {
             if let identifier = await manager.runtimeTaskIdentifier(for: task) {
                 return identifier
@@ -221,7 +222,7 @@ struct DownloadInactivityWatchdogTests {
         timeout: TimeInterval,
         condition: @Sendable () -> Bool
     ) async -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
+        let deadline = Date().addingTimeInterval(TestWaitBudget.upperBound(timeout))
         while Date() < deadline {
             if condition() { return true }
             try? await Task.sleep(nanoseconds: 10_000_000)

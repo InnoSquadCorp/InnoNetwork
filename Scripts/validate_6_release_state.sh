@@ -58,6 +58,11 @@ required_paths=(
 # carry that roadmap at its original path and must remain verifiable.
 superseded_notes_path="docs/releases/archive/6.1.0-superseded-roadmap.md"
 current_minor=0
+# A 7.0 draft developed on top of the published 6.1 line changes the public
+# inventory before it changes any publication claim. Its presence selects the
+# draft inventory below; every 6.x publication statement stays enforced.
+seven_notes_path="docs/releases/7.0.0.md"
+seven_draft=0
 validation_root="$repo_root"
 temporary_root=""
 cleanup() {
@@ -76,6 +81,10 @@ if [[ -n "$git_ref" ]]; then
     current_minor=1
     required_paths+=(docs/releases/6.1.0.md Scripts/published-releases.json)
   fi
+  if git -C "$repo_root" cat-file -e "${resolved_ref}:${seven_notes_path}" 2>/dev/null; then
+    seven_draft=1
+    required_paths+=("$seven_notes_path")
+  fi
   required_paths+=("$superseded_notes_path")
   temporary_root="$(mktemp -d "${TMPDIR:-/tmp}/innonetwork-6-release-state.XXXXXX")"
   validation_root="$temporary_root"
@@ -91,6 +100,10 @@ else
   else
     current_minor=1
     required_paths+=(docs/releases/6.1.0.md Scripts/published-releases.json)
+  fi
+  if [[ -f "$validation_root/$seven_notes_path" ]]; then
+    seven_draft=1
+    required_paths+=("$seven_notes_path")
   fi
   required_paths+=("$superseded_notes_path")
   for path in "${required_paths[@]}"; do
@@ -186,12 +199,31 @@ if [[ "$current_minor" == "1" ]]; then
   # The archived roadmap is immutable; the canonical minor notes have their
   # own Draft/Ready/published contract. Ready alone never proves publication.
   python3 "$repo_root/Scripts/validate_6_1_release_state.py" "$validation_root" >/dev/null
-  total=1764
-  stable=367
-  provisional=1364
-  require_line '| **Total** | **1,764** |' "$symbols"
-  require_line '| Stable consumer API | 367 |' "$symbols"
-  require_line '| Provisionally Stable consumer API | 1,364 |' "$symbols"
+  if [[ "$seven_draft" == "1" ]]; then
+    # The 7.0 draft is unreleased: it may change the inventory, never the
+    # publication state. Only a draft marker is accepted here; approving 7.0
+    # for release needs its own release-state validator.
+    seven_notes="$validation_root/$seven_notes_path"
+    [[ "$(sed -n '1p' "$seven_notes")" == '<!-- release-status: draft -->' ]] \
+      || fail '7.0 release notes must remain a draft on the 6.x line'
+    forbid_contains '<!-- release-status: ready -->' "$seven_notes"
+    require_line 'Status: Draft (unreleased)' "$seven_notes"
+    require_line 'Release date: TBD' "$seven_notes"
+    total=1769
+    stable=369
+    provisional=1367
+    require_line '| **Total** | **1,769** |' "$symbols"
+    require_line '| Stable consumer API | 369 |' "$symbols"
+    require_line '| Provisionally Stable consumer API | 1,367 |' "$symbols"
+    require_contains 'unreleased 7.0 draft' "$symbols"
+  else
+    total=1764
+    stable=367
+    provisional=1364
+    require_line '| **Total** | **1,764** |' "$symbols"
+    require_line '| Stable consumer API | 367 |' "$symbols"
+    require_line '| Provisionally Stable consumer API | 1,364 |' "$symbols"
+  fi
 else
   forbid_contains '<!-- encoded-request-' "$api"
   require_line '| **Total** | **1,702** |' "$symbols"

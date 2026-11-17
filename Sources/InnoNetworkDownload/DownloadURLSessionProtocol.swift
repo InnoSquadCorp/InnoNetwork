@@ -10,6 +10,11 @@ package protocol DownloadURLTask: AnyObject, Sendable {
     var taskDescription: String? { get set }
     var originalRequest: URLRequest? { get }
     var currentRequest: URLRequest? { get }
+    /// Server response received for this attempt, when one exists. The
+    /// session delegate reads its HTTP status before admitting a finished
+    /// download, because Foundation reports 4xx/5xx bodies as successful
+    /// `didFinishDownloadingTo` callbacks.
+    var response: URLResponse? { get }
 
     func resume()
     func suspend()

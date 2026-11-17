@@ -174,6 +174,32 @@ If the resume data has been invalidated by the server (cache TTL, range support 
 the resumed task will fall back to a fresh download from byte 0. The transition is
 transparent to observers.
 
+An automatic retry uses resume data the same way. When a failed attempt produced resume
+data, the retry continues the transfer from that point instead of restarting from byte 0,
+and restarts from the source URL when the server rejects the range with `416`.
+
+`pause(_:)` also takes effect while a retry is waiting for its backoff delay or for a
+network change. The task ends `.paused`, keeps the resume data of the failed attempt when
+there is any, and does not restart until `resume(_:)` is called. A pause issued at any
+point during the wait persists the resume data of the attempt that failed last, never an
+earlier attempt's.
+
+A retry waits for a network change only after a connectivity failure. Downloads use the
+same `URLError` table as the core module: `notConnectedToInternet`, `dnsLookupFailed`,
+`cannotFindHost`, `networkConnectionLost`, `dataNotAllowed`, `internationalRoamingOff`,
+and `callIsActive`. Any other retryable failure, including `cannotConnectToHost`, waits
+only for the backoff delay.
+
+## HTTP status validation
+
+A finished attempt is admitted only when its HTTP status is in
+`DownloadTransferPack(acceptableStatusCodes:)` (default `200..<300`). The response body of
+any other status is never staged or moved to the destination. `408`, `416`, `429`, and
+`5xx` are retried under ``DownloadRetryPack`` and end as
+``DownloadError/maxRetriesExceeded(lastError:)`` when the budget runs out; every other
+unacceptable status fails at once with ``DownloadError/unacceptableStatusCode(_:)``.
+Responses that are not HTTP are not validated.
+
 ## Cellular and roaming
 
 The default `safeDefaults` configuration disables cellular access. For apps that
@@ -185,6 +211,13 @@ let configuration = DownloadConfiguration.advanced(
     transfer: DownloadTransferPack(allowsCellularAccess: true)
 ).backgroundTransfersEnabled()
 ```
+
+When the only path is cellular and it cannot carry data — cellular data is not allowed for
+the connection, international data roaming is off, or a voice call blocks data on an EDGE
+or GPRS network — an attempt fails with `URLError.dataNotAllowed`,
+`.internationalRoamingOff`, or `.callIsActive`. These are connectivity failures, so with
+`DownloadRetryPack(waitsForNetworkChanges: true)` (the default) the retry waits for a path
+change, such as joining Wi-Fi, up to `networkChangeTimeout`.
 
 ## Related
 

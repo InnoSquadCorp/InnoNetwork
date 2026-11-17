@@ -94,7 +94,7 @@ InnoNetworkWebSocket	swift.init	WebSocketMessagingPack.init(sendQueueLimit:sendQ
 InnoNetworkWebSocket	swift.init	WebSocketObservabilityPack.init(eventDeliveryPolicy:eventMetricsReporter:)
 InnoNetworkWebSocket	swift.init	WebSocketFrameKind.init(rawValue:)
 InnoNetworkWebSocket	swift.init	WebSocketProtocolFeature.init(rawValue:)
-InnoNetworkWebSocket	swift.init	WebSocketReconnectPack.init(delay:jitterRatio:maxDelay:maxAttempts:maxTotalDuration:)
+InnoNetworkWebSocket	swift.init	WebSocketReconnectPack.init(delay:jitterRatio:maxDelay:maxAttempts:maxTotalDuration:stabilityInterval:)
 InnoNetworkWebSocket	swift.init	WebSocketState.init(rawValue:)
 InnoNetworkWebSocket	swift.init	WebSocketTypedChannel.init(manager:task:codec:)
 InnoNetworkWebSocket	swift.method	JSONWebSocketMessageCodec.decode(_:)

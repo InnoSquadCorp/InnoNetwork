@@ -1,4 +1,5 @@
 import Foundation
+import InnoNetworkTestSupport
 import Testing
 
 @testable import InnoNetwork
@@ -248,7 +249,7 @@ private actor BlockingDownloadEventRecorder {
 
     func waitUntilBlocked(timeout: Duration = .seconds(5)) async -> Bool {
         let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: timeout)
+        let deadline = clock.now.advanced(by: TestWaitBudget.upperBound(timeout))
         while clock.now < deadline {
             if hasBlockedFirstEvent { return true }
             await Task.yield()
@@ -269,7 +270,7 @@ private actor BlockingDownloadEventRecorder {
         timeout: Duration = .seconds(2)
     ) async -> Bool {
         let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: timeout)
+        let deadline = clock.now.advanced(by: TestWaitBudget.upperBound(timeout))
         while clock.now < deadline {
             if events.contains(where: expected.matches) {
                 return true

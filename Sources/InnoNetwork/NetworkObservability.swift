@@ -89,6 +89,8 @@ extension NetworkError {
                 return "reachability.cannot_find_host"
             case .networkConnectionLost:
                 return "reachability.connection_lost"
+            case .cellularDataUnavailable:
+                return "reachability.cellular_data_unavailable"
             }
         case .trustEvaluationFailed(let reason):
             switch reason {
@@ -117,6 +119,32 @@ extension NetworkError {
                 return "timeout.resource"
             case .connectionTimeout:
                 return "timeout.connection"
+            case .operationDeadline(let stage):
+                return "timeout.operation_deadline.\(stage.rawValue)"
+            }
+        case .policyRejected(let rejection):
+            switch rejection {
+            case .responseBodyLimitExceeded:
+                return "policy.response_body_limit_exceeded"
+            case .circuitOpen:
+                return "policy.circuit_open"
+            case .rateLimitQueueFull:
+                return "policy.rate_limit_queue_full"
+            case .rateLimitScopeLimitReached:
+                return "policy.rate_limit_scope_limit_reached"
+            case .admissionQueueFull:
+                return "policy.admission_queue_full"
+            case .admissionWaitExpired:
+                return "policy.admission_wait_expired"
+            case .nonHTTPResponse:
+                return "policy.non_http_response"
+            }
+        case .authentication(let failure):
+            switch failure {
+            case .refreshFailed:
+                return "authentication.refresh_failed"
+            case .credential(let reason):
+                return "authentication.credential.\(reason.rawValue)"
             }
         }
     }
@@ -301,6 +329,26 @@ public struct NetworkRequestContext: Sendable {
         self.allowsInsecureHTTP = allowsInsecureHTTP
         self.allowsAutomaticRedirects = allowsAutomaticRedirects
         self.allowsURLCacheStorage = allowsURLCacheStorage
+    }
+
+    /// The same context, except that the per-task delegate refuses to store
+    /// the response in `URLCache`. Credential preparation and redaction are
+    /// kept.
+    package func disallowingURLCacheStorage() -> NetworkRequestContext {
+        var restricted = NetworkRequestContext(
+            requestID: requestID,
+            retryIndex: retryIndex,
+            metricsReporter: metricsReporter,
+            trustPolicy: trustPolicy,
+            eventObservers: eventObservers,
+            redirectPolicy: redirectPolicy,
+            allowsInsecureHTTP: allowsInsecureHTTP,
+            allowsAutomaticRedirects: allowsAutomaticRedirects,
+            allowsURLCacheStorage: false
+        )
+        restricted.credentialPreparation = credentialPreparation
+        restricted.credentialRedaction = credentialRedaction
+        return restricted
     }
 
     package func restrictingSignedRequestSharing() -> NetworkRequestContext {

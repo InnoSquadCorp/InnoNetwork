@@ -20,11 +20,13 @@ public struct PersistentResponseCacheStatistics: Sendable, Equatable {
     public let hitCount: Int
     /// Cumulative count of ``PersistentResponseCache/get(_:)`` calls that
     /// returned `nil` in this process (no entry, body unreadable, body
-    /// rejected by privacy policy, or body exceeded `maxEntryBytes`).
+    /// rejected by privacy policy, body exceeded `maxEntryBytes`, or body
+    /// failed integrity verification).
     public let missCount: Int
     /// Cumulative count of evictions or scrubs the actor has performed in
     /// this process across all reasons (`storageBudget`, `policyRejected`,
-    /// `missingBody`, `entryTooLarge`, `unreferencedBody`). The drained
+    /// `missingBody`, `entryTooLarge`, `unreferencedBody`,
+    /// `bodyIntegrityMismatch`). The drained
     /// ``PersistentResponseCacheTelemetryEvent/scrubbedEntries(reason:count:byteCount:)`` events
     /// retain the per-reason breakdown.
     public let evictionCount: Int
@@ -77,6 +79,16 @@ public enum PersistentResponseCacheEvictionReason: String, Sendable, Equatable {
     /// Entry removed because a body file on disk was not referenced by any
     /// surviving index entry.
     case unreferencedBody
+    /// Entry removed because the body bytes read back from disk no longer
+    /// match the exact length and SHA-256 digest recorded in the index when
+    /// the entry was stored (for example bit rot, a torn write that survived
+    /// a crash, or another process or restore tool replacing the file).
+    ///
+    /// The lookup that detects the mismatch is reported as a miss and the
+    /// body is never returned. The digest is an unkeyed corruption check:
+    /// it is not tamper protection against a party that can also rewrite
+    /// the cache index.
+    case bodyIntegrityMismatch
 }
 
 /// Operational totals emitted by ``PersistentResponseCache``. Snapshots and

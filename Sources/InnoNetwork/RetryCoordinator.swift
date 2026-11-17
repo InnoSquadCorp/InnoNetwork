@@ -342,7 +342,10 @@ package struct RetryCoordinator {
 
         var nextRetryIndex = retryIndex + 1
         var nextSnapshot = snapshot
-        if policy.waitsForNetworkChanges, let monitor = networkMonitor {
+        // Only a connectivity failure can be cured by a path change. Waiting
+        // after a server error or a timeout on a working network would stall
+        // every retry for the full `networkChangeTimeout`.
+        if policy.waitsForNetworkChanges, error.isConnectivityFailure, let monitor = networkMonitor {
             NetworkOperationDeadlineContext.mark(.connectivityWait)
             let newSnapshot = await monitor.waitForChange(
                 from: nextSnapshot,

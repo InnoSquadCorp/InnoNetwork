@@ -189,6 +189,7 @@ run_release_script_fixtures() {
   bash Scripts/tests/test_check_docc_archives.sh
   python3 Scripts/check_release_workflow_contract.py
   python3 Scripts/tests/test_check_release_workflow_contract.py
+  bash Scripts/tests/test_check_api_breaking_changes.sh
 }
 
 run_dependency_lock() {
@@ -212,6 +213,8 @@ run_static_contracts() {
   bash Scripts/check_changelog_sync.sh
   ruby Scripts/check_post_release_docs.rb
   bash Scripts/check_provisional_enum_cases.sh
+  # Every breaking change against the last release must be in the ledger.
+  bash Scripts/check_api_breaking_changes.sh
   bash Scripts/check_macro_compile_failures.sh
   bash Scripts/check_unchecked_sendable.sh
   bash Scripts/check_shared_coders_mutation.sh

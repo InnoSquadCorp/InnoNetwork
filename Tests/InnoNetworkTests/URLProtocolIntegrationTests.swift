@@ -1,4 +1,5 @@
 import Foundation
+import InnoNetworkTestSupport
 import Network
 import Testing
 
@@ -223,16 +224,15 @@ struct URLProtocolIntegrationTests {
 
         do {
             _ = try await client.request(BinaryEndpoint(path: "/large"))
-            Issue.record("Expected response-too-large NetworkError.underlying")
+            Issue.record("Expected a response body limit rejection")
         } catch let error {
-            switch error {
-            case .underlying(let underlying, _)
-            where underlying.code == NetworkErrorCode.responseBodyLimitExceeded.rawValue:
-                #expect(underlying.message.contains("1024"))
-                #expect(underlying.message.contains("\(payload.count)"))
-            default:
-                Issue.record("Expected NetworkError.underlying with responseBodyLimitExceeded code, got \(error)")
-            }
+            #expect(
+                error.policyRejection
+                    == .responseBodyLimitExceeded(
+                        limitBytes: 1_024,
+                        observedBytes: Int64(payload.count)
+                    )
+            )
         }
     }
 
@@ -738,18 +738,14 @@ private func expectResponseBodyLimit(
 ) async {
     do {
         try await operation()
-        Issue.record("Expected response-too-large NetworkError.underlying")
+        Issue.record("Expected a response body limit rejection")
     } catch let error as NetworkError {
-        guard case .underlying(let underlying, _) = error,
-            underlying.code == NetworkErrorCode.responseBodyLimitExceeded.rawValue
-        else {
-            Issue.record("Expected responseBodyLimitExceeded, got \(error)")
-            return
-        }
-        #expect(underlying.message.contains("\(observed)"))
-        #expect(underlying.message.contains("\(limit)"))
+        #expect(
+            error.policyRejection
+                == .responseBodyLimitExceeded(limitBytes: limit, observedBytes: observed)
+        )
     } catch {
-        Issue.record("Expected NetworkError.underlying, got \(error)")
+        Issue.record("Expected a response body limit rejection, got \(error)")
     }
 }
 
@@ -898,7 +894,7 @@ private final class RedirectReplayHTTPServer: @unchecked Sendable {
         }
         listener.start(queue: queue)
 
-        guard ready.wait(timeout: .now() + 2) == .success,
+        guard ready.wait(timeout: .now() + TestWaitBudget.upperBound(2.0)) == .success,
             let port = listener.port
         else {
             throw URLError(.cannotConnectToHost)

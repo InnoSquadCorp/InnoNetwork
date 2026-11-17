@@ -39,6 +39,15 @@ peer's application protocol carries JSON in binary frames.
 requests the next value, so it inherits the manager's configured event
 delivery policy instead of creating an unbounded intermediate queue.
 
+That stream is bounded: 256 events per consumer with
+``WebSocketConfiguration/safeDefaults()``, with the `.dropOldest` overflow
+policy. A typed consumer that falls behind loses the oldest queued messages
+without a decoding error or a gap marker. Raise
+`maxBufferedEventsPerConsumer` through an `EventDeliveryPolicy` on
+``WebSocketObservabilityPack``, and watch the `droppedEventCount` and
+`overflowEventCount` values reported through `EventPipelineMetricsReporting`,
+when the protocol cannot tolerate loss.
+
 The typed sequence skips connection, heartbeat, and send-pressure events.
 Observe those independently through ``WebSocketManager/events(for:)`` when the
 feature needs lifecycle telemetry. An invalid payload throws

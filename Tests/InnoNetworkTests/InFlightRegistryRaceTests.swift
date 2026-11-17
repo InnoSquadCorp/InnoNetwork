@@ -1,4 +1,5 @@
 import Foundation
+import InnoNetworkTestSupport
 import Testing
 import os
 
@@ -265,7 +266,7 @@ struct InFlightRegistryRaceTests {
 
         // Wait until the request has actually entered the URL session so the
         // cancellation has registered work to interrupt.
-        let waitDeadline = Date().addingTimeInterval(2.0)
+        let waitDeadline = Date().addingTimeInterval(TestWaitBudget.upperBound(2.0))
         while session.started.withLock({ $0 }) == 0, Date() < waitDeadline {
             try await Task.sleep(for: .milliseconds(20))
         }
@@ -279,7 +280,7 @@ struct InFlightRegistryRaceTests {
         // The deregister path must run on cancellation; the registry
         // must end up empty so subsequent requests are not bookkept against
         // stale state.
-        let drainDeadline = Date().addingTimeInterval(1.0)
+        let drainDeadline = Date().addingTimeInterval(TestWaitBudget.upperBound(1.0))
         while client.inFlight.inFlightCount > 0, Date() < drainDeadline {
             try await Task.sleep(for: .milliseconds(10))
         }
@@ -299,7 +300,7 @@ struct InFlightRegistryRaceTests {
             _ = try await client.request(LongPollRequest(), tag: tag)
         }
 
-        let waitDeadline = Date().addingTimeInterval(2.0)
+        let waitDeadline = Date().addingTimeInterval(TestWaitBudget.upperBound(2.0))
         while session.started.withLock({ $0 }) == 0, Date() < waitDeadline {
             try await Task.sleep(for: .milliseconds(20))
         }
@@ -309,7 +310,7 @@ struct InFlightRegistryRaceTests {
             _ = try await work.value
         }
 
-        let drainDeadline = Date().addingTimeInterval(1.0)
+        let drainDeadline = Date().addingTimeInterval(TestWaitBudget.upperBound(1.0))
         while client.inFlight.inFlightCount > 0, Date() < drainDeadline {
             try await Task.sleep(for: .milliseconds(10))
         }

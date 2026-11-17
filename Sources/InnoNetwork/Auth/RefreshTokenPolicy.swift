@@ -207,7 +207,7 @@ package actor RefreshTokenCoordinator {
         if current.didApplyToken { return current }
 
         try Task.checkCancellation()
-        let resolution = try await resolveRefresh(
+        let resolution = try await resolveClassifiedRefresh(
             for: realm,
             request: request,
             expectedGeneration: nil
@@ -228,6 +228,12 @@ package actor RefreshTokenCoordinator {
         )
     }
 
+    /// Refreshes the token for `request`'s realm and applies it.
+    ///
+    /// Unlike the request paths, this low-level entry point surfaces the
+    /// refresh operation's own error unchanged (including
+    /// `CancellationError`), so coalescing and cooldown can be observed
+    /// directly.
     package func refreshAndApply(to request: URLRequest) async throws -> URLRequest {
         try Task.checkCancellation()
         guard let realm = policy.realmResolver(request) else { return request }
@@ -268,7 +274,7 @@ package actor RefreshTokenCoordinator {
         // decisions together closes the reentrancy window where a refresh
         // could complete after this method checked the generation but before
         // a second refresh task was registered.
-        let resolution = try await resolveRefresh(
+        let resolution = try await resolveClassifiedRefresh(
             for: realm,
             request: request,
             expectedGeneration: observedGeneration
@@ -318,6 +324,30 @@ package actor RefreshTokenCoordinator {
     private enum RefreshResolution {
         case generationAdvanced
         case refreshed(String)
+    }
+
+    /// Runs ``resolveRefresh(for:request:expectedGeneration:)`` and classifies
+    /// a failed refresh with the library's single rule,
+    /// `NetworkError.sessionRefreshFailed(_:)`.
+    ///
+    /// Both request paths that refresh go through here — the proactive
+    /// refresh of a request that has no token yet and the replay after a
+    /// refreshable status — so a caller sees the same error for the same
+    /// refresh failure whichever path started it.
+    private func resolveClassifiedRefresh(
+        for realm: AuthenticationRealm,
+        request: URLRequest,
+        expectedGeneration: UInt64?
+    ) async throws -> RefreshResolution {
+        do {
+            return try await resolveRefresh(
+                for: realm,
+                request: request,
+                expectedGeneration: expectedGeneration
+            )
+        } catch {
+            throw NetworkError.sessionRefreshFailed(error)
+        }
     }
 
     private func resolveRefresh(

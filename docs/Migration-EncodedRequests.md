@@ -79,6 +79,11 @@ release and application-specific gates remain separate from Core publication.
 
 ## Operation client generic wrappers
 
+> The unreleased 7.0 draft removes `OperationNetworkClient`; `start` is
+> available on the client itself, so these extensions are not needed there.
+> See [the 7.0 migration guide](Migration-7.0.0.md). The text below describes
+> the published 6.1 line.
+
 `OperationNetworkClient` is Provisionally Stable. Its type-level `Base` bound
 changes from `NetworkClient` to `Sendable` so binary-only clients can use the
 same operation lifecycle. JSON `start` methods now require `Base: NetworkClient`
@@ -97,7 +102,9 @@ extension OperationNetworkClient {
 
 After (compiles with both 6.0 and 6.1):
 
-<!-- compile-check -->
+This block describes the published 6.1 line and is not compiled against the
+7.0 draft on this branch, where `OperationNetworkClient` is unavailable.
+
 ```swift
 import InnoNetwork
 

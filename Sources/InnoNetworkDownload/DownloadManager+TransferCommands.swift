@@ -1,7 +1,7 @@
 import Foundation
 
 extension DownloadManager {
-    /// Starts a download. An optional ``CancellationTag`` groups the task
+    /// Starts a download. An optional `CancellationTag` groups the task
     /// for ``cancelAll(matching:)``; tags are runtime-scoped and not
     /// persisted, so tasks restored from a background session carry none.
     @discardableResult
@@ -58,7 +58,13 @@ extension DownloadManager {
 
         let expectedLifecycle = await task.lifecycleSnapshot()
         guard expectedLifecycle.state == .downloading else { return }
-        guard let urlTask = await runtimeRegistry.urlTask(for: task.id) else { return }
+        guard let urlTask = await runtimeRegistry.urlTask(for: task.id) else {
+            // A failed attempt has been retired and its automatic retry is
+            // still waiting for backoff or a network change: the logical task
+            // stays `.downloading` but there is no transport to cancel.
+            await pausePendingRetry(task, expectedLifecycle: expectedLifecycle)
+            return
+        }
         let expectedTaskIdentifier = urlTask.taskIdentifier
         managerState.pausingTaskIdentifiers[task.id] = expectedTaskIdentifier
         defer { managerState.pausingTaskIdentifiers.removeValue(forKey: task.id) }
@@ -171,6 +177,73 @@ extension DownloadManager {
         await callbackDeliveryQueue.enqueueStateChanged(task, .paused)
     }
 
+    /// Pauses a logical task whose automatic retry has not started its next
+    /// attempt yet. The task ends `.paused` with the same durable `.paused`
+    /// phase an ordinary pause leaves behind, keeps any resume data the
+    /// failed attempt produced, and is no longer restarted by the pending
+    /// retry; `resume(_:)` starts the next attempt.
+    private func pausePendingRetry(
+        _ task: DownloadTask,
+        expectedLifecycle: DownloadTaskLifecycleSnapshot
+    ) async {
+        // The durable retry marker is the only authoritative evidence of
+        // this window. Every other attempt-less `.downloading` moment (a
+        // failure still being admitted, a resume creating its attempt, a
+        // completion being committed) is owned by that lifecycle path and
+        // keeps the historical no-op.
+        guard await persistence.record(forID: task.id)?.lifecycle == .retryPending else { return }
+
+        // The in-memory pause below becomes visible before its durable
+        // phase. `resume(_:)` consults this set so it cannot act on a pause
+        // whose record still says `retryPending`.
+        managerState.retryWaitPausingTaskIDs.insert(task.id)
+        defer { managerState.retryWaitPausingTaskIDs.remove(task.id) }
+
+        // Take the task away from the pending retry first. The retry claims
+        // its restart with a compare-and-set on this same lifecycle
+        // snapshot, so either this pause wins and the retry can never
+        // restart the task, or the retry already owns the next attempt and
+        // the pause is the same no-op as a pause issued during `.waiting`.
+        guard await task.transitionToPausedRetainingResumeData(ifMatching: expectedLifecycle) else {
+            return
+        }
+        let pausedLifecycle = await task.lifecycleSnapshot()
+        let retainedResumeData = await task.resumeData
+
+        do {
+            // Shield the durable phase from caller cancellation: the task is
+            // already paused in memory and must not be left behind a record
+            // that still schedules a retry.
+            let persistence = self.persistence
+            let markedPaused = try await Task.detached {
+                try await persistence.transitionResumeState(
+                    id: task.id,
+                    from: .retryPending,
+                    to: .paused,
+                    resumeData: retainedResumeData
+                )
+            }.value
+            if !markedPaused {
+                // A terminal path replaced the retry marker while this pause
+                // was in flight and now owns the task and its record.
+                guard await task.lifecycleSnapshot() == pausedLifecycle else { return }
+                throw DownloadPersistenceStateError.missingPausingRecord(task.id)
+            }
+        } catch {
+            await transferCoordinator.markTaskFailedForPersistence(
+                task,
+                error: error,
+                ifMatching: pausedLifecycle
+            )
+            return
+        }
+
+        await eventHub.publishIfCurrent(.stateChanged(.paused), for: task.id) {
+            await task.lifecycleSnapshot() == pausedLifecycle
+        }
+        await callbackDeliveryQueue.enqueueStateChanged(task, .paused)
+    }
+
     public func resume(_ task: DownloadTask) async {
         guard beginShutdownTrackedOperation() else { return }
         defer { finishShutdownTrackedOperation() }
@@ -180,6 +253,10 @@ extension DownloadManager {
         defer { managerState.resumingTaskIDs.remove(task.id) }
         let pausedLifecycle = await task.lifecycleSnapshot()
         guard pausedLifecycle.state == .paused else { return }
+        // A retry-wait pause is visible in memory before its durable phase.
+        // As with any resume issued before a pause has finished, do nothing
+        // rather than resume against a record that is not `.paused` yet.
+        guard !managerState.retryWaitPausingTaskIDs.contains(task.id) else { return }
         guard await claimDestructiveLifecycle(taskID: task.id) else { return }
         await task.endRestoredSuccessAdmission()
         guard admitsDownloadURL(task.url) else {

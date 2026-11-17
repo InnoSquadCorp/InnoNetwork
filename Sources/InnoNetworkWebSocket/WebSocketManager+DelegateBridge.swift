@@ -32,39 +32,59 @@ extension WebSocketManager {
         }
     }
 
+    /// Suspends until the manager has fully processed every delegate
+    /// callback delivered before this call.
+    ///
+    /// Delegate callbacks are queued and reduced one at a time, so a test
+    /// that injects a callback and then changes task state must wait for the
+    /// injected callback to be reduced first. A timed pause cannot guarantee
+    /// that under load; this barrier can. Package-scoped: it exists for the
+    /// repository's own tests.
+    package nonisolated func waitForDelegateEventsProcessed() async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            let result = delegateEventContinuation.yield(.flush { continuation.resume() })
+            if case .enqueued = result {
+                return
+            }
+            // The stream already finished (shutdown) or dropped the element,
+            // so the consumer will never reach the flush marker.
+            continuation.resume()
+        }
+    }
+
     nonisolated func handleConnected(taskIdentifier: Int, protocolName: String?) {
         delegateEventContinuation.yield(
-            .connected(taskIdentifier: taskIdentifier, protocolName: protocolName)
+            .event(.connected(taskIdentifier: taskIdentifier, protocolName: protocolName))
         )
     }
 
     nonisolated func handleDisconnected(taskIdentifier: Int, closeCode: WebSocketCloseCode, reason: String?) {
         delegateEventContinuation.yield(
-            .disconnected(taskIdentifier: taskIdentifier, closeCode: closeCode, reason: reason)
+            .event(.disconnected(taskIdentifier: taskIdentifier, closeCode: closeCode, reason: reason))
         )
     }
 
     nonisolated func handleError(taskIdentifier: Int, error: Error) {
         let wsError = Self.mapWebSocketError(error)
         delegateEventContinuation.yield(
-            .mappedError(taskIdentifier: taskIdentifier, error: wsError)
+            .event(.mappedError(taskIdentifier: taskIdentifier, error: wsError))
         )
     }
 
     nonisolated func handleSessionError(taskIdentifier: Int, error: SendableUnderlyingError, statusCode: Int? = nil) {
         delegateEventContinuation.yield(
-            .sessionError(taskIdentifier: taskIdentifier, error: error, statusCode: statusCode)
+            .event(.sessionError(taskIdentifier: taskIdentifier, error: error, statusCode: statusCode))
         )
     }
 
     nonisolated func handleRedirectRejected(taskIdentifier: Int, error: WebSocketError) {
         delegateEventContinuation.yield(
-            .redirectRejected(taskIdentifier: taskIdentifier, error: error)
+            .event(.redirectRejected(taskIdentifier: taskIdentifier, error: error))
         )
     }
 
     nonisolated func handlePingTimeout(taskIdentifier: Int) {
-        delegateEventContinuation.yield(.pingTimeout(taskIdentifier: taskIdentifier))
+        delegateEventContinuation.yield(.event(.pingTimeout(taskIdentifier: taskIdentifier)))
     }
 
     func processConnected(taskIdentifier: Int, protocolName: String?) async {
@@ -76,17 +96,22 @@ extension WebSocketManager {
         else { return }
         let task = callbackContext.task
         let previousState = await task.state
+        let reconnectAttemptsBeforeOpen = await task.attemptedReconnectCount
         let transition = await task.applyLifecycleEvent(
             .didOpen(generation: callbackContext.generation, protocolName: protocolName)
         )
         let didConnect = transition.state.publicState == .connected && !transition.isIgnoredCallback
 
-        if previousState == .reconnecting, didConnect {
+        // A reconnect attempt leaves `.reconnecting` for `.connecting` when its
+        // timer fires and the new transport starts, so the public state at
+        // `didOpen` cannot tell a reconnect from a first connection. The
+        // attempt counter can: it is zero only for a connection that is not
+        // a reconnect.
+        if didConnect, previousState == .reconnecting || reconnectAttemptsBeforeOpen > 0 {
             await task.incrementSuccessfulReconnectCount()
         }
         if didConnect {
-            await task.resetAttemptedReconnectCount()
-            await task.clearReconnectWindow()
+            await reconnectCoordinator.connectionDidOpen(task: task)
             await task.resetPingCounter()
             await task.setAutoReconnectEnabled(true)
             await task.setError(nil)

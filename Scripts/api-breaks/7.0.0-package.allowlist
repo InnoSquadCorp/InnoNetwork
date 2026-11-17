@@ -1,0 +1,19 @@
+# `package`-scoped declarations whose shape changed in 7.0.0. They appear in
+# the API comparison but consumers cannot use them, so they need no migration
+# note. Each line is an exact diagnostic from
+# `swift package diagnose-api-breaking-changes 6.1.1`.
+
+API breakage: constructor NetworkOperation.init(id:events:task:) has parameter 2 type change from _Concurrency.Task<Swift.Result<Value, InnoNetwork.NetworkFailure>, Swift.Never> to _Concurrency.Task<Swift.Result<Value, InnoNetwork.NetworkOperationFailure>, Swift.Never>
+API breakage: func NetworkOperationResultGate.wait() has return type change from Swift.Result<Value, InnoNetwork.NetworkFailure> to Swift.Result<Value, InnoNetwork.NetworkError>
+API breakage: func NetworkOperationResultGate.resolve(_:) has parameter 0 type change from Swift.Result<Value, InnoNetwork.NetworkFailure> to Swift.Result<Value, InnoNetwork.NetworkError>
+API breakage: func DownloadFailureCoordinator.handleError(task:error:onAdmissionComplete:restart:) has parameter 2 type change from () -> Swift.Void to Foundation.Data?
+API breakage: func DownloadFailureCoordinator.handleError(task:error:onAdmissionComplete:restart:) has parameter 3 type change from (InnoNetworkDownload.DownloadTask) async -> Swift.Void to () -> Swift.Void
+API breakage: typealias DownloadSessionDelegateCallbacks.CompletionHandler has underlying type change from (Swift.Int, Swift.String?, Foundation.URL?, Foundation.URL?, InnoNetworkDownload.DownloadCompletionPayload?, InnoNetwork.SendableUnderlyingError?) -> Swift.Void to (Swift.Int, Swift.String?, Foundation.URL?, Foundation.URL?, InnoNetworkDownload.DownloadCompletionPayload?, InnoNetwork.SendableUnderlyingError?, Foundation.Data?) -> Swift.Void
+API breakage: var DownloadURLTask.response has been added as a protocol requirement
+API breakage: func DownloadFailureCoordinator.handleError(task:error:onAdmissionComplete:restart:) has been renamed to func handleError(task:error:resumeData:onAdmissionComplete:restart:)
+API breakage: constructor DownloadSessionDelegate.init(callbacks:backgroundCompletionStore:completionStager:completionAdmissionGate:allowsInsecureHTTP:) has been removed
+API breakage: func DownloadSessionDelegateCallbacks.handleCompletion(taskIdentifier:taskDescription:originalRequestURL:currentRequestURL:payload:error:) has been renamed to func handleCompletion(taskIdentifier:taskDescription:originalRequestURL:currentRequestURL:payload:error:resumeData:)
+API breakage: func DownloadSessionDelegateCallbacks.handleCompletion(taskIdentifier:taskDescription:originalRequestURL:currentRequestURL:location:error:) has been renamed to func handleCompletion(taskIdentifier:taskDescription:originalRequestURL:currentRequestURL:location:error:resumeData:)
+API breakage: constructor DownloadTransferCoordinator.init(session:runtimeRegistry:callbackDeliveryQueue:persistence:eventHub:lifecycleGate:completionStager:completionAdmissionGate:) has been removed
+API breakage: constructor WebSocketConfiguration.init(maxConnectionsPerHost:connectionTimeout:heartbeatInterval:pongTimeout:maxMissedPongs:reconnectDelay:reconnectJitterRatio:maxReconnectDelay:maxReconnectAttempts:reconnectMaxTotalDuration:allowsCellularAccess:allowsInsecureWebSocket:requestHeaders:handshakeRequestAdapters:eventDeliveryPolicy:eventMetricsReporter:sendQueueLimit:sendQueueOverflowPolicy:closeHandshakeTimeout:maximumMessageSize:permessageDeflateEnabled:) has been removed
+API breakage: constructor DownloadConfiguration.init(maxConnectionsPerHost:maxRetryCount:maxTotalRetries:retryDelay:exponentialBackoff:retryJitterRatio:maxRetryDelay:timeoutForRequest:timeoutForResource:taskInactivityTimeout:allowsCellularAccess:allowsInsecureHTTP:sessionIdentifier:sharedContainerIdentifier:networkMonitor:waitsForNetworkChanges:networkChangeTimeout:eventDeliveryPolicy:eventMetricsReporter:persistenceFsyncPolicy:persistenceCompactionPolicy:persistenceBaseDirectoryURL:) has been removed

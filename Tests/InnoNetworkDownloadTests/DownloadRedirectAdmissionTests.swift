@@ -494,7 +494,8 @@ private final class DelegateCompletionRecorder: Sendable {
         originalRequestURL _: URL?,
         currentRequestURL _: URL?,
         payload: DownloadCompletionPayload?,
-        error: SendableUnderlyingError?
+        error: SendableUnderlyingError?,
+        resumeData _: Data?
     ) {
         lock.withLock {
             $0.append(

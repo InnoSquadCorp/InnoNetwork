@@ -257,14 +257,10 @@ struct RequestExecutionPolicyTests {
 
         do {
             _ = try await client.request(DataEcho())
-            Issue.record("Expected NetworkError.underlying for non-HTTP response")
+            Issue.record("Expected a non-HTTP response rejection")
         } catch let error {
-            switch error {
-            case .underlying(let underlying, _):
-                #expect(underlying.message.contains("non-HTTP response"))
-            default:
-                Issue.record("Expected NetworkError.underlying, got \(error)")
-            }
+            #expect(error.policyRejection == .nonHTTPResponse)
+            #expect(error.errorCode == NetworkErrorCode.nonHTTPResponse.rawValue)
         }
     }
 
@@ -312,16 +308,12 @@ struct RequestExecutionPolicyTests {
 
         do {
             while try await iterator.next() != nil {}
-            Issue.record("Expected response-too-large NetworkError.underlying")
+            Issue.record("Expected a response body limit rejection")
         } catch let error as NetworkError {
-            switch error {
-            case .underlying(let underlying, _)
-            where underlying.code == NetworkErrorCode.responseBodyLimitExceeded.rawValue:
-                #expect(underlying.message.contains("1024"))
-                #expect(underlying.message.contains("1025"))
-            default:
-                Issue.record("Expected NetworkError.underlying with responseBodyLimitExceeded code, got \(error)")
-            }
+            #expect(
+                error.policyRejection
+                    == .responseBodyLimitExceeded(limitBytes: 1_024, observedBytes: 1_025)
+            )
         }
     }
 }

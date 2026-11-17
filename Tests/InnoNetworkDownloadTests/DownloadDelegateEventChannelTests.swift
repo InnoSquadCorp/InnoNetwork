@@ -85,7 +85,7 @@ struct DownloadDelegateEventChannelTests {
 
         var identifiers: [Int] = []
         while let event = await channel.next() {
-            guard case .completion(let taskIdentifier, _, _, _, _, _) = event else {
+            guard case .completion(let taskIdentifier, _, _, _, _, _, _) = event else {
                 Issue.record("Expected only completion events")
                 continue
             }
@@ -123,7 +123,7 @@ struct DownloadDelegateEventChannelTests {
         }
         guard
             let completionEvent = await channel.next(),
-            case .completion(let completedIdentifier, _, _, _, _, _) = completionEvent
+            case .completion(let completedIdentifier, _, _, _, _, _, _) = completionEvent
         else {
             Issue.record("Expected completion between progress segments")
             return

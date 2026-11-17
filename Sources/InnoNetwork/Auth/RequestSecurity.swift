@@ -222,9 +222,10 @@ public struct RequestSecurity: Sendable {
 
 /// Secret-free failures at the opt-in request credential boundary.
 ///
-/// Constructors throw this error directly. Execution wraps it in
-/// `NetworkError.underlying` with domain `InnoNetwork.RequestSecurity` and this
-/// raw code. Provider error descriptions are intentionally discarded.
+/// Constructors throw this error directly. Execution reports it as
+/// ``NetworkError/authentication(_:)`` with
+/// ``NetworkAuthenticationFailure/credential(_:)``. Provider error
+/// descriptions are intentionally discarded.
 public enum RequestSecurityFailure: Int, Error, Sendable {
     /// Invalid, conflicting, unsupported or over-budget metadata.
     case invalidRequirements = 1
@@ -250,11 +251,6 @@ public enum RequestSecurityFailure: Int, Error, Sendable {
     case refreshFailed
 
     var networkError: NetworkError {
-        .underlying(
-            SendableUnderlyingError(
-                domain: "InnoNetwork.RequestSecurity", code: rawValue,
-                message: "Request credential boundary failed (\(rawValue))."
-            ), nil
-        )
+        .authentication(.credential(self))
     }
 }

@@ -95,6 +95,12 @@ These invariants prevent `_autoReconnectEnabled` from racing against
    `.disconnected` event. (See `WebSocketTask` counter docs in
    [`WebSocketTask.swift`](../Sources/InnoNetworkWebSocket/WebSocketTask.swift) for why
    the internal counter may overshoot.)
+   A connection that opens clears the attempt counter and the reconnect window, but
+   only a connection that stays open for `WebSocketReconnectPack`'s
+   `stabilityInterval` (default 10 seconds) keeps them cleared. If it drops sooner,
+   the earlier count and window continue, so a server that accepts every connection
+   and closes it at once runs into the cap instead of being retried forever. A
+   `stabilityInterval` of `0` restores the reset-on-every-open rule.
 4. **Stale callbacks cannot advance generation.** Delegate callback identifiers
    are registered with the connection generation that created the underlying
    `URLSessionWebSocketTask`. Delayed `didOpen`, close, or error callbacks

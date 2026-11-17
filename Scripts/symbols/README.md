@@ -22,30 +22,33 @@ Stable compatibility promise.
 ## Current sizes (InnoNetwork 6.0.0 release baseline)
 
 This table includes the published 6.1.0 encoded-request addition.
+It also includes the unreleased 7.0 draft on this branch. The published 6.1.1
+inventory is 1,764 declarations; the 7.0 draft removes the operation-client
+facade and adds the typed error model, for a net change of +5.
 The inventory contains
-1,764 public runtime declarations and 12 separately inventoried compiler-host declarations.
+1,769 public runtime declarations and 12 separately inventoried compiler-host declarations.
 The heading retains the historical 6.0 baseline contract;
 the 5.0.0 baseline remains the compatibility reference for the 5.x line.
 
 | Product | Public declarations |
 |---|---:|
-| `InnoNetwork` (core) | 1197 |
+| `InnoNetwork` (core) | 1199 |
 | `InnoNetworkWebSocket` | 164 |
-| `InnoNetworkDownload` | 94 |
+| `InnoNetworkDownload` | 96 |
 | `InnoNetworkUpload` | 111 |
 | `InnoNetworkTestSupport` | 84 |
-| `InnoNetworkPersistentCache` | 51 |
+| `InnoNetworkPersistentCache` | 52 |
 | `InnoNetworkOpenAPI` | 36 |
 | `InnoNetworkTrust` | 17 |
 | `InnoNetworkAuthAWS` | 10 |
-| **Total** | **1,764** |
+| **Total** | **1,769** |
 
 | Compatibility tier | Public declarations |
 |---|---:|
-| Stable consumer API | 367 |
-| Provisionally Stable consumer API | 1,364 |
+| Stable consumer API | 369 |
+| Provisionally Stable consumer API | 1,367 |
 | `@_spi(GeneratedClientSupport)` | 33 |
-| **Total** | **1,764** |
+| **Total** | **1,769** |
 
 The encoded-request contract intentionally adds 55 declarations: 53 Stable
 codec-boundary declarations and two Provisional configuration-error declarations.

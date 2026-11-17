@@ -68,7 +68,7 @@ extension NetworkClient {
         fatalError("unavailable")
     }
 
-    /// Default forwarder that calls ``request(_:tag:)`` with `tag: nil`.
+    /// Default forwarder that calls `request(_:tag:)` with `tag: nil`.
     ///
     /// Conformers that need explicit observation of ungrouped requests may
     /// override this overload, but most mocks and stubs only need to
