@@ -450,4 +450,145 @@ struct RecoveryClassificationTests {
         }
         #expect(reason == .notConnectedToInternet)
     }
+
+    @Test("A proactive refresh that fails in transit is retried like a transport failure")
+    func proactiveRefreshFailureInTransitIsRetried() async throws {
+        let session = MockURLSession()
+        session.setMockResponse(statusCode: 200, data: Data("profile".utf8))
+        let refreshCount = Counter()
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(
+                baseURL: "https://api.example.com",
+                retryPolicy: Self.immediateRetry,
+                refreshTokenPolicy: RefreshTokenPolicy(
+                    failureCooldown: .disabled,
+                    currentToken: { nil },
+                    refreshToken: {
+                        await refreshCount.increment()
+                        if await refreshCount.value == 1 { throw URLError(.timedOut) }
+                        return "fresh"
+                    }
+                )
+            ),
+            session: session
+        )
+
+        let data = try await client.request(AuthenticatedEcho())
+
+        // Nothing was sent on the first attempt; the retry refreshed again.
+        #expect(data == Data("profile".utf8))
+        #expect(await refreshCount.value == 2)
+        #expect(session.capturedRequestsInOrder.count == 1)
+        #expect(session.capturedRequestsInOrder.first?.value(forHTTPHeaderField: "Authorization") == "Bearer fresh")
+    }
+
+    @Test("A refresh endpoint's transient status reaches the caller without the refresh request")
+    func refreshEndpointStatusDropsTheTokenRequest() {
+        var tokenRequest = URLRequest(url: URL(string: "https://auth.example.com/token")!)
+        tokenRequest.httpMethod = "POST"
+        tokenRequest.setValue("Basic fixture-secret", forHTTPHeaderField: "Authorization")
+        tokenRequest.httpBody = Data("grant_type=refresh_token&refresh_token=fixture-secret".utf8)
+        let tokenResponse = HTTPURLResponse(
+            url: tokenRequest.url!,
+            statusCode: 503,
+            httpVersion: nil,
+            headerFields: ["Retry-After": "2"]
+        )!
+
+        let surfaced = NetworkError.sessionRefreshFailed(
+            NetworkError.statusCode(
+                Response(statusCode: 503, data: Data(), request: tokenRequest, response: tokenResponse)
+            )
+        )
+
+        guard case .statusCode(let response) = surfaced else {
+            Issue.record("Expected the refresh endpoint's status, got \(surfaced)")
+            return
+        }
+        // The status and headers still drive the retry; the refresh token in
+        // the token request never reaches the caller.
+        #expect(response.statusCode == 503)
+        #expect(response.response?.value(forHTTPHeaderField: "Retry-After") == "2")
+        #expect(response.request == nil)
+        #expect(surfaced.isTransient)
+    }
+
+    @Test("Reading the token a peer already refreshed is not a failed renewal")
+    func peerTokenReadFailureIsNotARefreshFailure() {
+        struct KeychainLocked: Error {}
+
+        let surfaced = NetworkError.sessionRefreshFailed(SessionTokenReadFailure(underlying: KeychainLocked()))
+        guard case .underlying = surfaced else {
+            Issue.record("A failed token read must keep its own case, got \(surfaced)")
+            return
+        }
+        #expect(surfaced.summary(method: .get, authentication: .required).recovery == .retry)
+
+        let cancelled = NetworkError.sessionRefreshFailed(SessionTokenReadFailure(underlying: CancellationError()))
+        guard case .cancelled = cancelled else {
+            Issue.record("A cancelled token read must stay cancelled, got \(cancelled)")
+            return
+        }
+    }
+
+    @Test("Recovering after a peer's refresh marks a failed token read, so it is not a failed renewal")
+    func peerRefreshRecoveryMarksTokenReadFailure() async throws {
+        struct KeychainLocked: Error {}
+        actor TokenStore {
+            private var token: String?
+            private var failsReads = false
+
+            func read() throws -> String? {
+                if failsReads { throw KeychainLocked() }
+                return token
+            }
+
+            func store(_ newToken: String) { token = newToken }
+            func failReads() { failsReads = true }
+        }
+
+        let store = TokenStore()
+        let coordinator = RefreshTokenCoordinator(
+            policy: RefreshTokenPolicy(
+                currentToken: { try await store.read() },
+                refreshToken: {
+                    await store.store("fresh")
+                    return "fresh"
+                }
+            )
+        )
+        let request = URLRequest(url: URL(string: "https://api.example.com/profile")!)
+        // A first request refreshes, so the generation moves past 0.
+        _ = try await coordinator.applyRequiredTokenWithGeneration(to: request)
+        await store.failReads()
+
+        // A request that sent the earlier token now sees its 401. A peer has
+        // already refreshed, so recovery only reads the stored token.
+        do {
+            _ = try await coordinator.recoverAfterAuthenticationFailure(request: request, observedGeneration: 0)
+            Issue.record("Expected the token read to fail")
+        } catch let failure as SessionTokenReadFailure {
+            #expect(failure.underlying is KeychainLocked)
+            guard case .underlying = NetworkError.sessionRefreshFailed(failure) else {
+                Issue.record("A failed token read must keep its own case")
+                return
+            }
+        }
+    }
+
+    @Test("Credential contracts the integrating code got wrong are not shown to the user")
+    func credentialIntegrationMistakesAreNotUserVisible() {
+        let mistakes: [RequestSecurityFailure] = [
+            .invalidRequirements, .originMismatch, .credentialConflict, .unsupportedExecution,
+        ]
+        for failure in mistakes {
+            #expect(!failure.networkError.isUserVisible)
+        }
+        let actionable: [RequestSecurityFailure] = [
+            .credentialExpired, .refreshFailed, .insufficientScope, .credentialUnavailable,
+        ]
+        for failure in actionable {
+            #expect(failure.networkError.isUserVisible)
+        }
+    }
 }

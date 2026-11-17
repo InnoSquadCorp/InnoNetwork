@@ -61,10 +61,10 @@ private actor ScopedCredentialProvider: OAuthCredentialRefreshing {
 /// transport error, as a provider does when its token endpoint is unreachable.
 private actor TransportFailingRenewalProvider: OAuthCredentialRefreshing {
     let clock: TestClock
-    let renewalError: URLError
+    let renewalError: any Error
     var refreshes = 0
 
-    init(clock: TestClock, renewalError: URLError) {
+    init(clock: TestClock, renewalError: any Error) {
         self.clock = clock
         self.renewalError = renewalError
     }
@@ -372,6 +372,33 @@ struct OAuthCredentialTests {
         #expect(underlying.message == "Credential-protected transport failed.")
         #expect(error?.credentialFailure == nil)
         #expect(error?.summary(method: .get, authentication: .anonymous).recovery == .waitForConnectivity)
+        #expect(session.capturedRequest == nil)
+        #expect(await provider.refreshes == 1)
+    }
+
+    @Test("a renewal stopped by a local decision about the provider's transport does not ask to sign in")
+    func renewalLocalRejectionKeepsItsClassification() async throws {
+        let clock = TestClock()
+        let provider = TransportFailingRenewalProvider(
+            clock: clock,
+            renewalError: NetworkError.policyRejected(.admissionQueueFull)
+        )
+        let session = MockURLSession()
+        session.setMockResponse(statusCode: 204)
+
+        let error = await #expect(throws: NetworkError.self) {
+            _ = try await client(session, clock: clock).request(
+                ScopedCredentialEndpoint(requestSecurity: security(provider)))
+        }
+
+        // A full queue on the provider's own client says nothing about the
+        // grant, so the session refresh rule applies: keep the rejection.
+        guard case .policyRejected(.admissionQueueFull) = error else {
+            Issue.record("Expected the provider's policy rejection, got \(String(describing: error))")
+            return
+        }
+        #expect(error?.credentialFailure == nil)
+        #expect(error?.summary(method: .get, authentication: .anonymous).recovery != .reauthenticate)
         #expect(session.capturedRequest == nil)
         #expect(await provider.refreshes == 1)
     }

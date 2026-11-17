@@ -1187,6 +1187,57 @@ struct StreamingAPIDefinitionTests {
         #expect(SequencedStreamingURLProtocol.capturedRequests(for: streamURL).count == 1)
     }
 
+    @Test("stream() retries a session refresh that failed in transit, as a buffered request would")
+    func streamRetriesRefreshFailureInTransit() async throws {
+        actor RefreshProbe {
+            private(set) var refreshCalls = 0
+
+            func refreshToken() throws -> String {
+                refreshCalls += 1
+                if refreshCalls == 1 { throw URLError(.timedOut) }
+                return "retried-stream-token"
+            }
+        }
+
+        let definition = AuthenticatedLineCounterStream()
+        let baseURL = uniqueStreamingBaseURL()
+        let streamURL = baseURL.appendingPathComponent(definition.path)
+        let probe = RefreshProbe()
+
+        SequencedStreamingURLProtocol.enqueue(
+            url: streamURL,
+            steps: [
+                .success(statusCode: 200, data: Data("authorized\n".utf8))
+            ]
+        )
+
+        let client = DefaultNetworkClient(
+            configuration: NetworkConfiguration(
+                baseURL: baseURL,
+                retryPolicy: ExponentialBackoffRetryPolicy(maxRetries: 2, retryDelay: 0, jitterRatio: 0),
+                refreshTokenPolicy: RefreshTokenPolicy(
+                    failureCooldown: .disabled,
+                    currentToken: { nil },
+                    refreshToken: { try await probe.refreshToken() }
+                )
+            ),
+            session: makeSequencedStreamingURLSession()
+        )
+
+        var values: [String] = []
+        for try await value in client.stream(definition) {
+            values.append(value)
+        }
+
+        // The first proactive refresh timed out before anything was sent;
+        // the retry refreshed again and opened the stream once.
+        let captured = SequencedStreamingURLProtocol.capturedRequests(for: streamURL)
+        #expect(values == ["authorized"])
+        #expect(captured.count == 1)
+        #expect(captured.first?.value(forHTTPHeaderField: "Authorization") == "Bearer retried-stream-token")
+        #expect(await probe.refreshCalls == 2)
+    }
+
     @Test("stream() does not refresh anonymous handshakes")
     func streamDoesNotRefreshAnonymousHandshake() async throws {
         actor RefreshCounter {

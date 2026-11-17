@@ -118,7 +118,8 @@ package struct RequestExecutor {
                 requestBuilder: requestBuilder,
                 runtime: runtime,
                 retryIndex: retryIndex,
-                requestID: requestID
+                requestID: requestID,
+                authenticatingRequest: &retryRequest
             )
             preparedForRecovery = prepared
             defer {
@@ -235,7 +236,8 @@ package struct RequestExecutor {
         requestBuilder: RequestBuilder,
         runtime: RequestExecutionRuntime,
         retryIndex: Int,
-        requestID: UUID
+        requestID: UUID,
+        authenticatingRequest: inout URLRequest?
     ) async throws -> PreparedExecutionRequest {
         NetworkOperationDeadlineContext.mark(.requestPreparation)
         try validateSessionAuthentication(executable, configuration: configuration)
@@ -273,6 +275,13 @@ package struct RequestExecutor {
                 request = try await interceptor.adapt(request)
                 try Task.checkCancellation()
             }
+            // Applying the session token, including a proactive refresh that
+            // fails in transit, can fail this attempt before transport.
+            // Expose the request the token was for while that step runs, so
+            // the retry policy judges such a failure against this request as
+            // it judges a transport failure. Any other preparation failure
+            // still carries no request and is not replayed.
+            authenticatingRequest = request
             let refreshCoordinator: RefreshTokenCoordinator?
             let refreshGeneration: UInt64?
             switch executable.sessionAuthentication {
@@ -308,6 +317,7 @@ package struct RequestExecutor {
                 request = application.request
                 refreshGeneration = application.generation
             }
+            authenticatingRequest = nil
 
             NetworkOperationDeadlineContext.mark(.requestPreparation)
 

@@ -100,6 +100,20 @@ public enum ReachabilityReason: Sendable, Equatable {
     case cellularDataUnavailable
 }
 
+extension ReachabilityReason {
+    /// Whether the device itself has no usable network path, as opposed to
+    /// one host that cannot be resolved or reached. Such a failure says
+    /// nothing about any one host's health.
+    package var isDeviceConnectivityFailure: Bool {
+        switch self {
+        case .notConnectedToInternet, .cellularDataUnavailable:
+            true
+        case .dnsLookupFailed, .cannotFindHost, .networkConnectionLost:
+            false
+        }
+    }
+}
+
 extension NetworkError {
     /// The reachability reason for a `URLError` code, or `nil` when the code
     /// does not mean that the device lacks a usable route to the host.

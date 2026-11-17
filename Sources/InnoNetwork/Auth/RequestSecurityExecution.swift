@@ -37,6 +37,20 @@ package actor RequestSecurityExecution {
         return PreparedRequestSecurity(security: security, selection: selection, execution: self)
     }
 
+    /// Whether a renewal failed on a local decision about the provider's own
+    /// transport — a policy rejection such as an open circuit for its host, a
+    /// trust failure, or a configuration failure — the same cases a session
+    /// refresh keeps as they are. None of them is a verdict on the grant, so
+    /// none should send the user to sign in again.
+    private static func isLocalNonVerdict(_ error: any Error) -> Bool {
+        switch error as? NetworkError {
+        case .policyRejected?, .trustEvaluationFailed?, .configuration?:
+            true
+        default:
+            false
+        }
+    }
+
     func scheduleOAuthRefresh() -> Bool {
         guard !didRefreshOAuth, !oauthRefreshRequested else { return false }
         oauthRefreshRequested = true
@@ -67,7 +81,7 @@ package actor RequestSecurityExecution {
             // reauthentication. The renewal never reached a verdict, so it
             // does not use up this request's single renewal either: a retry
             // of the request may renew again.
-            if NetworkError.isTransientTransportFailure(error) {
+            if NetworkError.isTransientTransportFailure(error) || Self.isLocalNonVerdict(error) {
                 didRefreshOAuth = false
                 throw CredentialRedaction.failure(error)
             }
