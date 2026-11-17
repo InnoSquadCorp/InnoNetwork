@@ -69,6 +69,12 @@ unreleased 7.0 line. See `docs/Migration-7.0.0.md`.
 - Decide transience in one place for `isRetriableHint`, the built-in retry
   policy, the circuit breaker and the recovery recommendation. Policy
   rejections and authentication failures are no longer retried or counted.
+  Neither is a `URLError` a replay cannot change (an App Transport Security
+  block, a malformed or unsupported URL, a redirect loop, an untrusted
+  certificate, a refused credential, a local file or size limit), and a device
+  without a network path no longer counts toward any host's breaker.
+- `NetworkError.isUserVisible` is `false` for a request credential contract
+  the integrating code got wrong.
 - `waitsForNetworkChanges` defers a retry only after a connectivity failure,
   for buffered requests, streaming handshakes and downloads, which share one
   connectivity table. `URLError.cannotConnectToHost` is a connection timeout,
@@ -85,18 +91,29 @@ unreleased 7.0 line. See `docs/Migration-7.0.0.md`.
   `.useProtocolCachePolicy` does not read it either, with either preset. Only
   an explicitly cache-first policy opts out.
 - A credential provider that cannot be reached no longer counts against the
-  API host's circuit breaker, and a renewal that failed in transit leaves the
-  request's single renewal for a retry.
+  API host's circuit breaker, and a renewal that failed in transit, or was
+  stopped by a local decision about the provider's transport, leaves the
+  request's single renewal for a retry instead of asking to sign in.
+- A transient session-refresh failure is retried on every path, including the
+  proactive refresh and streams, and its `statusCode` carries the refresh
+  endpoint's response without the refresh request.
 - Streaming handshakes replay once through the session refresh and take part
-  in the circuit breaker.
+  in the circuit breaker, which judges a custom trust policy's rejection like
+  any other transport-security failure.
 - Downloads validate the HTTP status before staging the file, resume from
   resume data on automatic retry, and honor `pause(_:)` during a retry wait,
-  which keeps the latest failed attempt's resume data.
+  including one restored after a relaunch or racing the failure, which keeps
+  the latest failed attempt's resume data. The `206` answering a resumed range
+  request is always accepted, and `resume(_:)` checks persisted resume data
+  before handing it to Foundation.
   `DownloadError.maxRetriesExceeded` carries the last attempt's error.
-- A WebSocket connection that drops before the stability interval continues
-  the earlier reconnect budget instead of resetting it.
+- A WebSocket connection that drops before the stability interval, measured
+  on the monotonic clock, continues the earlier reconnect budget instead of
+  resetting it; `.infinity` never resets it. `successfulReconnectCount`
+  counts manager reconnects but never a first connection.
 - The persistent cache index format is version 5; a 6.x cache directory is
-  reset on first open.
+  reset on first open. Opening drops an entry whose body file has the wrong
+  length and removes staging files a crash left behind.
 
 ### Removed
 

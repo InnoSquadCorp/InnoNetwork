@@ -94,7 +94,8 @@ do {
   ``NetworkError/timeout(reason:underlying:)`` 으로 남습니다.
 - 갱신 endpoint 가 반환한 `408`, `429`, `5xx` 는
   ``NetworkError/statusCode(_:)`` 로 남습니다. 이때 ``Response`` 는 원래 요청의
-  응답이 아니라 갱신 endpoint 의 응답입니다.
+  응답이 아니라 갱신 endpoint 의 응답이며, 요청은 담지 않습니다. 갱신 요청의
+  본문과 헤더에는 refresh token 이 들어 있기 때문입니다.
 - 그 밖의 `URLError` 는 분류되지 않은 transport 오류이며
   ``NetworkError/underlying(_:_:)`` 로 남습니다.
 - 기기 오프라인을 포함한 configuration 실패는

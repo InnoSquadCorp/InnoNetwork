@@ -24,7 +24,8 @@ public enum NetworkOperationEvent: Sendable, Equatable {
 ///
 /// The event stream is registered before work starts and retains the bounded
 /// start/terminal lifecycle for a late first consumer. Await ``value()`` for
-/// the typed response or call ``cancel()`` without retaining the client.
+/// the typed response or call ``cancel()``; the caller need not keep the
+/// client, which the running operation holds until it finishes.
 /// Cancelling a task that is currently awaiting ``value()`` also cancels this
 /// operation so structured callers do not leave detached network work behind.
 public struct NetworkOperation<Value: Sendable>: Sendable {
@@ -103,8 +104,9 @@ public struct NetworkOperation<Value: Sendable>: Sendable {
     }
 
     /// Cancels the operation. A pending ``value()`` then throws
-    /// ``NetworkError/cancelled``. The handle does not retain the client, so
-    /// cancelling works after the client has gone away.
+    /// ``NetworkError/cancelled``. The running operation holds the client
+    /// until it finishes, so cancelling works after the caller released its
+    /// own reference.
     public func cancel() {
         task.cancel()
     }

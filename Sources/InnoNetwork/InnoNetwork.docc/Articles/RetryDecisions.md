@@ -129,7 +129,7 @@ the circuit breaker, and ``NetworkErrorSummary/recovery`` read the same rule:
 | ``NetworkError/statusCode(_:)`` with `408`, `429`, or `5xx` | Yes |
 | ``NetworkError/statusCode(_:)`` with any other status | No |
 | ``NetworkError/reachability(_:_:_:)``, ``NetworkError/timeout(reason:underlying:)`` | Yes |
-| ``NetworkError/underlying(_:_:)`` (an unclassified transport error) | Yes |
+| ``NetworkError/underlying(_:_:)`` (an unclassified transport error) | Yes, unless its `URLError` cannot change on a replay: an App Transport Security block, a malformed or unsupported URL, a redirect loop, an untrusted certificate, a refused credential, or a local file or size limit |
 | ``NetworkError/policyRejected(_:)`` — body limit, open circuit, full rate-limit or admission queue, non-HTTP response | No |
 | ``NetworkError/authentication(_:)`` — a session that cannot be renewed, or a failed request credential | No |
 | ``NetworkError/configuration(reason:)``, ``NetworkError/decoding(stage:underlying:response:)``, ``NetworkError/trustEvaluationFailed(_:)``, ``NetworkError/cancelled`` | No |

@@ -92,7 +92,8 @@ request then follows the ordinary retry and recovery rules:
   timeout stays ``NetworkError/timeout(reason:underlying:)``.
 - A `408`, `429`, or `5xx` from the refresh endpoint stays
   ``NetworkError/statusCode(_:)``. Its ``Response`` is the refresh endpoint's
-  response, not the response to your request.
+  response, not the response to your request, and carries no request: the
+  refresh request's body and headers hold the refresh token.
 - Any other `URLError` is an unclassified transport error and stays
   ``NetworkError/underlying(_:_:)``.
 - A configuration failure, including an offline device, stays

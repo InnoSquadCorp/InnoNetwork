@@ -96,7 +96,7 @@ token 이 없는 `.required` 요청의 사전 갱신 모두 같습니다. 세션
 아무것도 알려 주지 않는 이유로 갱신이 실패하면, 세션이 여전히 유효할 수 있으므로
 그 실패는 원래의 case 를 유지합니다. 취소, 연결 실패, 타임아웃, 갱신 endpoint 의
 `408`·`429`·`5xx` (이때 ``NetworkError/statusCode(_:)`` 는 갱신 endpoint 의
-응답을 담습니다), 분류되지 않은 transport 오류, 기기 오프라인을 포함한
+응답을 담되, refresh token 이 든 갱신 요청은 담지 않습니다), 분류되지 않은 transport 오류, 기기 오프라인을 포함한
 configuration 실패, token host 의 circuit 이 열린 경우 같은 로컬 정책 거부, 신뢰
 평가 실패가 여기에 해당합니다. 일시적 실패로 볼 수 있는 오류는 transport 에서 온
 오류, 즉 ``NetworkError`` 나 `URLError` 뿐이며, 거부된 credential 을 알리는
@@ -114,7 +114,10 @@ transport 가 일시적으로 실패하면 — credential 거부가 아닌 `URLE
 보고합니다. 예를 들어 underlying 오류가 domain 과 code 를 유지하고 메시지가
 "Credential-protected transport failed." 인 ``NetworkError/reachability(_:_:_:)``
 입니다. provider 가 받은 일시적인 HTTP status 는 provider 의 응답을 드러낼 수
-있으므로 여전히 `.credentialUnavailable` 이 됩니다. 이름 있는 credential 을
+있으므로 여전히 `.credentialUnavailable` 이 됩니다. 갱신이 provider 자신의
+transport 에 대한 로컬 정책 거부, 신뢰 평가 실패, configuration 실패로 멈춘
+경우에도 세션 갱신과 마찬가지로 그 분류를 유지하며, 다시 로그인하라고 권하지
+않습니다. 이름 있는 credential 을
 준비하는 중에 난 실패는 circuit breaker 가 요청 host 의 실패로 세지 않습니다.
 <doc:RequestCredentials> 를 참고하세요.
 
@@ -129,8 +132,8 @@ transport 가 일시적으로 실패하면 — credential 거부가 아닌 `URLE
 | `.statusCode` 의 `5xx` | `.statusCode` | 예 | 예 |
 | `.statusCode` 의 `408`, `429` | `.statusCode` | 예 | 아니요. `4xx` 응답은 rolling window 에서 제외됩니다. |
 | `.statusCode` 의 그 밖의 status | `.statusCode` | 아니요 | 아니요 |
-| `.underlying` (취소 제외) | `.transport` | 예 | 예. 단, TLS 실패는 정책이 transport-security 실패를 집계할 때만 집계하고, 맞출 수 없는 `304` 는 그 `304` 가 이미 성공으로 기록된 뒤에 발생하므로 집계하지 않습니다. |
-| `.reachability` | `.reachability` | 예 | 예 |
+| `.underlying` (취소 제외) | `.transport` | 예. 단, 결정적 `URLError` 는 아니요 | 예. 단, 결정적 `URLError` 는 집계하지 않고, TLS 실패는 정책이 transport-security 실패를 집계할 때만 집계하고, 맞출 수 없는 `304` 는 그 `304` 가 이미 성공으로 기록된 뒤에 발생하므로 집계하지 않습니다. |
+| `.reachability` | `.reachability` | 예 | 예. 단, `.notConnectedToInternet` 과 `.cellularDataUnavailable` 은 아니요 |
 | `.timeout` | `.timeout` | 예 | 예 |
 | `.trustEvaluationFailed` | `.trust` | 아니요 | ``CircuitBreakerPolicy/countsTransportSecurityFailures`` 가 `true` 일 때만 |
 | `.configuration` | `.configuration` | 아니요 | 아니요 |
@@ -141,7 +144,24 @@ transport 가 일시적으로 실패하면 — credential 거부가 아닌 `URLE
 
 circuit breaker 열은 요청 자신의 교환에서 난 실패를 설명합니다. 이름 있는
 request credential 을 획득·갱신·서명하는 중에 난 실패는 case 와 관계없이 집계하지
-않으며, 실패한 세션 갱신도 집계하지 않습니다.
+않으며, 실패한 세션 갱신도 집계하지 않습니다. 사용 가능한 네트워크 경로가 아예
+없는 기기 — ``ReachabilityReason/notConnectedToInternet`` 이나
+``ReachabilityReason/cellularDataUnavailable`` — 도 특정 host 에 대한 증거가
+아니므로 집계하지 않습니다. 집계하면 오프라인 동안 쓴 모든 host 의 circuit 이
+열리고, 다시 연결된 직후의 요청이 거절됩니다.
+
+결정적 `URLError` 는 같은 요청을 다시 보내도 결과가 바뀌지 않는 오류입니다. App
+Transport Security 차단(`.appTransportSecurityRequiresSecureConnection`), 잘못된
+또는 지원하지 않는 URL(`.badURL`, `.unsupportedURL`), 반복되거나 갈 곳 없는
+redirect(`.httpTooManyRedirects`, `.redirectToNonExistentLocation`), 시스템이
+신뢰하지 않는 서버 인증서나 거부된 클라이언트 인증서
+(`.serverCertificateUntrusted`, `.serverCertificateHasBadDate`,
+`.serverCertificateNotYetValid`, `.serverCertificateHasUnknownRoot`,
+`.clientCertificateRejected`, `.clientCertificateRequired`), 서버가 거부한
+credential(`.userAuthenticationRequired`, `.userCancelledAuthentication`),
+로컬 파일이나 크기 제한 실패(`.fileDoesNotExist`, `.fileIsDirectory`,
+`.noPermissionsToReadFile`, `.dataLengthExceedsMaximum`)가 해당하며, 재시도하지도
+집계하지도 않습니다.
 
 ``NetworkError/isRetriableHint`` 는 오류 종류가 보통 일시적인지만 답합니다.
 요청 method, idempotency key, 시도 예산까지 확인하는 ``RetryPolicy`` 를 대체하지
@@ -167,7 +187,10 @@ func presentation(for error: NetworkError) -> ErrorPresentation {
     case .policy:
         return .locallyRejected  // 재시도해도 결과가 같습니다
     case .authentication:
-        return .signInRequired
+        // 사용자가 필요한 것은 세션이나 credential 이 만료된 경우뿐입니다.
+        // 코드가 credential 계약을 잘못 쓴 경우는 사용자에게 보이지 않습니다.
+        if error.summary.recovery == .reauthenticate { return .signInRequired }
+        return error.isUserVisible ? .credentialUnavailable : .developerIssue
     }
 }
 ```

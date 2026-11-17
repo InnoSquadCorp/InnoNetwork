@@ -17,9 +17,14 @@ public enum NetworkOperationReplaySafety: String, Sendable, Equatable {
     /// not sufficient because a restarted operation receives a new identifier.
     case stableIdempotencyKey
 
-    /// Never recommend repeating the request, including for safe methods. A
-    /// failure before anything was sent, such as an offline device, still
-    /// recommends ``NetworkRecoveryDisposition/waitForConnectivity``.
+    /// Never recommend repeating the request, including for safe methods.
+    ///
+    /// The one exception is a request a reachability check rejected before
+    /// dispatch, reported as ``NetworkError/configuration(reason:)`` with
+    /// ``NetworkConfigurationFailureReason/offline(_:)``: it was never sent,
+    /// so it still recommends
+    /// ``NetworkRecoveryDisposition/waitForConnectivity``. A
+    /// ``NetworkError/reachability(_:_:_:)`` failure is not exempt.
     case never
 }
 

@@ -128,7 +128,9 @@ request in three ways:
   transport failure is recorded for the host. Bytes delivered after an
   accepted handshake are not recorded, because a long-lived stream normally
   ends by disconnecting.
-- **Retry.** The configured ``RetryPolicy`` applies to a failed handshake.
+- **Retry.** The configured ``RetryPolicy`` applies to a failed handshake,
+  and to a failure before it, while the request is adapted, signed, or given
+  its session token, because nothing has been sent yet.
   `waitsForNetworkChanges` defers a handshake retry only after a connectivity
   failure, as it does for buffered requests.
 
