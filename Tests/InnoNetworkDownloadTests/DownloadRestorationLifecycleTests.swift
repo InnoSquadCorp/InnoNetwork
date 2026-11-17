@@ -655,7 +655,7 @@ struct DownloadRestorationLifecycleTests {
     func foreignResumeTaskFallsBackToPersistedURL() async throws {
         let expectedURL = URL(string: "https://downloads.example.invalid/archive.zip")!
         let foreignURL = URL(string: "https://attacker.example.invalid/archive.zip")!
-        let resumeData = Data("opaque-resume-data".utf8)
+        let resumeData = try makeRetryResumeData("opaque-resume-data")
         let foreignTask = StubDownloadURLTask(
             request: URLRequest(url: foreignURL),
             currentRequest: URLRequest(url: foreignURL)
@@ -696,7 +696,7 @@ struct DownloadRestorationLifecycleTests {
     @Test("Opaque resume task without retained requests is cancelled before safe fresh restart")
     func requestlessResumeTaskFallsBackToPersistedURL() async throws {
         let expectedURL = URL(string: "https://downloads.example.invalid/requestless.zip")!
-        let resumeData = Data("requestless-resume-data".utf8)
+        let resumeData = try makeRetryResumeData("requestless-resume-data")
         let requestlessTask = StubDownloadURLTask(
             request: nil,
             currentRequest: nil

@@ -114,7 +114,7 @@ package final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegat
             return
         }
         if let statusCode = (downloadTask.response as? HTTPURLResponse)?.statusCode,
-            !acceptableStatusCodes.contains(statusCode)
+            !admitsStatusCode(statusCode, for: downloadTask)
         {
             // A download task does not fail on 4xx/5xx: Foundation hands over
             // the error body as if it were the requested file. Never stage
@@ -274,6 +274,17 @@ package final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegat
 
     private func isRejectedRedirectTask(_ taskIdentifier: Int) -> Bool {
         rejectedRedirectTaskIdentifiers.withLock { $0.contains(taskIdentifier) }
+    }
+
+    /// The configured set governs every status except a `206 Partial
+    /// Content` that answers the byte range a resumed attempt asked for.
+    /// Automatic retries resume from resume data, so a set without `206`
+    /// would otherwise turn each resumed transfer into a terminal failure.
+    private func admitsStatusCode(_ statusCode: Int, for downloadTask: any DownloadURLTask) -> Bool {
+        if acceptableStatusCodes.contains(statusCode) { return true }
+        guard statusCode == 206 else { return false }
+        return downloadTask.currentRequest?.value(forHTTPHeaderField: "Range") != nil
+            || downloadTask.originalRequest?.value(forHTTPHeaderField: "Range") != nil
     }
 }
 

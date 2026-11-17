@@ -437,6 +437,183 @@ struct DownloadPauseDuringRetryWaitTests {
         #expect(fixture.session.createdTasks.isEmpty)
         #expect(await fixture.store.record(forID: fixture.task.id)?.lifecycle == lifecycle)
     }
+
+    @Test("A retry restored after relaunch can be paused while it waits, and the wait does not restart it")
+    func pauseDuringRestoredRetryWait() async throws {
+        let clock = TestClock()
+        let id = "restored-retry-wait-\(UUID().uuidString)"
+        let sourceURL = try #require(URL(string: "https://example.invalid/restored-retry-wait.bin"))
+        let resumeData = try makeRetryResumeData("restored-retry-wait")
+        let harness = try StubDownloadHarness(
+            maxRetryCount: 3,
+            maxTotalRetries: 3,
+            retryDelay: 30,
+            clock: clock,
+            label: "pause-restored-retry-wait",
+            prepopulatedRecords: [
+                DownloadTaskPersistence.Record(
+                    id: id,
+                    url: sourceURL,
+                    destinationURL: makeRetryWaitDestinationURL(),
+                    resumeData: resumeData,
+                    lifecycle: .retryPending,
+                    retryCount: 1,
+                    totalRetryCount: 1,
+                    retryPlan: .backoff(retryNotBefore: clock.now().addingTimeInterval(30))
+                )
+            ]
+        )
+        #expect(await harness.manager.waitForRestoration())
+        let restored = try #require(await harness.manager.task(withId: id))
+        // The restored retry is waiting out its backoff with no attempt.
+        #expect(await clock.waitForEnqueuedCount(atLeast: 1, timeout: 10.0))
+        #expect(await restored.state == .downloading)
+
+        await harness.manager.pause(restored)
+
+        #expect(await restored.state == .paused)
+        let paused = await harness.store.record(forID: id)
+        #expect(paused?.lifecycle == .paused)
+        #expect(paused?.resumeData == resumeData)
+        clock.advance(by: .seconds(60))
+        await harness.manager.drainDeferredFailureTasks()
+        #expect(harness.stubSession.createdTasks.isEmpty)
+        #expect(await restored.state == .paused)
+
+        await harness.manager.shutdown()
+    }
+
+    @Test("An attempt that fails after a pause made `.pausing` durable leaves the task paused, not stranded")
+    func failureAfterPausingWrittenEndsPaused() async throws {
+        let harness = try StubDownloadHarness(
+            maxRetryCount: 3,
+            maxTotalRetries: 3,
+            retryDelay: 30,
+            clock: TestClock(),
+            label: "pause-then-failure"
+        )
+        let task = await harness.startDownload(destinationURL: makeRetryWaitDestinationURL())
+        let identifier = try #require(
+            await waitForRuntimeTaskIdentifier(manager: harness.manager, task: task, timeout: 10.0)
+        )
+        #expect(await waitForTaskState(task, timeout: 10.0) { $0 == .downloading })
+        let failureResumeData = try makeRetryResumeData("failed-under-pause")
+        await harness.store.setAfterPausingWritten { _ in
+            // The failure finds `.pausing` and defers to the pause: it retires
+            // the attempt and neither retries nor fails the task.
+            await harness.injectCompletion(
+                taskIdentifier: identifier,
+                error: retryWaitConnectionLost,
+                resumeData: failureResumeData
+            )
+        }
+
+        await harness.manager.pause(task)
+
+        #expect(await task.state == .paused)
+        let paused = await harness.store.record(forID: task.id)
+        #expect(paused?.lifecycle == .paused)
+        #expect(paused?.resumeData == failureResumeData)
+        #expect(await harness.manager.runtimeTaskIdentifier(for: task) == nil)
+
+        await harness.manager.shutdown()
+    }
+
+    @Test("An attempt that fails just before a pause writes `.pausing` pauses the retry instead of failing")
+    func failureBeforePausingWriteEndsPaused() async throws {
+        let clock = TestClock()
+        let harness = try StubDownloadHarness(
+            maxRetryCount: 3,
+            maxTotalRetries: 3,
+            retryDelay: 30,
+            clock: clock,
+            label: "failure-then-pause"
+        )
+        let task = await harness.startDownload(destinationURL: makeRetryWaitDestinationURL())
+        let identifier = try #require(
+            await waitForRuntimeTaskIdentifier(manager: harness.manager, task: task, timeout: 10.0)
+        )
+        #expect(await waitForTaskState(task, timeout: 10.0) { $0 == .downloading })
+        await harness.store.setBeforePausingWrite { _ in
+            // The retry marker becomes durable first, so the pause's own
+            // compare-and-set finds `.retryPending` instead of `.active`.
+            await harness.injectCompletion(taskIdentifier: identifier, error: retryWaitConnectionLost)
+        }
+
+        await harness.manager.pause(task)
+
+        #expect(await task.state == .paused)
+        #expect(await task.error == nil)
+        #expect(await harness.store.record(forID: task.id)?.lifecycle == .paused)
+        // The scheduled retry ends without restarting the paused task.
+        clock.advance(by: .seconds(60))
+        await harness.manager.drainDeferredFailureTasks()
+        #expect(harness.stubSession.createdTasks.count == 1)
+        #expect(await task.state == .paused)
+
+        await harness.manager.shutdown()
+    }
+
+    @Test("An attempt that fails while a pause waits for its resume data leaves the task paused")
+    func failureDuringResumeDataCancellationEndsPaused() async throws {
+        let harness = try StubDownloadHarness(
+            maxRetryCount: 3,
+            maxTotalRetries: 3,
+            retryDelay: 30,
+            clock: TestClock(),
+            label: "failure-during-pause-cancel"
+        )
+        let task = await harness.startDownload(destinationURL: makeRetryWaitDestinationURL())
+        let identifier = try #require(
+            await waitForRuntimeTaskIdentifier(manager: harness.manager, task: task, timeout: 10.0)
+        )
+        #expect(await waitForTaskState(task, timeout: 10.0) { $0 == .downloading })
+        harness.stubTask.suspendCancelByProducingResumeData()
+
+        let pause = Task { await harness.manager.pause(task) }
+        #expect(await waitForCancelByProducingResumeDataCount(harness.stubTask, atLeast: 1, timeout: 10.0))
+        // The pause made `.pausing` durable and owns the attempt; the failure
+        // that arrives now defers to it and retires the attempt.
+        await harness.injectCompletion(taskIdentifier: identifier, error: retryWaitConnectionLost)
+        let producedResumeData = try makeRetryResumeData("produced-by-pause")
+        harness.stubTask.completeCancelByProducingResumeData(with: producedResumeData)
+        await pause.value
+
+        #expect(await task.state == .paused)
+        let paused = await harness.store.record(forID: task.id)
+        #expect(paused?.lifecycle == .paused)
+        #expect(paused?.resumeData == producedResumeData)
+
+        await harness.manager.shutdown()
+    }
+
+    @Test("A pause that cannot make its outcome durable fails the task instead of stranding it")
+    func settledPauseWriteFailureFailsTask() async throws {
+        let harness = try StubDownloadHarness(
+            maxRetryCount: 3,
+            maxTotalRetries: 3,
+            retryDelay: 30,
+            clock: TestClock(),
+            label: "pause-settle-write-failure"
+        )
+        let task = await harness.startDownload(destinationURL: makeRetryWaitDestinationURL())
+        let identifier = try #require(
+            await waitForRuntimeTaskIdentifier(manager: harness.manager, task: task, timeout: 10.0)
+        )
+        #expect(await waitForTaskState(task, timeout: 10.0) { $0 == .downloading })
+        await harness.store.setAfterPausingWritten { _ in
+            await harness.injectCompletion(taskIdentifier: identifier, error: retryWaitConnectionLost)
+            // The `.paused` write that would settle the pause then fails.
+            await harness.store.setUpsertFailure(true)
+        }
+
+        await harness.manager.pause(task)
+
+        #expect(await waitForTaskState(task, timeout: 10.0) { $0 == .failed })
+
+        await harness.store.setUpsertFailure(false)
+        await harness.manager.shutdown()
+    }
 }
 
 

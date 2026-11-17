@@ -313,7 +313,7 @@ struct DownloadPauseResumeTests {
             label: "resume-with-data",
             prequeuedStubs: [resumedStub]
         )
-        let resumeData = Data("resume-payload".utf8)
+        let resumeData = try makeRetryResumeData("resume-payload")
         harness.stubTask.scriptCancelResumeData(resumeData)
 
         let task = await harness.startDownload(url: downloadURL)

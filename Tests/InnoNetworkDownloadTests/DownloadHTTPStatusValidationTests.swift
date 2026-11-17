@@ -206,6 +206,22 @@ struct DownloadHTTPStatusValidationTests {
         await fixture.tearDown()
     }
 
+    @Test("The 206 that answers a resumed range request is accepted even when the configured set omits it")
+    func resumedPartialContentIsAlwaysAccepted() async throws {
+        let fixture = try await StatusFixture(
+            label: "status-resumed-partial-content",
+            acceptableStatusCodes: [200]
+        )
+
+        fixture.finish(statusCode: 206, rangeRequested: true)
+
+        #expect(await waitForTaskState(fixture.task, timeout: 10.0) { $0.isTerminal })
+        #expect(await fixture.task.state == .completed)
+        #expect(try Data(contentsOf: fixture.destinationURL) == StatusFixture.body)
+
+        await fixture.tearDown()
+    }
+
     // MARK: Configuration plumbing
 
     @Test("The transfer pack carries acceptableStatusCodes into the configuration and its copies")
@@ -454,17 +470,22 @@ private struct StatusFixture {
 
     /// A stand-in for the registered attempt as Foundation would present it
     /// to the delegate: same identifier, retained request, and task id.
-    func finishedAttempt() -> StubDownloadURLTask {
+    func finishedAttempt(rangeRequested: Bool = false) -> StubDownloadURLTask {
+        var request = URLRequest(url: sourceURL)
+        if rangeRequested {
+            // A task Foundation rebuilds from resume data asks for the rest.
+            request.setValue("bytes=1024-", forHTTPHeaderField: "Range")
+        }
         let attempt = StubDownloadURLTask(
             taskIdentifier: attemptIdentifier,
-            request: URLRequest(url: sourceURL)
+            request: request
         )
         attempt.taskDescription = task.id
         return attempt
     }
 
-    func finish(statusCode: Int) {
-        let attempt = finishedAttempt()
+    func finish(statusCode: Int, rangeRequested: Bool = false) {
+        let attempt = finishedAttempt(rangeRequested: rangeRequested)
         attempt.scriptHTTPStatus(statusCode, url: sourceURL)
         harness.delegate.handleFinishedDownload(attempt, location: bodyURL)
     }

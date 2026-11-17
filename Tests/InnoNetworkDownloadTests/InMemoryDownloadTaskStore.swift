@@ -187,6 +187,10 @@ actor InMemoryDownloadTaskStore: DownloadTaskStore {
         if shouldFailUpsert {
             throw InMemoryDownloadTaskStoreError.upsertFailed(id)
         }
+        if lifecycle == .pausing, let hook = beforePausingWrite {
+            beforePausingWrite = nil
+            await hook(id)
+        }
         guard lifecycle != .committing,
             let record = records[id],
             record.lifecycle != .terminal,
@@ -205,7 +209,25 @@ actor InMemoryDownloadTaskStore: DownloadTaskStore {
             commitMetadata: record.commitMetadata,
             commitOutcome: record.commitOutcome
         )
+        if lifecycle == .pausing, let hook = afterPausingWritten {
+            afterPausingWritten = nil
+            await hook(id)
+        }
         return true
+    }
+
+    /// One-shot hooks around the first write to `.pausing`. A test injects an
+    /// attempt failure in one of them to reproduce, in either order, the race
+    /// between `pause(_:)` and that failure.
+    private var beforePausingWrite: (@Sendable (String) async -> Void)?
+    private var afterPausingWritten: (@Sendable (String) async -> Void)?
+
+    func setBeforePausingWrite(_ hook: (@Sendable (String) async -> Void)?) {
+        beforePausingWrite = hook
+    }
+
+    func setAfterPausingWritten(_ hook: (@Sendable (String) async -> Void)?) {
+        afterPausingWritten = hook
     }
 
     func updateRetryState(

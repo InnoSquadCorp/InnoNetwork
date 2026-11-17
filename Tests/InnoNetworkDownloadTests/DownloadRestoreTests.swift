@@ -45,7 +45,7 @@ struct DownloadRestoreTests {
     @Test("Paused persisted records with resume data restore without a system task")
     func pausedRecordWithResumeDataRestores() async throws {
         let pausedID = "paused-task-\(UUID().uuidString)"
-        let resumeData = Data("resume-after-relaunch".utf8)
+        let resumeData = try makeRetryResumeData("resume-after-relaunch")
         let pausedRecord = DownloadTaskPersistence.Record(
             id: pausedID,
             url: URL(string: "https://example.invalid/paused.zip")!,
@@ -72,6 +72,38 @@ struct DownloadRestoreTests {
 
         #expect(harness.stubSession.lastResumeData == resumeData)
         #expect(await restoredTask.resumeData == nil)
+    }
+
+    @Test(
+        "Resuming non-dictionary resume data restarts fresh without handing it to Foundation",
+        arguments: UnusableResumeData.allCases
+    )
+    func malformedPausedResumeDataRestartsFresh(_ shape: UnusableResumeData) async throws {
+        let pausedID = "paused-malformed-\(UUID().uuidString)"
+        let pausedURL = URL(string: "https://example.invalid/paused-malformed.zip")!
+        let pausedRecord = DownloadTaskPersistence.Record(
+            id: pausedID,
+            url: pausedURL,
+            destinationURL: URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-paused-malformed.zip"),
+            resumeData: try shape.makeData(),
+            lifecycle: .paused
+        )
+        let harness = try StubDownloadHarness(
+            label: "restore-paused-malformed",
+            prepopulatedRecords: [pausedRecord]
+        )
+
+        let restoredTask = try #require(await harness.manager.task(withId: pausedID))
+        #expect(await restoredTask.state == .paused)
+
+        // Foundation raises an Objective-C exception for such a blob, so it
+        // must never reach `downloadTask(withResumeData:)`.
+        await harness.manager.resume(restoredTask)
+
+        #expect(harness.stubSession.lastResumeData == nil)
+        #expect(harness.stubSession.lastURL == pausedURL)
+        #expect(await restoredTask.resumeData == nil)
+        await harness.manager.shutdown()
     }
 
     @Test("Explicitly paused record without resume data restores as paused and restarts fresh")

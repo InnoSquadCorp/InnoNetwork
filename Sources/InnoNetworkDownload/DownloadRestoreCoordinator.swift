@@ -262,6 +262,12 @@ package struct DownloadRestoreCoordinator {
                     retryCount: record.retryCount ?? 0,
                     totalRetryCount: record.totalRetryCount ?? 0
                 )
+                // Waiting for an automatic retry, the transfer is still in
+                // progress, exactly as in the process that scheduled it. In
+                // that state `pause(_:)` takes the task away from the pending
+                // retry instead of ignoring it, and the deferred retry, which
+                // compares against this lifecycle, then does not restart it.
+                await restoredTask.restoreState(.downloading)
                 guard !Task.isCancelled else { return .empty }
                 await runtimeRegistry.add(restoredTask)
                 deferredRetries.append(

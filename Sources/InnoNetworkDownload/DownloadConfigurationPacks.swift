@@ -21,17 +21,19 @@ public struct DownloadTransferPack: Sendable {
     ///     the request times out.
     ///   - timeoutForResource: Seconds the whole transfer may take. Defaults
     ///     to 24 hours.
-    ///   - taskInactivityTimeout: Per-task watchdog that fails a transfer
-    ///     reporting no progress for this long. Values below 100 milliseconds
-    ///     are raised to that floor; `nil` disables the watchdog.
+    ///   - taskInactivityTimeout: Per-task watchdog that cancels a transfer
+    ///     reporting no progress for this long; the task ends `.cancelled`.
+    ///     Values below 100 milliseconds are raised to that floor; `nil`
+    ///     disables the watchdog.
     ///   - allowsCellularAccess: Whether transfers may use cellular
     ///     connectivity. Defaults to `false`; opt in when the product accepts
     ///     the cellular transfer cost.
     ///   - allowsInsecureHTTP: Whether plain `http` download sources are
     ///     accepted. Defaults to `false`.
     ///   - acceptableStatusCodes: HTTP status codes that count as a
-    ///     successfully finished transfer. Defaults to `200..<300`, which
-    ///     includes the `206 Partial Content` a resumed download returns. A
+    ///     successfully finished transfer. Defaults to `200..<300`. The
+    ///     `206 Partial Content` that answers a resumed download's range
+    ///     request is accepted even when the set omits it. A
     ///     response with any other status is never saved to the destination:
     ///     `408`, `429`, and `500...599` are retried under the retry pack's
     ///     budget, as is a `416` (a resumed transfer whose range the server
