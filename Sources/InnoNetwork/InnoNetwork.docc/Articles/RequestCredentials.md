@@ -106,9 +106,10 @@ reason. Ordinary transport/status retries still retain selection.
 
 A provider that cannot reach its own backend has not shown that a credential
 is missing. When credential acquisition or an OAuth renewal fails with a
-transient transport failure — a `URLError` other than a credential rejection
-described below, or a ``NetworkError`` such as a connectivity failure, a
-timeout, or an unclassified transport error — the request reports that
+transport failure — a `URLError` other than a credential rejection described
+below, including one a replay cannot change such as an untrusted certificate,
+or a ``NetworkError`` such as a connectivity failure, a timeout, or an
+unclassified transport error — the request reports that
 failure's secret-free classification instead of
 ``RequestSecurityFailure/credentialUnavailable`` or
 ``RequestSecurityFailure/refreshFailed``. For example, an offline provider

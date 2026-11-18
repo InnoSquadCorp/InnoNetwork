@@ -135,7 +135,7 @@ for one of them and terminal for another.
 | `.statusCode` with `5xx` | `.statusCode` | Yes | Yes |
 | `.statusCode` with `408` or `429` | `.statusCode` | Yes | No; a `4xx` response is excluded from the rolling window |
 | `.statusCode` with any other status | `.statusCode` | No | No |
-| `.underlying` (not a cancellation) | `.transport` | Yes, except a deterministic `URLError` (below) | Yes, except a deterministic `URLError`, a TLS failure, which counts only when the policy counts transport-security failures, and an unreconcilable `304`, which is raised after the `304` was recorded as a success |
+| `.underlying` (not a cancellation) | `.transport` | Yes, except a deterministic `URLError` (below) | Yes, except a deterministic `URLError` and an unreconcilable `304`, which is raised after the `304` was recorded as a success. A TLS failure, including a deterministic certificate failure, counts only when the policy counts transport-security failures |
 | `.reachability` | `.reachability` | Yes | Yes, except `.notConnectedToInternet` and `.cellularDataUnavailable` |
 | `.timeout` | `.timeout` | Yes | Yes |
 | `.trustEvaluationFailed` | `.trust` | No | Only when ``CircuitBreakerPolicy/countsTransportSecurityFailures`` is `true` |
@@ -157,7 +157,10 @@ not trust the server certificate or refused the client certificate
 refused the credential (`.userAuthenticationRequired`,
 `.userCancelledAuthentication`), or a local file or size limit failed
 (`.fileDoesNotExist`, `.fileIsDirectory`, `.noPermissionsToReadFile`,
-`.dataLengthExceedsMaximum`). It is neither retried nor counted.
+`.dataLengthExceedsMaximum`). It is never retried, and the circuit breaker
+does not count it, except that a certificate failure counts when
+``CircuitBreakerPolicy/countsTransportSecurityFailures`` is `true`, like any
+other TLS failure.
 
 The breaker column describes failures of the request's own exchange. A failure
 raised while a named request credential is acquired, renewed, or signed is not

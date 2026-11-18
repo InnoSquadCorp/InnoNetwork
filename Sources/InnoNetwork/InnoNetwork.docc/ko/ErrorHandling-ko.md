@@ -132,7 +132,7 @@ transport 에 대한 로컬 정책 거부, 신뢰 평가 실패, configuration �
 | `.statusCode` 의 `5xx` | `.statusCode` | 예 | 예 |
 | `.statusCode` 의 `408`, `429` | `.statusCode` | 예 | 아니요. `4xx` 응답은 rolling window 에서 제외됩니다. |
 | `.statusCode` 의 그 밖의 status | `.statusCode` | 아니요 | 아니요 |
-| `.underlying` (취소 제외) | `.transport` | 예. 단, 결정적 `URLError` 는 아니요 | 예. 단, 결정적 `URLError` 는 집계하지 않고, TLS 실패는 정책이 transport-security 실패를 집계할 때만 집계하고, 맞출 수 없는 `304` 는 그 `304` 가 이미 성공으로 기록된 뒤에 발생하므로 집계하지 않습니다. |
+| `.underlying` (취소 제외) | `.transport` | 예. 단, 결정적 `URLError` 는 아니요 | 예. 단, 결정적 `URLError` 와 맞출 수 없는 `304` 는 집계하지 않습니다. 그 `304` 는 이미 성공으로 기록된 뒤에 발생합니다. TLS 실패는 결정적 인증서 실패를 포함해, 정책이 transport-security 실패를 집계할 때만 집계합니다. |
 | `.reachability` | `.reachability` | 예 | 예. 단, `.notConnectedToInternet` 과 `.cellularDataUnavailable` 은 아니요 |
 | `.timeout` | `.timeout` | 예 | 예 |
 | `.trustEvaluationFailed` | `.trust` | 아니요 | ``CircuitBreakerPolicy/countsTransportSecurityFailures`` 가 `true` 일 때만 |
@@ -160,8 +160,10 @@ redirect(`.httpTooManyRedirects`, `.redirectToNonExistentLocation`), 시스템�
 `.clientCertificateRejected`, `.clientCertificateRequired`), 서버가 거부한
 credential(`.userAuthenticationRequired`, `.userCancelledAuthentication`),
 로컬 파일이나 크기 제한 실패(`.fileDoesNotExist`, `.fileIsDirectory`,
-`.noPermissionsToReadFile`, `.dataLengthExceedsMaximum`)가 해당하며, 재시도하지도
-집계하지도 않습니다.
+`.noPermissionsToReadFile`, `.dataLengthExceedsMaximum`)가 해당합니다. 재시도하지
+않으며 circuit breaker 도 집계하지 않습니다. 단, 인증서 실패는 다른 TLS 실패와
+마찬가지로 ``CircuitBreakerPolicy/countsTransportSecurityFailures`` 가 `true` 일
+때 집계합니다.
 
 ``NetworkError/isRetriableHint`` 는 오류 종류가 보통 일시적인지만 답합니다.
 요청 method, idempotency key, 시도 예산까지 확인하는 ``RetryPolicy`` 를 대체하지

@@ -236,7 +236,7 @@ One rule now decides whether a failure is transient, and `isRetriableHint`,
 | Session that cannot be renewed | Retried when the refresh error arrived as `.underlying` | Not retried (`.authentication(.refreshFailed)`) |
 | Refresh that failed on the network or with `408`, `429` or `5xx` | Retried | Retried (unchanged) |
 | The same refresh before the first attempt of a `.required` request, or for a stream | Not retried | Retried |
-| Deterministic `URLError`: ATS block, malformed or unsupported URL, redirect loop, untrusted certificate, refused credential, local file or size limit | Retried; counted against the host | Not retried; not counted |
+| Deterministic `URLError`: ATS block, malformed or unsupported URL, redirect loop, untrusted certificate, refused credential, local file or size limit | Retried; counted against the host (a certificate failure only when the policy counts transport-security failures) | Not retried; not counted (a certificate failure still counts when the policy counts transport-security failures) |
 | Device without a network path (`.notConnectedToInternet`, `.cellularDataUnavailable`) | Counted against every host | Not counted (still retried) |
 | `waitsForNetworkChanges: true` | Waited before every retry | Waits only after a connectivity failure |
 
@@ -571,9 +571,10 @@ setting that restores the old behavior, where one exists.
   does not trust, a refused client certificate or credential, or a local file
   or size limit — is no longer transient: `isRetriableHint` is `false`, the
   built-in policy does not retry it, the summary recommends `.doNotRetry`, and
-  the breaker does not count it. *Affected:* apps that relied on an automatic
-  retry after these. *Keep 6.x:* a custom `RetryPolicy` can return `.retry`
-  for them.
+  the breaker does not count it. A certificate failure is the exception for the
+  breaker: as in 6.x, it counts when `countsTransportSecurityFailures` is
+  `true`. *Affected:* apps that relied on an automatic retry after these.
+  *Keep 6.x:* a custom `RetryPolicy` can return `.retry` for them.
 - [ ] **An offline device does not open circuits.** A
   `.reachability(.notConnectedToInternet)` or `.cellularDataUnavailable`
   failure is still retried but no longer counts toward the host's circuit

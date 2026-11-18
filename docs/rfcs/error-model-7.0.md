@@ -126,7 +126,7 @@ internal property decides transience and every consumer reads it:
 | `.statusCode` 408, 429 | `.statusCode` | yes | no (4xx rule below) |
 | `.statusCode` other 4xx | `.statusCode` | no | no (4xx rule below) |
 | `.underlying` (not cancellation, not a deterministic `URLError`) | `.transport` | yes | yes; a TLS-class error only when the policy counts transport-security failures |
-| `.underlying` with a deterministic `URLError` (below) | `.transport` | no | no |
+| `.underlying` with a deterministic `URLError` (below) | `.transport` | no | no; a certificate failure only when the policy counts transport-security failures |
 | `.underlying`, domain `InnoNetwork.ResponseCache` (unreconcilable `304`) | `.transport` | yes; the replay is unconditional | no; the `304` was recorded as a success |
 | `.reachability`: `.dnsLookupFailed`, `.cannotFindHost`, `.networkConnectionLost` | `.reachability` | yes | yes |
 | `.reachability`: `.notConnectedToInternet`, `.cellularDataUnavailable` | `.reachability` | yes | no; the device has no path, which says nothing about the host |

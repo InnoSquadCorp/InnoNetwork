@@ -61,8 +61,10 @@ unreleased 7.0 line. See `docs/Migration-7.0.0.md`.
   instead of `underlying`. `NetworkError.errorCode` returns their specific
   codes. A refresh that failed on the network, timed out or received a `408`,
   `429` or `5xx`, and a credential provider whose own transport failed
-  transiently, keep that failure's own classification. The proactive refresh
-  of a request that has no token yet follows the same rule.
+  transiently, keep that failure's own classification, and so does a transport
+  failure a replay cannot cure that rejects no credential, such as an untrusted
+  certificate. The proactive refresh of a request that has no token yet
+  follows the same rule.
 - Report `URLError.dataNotAllowed`, `.internationalRoamingOff` and
   `.callIsActive` as `reachability(.cellularDataUnavailable, …)` instead of
   `underlying`.
@@ -71,8 +73,10 @@ unreleased 7.0 line. See `docs/Migration-7.0.0.md`.
   rejections and authentication failures are no longer retried or counted.
   Neither is a `URLError` a replay cannot change (an App Transport Security
   block, a malformed or unsupported URL, a redirect loop, an untrusted
-  certificate, a refused credential, a local file or size limit), and a device
-  without a network path no longer counts toward any host's breaker.
+  certificate, a refused credential, a local file or size limit), except that
+  a certificate failure still counts when the policy counts transport-security
+  failures, and a device without a network path no longer counts toward any
+  host's breaker.
 - `NetworkError.isUserVisible` is `false` for a request credential contract
   the integrating code got wrong.
 - `waitsForNetworkChanges` defers a retry only after a connectivity failure,
@@ -94,9 +98,11 @@ unreleased 7.0 line. See `docs/Migration-7.0.0.md`.
   API host's circuit breaker, and a renewal that failed in transit, or was
   stopped by a local decision about the provider's transport, leaves the
   request's single renewal for a retry instead of asking to sign in.
-- A transient session-refresh failure is retried on every path, including the
-  proactive refresh and streams, and its `statusCode` carries the refresh
-  endpoint's response without the refresh request.
+- A transient session-refresh failure reaches the retry policy on every path,
+  including the proactive refresh and streams, which retries it like any
+  transient failure: only for a request that may be replayed and while retries
+  remain. Its `statusCode` carries the refresh endpoint's response without the
+  refresh request.
 - Streaming handshakes replay once through the session refresh and take part
   in the circuit breaker, which judges a custom trust policy's rejection like
   any other transport-security failure.
