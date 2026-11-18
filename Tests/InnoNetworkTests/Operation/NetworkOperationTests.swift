@@ -57,6 +57,29 @@ struct NetworkOperationTests {
         #expect(await collectEvents(late) == lifecycle)
     }
 
+    @Test("The event log delivers to subscribers live, replays to late ones, and ignores events after the end")
+    func eventLogDeliversLiveAndReplays() async {
+        let log = NetworkOperationEventLog()
+        let id = UUID()
+        let summary = NetworkError.cancelled.summary
+        let lifecycle: [NetworkOperationEvent] = [.started(id: id), .failed(id: id, summary: summary)]
+
+        // Subscribed before anything is recorded, so both events must arrive
+        // live, while this consumer may already be waiting for them.
+        let early = log.subscribe()
+        let earlyConsumer = Task { await collectEvents(early) }
+        log.record(.started(id: id))
+        let afterStart = log.subscribe()
+        log.finish(with: .failed(id: id, summary: summary))
+        let afterFinish = log.subscribe()
+        log.record(.started(id: id))
+        log.finish(with: .succeeded(id: id))
+
+        #expect(await earlyConsumer.value == lifecycle)
+        #expect(await collectEvents(afterStart) == lifecycle)
+        #expect(await collectEvents(afterFinish) == lifecycle)
+    }
+
     @Test("An upload operation returns the value decoded by the multipart pipeline")
     func uploadOperationReturnsDecodedValue() async throws {
         let session = MockURLSession()
@@ -567,7 +590,6 @@ struct NetworkOperationTests {
     }
 }
 
-/// Awaits a failing operation and returns its contextual summary.
 private func collectEvents(_ events: AsyncStream<NetworkOperationEvent>) async -> [NetworkOperationEvent] {
     var collected: [NetworkOperationEvent] = []
     for await event in events {
@@ -576,6 +598,7 @@ private func collectEvents(_ events: AsyncStream<NetworkOperationEvent>) async -
     return collected
 }
 
+/// Awaits a failing operation and returns its contextual summary.
 private func failure<Value: Sendable>(
     from operation: NetworkOperation<Value>,
     onWait: @Sendable () -> Void = {}
