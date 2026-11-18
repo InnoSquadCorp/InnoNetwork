@@ -247,6 +247,7 @@ package struct DownloadFailureCoordinator {
 
         if activePlan.phase == .waitingForNetwork {
             let baseline = activePlan.networkBaseline?.value
+            var observedNetworkChange = false
             if let monitor = configuration.networkMonitor {
                 let timeout: TimeInterval?
                 if let deadline = activePlan.networkWaitDeadline {
@@ -271,25 +272,37 @@ package struct DownloadFailureCoordinator {
                     )
                 }
                 guard case .value(let newSnapshot) = changeResult else { return }
-                guard await task.lifecycleSnapshot() == waitingLifecycle else { return }
                 if let newSnapshot, newSnapshot != baseline {
-                    await task.resetRetryCount()
+                    observedNetworkChange = true
                 }
+            }
+            // With or without a wait, a pause, resume, cancellation, or manual
+            // retry may have taken the task since this retry was scheduled. A
+            // restored retry has no monitor wait at all when the relaunched
+            // process configures none. Leave such a task and its record alone.
+            guard await task.lifecycleSnapshot() == waitingLifecycle else { return }
+            if observedNetworkChange {
+                await task.resetRetryCount()
             }
 
             let backoffPlan = makeBackoffPlan(
                 retryCount: await task.retryCount
             )
             do {
-                let persisted = try await persistence.updateRetryState(
+                // The check above and this write are separate steps, so the
+                // store decides again whether the marker is still this
+                // retry's: it rewrites only a `.retryPending` record that
+                // carries the plan this retry has been waiting out. The
+                // retained resume data goes into the same write.
+                let persisted = try await persistence.rewriteRetryPlan(
                     id: task.id,
+                    replacing: activePlan,
+                    with: backoffPlan,
                     retryCount: await task.retryCount,
                     totalRetryCount: await task.totalRetryCount,
-                    retryPlan: backoffPlan
+                    resumeData: await task.resumeData
                 )
                 guard persisted else { return }
-                // Rewriting the plan resets the marker's resume data.
-                await persistRetainedResumeData(for: task)
             } catch {
                 await markTaskFailed(
                     task,

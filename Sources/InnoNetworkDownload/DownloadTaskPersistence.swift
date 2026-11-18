@@ -313,8 +313,9 @@ package actor DownloadTaskPersistence {
     /// - Parameter admitsResumingRecord: Whether a `.resuming` record may be
     ///   replaced too. `resume(_:)` starts its attempt before it records the
     ///   attempt as active, so the admission of that attempt's failure can
-    ///   still find `.resuming`. A later rewrite of the plan passes `false`:
-    ///   by then a `.resuming` record belongs to a newer resume.
+    ///   still find `.resuming`. A later rewrite of the waiting retry's plan
+    ///   uses ``rewriteRetryPlan(id:replacing:with:retryCount:totalRetryCount:resumeData:)``
+    ///   instead, because by then any other phase belongs to a newer path.
     package func updateRetryState(
         id: String,
         retryCount: Int,
@@ -328,6 +329,33 @@ package actor DownloadTaskPersistence {
             totalRetryCount: totalRetryCount,
             retryPlan: retryPlan,
             admitsResumingRecord: admitsResumingRecord
+        )
+    }
+
+    /// Replaces the plan of a waiting retry's own `.retryPending` marker,
+    /// together with its retry counts and resume data.
+    ///
+    /// - Parameter expectedPlan: The plan the waiting retry is carrying out.
+    ///   The write applies only while the record is still `.retryPending`
+    ///   with this plan. Any other phase belongs to a pause, a resume, or a
+    ///   newer attempt, and a marker with another plan belongs to a newer
+    ///   retry; the task id alone cannot tell them apart.
+    /// - Returns: Whether the marker was still this retry's and was rewritten.
+    package func rewriteRetryPlan(
+        id: String,
+        replacing expectedPlan: RetryPlan,
+        with retryPlan: RetryPlan,
+        retryCount: Int,
+        totalRetryCount: Int,
+        resumeData: Data?
+    ) async throws -> Bool {
+        try await store.rewriteRetryPlan(
+            id: id,
+            replacing: expectedPlan,
+            with: retryPlan,
+            retryCount: retryCount,
+            totalRetryCount: totalRetryCount,
+            resumeData: resumeData
         )
     }
 

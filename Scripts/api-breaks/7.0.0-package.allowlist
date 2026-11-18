@@ -27,3 +27,4 @@ API breakage: func DownloadTaskStore.updateRetryState(id:retryCount:totalRetryCo
 API breakage: func DownloadFailureCoordinator.resumePersistedRetry(task:plan:restart:) has parameter 0 type change from InnoNetworkDownload.DownloadTask to InnoNetworkDownload.DownloadRestoredRetry
 API breakage: func DownloadFailureCoordinator.resumePersistedRetry(task:plan:restart:) has parameter 1 type change from InnoNetworkDownload.DownloadTaskPersistence.RetryPlan to (InnoNetworkDownload.DownloadTask) async -> Swift.Void
 API breakage: func DownloadFailureCoordinator.resumePersistedRetry(task:plan:restart:) has been renamed to func resumePersistedRetry(_:restart:)
+API breakage: func DownloadTaskStore.rewriteRetryPlan(id:replacing:with:retryCount:totalRetryCount:resumeData:) has been added as a protocol requirement

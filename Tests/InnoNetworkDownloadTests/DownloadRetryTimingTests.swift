@@ -571,6 +571,83 @@ struct RestoredRetryClaimTests {
         #expect(restarts.withLock { $0 } == 0)
         #expect(await task.lifecycleSnapshot() == resumedLifecycle)
     }
+
+    /// A relaunched process without a network monitor has no change to wait
+    /// for, so a restored retry that was waiting for one goes straight to
+    /// rewriting its plan as a backoff.
+    private static let withoutNetworkMonitor = DownloadConfiguration(
+        maxRetryCount: 3,
+        maxTotalRetries: 3,
+        retryDelay: 0,
+        retryJitterRatio: 0,
+        sessionIdentifier: "test.restored-retry-claim.\(UUID().uuidString)",
+        networkMonitor: nil,
+        waitsForNetworkChanges: true
+    )
+
+    private static let waitingPlan = DownloadTaskPersistence.RetryPlan.waitingForNetwork(
+        baseline: nil,
+        deadline: Date(timeIntervalSince1970: 500)
+    )
+
+    @Test("A restored retry without a network monitor leaves alone a task a pause took before its job ran")
+    func restoredNetworkWaitYieldsToPauseWithoutMonitor() async throws {
+        let clock = TestClock()
+        let (coordinator, task) = await makeCoordinator(configuration: Self.withoutNetworkMonitor, clock: clock)
+        await task.restoreState(.downloading)
+        let waitingLifecycle = await task.lifecycleSnapshot()
+        #expect(
+            try await coordinator.persistence.updateRetryState(
+                id: task.id, retryCount: 1, totalRetryCount: 1, retryPlan: Self.waitingPlan)
+        )
+        // The pause has taken the task, and its durable `.paused` is still
+        // to come.
+        #expect(await task.transitionToPausedRetainingResumeData(ifMatching: waitingLifecycle))
+
+        let restarts = OSAllocatedUnfairLock(initialState: 0)
+        await coordinator.resumePersistedRetry(
+            DownloadRestoredRetry(task: task, plan: Self.waitingPlan, waitingLifecycle: waitingLifecycle),
+            restart: { _ in restarts.withLock { $0 += 1 } })
+
+        let record = await coordinator.persistence.record(forID: task.id)
+        #expect(record?.lifecycle == .retryPending)
+        #expect(record?.retryPlan == Self.waitingPlan)
+        #expect(restarts.withLock { $0 } == 0)
+    }
+
+    @Test("A restored retry without a network monitor keeps the record of an attempt resumed before its job ran")
+    func restoredNetworkWaitKeepsResumedRecordWithoutMonitor() async throws {
+        let clock = TestClock()
+        let (coordinator, task) = await makeCoordinator(configuration: Self.withoutNetworkMonitor, clock: clock)
+        await task.restoreState(.downloading)
+        let waitingLifecycle = await task.lifecycleSnapshot()
+        #expect(
+            try await coordinator.persistence.updateRetryState(
+                id: task.id, retryCount: 1, totalRetryCount: 1, retryPlan: Self.waitingPlan)
+        )
+        // A pause and a resume finished first: the resumed attempt is running
+        // and its record is `.active`.
+        #expect(await task.transitionToPausedRetainingResumeData(ifMatching: waitingLifecycle))
+        #expect(
+            try await coordinator.persistence.transitionResumeState(
+                id: task.id, from: .retryPending, to: .paused, resumeData: nil)
+        )
+        let pausedLifecycle = await task.lifecycleSnapshot()
+        #expect(await task.startNextAttempt(transitioningTo: .downloading, ifMatching: pausedLifecycle) != nil)
+        #expect(
+            try await coordinator.persistence.transitionResumeState(
+                id: task.id, from: .paused, to: .active, resumeData: nil)
+        )
+
+        let restarts = OSAllocatedUnfairLock(initialState: 0)
+        await coordinator.resumePersistedRetry(
+            DownloadRestoredRetry(task: task, plan: Self.waitingPlan, waitingLifecycle: waitingLifecycle),
+            restart: { _ in restarts.withLock { $0 += 1 } })
+
+        // A `.retryPending` record would refuse the resumed attempt's commit.
+        #expect(await coordinator.persistence.record(forID: task.id)?.lifecycle == .active)
+        #expect(restarts.withLock { $0 } == 0)
+    }
 }
 
 // MARK: - Helpers

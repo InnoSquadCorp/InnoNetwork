@@ -91,6 +91,18 @@ private actor FailingUpsertDownloadTaskStore: DownloadTaskStore {
         throw PersistenceTestError.upsertFailed
     }
 
+    func rewriteRetryPlan(
+        id: String,
+        replacing expectedPlan: DownloadTaskPersistence.RetryPlan,
+        with retryPlan: DownloadTaskPersistence.RetryPlan,
+        retryCount: Int,
+        totalRetryCount: Int,
+        resumeData: Data?
+    ) async throws -> Bool {
+        _ = (id, expectedPlan, retryPlan, retryCount, totalRetryCount, resumeData)
+        throw PersistenceTestError.upsertFailed
+    }
+
     func beginCommit(
         id: String,
         metadata: DownloadTaskPersistence.CommitMetadata

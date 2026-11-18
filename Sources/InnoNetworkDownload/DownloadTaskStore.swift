@@ -28,6 +28,14 @@ package protocol DownloadTaskStore: Actor {
         retryPlan: DownloadTaskPersistence.RetryPlan?,
         admitsResumingRecord: Bool
     ) async throws -> Bool
+    func rewriteRetryPlan(
+        id: String,
+        replacing expectedPlan: DownloadTaskPersistence.RetryPlan,
+        with retryPlan: DownloadTaskPersistence.RetryPlan,
+        retryCount: Int,
+        totalRetryCount: Int,
+        resumeData: Data?
+    ) async throws -> Bool
     func beginCommit(
         id: String,
         metadata: DownloadTaskPersistence.CommitMetadata

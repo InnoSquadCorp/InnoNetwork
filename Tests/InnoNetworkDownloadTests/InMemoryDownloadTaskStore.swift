@@ -291,6 +291,34 @@ actor InMemoryDownloadTaskStore: DownloadTaskStore {
         return true
     }
 
+    func rewriteRetryPlan(
+        id: String,
+        replacing expectedPlan: DownloadTaskPersistence.RetryPlan,
+        with retryPlan: DownloadTaskPersistence.RetryPlan,
+        retryCount: Int,
+        totalRetryCount: Int,
+        resumeData: Data?
+    ) async throws -> Bool {
+        if shouldFailUpsert {
+            throw InMemoryDownloadTaskStoreError.upsertFailed(id)
+        }
+        guard let record = records[id],
+            record.lifecycle == .retryPending,
+            record.retryPlan == expectedPlan
+        else { return false }
+        records[id] = DownloadTaskPersistence.Record(
+            id: id,
+            url: record.url,
+            destinationURL: record.destinationURL,
+            resumeData: resumeData,
+            lifecycle: .retryPending,
+            retryCount: retryCount,
+            totalRetryCount: totalRetryCount,
+            retryPlan: retryPlan
+        )
+        return true
+    }
+
     /// Called after `updateRetryState` makes a retry marker durable and before
     /// it returns, so a test can act in the window a concurrent pause uses.
     private var afterRetryMarkerWritten: (@Sendable (String) async -> Void)?

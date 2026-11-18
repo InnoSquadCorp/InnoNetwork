@@ -585,7 +585,7 @@ struct DownloadRetryPersistenceTests {
             )
         )
 
-        // A rewrite of an existing plan never takes a resume's record.
+        // Without the flag, a retry write never takes a resume's record.
         #expect(
             try await writer.updateRetryState(
                 id: taskID,
@@ -617,6 +617,92 @@ struct DownloadRetryPersistenceTests {
         #expect(replayed.resumeData == nil)
         #expect(replayed.retryCount == 1)
         #expect(replayed.retryPlan == plan)
+    }
+
+    @Test("a plan rewrite replaces only the marker of the retry that is waiting it out")
+    func planRewriteReplacesOnlyItsOwnMarker() async throws {
+        let baseDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(
+                "inno-retry-rewrite-\(UUID().uuidString)",
+                isDirectory: true
+            )
+        defer { try? FileManager.default.removeItem(at: baseDirectory) }
+        let sessionIdentifier = "retry-plan-rewrite"
+        let taskID = "retry-rewrite-\(UUID().uuidString)"
+        let sourceURL = URL(string: "https://example.invalid/retry-rewrite.bin")!
+        let destinationURL = baseDirectory.appendingPathComponent("retry-rewrite.bin")
+        let failureResumeData = Data("resume point of the failed attempt".utf8)
+        let waitingPlan = DownloadTaskPersistence.RetryPlan.waitingForNetwork(
+            baseline: nil,
+            deadline: Date(timeIntervalSince1970: 500)
+        )
+        let newerPlan = DownloadTaskPersistence.RetryPlan.waitingForNetwork(
+            baseline: nil,
+            deadline: Date(timeIntervalSince1970: 900)
+        )
+        let backoffPlan = DownloadTaskPersistence.RetryPlan.backoff(
+            retryNotBefore: Date(timeIntervalSince1970: 600)
+        )
+        let writer = try DownloadTaskPersistence(
+            sessionIdentifier: sessionIdentifier,
+            baseDirectoryURL: baseDirectory
+        )
+        try await writer.upsert(id: taskID, url: sourceURL, destinationURL: destinationURL)
+        @Sendable func rewrite() async throws -> Bool {
+            try await writer.rewriteRetryPlan(
+                id: taskID,
+                replacing: waitingPlan,
+                with: backoffPlan,
+                retryCount: 2,
+                totalRetryCount: 2,
+                resumeData: failureResumeData
+            )
+        }
+
+        // The record of an attempt that a pause and a resume started.
+        #expect(try await rewrite() == false)
+        #expect(await writer.record(forID: taskID)?.lifecycle == .active)
+
+        // The marker of a newer retry, which waits out its own plan.
+        #expect(
+            try await writer.updateRetryState(
+                id: taskID, retryCount: 1, totalRetryCount: 1, retryPlan: newerPlan)
+        )
+        #expect(try await rewrite() == false)
+        #expect(await writer.record(forID: taskID)?.retryPlan == newerPlan)
+
+        // A pause that took the waiting retry.
+        #expect(
+            try await writer.updateRetryState(
+                id: taskID, retryCount: 1, totalRetryCount: 1, retryPlan: waitingPlan)
+        )
+        #expect(
+            try await writer.transitionResumeState(
+                id: taskID, from: .retryPending, to: .paused, resumeData: failureResumeData)
+        )
+        #expect(try await rewrite() == false)
+        #expect(await writer.record(forID: taskID)?.lifecycle == .paused)
+
+        // The waiting retry's own marker is rewritten, resume data included.
+        #expect(
+            try await writer.transitionResumeState(
+                id: taskID, from: .paused, to: .active, resumeData: nil)
+        )
+        #expect(
+            try await writer.updateRetryState(
+                id: taskID, retryCount: 1, totalRetryCount: 1, retryPlan: waitingPlan)
+        )
+        #expect(try await rewrite())
+        let reader = try DownloadTaskPersistence(
+            sessionIdentifier: sessionIdentifier,
+            baseDirectoryURL: baseDirectory
+        )
+        let replayed = try #require(await reader.record(forID: taskID))
+        #expect(replayed.lifecycle == .retryPending)
+        #expect(replayed.retryPlan == backoffPlan)
+        #expect(replayed.retryCount == 2)
+        #expect(replayed.totalRetryCount == 2)
+        #expect(replayed.resumeData == failureResumeData)
     }
 
     @Test("legacy retry records decode without schedule metadata")
