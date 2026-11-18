@@ -84,7 +84,7 @@ struct WebSocketReconnectHardeningTests {
     @Test("reconnectMaxTotalDuration returns .exceeded once the cumulative budget is exhausted")
     func reconnectMaxTotalDurationEnforced() async {
         let registry = WebSocketRuntimeRegistry()
-        let now = OSAllocatedUnfairLock<Date>(initialState: Date(timeIntervalSince1970: 1_700_000_000))
+        let clock = TestClock()
         let coordinator = WebSocketReconnectCoordinator(
             configuration: WebSocketConfiguration(
                 reconnectDelay: 0,
@@ -93,17 +93,17 @@ struct WebSocketReconnectHardeningTests {
                 reconnectMaxTotalDuration: 5.0
             ),
             runtimeRegistry: registry,
-            dateProvider: { now.withLock { $0 } }
+            clock: clock
         )
         let task = WebSocketTask(url: URL(string: "wss://example.invalid/budget")!)
 
         let first = await coordinator.reconnectAction(task: task)
         #expect(first == .retry, "first reconnect should retry when within budget")
 
-        // Advance the wall clock past the configured budget. The next call
-        // must return .exceeded even though the per-attempt cap has not
-        // been reached.
-        now.withLock { $0 = $0.addingTimeInterval(5.5) }
+        // Advance the monotonic clock past the configured budget. The next
+        // call must return .exceeded even though the per-attempt cap has
+        // not been reached.
+        clock.advance(by: .milliseconds(5_500))
         let second = await coordinator.reconnectAction(task: task)
         #expect(second == .exceeded(reason: .duration))
     }
@@ -111,7 +111,7 @@ struct WebSocketReconnectHardeningTests {
     @Test("Successful reconnect clears the cumulative budget window")
     func reconnectWindowClearsAfterSuccess() async {
         let task = WebSocketTask(url: URL(string: "wss://example.invalid/clear")!)
-        await task.beginReconnectWindowIfNeeded(now: Date(timeIntervalSince1970: 1_000))
+        await task.beginReconnectWindowIfNeeded(now: .seconds(1_000))
         #expect(await task.reconnectWindowStartedAt != nil)
         await task.clearReconnectWindow()
         #expect(await task.reconnectWindowStartedAt == nil)

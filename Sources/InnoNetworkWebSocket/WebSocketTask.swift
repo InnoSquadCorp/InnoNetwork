@@ -19,7 +19,7 @@ public actor WebSocketTask: Identifiable {
     private var _error: WebSocketError?
     private var _closeCode: WebSocketCloseCode?
     private var _closeDisposition: WebSocketCloseDisposition?
-    private var _reconnectWindowStartedAt: Date?
+    private var _reconnectWindowStartedAt: Duration?
     /// Reconnect budget that was in force when the current connection opened.
     /// Kept until the connection ends so a connection that drops before the
     /// stability interval can continue that budget.
@@ -169,7 +169,7 @@ public actor WebSocketTask: Identifiable {
     /// The reconnect coordinator stamps this on the first reconnect attempt
     /// after a clean connection and uses ``reconnectWindowStartedAt`` to
     /// enforce `maxTotalDuration` from ``WebSocketReconnectPack``.
-    package func beginReconnectWindowIfNeeded(now: Date) {
+    package func beginReconnectWindowIfNeeded(now: Duration) {
         if _reconnectWindowStartedAt == nil {
             _reconnectWindowStartedAt = now
         }
@@ -219,7 +219,8 @@ public actor WebSocketTask: Identifiable {
         _reconnectWindowStartedAt = carry.reconnectWindowStartedAt
     }
 
-    package var reconnectWindowStartedAt: Date? { _reconnectWindowStartedAt }
+    /// Monotonic instant at which the current reconnect window started.
+    package var reconnectWindowStartedAt: Duration? { _reconnectWindowStartedAt }
 
     package func isConnecting(generation: Int) -> Bool {
         lifecycleState.generation == generation && lifecycleState.publicState == .connecting
@@ -385,7 +386,7 @@ extension WebSocketTask: Hashable {
 /// connection that does not stay open can continue it.
 private struct ReconnectBudgetCarry: Sendable {
     let attemptedReconnectCount: Int
-    let reconnectWindowStartedAt: Date?
+    let reconnectWindowStartedAt: Duration?
     /// Monotonic instant at which the connection became ready. Wall-clock
     /// corrections must not decide whether it stayed up long enough.
     let openedAt: Duration

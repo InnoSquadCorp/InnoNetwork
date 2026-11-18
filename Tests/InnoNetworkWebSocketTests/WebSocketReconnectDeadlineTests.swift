@@ -29,7 +29,7 @@ struct WebSocketReconnectDeadlineTests {
             configuration: WebSocketConfiguration(
                 reconnectDelay: delayedWakeup ? 1 : 10, reconnectJitterRatio: 0,
                 maxReconnectAttempts: 10, reconnectMaxTotalDuration: 5
-            ), runtimeRegistry: registry, clock: clock, dateProvider: { clock.now() }
+            ), runtimeRegistry: registry, clock: clock
         )
         let task = WebSocketTask(url: try #require(URL(string: "wss://example.invalid/deadline")))
         await task.restoreStateForTesting(.reconnecting)
@@ -64,7 +64,7 @@ struct WebSocketReconnectDeadlineTests {
             configuration: WebSocketConfiguration(
                 reconnectDelay: 1, reconnectJitterRatio: 0,
                 maxReconnectAttempts: 10, reconnectMaxTotalDuration: 5
-            ), runtimeRegistry: registry, clock: clock, dateProvider: { clock.now() }
+            ), runtimeRegistry: registry, clock: clock
         )
         let task = WebSocketTask(url: try #require(URL(string: "wss://example.invalid/control")))
         await task.restoreStateForTesting(.reconnecting)

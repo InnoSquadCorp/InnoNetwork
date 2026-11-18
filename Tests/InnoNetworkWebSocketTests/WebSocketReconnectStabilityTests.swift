@@ -1,6 +1,7 @@
 import Foundation
 import InnoNetworkTestSupport
 import Testing
+import os
 
 @testable import InnoNetwork
 @testable import InnoNetworkWebSocket
@@ -14,9 +15,8 @@ struct WebSocketReconnectStabilityTests {
     private struct Fixture {
         let coordinator: WebSocketReconnectCoordinator
         let task: WebSocketTask
-        /// Drives both clocks the coordinator reads: the monotonic one that
-        /// measures how long a connection stayed open, and the wall clock of
-        /// the reconnect window.
+        /// Drives the monotonic clock the coordinator measures both budgets
+        /// on: how long a connection stayed open, and the reconnect window.
         let clock: TestClock
 
         func advance(by interval: TimeInterval) {
@@ -39,8 +39,7 @@ struct WebSocketReconnectStabilityTests {
                 reconnectStabilityInterval: stabilityInterval
             ),
             runtimeRegistry: WebSocketRuntimeRegistry(),
-            clock: clock,
-            dateProvider: { clock.now() }
+            clock: clock
         )
         let task = WebSocketTask(url: URL(string: "wss://example.invalid/stability")!)
         return Fixture(coordinator: coordinator, task: task, clock: clock)
@@ -122,6 +121,32 @@ struct WebSocketReconnectStabilityTests {
         #expect(await fixture.coordinator.reconnectAction(task: fixture.task) == .exceeded(reason: .duration))
     }
 
+    @Test("A wall-clock correction neither spends nor refills the reconnect window")
+    func wallClockCorrectionLeavesReconnectWindowAlone() async {
+        let clock = WallClockCorrectingClock(base: TestClock(epoch: Self.start))
+        let coordinator = WebSocketReconnectCoordinator(
+            configuration: WebSocketConfiguration(
+                reconnectDelay: 0,
+                reconnectJitterRatio: 0,
+                maxReconnectAttempts: 1_000,
+                reconnectMaxTotalDuration: 5
+            ),
+            runtimeRegistry: WebSocketRuntimeRegistry(),
+            clock: clock
+        )
+        let task = WebSocketTask(url: URL(string: "wss://example.invalid/wall-clock")!)
+
+        #expect(await coordinator.reconnectAction(task: task) == .retry)
+        // The wall clock jumps an hour ahead: the window must not expire.
+        clock.correct(by: 3_600)
+        #expect(await coordinator.reconnectAction(task: task) == .retry)
+        // It jumps back two hours while five real seconds pass: the window
+        // must expire on schedule instead of gaining an hour.
+        clock.correct(by: -7_200)
+        clock.base.advance(by: .seconds(5))
+        #expect(await coordinator.reconnectAction(task: task) == .exceeded(reason: .duration))
+    }
+
     @Test("Reset discards the budget carried across a short connection")
     func resetDiscardsCarriedBudget() async {
         let fixture = makeFixture(maxReconnectAttempts: 2)
@@ -172,5 +197,32 @@ struct WebSocketReconnectStabilityTests {
         #expect(notANumber.reconnectStabilityInterval == 10)
         #expect(WebSocketConfiguration.safeDefaults().reconnectStabilityInterval == 10)
         #expect(WebSocketConfiguration.advanced().reconnectStabilityInterval == 10)
+    }
+}
+
+/// Moves only the wall clock, as an NTP or manual time correction does,
+/// while the monotonic clock keeps following `base`.
+private final class WallClockCorrectingClock: InnoNetworkClock, Sendable {
+    let base: TestClock
+    private let correction = OSAllocatedUnfairLock<TimeInterval>(initialState: 0)
+
+    init(base: TestClock) {
+        self.base = base
+    }
+
+    func correct(by interval: TimeInterval) {
+        correction.withLock { $0 += interval }
+    }
+
+    func sleep(for duration: Duration) async throws {
+        try await base.sleep(for: duration)
+    }
+
+    func now() -> Date {
+        base.now().addingTimeInterval(correction.withLock { $0 })
+    }
+
+    func monotonicNow() -> Duration {
+        base.monotonicNow()
     }
 }
