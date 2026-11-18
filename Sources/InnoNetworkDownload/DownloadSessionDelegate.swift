@@ -102,6 +102,20 @@ package final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegat
         handleFinishedDownload(downloadTask, location: location)
     }
 
+    /// Whether `downloadTask` continued a transfer at a redirect target from
+    /// resume data. Only an attempt rebuilt from resume data asks for a
+    /// range, and such an attempt keeps the source as its original request.
+    private static func isResumedAtRedirectTarget(_ downloadTask: any DownloadURLTask) -> Bool {
+        guard let currentRequest = downloadTask.currentRequest,
+            currentRequest.value(forHTTPHeaderField: "Range") != nil,
+            let currentURL = currentRequest.url,
+            let originalURL = downloadTask.originalRequest?.url
+        else {
+            return false
+        }
+        return currentURL != originalURL
+    }
+
     /// Transport-independent body of `didFinishDownloadingTo`. Foreground
     /// attempts and background-session attempts redelivered after a relaunch
     /// both arrive here, so admission decisions made in this method apply to
@@ -128,7 +142,8 @@ package final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegat
                 location: nil,
                 error: DownloadHTTPStatusFailure.make(
                     statusCode: statusCode,
-                    url: downloadTask.currentRequest?.url
+                    url: downloadTask.currentRequest?.url,
+                    resumedAtRedirectTarget: Self.isResumedAtRedirectTarget(downloadTask)
                 )
             )
             return
@@ -347,8 +362,16 @@ package enum DownloadAttemptResumeData {
     }
 
     /// Whether a task Foundation rebuilt from opaque resume data still
-    /// targets the admitted logical source. Shared by `resume(_:)` and the
+    /// belongs to the admitted logical source. Shared by `resume(_:)` and the
     /// automatic retry so both apply one admission rule.
+    ///
+    /// The rebuilt task's original request must be the source. Its current
+    /// request is the source too, unless the transfer followed a redirect:
+    /// Foundation then restores the redirect target, with the range it asks
+    /// for, as the current request. A target is admitted only where a live
+    /// redirect from the source could have led under the policy the session
+    /// applies, and only when that policy would not have had to strip
+    /// anything from it; anything else restarts from the source.
     package static func admits(
         _ urlTask: any DownloadURLTask,
         expectedURL: URL,
@@ -356,17 +379,50 @@ package enum DownloadAttemptResumeData {
     ) -> Bool {
         guard
             let originalURL = urlTask.originalRequest?.url,
-            let currentURL = urlTask.currentRequest?.url,
+            let currentRequest = urlTask.currentRequest,
+            let currentURL = currentRequest.url,
             originalURL == expectedURL,
-            currentURL == expectedURL
+            admitsURL(expectedURL, allowsInsecureHTTP: allowsInsecureHTTP)
         else {
             return false
         }
+        guard currentURL != expectedURL else { return true }
+        return admitsRedirectTarget(currentRequest, from: expectedURL, allowsInsecureHTTP: allowsInsecureHTTP)
+    }
+
+    /// Replays the live redirect decision for `target`. The source request is
+    /// rebuilt bare, as the manager creates every download from a URL alone.
+    /// The target keeps the headers Foundation restored with it — `Range`,
+    /// `If-Range`, and its default `Accept` fields — which the policy never
+    /// strips, so only a credential the live redirect would have removed
+    /// makes the two differ.
+    private static func admitsRedirectTarget(
+        _ target: URLRequest,
+        from sourceURL: URL,
+        allowsInsecureHTTP: Bool
+    ) -> Bool {
+        guard let targetURL = target.url,
+            let redirect = HTTPURLResponse(
+                url: sourceURL,
+                statusCode: 302,
+                httpVersion: nil,
+                headerFields: ["Location": targetURL.absoluteString]
+            ),
+            let admitted = DefaultRedirectPolicy().redirect(
+                request: target,
+                response: redirect,
+                originalRequest: URLRequest(url: sourceURL)
+            ),
+            (admitted.allHTTPHeaderFields ?? [:]) == (target.allHTTPHeaderFields ?? [:])
+        else {
+            return false
+        }
+        return admitsURL(targetURL, allowsInsecureHTTP: allowsInsecureHTTP)
+    }
+
+    private static func admitsURL(_ url: URL, allowsInsecureHTTP: Bool) -> Bool {
         do {
-            try NetworkURLAdmission.validate(
-                expectedURL,
-                policy: .http(allowsInsecure: allowsInsecureHTTP)
-            )
+            try NetworkURLAdmission.validate(url, policy: .http(allowsInsecure: allowsInsecureHTTP))
             return true
         } catch {
             return false
@@ -381,20 +437,35 @@ package enum DownloadAttemptResumeData {
 /// ``DownloadError/networkError(_:)``.
 package enum DownloadHTTPStatusFailure {
     package static let domain = "InnoNetworkDownload.HTTPStatus"
+    /// Domain of a status that refused an attempt resumed at a redirect
+    /// target. That target came from resume data and may have expired, as a
+    /// signed URL does, so the status is never final: the retry carries no
+    /// resume data and asks the source again, which redirects afresh.
+    package static let resumedRedirectTargetDomain = "InnoNetworkDownload.HTTPStatus.ResumedRedirectTarget"
     /// Successful responses, including the 206 a resumed transfer returns.
     package static let defaultAcceptableStatusCodes = Set(200..<300)
 
-    package static func make(statusCode: Int, url: URL?) -> SendableUnderlyingError {
+    package static func make(
+        statusCode: Int,
+        url: URL?,
+        resumedAtRedirectTarget: Bool = false
+    ) -> SendableUnderlyingError {
         let target = NetworkError.diagnosticURLString(for: url)
         return SendableUnderlyingError(
-            domain: domain,
+            domain: resumedAtRedirectTarget ? resumedRedirectTargetDomain : domain,
             code: statusCode,
             message: "Download from \(target) finished with unacceptable HTTP status \(statusCode)."
         )
     }
 
     package static func statusCode(from error: SendableUnderlyingError) -> Int? {
-        guard error.domain == domain else { return nil }
+        guard error.domain == domain || error.domain == resumedRedirectTargetDomain else { return nil }
+        return error.code
+    }
+
+    /// The status of a failure no other attempt can clear, or `nil`.
+    package static func terminalStatusCode(from error: SendableUnderlyingError) -> Int? {
+        guard error.domain == domain, !isRetryable(statusCode: error.code) else { return nil }
         return error.code
     }
 

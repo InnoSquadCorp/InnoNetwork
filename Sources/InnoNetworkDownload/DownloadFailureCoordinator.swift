@@ -59,14 +59,14 @@ package struct DownloadFailureCoordinator {
             )
             return
         }
-        if let statusCode = DownloadHTTPStatusFailure.statusCode(from: error),
-            !DownloadHTTPStatusFailure.isRetryable(statusCode: statusCode)
-        {
+        if let statusCode = DownloadHTTPStatusFailure.terminalStatusCode(from: error) {
             // The server answered this exact request with a deterministic
             // refusal (expired signature, missing object, ...). Asking again
             // returns the same status, so surface the typed status failure
             // without spending retry budget. Retryable statuses fall through
-            // to the ordinary retry path below.
+            // to the ordinary retry path below, and so does a refusal of an
+            // attempt resumed at a redirect target: its retry carries no
+            // resume data, so it asks the source again for a fresh target.
             await markTaskFailed(
                 task,
                 reason: .unacceptableStatusCode(statusCode),

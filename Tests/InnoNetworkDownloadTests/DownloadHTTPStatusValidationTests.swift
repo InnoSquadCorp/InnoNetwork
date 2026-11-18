@@ -264,6 +264,50 @@ struct DownloadHTTPStatusValidationTests {
         #expect(DownloadHTTPStatusFailure.statusCode(from: transportError) == nil)
     }
 
+    @Test("A refusal of an attempt resumed at a redirect target keeps its status but is never final")
+    func resumedRedirectTargetRefusalIsNotTerminal() throws {
+        let target = try #require(URL(string: "https://cdn.example.invalid/objects/file.bin?sig=1"))
+        let refusal = DownloadHTTPStatusFailure.make(statusCode: 403, url: target, resumedAtRedirectTarget: true)
+        let ordinary = DownloadHTTPStatusFailure.make(statusCode: 403, url: target)
+
+        #expect(DownloadHTTPStatusFailure.statusCode(from: refusal) == 403)
+        #expect(DownloadHTTPStatusFailure.terminalStatusCode(from: refusal) == nil)
+        #expect(DownloadHTTPStatusFailure.terminalStatusCode(from: ordinary) == 403)
+        #expect(DownloadError.maxRetriesExceeded(lastError: refusal).httpStatusCode == 403)
+    }
+
+    @Test("Only a ranged attempt at a target other than its source is a resumed redirect target")
+    func resumedRedirectTargetNeedsRangeAndRedirect() throws {
+        let source = try #require(URL(string: "https://downloads.example.invalid/file.bin"))
+        let target = try #require(URL(string: "https://cdn.example.invalid/objects/file.bin?sig=1"))
+        func reportedDomain(currentURL: URL, range: String?) -> String? {
+            var current = URLRequest(url: currentURL)
+            current.setValue(range, forHTTPHeaderField: "Range")
+            let task = StubDownloadURLTask(request: URLRequest(url: source), currentRequest: current)
+            task.scriptHTTPStatus(403, url: currentURL)
+            let reported = OSAllocatedUnfairLock<String?>(initialState: nil)
+            let callbacks = DownloadSessionDelegateCallbacks()
+            callbacks.setHandlers(
+                onProgress: { _, _, _, _ in },
+                onCompletion: { _, _, _, _, _, error, _ in reported.withLock { $0 = error?.domain } }
+            )
+            let delegate = DownloadSessionDelegate(
+                callbacks: callbacks,
+                backgroundCompletionStore: BackgroundCompletionStore()
+            )
+            delegate.handleFinishedDownload(task, location: FileManager.default.temporaryDirectory)
+            return reported.withLock { $0 }
+        }
+        let retryable = DownloadHTTPStatusFailure.resumedRedirectTargetDomain
+        let terminal = DownloadHTTPStatusFailure.domain
+
+        #expect(reportedDomain(currentURL: target, range: "bytes=1024-") == retryable)
+        // A fresh attempt that followed the redirect live sends no range.
+        #expect(reportedDomain(currentURL: target, range: nil) == terminal)
+        // A resumed attempt at the source itself is refused for good.
+        #expect(reportedDomain(currentURL: source, range: "bytes=1024-") == terminal)
+    }
+
     // MARK: Failure classification
 
     @Test(
