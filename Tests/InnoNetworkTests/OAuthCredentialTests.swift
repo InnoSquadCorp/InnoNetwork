@@ -127,6 +127,41 @@ private actor FlakyRenewalProvider: OAuthCredentialRefreshing {
     }
 }
 
+/// Serves a token that has not expired by its own clock but that the server
+/// rejects, and stores the renewed one. Its first renewal times out.
+private actor TimingOutRenewalProvider: OAuthCredentialRefreshing {
+    let clock: TestClock
+    var refreshes = 0
+    var renewed = false
+
+    init(clock: TestClock) {
+        self.clock = clock
+    }
+
+    func select(alternatives: [[RequestSecurity.Scheme]], origin: URL) -> RequestSecurity.Selection {
+        .init(alternative: 0, realm: "tenant", principal: "user")
+    }
+
+    func credential(for scheme: RequestSecurity.Scheme, selection: RequestSecurity.Selection, origin: URL)
+        -> RequestSecurity.Credential
+    {
+        .init(
+            value: renewed ? "fresh-token" : "old-token", realm: selection.realm, principal: selection.principal,
+            grantedScopes: ["Read"], expiresAt: clock.now().addingTimeInterval(100))
+    }
+
+    func refreshCredential(for scheme: RequestSecurity.Scheme, selection: RequestSecurity.Selection, origin: URL)
+        async throws -> RequestSecurity.Credential
+    {
+        refreshes += 1
+        if refreshes == 1 { throw URLError(.timedOut) }
+        renewed = true
+        return .init(
+            value: "fresh-token", realm: selection.realm, principal: selection.principal,
+            grantedScopes: ["Read"], expiresAt: clock.now().addingTimeInterval(100))
+    }
+}
+
 /// An endpoint on the same origin that carries no credential.
 private struct OpenEndpoint: APIDefinition {
     typealias Parameter = EmptyParameter
@@ -483,6 +518,36 @@ struct OAuthCredentialTests {
         // retry renewed instead of failing with `credentialExpired`.
         #expect(await provider.refreshes == 2)
         #expect(session.capturedRequest?.value(forHTTPHeaderField: "Authorization") == "Bearer fresh-token")
+    }
+
+    @Test("a renewal asked for by invalid_token that times out is still owed, so the retry renews before it sends")
+    func timedOutReactiveRenewalStaysOwed() async throws {
+        let clock = TestClock()
+        let provider = TimingOutRenewalProvider(clock: clock)
+        let session = MockURLSession()
+        // The mock answers in order, whatever token a request carries, so the
+        // tokens it captured are what show whether the retry renewed first.
+        session.setScriptedResponses([
+            .http(statusCode: 401, headers: ["WWW-Authenticate": "Bearer error=invalid_token"]),
+            .http(statusCode: 204),
+        ])
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(
+                baseURL: origin.absoluteString,
+                retryPolicy: ExponentialBackoffRetryPolicy(maxRetries: 1, retryDelay: 0, jitterRatio: 0)
+            ),
+            session: session,
+            clock: clock
+        )
+
+        _ = try await client.request(ScopedCredentialEndpoint(requestSecurity: security(provider)))
+
+        // The server rejected the old token, and the renewal it asked for
+        // timed out. The retry renewed first instead of sending the rejected
+        // token again.
+        let sent = session.capturedRequestsInOrder.map { $0.value(forHTTPHeaderField: "Authorization") }
+        #expect(sent == ["Bearer old-token", "Bearer fresh-token"])
+        #expect(await provider.refreshes == 2)
     }
 
     @Test("renewal groups and waiters are bounded", arguments: [true, false])

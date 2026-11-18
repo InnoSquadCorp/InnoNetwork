@@ -63,6 +63,7 @@ package actor RequestSecurityExecution {
         guard !didRefreshOAuth, let selection,
             let provider = security.provider as? any OAuthCredentialRefreshing
         else { throw RequestSecurityFailure.credentialExpired.networkError }
+        let renewalWasRequested = oauthRefreshRequested
         didRefreshOAuth = true
         oauthRefreshRequested = false
         do {
@@ -82,9 +83,12 @@ package actor RequestSecurityExecution {
             // reporting a failed renewal, whose recovery is reauthentication.
             // The renewal never reached a verdict, so it does not use up this
             // request's single renewal either: a retry of the request may
-            // renew again.
+            // renew again. A renewal the server asked for with
+            // `invalid_token` is still owed, so that retry renews before it
+            // sends anything instead of sending the rejected token again.
             if NetworkError.isCredentialNeutralTransportFailure(error) || Self.isLocalNonVerdict(error) {
                 didRefreshOAuth = false
+                oauthRefreshRequested = renewalWasRequested
                 throw CredentialRedaction.failure(error)
             }
             throw RequestSecurityFailure.refreshFailed.networkError
