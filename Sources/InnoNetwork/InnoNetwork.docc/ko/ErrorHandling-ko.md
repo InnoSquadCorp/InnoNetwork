@@ -160,10 +160,10 @@ redirect(`.httpTooManyRedirects`, `.redirectToNonExistentLocation`), 시스템�
 `.clientCertificateRejected`, `.clientCertificateRequired`), 서버가 거부한
 credential(`.userAuthenticationRequired`, `.userCancelledAuthentication`),
 로컬 파일이나 크기 제한 실패(`.fileDoesNotExist`, `.fileIsDirectory`,
-`.noPermissionsToReadFile`, `.dataLengthExceedsMaximum`)가 해당합니다. 재시도하지
-않으며 circuit breaker 도 집계하지 않습니다. 단, 인증서 실패는 다른 TLS 실패와
-마찬가지로 ``CircuitBreakerPolicy/countsTransportSecurityFailures`` 가 `true` 일
-때 집계합니다.
+`.noPermissionsToReadFile`, `.dataLengthExceedsMaximum`)가 해당합니다. 기본 재시도
+정책은 재시도하지 않으며 circuit breaker 도 집계하지 않습니다. 단, 인증서 실패는
+다른 TLS 실패와 마찬가지로 ``CircuitBreakerPolicy/countsTransportSecurityFailures``
+가 `true` 일 때 집계합니다.
 
 ``NetworkError/isRetriableHint`` 는 오류 종류가 보통 일시적인지만 답합니다.
 요청 method, idempotency key, 시도 예산까지 확인하는 ``RetryPolicy`` 를 대체하지

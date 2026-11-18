@@ -157,10 +157,10 @@ not trust the server certificate or refused the client certificate
 refused the credential (`.userAuthenticationRequired`,
 `.userCancelledAuthentication`), or a local file or size limit failed
 (`.fileDoesNotExist`, `.fileIsDirectory`, `.noPermissionsToReadFile`,
-`.dataLengthExceedsMaximum`). It is never retried, and the circuit breaker
-does not count it, except that a certificate failure counts when
-``CircuitBreakerPolicy/countsTransportSecurityFailures`` is `true`, like any
-other TLS failure.
+`.dataLengthExceedsMaximum`). The built-in retry policy does not retry it, and
+the circuit breaker does not count it, except that a certificate failure
+counts when ``CircuitBreakerPolicy/countsTransportSecurityFailures`` is
+`true`, like any other TLS failure.
 
 The breaker column describes failures of the request's own exchange. A failure
 raised while a named request credential is acquired, renewed, or signed is not

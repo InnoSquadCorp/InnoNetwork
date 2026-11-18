@@ -574,7 +574,8 @@ setting that restores the old behavior, where one exists.
   the breaker does not count it. A certificate failure is the exception for the
   breaker: as in 6.x, it counts when `countsTransportSecurityFailures` is
   `true`. *Affected:* apps that relied on an automatic retry after these.
-  *Keep 6.x:* a custom `RetryPolicy` can return `.retry` for them.
+  *Keep 6.x:* a custom `RetryPolicy` can return `.retry` for them; breaker
+  counting cannot be restored.
 - [ ] **An offline device does not open circuits.** A
   `.reachability(.notConnectedToInternet)` or `.cellularDataUnavailable`
   failure is still retried but no longer counts toward the host's circuit

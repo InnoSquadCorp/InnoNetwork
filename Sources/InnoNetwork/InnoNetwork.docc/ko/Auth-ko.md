@@ -115,7 +115,10 @@ credential 을 거부하는 `400`, `401`, `403` 에는
 가능하게 남기는 `URLError(.badServerResponse)` 를 던집니다.
 
 실패 cooldown 중에 도착한 `401` 은 저장된 갱신 오류로 실패하며, 같은 규칙으로
-분류됩니다. 갱신이 성공한 뒤 서버가 반환한 `401` 은
+분류됩니다. 그래서 cooldown 중에 실행된 재시도는 `refreshToken` 을 부르지 않고
+같은 오류를 다시 받으며, 재시도 한 번을 씁니다. 일시적인 갱신 실패 뒤 다음
+재시도가 갱신 endpoint 까지 다시 가야 한다면, 재시도 정책의 지연을 cooldown 보다
+짧지 않게 두세요. 갱신이 성공한 뒤 서버가 반환한 `401` 은
 ``NetworkError/statusCode(_:)`` 로 남습니다.
 
 ## URLSession cache policy
