@@ -376,6 +376,36 @@ struct OAuthCredentialTests {
         #expect(await provider.refreshes == 1)
     }
 
+    @Test("a renewal with an untrusted certificate keeps its classification instead of asking to sign in")
+    func renewalCertificateFailure() async throws {
+        let clock = TestClock()
+        let provider = TransportFailingRenewalProvider(
+            clock: clock,
+            renewalError: URLError(.serverCertificateUntrusted)
+        )
+        let session = MockURLSession()
+        session.setMockResponse(statusCode: 204)
+
+        let error = await #expect(throws: NetworkError.self) {
+            _ = try await client(session, clock: clock).request(
+                ScopedCredentialEndpoint(requestSecurity: security(provider)))
+        }
+
+        // A replay cannot cure the provider's certificate, but signing in
+        // again cannot either: it is no verdict on the grant.
+        guard case .underlying(let underlying, nil) = error else {
+            Issue.record("Expected the provider's transport failure, got \(String(describing: error))")
+            return
+        }
+        #expect(underlying.domain == NSURLErrorDomain)
+        #expect(underlying.code == URLError.Code.serverCertificateUntrusted.rawValue)
+        #expect(underlying.message == "Credential-protected transport failed.")
+        #expect(error?.credentialFailure == nil)
+        #expect(error?.summary(method: .get, authentication: .anonymous).recovery == .doNotRetry)
+        #expect(session.capturedRequest == nil)
+        #expect(await provider.refreshes == 1)
+    }
+
     @Test("a renewal stopped by a local decision about the provider's transport does not ask to sign in")
     func renewalLocalRejectionKeepsItsClassification() async throws {
         let clock = TestClock()

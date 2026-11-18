@@ -75,13 +75,15 @@ package actor RequestSecurityExecution {
             return credential
         } catch {
             if NetworkError.isCancellation(error) || Task.isCancelled { throw CancellationError() }
-            // A transient transport failure of the provider says nothing
-            // about the grant. Keep its secret-free retry classification
-            // instead of reporting a failed renewal, whose recovery is
-            // reauthentication. The renewal never reached a verdict, so it
-            // does not use up this request's single renewal either: a retry
-            // of the request may renew again.
-            if NetworkError.isTransientTransportFailure(error) || Self.isLocalNonVerdict(error) {
+            // A transport failure of the provider that rejects no credential
+            // — a transient one, or one a replay cannot cure, such as a
+            // certificate the system does not trust — says nothing about the
+            // grant. Keep its secret-free classification instead of
+            // reporting a failed renewal, whose recovery is reauthentication.
+            // The renewal never reached a verdict, so it does not use up this
+            // request's single renewal either: a retry of the request may
+            // renew again.
+            if NetworkError.isCredentialNeutralTransportFailure(error) || Self.isLocalNonVerdict(error) {
                 didRefreshOAuth = false
                 throw CredentialRedaction.failure(error)
             }
@@ -158,7 +160,9 @@ struct PreparedRequestSecurity: Sendable {
                 if forceRefresh { throw error }
                 // Same rule as a renewal: an offline or failing transport is
                 // not a missing credential.
-                if NetworkError.isTransientTransportFailure(error) { throw CredentialRedaction.failure(error) }
+                if NetworkError.isCredentialNeutralTransportFailure(error) {
+                    throw CredentialRedaction.failure(error)
+                }
                 throw RequestSecurityFailure.credentialUnavailable.networkError
             }
             try Task.checkCancellation()

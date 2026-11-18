@@ -190,13 +190,18 @@ extension NetworkError {
     ///   an unclassified transport error. The request then follows the
     ///   ordinary retry and recovery rules; a status failure carries the
     ///   refresh endpoint's response;
+    /// - a transport failure of the refresh request that a replay cannot
+    ///   cure and that does not reject a credential — a server certificate
+    ///   the system does not trust, a malformed URL, a redirect loop, or a
+    ///   local limit. It is not retried, but signing in again cannot cure it
+    ///   either;
     /// - a configuration failure (including an offline device), a local
     ///   policy rejection, a trust evaluation failure, or a failure that is
     ///   already an authentication failure.
     ///
     /// Only errors that come from a transport — a ``NetworkError`` or a
-    /// `URLError` — can count as transient. Any other error type is the
-    /// refresh closure's own verdict and is reported as a failed refresh.
+    /// `URLError` — can keep their identity this way. Any other error type is
+    /// the refresh closure's own verdict and is reported as a failed refresh.
     package static func sessionRefreshFailed(_ error: any Error) -> NetworkError {
         if let readFailure = error as? SessionTokenReadFailure {
             // No renewal ran: a peer had refreshed and only reading its token
@@ -215,7 +220,7 @@ extension NetworkError {
         default:
             break
         }
-        if isTransientTransportFailure(error) {
+        if isCredentialNeutralTransportFailure(error) {
             if case .statusCode(let response) = mapped {
                 // The response belongs to the token exchange, whose request
                 // can carry the refresh token. Keep the status and headers
@@ -236,23 +241,41 @@ extension NetworkError {
     /// Only a ``NetworkError`` or a `URLError` qualifies. An application
     /// error that ``mapTransportError(_:)`` would wrap as
     /// ``NetworkError/underlying(_:_:)`` is not evidence of a transport
-    /// problem, so credential and refresh paths use this instead of
-    /// ``isTransient`` to decide whether a failure says anything about the
-    /// credential. For the same reason a `URLError` that reports a rejected
-    /// credential is never transient here.
+    /// problem, and a `URLError` that reports a rejected credential is never
+    /// transient here.
     package static func isTransientTransportFailure(_ error: any Error) -> Bool {
-        let mapped: NetworkError
-        if let networkError = error as? NetworkError {
-            mapped = networkError
-        } else if error is URLError {
-            mapped = mapTransportError(error)
-        } else {
-            return false
-        }
+        guard let mapped = transportFailure(error) else { return false }
         if case .underlying(let underlying, _) = mapped, isCredentialRejection(underlying) {
             return false
         }
         return mapped.isTransient || mapped.isConnectivityFailure
+    }
+
+    /// Whether `error` is a transport failure that is no verdict on a
+    /// credential or a session: a transient one, as
+    /// ``isTransientTransportFailure(_:)`` decides, or a `URLError` that a
+    /// replay cannot change and that does not report a rejected credential —
+    /// a server certificate the system does not trust, a malformed or
+    /// unsupported URL, a redirect loop, an App Transport Security block, or
+    /// a local file or size limit.
+    ///
+    /// Credential and refresh paths use this instead of ``isTransient`` to
+    /// decide whether a failure says anything about the credential. A
+    /// deterministic failure is not retried, but signing in again cannot cure
+    /// it either, so it keeps its own classification instead of becoming a
+    /// failed renewal or a missing credential.
+    package static func isCredentialNeutralTransportFailure(_ error: any Error) -> Bool {
+        if isTransientTransportFailure(error) { return true }
+        guard case .underlying(let underlying, _)? = transportFailure(error) else { return false }
+        return isDeterministicTransportFailure(underlying) && !isCredentialRejection(underlying)
+    }
+
+    /// The transport classification `error` carries, or `nil` when it is
+    /// neither a ``NetworkError`` nor a `URLError`.
+    private static func transportFailure(_ error: any Error) -> NetworkError? {
+        if let networkError = error as? NetworkError { return networkError }
+        if error is URLError { return mapTransportError(error) }
+        return nil
     }
 
     /// `URLError` codes with which the URL loading system reports that the
