@@ -390,14 +390,15 @@ public final class DefaultNetworkClient: NetworkClient, UploadNetworkClient, Sen
     /// Begins a long-lived streaming request and returns decoded line payloads
     /// through a lossless, backpressured sequence.
     ///
-    /// The configured ``RetryPolicy`` applies to a stream only until its
-    /// handshake is accepted: a failure while the request is adapted, signed,
-    /// or given its session token, and a failed handshake, are retried when
-    /// the policy allows, because nothing has been delivered yet. After that
-    /// the policy never replays the stream, because a half-consumed stream
-    /// cannot be replayed transparently; reconnecting is governed by the
-    /// endpoint's ``StreamingResumePolicy``. The producer reads at most one
-    /// output ahead of the consumer. Outer-task cancellation
+    /// The configured ``RetryPolicy`` applies to the handshake of every
+    /// connection, the first one and each reconnect alike: a failure while
+    /// the request is adapted, signed, or given its session token, and a
+    /// failed handshake, are retried when the policy allows, because that
+    /// connection has delivered nothing yet. The policy never replays a
+    /// connection whose handshake was accepted, because a half-consumed
+    /// stream cannot be replayed transparently; whether to reconnect after it
+    /// ends is decided by the endpoint's ``StreamingResumePolicy``. The
+    /// producer reads at most one output ahead of the consumer. Outer-task cancellation
     /// propagates to the underlying transport, and ``cancelAll()`` reaches
     /// stream tasks the same way it reaches request tasks.
     ///

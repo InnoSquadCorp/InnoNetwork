@@ -124,8 +124,12 @@ transport 에 대한 로컬 정책 거부, 신뢰 평가 실패, configuration �
 ## 재시도, circuit breaker, 회복 권고가 공유하는 단일 분류
 
 실패가 일시적인지 판단하는 규칙은 하나입니다. ``NetworkError/isRetriableHint``,
-``ExponentialBackoffRetryPolicy``, circuit breaker,
-``NetworkErrorSummary/recovery`` 가 모두 같은 규칙을 읽습니다.
+``ExponentialBackoffRetryPolicy``, ``NetworkErrorSummary/recovery`` 가 모두 같은
+규칙을 읽습니다. circuit breaker 는 분류되지 않은 transport 오류에 같은 규칙을
+쓰고, 자기 규칙을 더합니다. TLS 실패는 일시적이지 않더라도
+``CircuitBreakerPolicy/countsTransportSecurityFailures`` 가 `true` 일 때만
+집계하고, `4xx` 응답, 네트워크 경로가 없는 기기, request credential 을 준비하는
+중에 난 실패는 집계하지 않습니다. 표의 마지막 열이 그 결과입니다.
 
 | Case | ``NetworkError/category`` | 일시적 | circuit breaker 집계 |
 |------|---------------------------|--------|----------------------|

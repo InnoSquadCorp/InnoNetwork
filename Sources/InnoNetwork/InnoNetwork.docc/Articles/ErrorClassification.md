@@ -126,9 +126,14 @@ counted against the request's host by the circuit breaker. See
 ## One classification for retry, circuit breaker, and recovery
 
 One rule decides whether a failure is transient. ``NetworkError/isRetriableHint``,
-``ExponentialBackoffRetryPolicy``, the circuit breaker, and
-``NetworkErrorSummary/recovery`` all read it, so a failure cannot be transient
-for one of them and terminal for another.
+``ExponentialBackoffRetryPolicy``, and ``NetworkErrorSummary/recovery`` all read
+it, so a failure cannot be transient for one of them and terminal for another.
+The circuit breaker reads the same rule for an unclassified transport error and
+adds rules of its own: a TLS failure counts only when
+``CircuitBreakerPolicy/countsTransportSecurityFailures`` is `true`, even one
+that is not transient, and a `4xx` response, a device without a network path,
+and a failure while a request credential is prepared are not counted. The last
+column of the table shows the result.
 
 | Case | ``NetworkError/category`` | Transient | Counts toward the circuit breaker |
 |------|---------------------------|-----------|-----------------------------------|

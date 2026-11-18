@@ -118,9 +118,11 @@ error, classified by the same rules. A retry that runs during the cooldown
 therefore receives that error again without calling `refreshToken`, and still
 uses up one retry. When a transient refresh failure should reach the refresh
 endpoint again on the next retry, keep the retry policy's shortest delay,
-after jitter, at least as long as the cooldown. With the defaults of
+after jitter, at least as long as the cooldown. The default cooldown is 1
+second after the first failure and doubles with each consecutive failure of
+the same realm, up to 30 seconds. With the defaults of
 ``ExponentialBackoffRetryPolicy``, the first retry runs 0.8 to 1.2 seconds
-after the failure, so it can still fall inside the default 1-second cooldown.
+after the failure, so it can fall inside even the first cooldown.
 A `401` that the server returns after a successful refresh stays
 ``NetworkError/statusCode(_:)``.
 
