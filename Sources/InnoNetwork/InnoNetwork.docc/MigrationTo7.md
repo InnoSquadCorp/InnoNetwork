@@ -324,7 +324,8 @@ catalogs describe the new behavior:
   `.maxRetriesExceeded(lastError:)`, and `.unacceptableStatusCode(_:)` is
   added. An automatic retry resumes from the failed attempt's resume data, a
   transfer that followed a redirect resumes from its target instead of
-  restarting from byte 0 (and asks the source again if the target refuses),
+  restarting from byte 0 (and restarts from the source at once if the target
+  refuses),
   and `pause(_:)` issued during a retry wait takes effect. A retry waits for a
   network change only after a connectivity failure from the core module's
   table, so a retry after `URLError.cannotConnectToHost` goes straight to
@@ -361,6 +362,7 @@ with more detail.
 | A refresh endpoint's transient status reaches the caller without the refresh request, and a renewal stopped by a local decision about the provider's transport is not reported as `.refreshFailed`. | Code that read the refresh request from the error | Not configurable |
 | Stream handshakes refresh once and take part in the circuit breaker. | Session-authenticated streams; clients with a breaker | An `.anonymous` stream; a separate client |
 | An unreconcilable `304` removes the stored entry, so a replay is unconditional. | Servers with inconsistent validators | Not configurable |
+| Every access to ``NetworkOperation/events`` returns its own stream that replays the lifecycle, so each consumer receives both events; consumers sharing the 6.x stream divided them. | Code that observes `events` from more than one place | Not configurable |
 | An inactive VPN path reports `.vpnInactive` instead of `.unknown` on Swift 6.2 and 6.3. | Code that treats ``NetworkUnsatisfiedReason/unknown`` specially | Not configurable |
 
 Downloads validate the HTTP status, resume a retry from resume data, and honor

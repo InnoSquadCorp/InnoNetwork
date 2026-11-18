@@ -338,6 +338,9 @@ error body of an expired signed URL to the destination and published
 
 - `DownloadTransferPack` gains `acceptableStatusCodes` (default `200..<300`).
 - `408`, `416`, `429` and `5xx` are retried under `DownloadRetryPack`.
+- A resumed transfer whose range the server rejects with `416`, or whose
+  redirect target refuses it, restarts from the source URL at once without
+  spending the retry budget.
 - Any other unacceptable status fails immediately with
   `DownloadError.unacceptableStatusCode(_:)`. Nothing is written to the
   destination.
@@ -388,10 +391,10 @@ ended on a status.
   target unchanged. 6.x restarted every redirected transfer from byte 0. A
   target the policy would refuse, such as an HTTPS-to-HTTP downgrade, still
   restarts from the source URL. When the target refuses the resumed request
-  with any status, as an expired signed URL does, the task does not fail: the
-  next retry carries no resume data and asks the source, which redirects
-  afresh. That fallback spends one retry, so with retries disabled the task
-  fails with `.maxRetriesExceeded(lastError:)` instead.
+  with a status other than `408`, `429` or `5xx`, as an expired signed URL
+  does, the task does not fail: it restarts from the source at once, which
+  redirects afresh. Like the restart after a rejected range, it waits for no
+  backoff and spends no retry, so it works with retries disabled.
 - **`pause(_:)` during a retry wait takes effect.** 6.x dropped a pause issued
   while a retry was waiting for backoff or a network change, and the task
   restarted. The task now ends `.paused` and keeps the resume data of the
@@ -604,16 +607,16 @@ setting that restores the old behavior, where one exists.
   `DownloadTransferPack(acceptableStatusCodes:)`.
 - [ ] **Download retries resume, and `pause(_:)` works during a retry wait.**
   An automatic retry continues from the failed attempt's resume data and
-  restarts from the source URL after `416`. A `pause(_:)` issued while a retry
+  restarts from the source URL at once, without spending a retry, after a
+  `416`. A `pause(_:)` issued while a retry
   waits now pauses the task, which keeps the resume data of the attempt that
   failed last, including a retry restored after a relaunch and a pause that
   races the failure itself; 6.x dropped the pause and restarted the transfer.
   A transfer that followed a redirect resumes from its target when the
-  download redirect policy would admit it unchanged, and asks the source again
-  on its next retry if the target refuses; 6.x restarted it from byte 0.
+  download redirect policy would admit it unchanged, and restarts from the
+  source at once if the target refuses; 6.x restarted it from byte 0.
   *Affected:* downloads from servers that answer range requests incorrectly;
-  apps that pause during a retry wait; redirected downloads with retries
-  disabled. *Keep 6.x:* not configurable.
+  apps that pause during a retry wait. *Keep 6.x:* not configurable.
 - [ ] **WebSocket reconnect budget.** A connection must stay open for
   `stabilityInterval` (default 10 s) before it resets `maxAttempts` and
   `maxTotalDuration`; one that drops sooner continues the earlier budget, so a
@@ -641,6 +644,12 @@ setting that restores the old behavior, where one exists.
   stale-while-revalidate refreshes follow the same rule. *Affected:* servers
   with inconsistent validators, which now serve one full response. *Keep 6.x:*
   not configurable.
+- [ ] **Each `events` access is its own stream.** `NetworkOperation.events`
+  returns a new stream on every access that replays the lifecycle so far, so
+  every consumer receives `.started` and the terminal event. In 6.x each
+  access returned the same stream, and consumers iterating it at the same time
+  divided the two events between them. *Affected:* code that observes
+  `events` from more than one place. *Keep 6.x:* not configurable.
 - [ ] **Inactive VPN path on Swift 6.2 and 6.3.** Built with those toolchains,
   `NetworkSnapshot` reports `NetworkUnsatisfiedReason.vpnInactive` instead of
   `.unknown`. *Affected:* code that treats `.unknown` specially. *Keep 6.x:*

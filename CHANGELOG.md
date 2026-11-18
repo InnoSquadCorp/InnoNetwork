@@ -108,8 +108,10 @@ unreleased 7.0 line. See `docs/Migration-7.0.0.md`.
   before handing it to Foundation. A transfer that followed a redirect resumes
   from the redirect target when the download redirect policy would admit that
   target unchanged; 6.x restarted every redirected transfer from byte 0. When
-  the target refuses the resumed request, as an expired signed URL does, the
-  next retry asks the source again instead of failing the task.
+  the target refuses the resumed request, as an expired signed URL does, or
+  the server rejects a resumed range with `416`, the transfer restarts from
+  the source at once, without backoff or retry budget, instead of failing the
+  task.
   `DownloadError.maxRetriesExceeded` carries the last attempt's error.
 - A WebSocket connection that drops before the stability interval, measured
   on the monotonic clock, continues the earlier reconnect budget instead of
@@ -189,6 +191,10 @@ unreleased 7.0 line. See `docs/Migration-7.0.0.md`.
 - Fail a request whose transfer Foundation reports complete before the request
   starts waiting for the response, as it does for a task cancelled at that
   moment or a session invalidated then. The request could wait forever.
+- Give every access to `NetworkOperation.events` its own stream that replays
+  the lifecycle so far. Consumers that shared the one stream divided its two
+  events between them, so one saw only `.started` and another only the
+  terminal event.
 
 ## [6.1.1] - 2026-10-07
 

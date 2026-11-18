@@ -180,13 +180,18 @@ policy would have followed it from the source without removing anything, so an
 HTTPS-to-HTTP downgrade or a cross-origin target still carrying a credential header
 restarts from the source URL instead. A target can also stop answering while the transfer
 waits — a signed URL expires, a mirror rotates. When the target refuses the resumed
-request with any HTTP status, the task does not fail: the next retry carries no resume
-data and asks the source again, which redirects to a fresh target. That fallback spends
-one retry.
+request with a status other than `408`, `429`, or `5xx`, the task does not fail: it
+restarts from the source URL at once, which redirects to a fresh target. A busy target is
+retried like any busy server.
 
 An automatic retry uses resume data the same way. When a failed attempt produced resume
 data, the retry continues the transfer from that point instead of restarting from byte 0,
 and restarts from the source URL when the server rejects the range with `416`.
+
+A stale resume point — a rejected range or a refusing redirect target — says nothing
+about the server, so the restart from the source waits for no backoff and spends no
+retry. It recovers even when the retry budget is spent or retries are disabled, and the
+restarted attempt sends no range, so it cannot be stale in turn.
 
 `pause(_:)` also takes effect while a retry is waiting for its backoff delay or for a
 network change. The task ends `.paused`, keeps the resume data of the failed attempt when
@@ -207,7 +212,9 @@ A finished attempt is admitted only when its HTTP status is in
 any other status is never staged or moved to the destination. `408`, `416`, `429`, and
 `5xx` are retried under ``DownloadRetryPack`` and end as
 ``DownloadError/maxRetriesExceeded(lastError:)`` when the budget runs out; every other
-unacceptable status fails at once with ``DownloadError/unacceptableStatusCode(_:)``.
+unacceptable status fails at once with ``DownloadError/unacceptableStatusCode(_:)``. A
+resumed attempt refused for its stale resume point restarts from the source instead, as
+described under "Pause and resume" above.
 Responses that are not HTTP are not validated.
 
 ## Cellular and roaming
