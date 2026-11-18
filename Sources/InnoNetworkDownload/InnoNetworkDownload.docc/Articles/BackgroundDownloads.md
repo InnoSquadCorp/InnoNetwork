@@ -163,7 +163,8 @@ let task = await mediaDownloads.download(url: remoteURL, to: destinationURL)
 `pause(_:)` calls `cancelByProducingResumeData()` on the underlying URL task, captures the
 resume data in persistence, and transitions the task to `.paused`. `resume(_:)` rehydrates
 the task with the saved resume data and clears the stored resume payload once the new
-system task is created.
+system task is created. A resumed attempt that fails at once, even before `resume(_:)`
+returns, is handled like any other failed attempt.
 
 InnoNetwork 5.x treats resume data as best-effort durable state. Process termination
 after `pause(_:)` completes can resume from persisted `resumeData` on the next launch.

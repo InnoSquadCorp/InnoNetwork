@@ -195,6 +195,11 @@ unreleased 7.0 line. See `docs/Migration-7.0.0.md`.
   the lifecycle so far. Consumers that shared the one stream divided its two
   events between them, so one saw only `.started` and another only the
   terminal event.
+- Schedule the retry of a resumed download attempt that fails before
+  `resume(_:)` has recorded it as active. The retry was dropped, and the task
+  stayed `.downloading` with no transfer: `pause(_:)` had no effect, and only
+  `cancel(_:)` or a relaunch ended it. A failure just after that point now
+  also keeps its resume data for the retry.
 
 ## [6.1.1] - 2026-10-07
 
