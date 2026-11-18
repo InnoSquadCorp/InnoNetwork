@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// Lifecycle events emitted by a ``NetworkOperation``.
 ///
@@ -22,29 +23,39 @@ public enum NetworkOperationEvent: Sendable, Equatable {
 /// ``NetworkClient`` or ``EncodedRequestClient``, or with
 /// `startUpload(_:replaySafety:deadline:)` on an ``UploadNetworkClient``.
 ///
-/// The event stream is registered before work starts and retains the bounded
-/// start/terminal lifecycle for a late first consumer. Await ``value()`` for
-/// the typed response or call ``cancel()``; the caller need not keep the
-/// client, which the running operation holds until it finishes.
+/// The operation records its bounded start/terminal lifecycle, and every
+/// access to ``events`` replays it, so any number of consumers, early or late,
+/// each observe the whole lifecycle. Await ``value()`` for the typed response
+/// or call ``cancel()``; the caller need not keep the client, which the
+/// running operation holds until it finishes.
 /// Cancelling a task that is currently awaiting ``value()`` also cancels this
 /// operation so structured callers do not leave detached network work behind.
 public struct NetworkOperation<Value: Sendable>: Sendable {
     /// Identifier shared by every event of this operation.
     public let id: UUID
-    /// The bounded lifecycle stream: ``NetworkOperationEvent/started(id:)``
-    /// followed by one terminal event. It is registered before work starts,
-    /// so a consumer that subscribes late still receives both.
-    public let events: AsyncStream<NetworkOperationEvent>
 
+    /// The bounded lifecycle stream: ``NetworkOperationEvent/started(id:)``
+    /// followed by one terminal event.
+    ///
+    /// Each access returns a new stream that first replays the events the
+    /// operation has already emitted and then delivers the rest, so a
+    /// consumer that subscribes late still receives both, and several
+    /// consumers do not divide the events between them. A stream obtained
+    /// after the operation finished delivers both events and ends.
+    public var events: AsyncStream<NetworkOperationEvent> {
+        eventLog.subscribe()
+    }
+
+    private let eventLog: NetworkOperationEventLog
     private let task: Task<Result<Value, NetworkOperationFailure>, Never>
 
     package init(
         id: UUID,
-        events: AsyncStream<NetworkOperationEvent>,
+        eventLog: NetworkOperationEventLog,
         task: Task<Result<Value, NetworkOperationFailure>, Never>
     ) {
         self.id = id
-        self.events = events
+        self.eventLog = eventLog
         self.task = task
     }
 
@@ -123,4 +134,92 @@ public struct NetworkOperation<Value: Sendable>: Sendable {
 package struct NetworkOperationFailure: Error, Sendable {
     package let error: NetworkError
     package let summary: NetworkErrorSummary
+}
+
+/// The lifecycle an operation has emitted so far, delivered to every
+/// subscriber.
+///
+/// An `AsyncStream` hands each element to only one of the tasks iterating
+/// it, so a single shared stream would divide the events among consumers.
+/// The log instead gives each subscriber its own stream, replays the
+/// recorded events into it, and then delivers the remaining ones. An
+/// operation emits at most two events, so the log keeps all of them.
+package final class NetworkOperationEventLog: Sendable {
+    private typealias Continuation = AsyncStream<NetworkOperationEvent>.Continuation
+
+    private struct State {
+        var events: [NetworkOperationEvent] = []
+        var isFinished = false
+        var subscribers: [UInt64: Continuation] = [:]
+        var nextSubscriberID: UInt64 = 0
+    }
+
+    private let state = OSAllocatedUnfairLock(initialState: State())
+
+    package init() {}
+
+    /// Records `event` and delivers it to every current subscriber.
+    ///
+    /// Delivery happens under the lock that also serializes replay, so each
+    /// subscriber receives the events in the order they were recorded.
+    package func record(_ event: NetworkOperationEvent) {
+        state.withLock { state in
+            guard !state.isFinished else { return }
+            state.events.append(event)
+            for continuation in state.subscribers.values {
+                continuation.yield(event)
+            }
+        }
+    }
+
+    /// Records the terminal `event`, delivers it, and ends every stream.
+    package func finish(with event: NetworkOperationEvent) {
+        let subscribers = state.withLock { state -> [Continuation] in
+            guard !state.isFinished else { return [] }
+            state.events.append(event)
+            state.isFinished = true
+            let subscribers = Array(state.subscribers.values)
+            state.subscribers.removeAll()
+            for continuation in subscribers {
+                continuation.yield(event)
+            }
+            return subscribers
+        }
+        // Ending a stream runs its termination handler, which takes the lock.
+        for continuation in subscribers {
+            continuation.finish()
+        }
+    }
+
+    /// A new stream that replays the recorded events, then delivers the rest
+    /// and ends with the operation.
+    package func subscribe() -> AsyncStream<NetworkOperationEvent> {
+        let (stream, continuation) = AsyncStream<NetworkOperationEvent>.makeStream()
+        let isFinished = state.withLock { state -> Bool in
+            for event in state.events {
+                continuation.yield(event)
+            }
+            guard !state.isFinished else { return true }
+            let id = state.nextSubscriberID
+            state.nextSubscriberID &+= 1
+            state.subscribers[id] = continuation
+            // Runs when the consumer stops early; never while the lock is
+            // held, because the log ends streams only after releasing it.
+            continuation.onTermination = { [weak self] _ in
+                self?.unsubscribe(id)
+            }
+            return false
+        }
+        if isFinished {
+            continuation.finish()
+        }
+        return stream
+    }
+
+    private func unsubscribe(_ id: UInt64) {
+        // Released after the lock: dropping the last reference to a stream
+        // can run its termination handler.
+        let removed = state.withLock { $0.subscribers.removeValue(forKey: id) }
+        _ = removed
+    }
 }

@@ -25,6 +25,38 @@ struct NetworkOperationTests {
         #expect(await operation.failureSummary() == nil)
     }
 
+    @Test("Every access to events delivers the whole lifecycle, to early and late consumers alike")
+    func everyConsumerReceivesTheWholeLifecycle() async throws {
+        let endpoint = PreviewEndpoint()
+        let stub = StubNetworkClient()
+        stub.register(
+            PreviewResponse(id: "never"),
+            for: endpoint,
+            behavior: .delayed(seconds: 60)
+        )
+        let operation = stub.start(endpoint)
+        let first = operation.events
+        let second = operation.events
+        // A consumer that stops early leaves the other streams untouched.
+        let abandoned = Task {
+            for await _ in operation.events {}
+        }
+        abandoned.cancel()
+        await abandoned.value
+
+        operation.cancel()
+        let summary = try #require(await operation.failureSummary())
+        let late = operation.events
+
+        let lifecycle: [NetworkOperationEvent] = [
+            .started(id: operation.id),
+            .failed(id: operation.id, summary: summary),
+        ]
+        #expect(await collectEvents(first) == lifecycle)
+        #expect(await collectEvents(second) == lifecycle)
+        #expect(await collectEvents(late) == lifecycle)
+    }
+
     @Test("An upload operation returns the value decoded by the multipart pipeline")
     func uploadOperationReturnsDecodedValue() async throws {
         let session = MockURLSession()
@@ -536,6 +568,14 @@ struct NetworkOperationTests {
 }
 
 /// Awaits a failing operation and returns its contextual summary.
+private func collectEvents(_ events: AsyncStream<NetworkOperationEvent>) async -> [NetworkOperationEvent] {
+    var collected: [NetworkOperationEvent] = []
+    for await event in events {
+        collected.append(event)
+    }
+    return collected
+}
+
 private func failure<Value: Sendable>(
     from operation: NetworkOperation<Value>,
     onWait: @Sendable () -> Void = {}
