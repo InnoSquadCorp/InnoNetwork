@@ -1337,6 +1337,54 @@ struct StreamingAPIDefinitionTests {
         #expect(SequencedStreamingURLProtocol.capturedRequests(for: streamURL).count == 2)
     }
 
+    @Test("A half-open stream probe is settled by its handshake, so the next stream can probe again")
+    func halfOpenStreamProbeIsSettledByItsHandshake() async throws {
+        let definition = LineCounterStream()
+        let baseURL = uniqueStreamingBaseURL()
+        let streamURL = baseURL.appendingPathComponent(definition.path)
+
+        SequencedStreamingURLProtocol.enqueue(
+            url: streamURL,
+            steps: [
+                .success(statusCode: 503, data: Data()),
+                .failure(URLError(.networkConnectionLost)),
+                .success(statusCode: 200, data: Data("first\n".utf8)),
+                .success(statusCode: 200, data: Data("second\n".utf8)),
+            ])
+
+        // With no reset delay every rejection is followed by a half-open
+        // probe. A probe the stream neither recorded nor released would keep
+        // the single probe slot, and the next stream would be rejected
+        // locally instead of reaching transport.
+        let client = DefaultNetworkClient(
+            configuration: NetworkConfiguration(
+                baseURL: baseURL,
+                circuitBreakerPolicy: CircuitBreakerPolicy(failureThreshold: 1, windowSize: 1, resetAfter: .zero)
+            ),
+            session: makeSequencedStreamingURLSession()
+        )
+
+        for expectedFailure in 0..<2 {
+            do {
+                for try await _ in client.stream(definition) {}
+                Issue.record("Expected stream \(expectedFailure) to fail")
+            } catch {
+                if case .policyRejected = error {
+                    Issue.record("A probe slot was left behind: \(error)")
+                }
+            }
+        }
+        var values: [String] = []
+        for _ in 0..<2 {
+            for try await value in client.stream(definition) {
+                values.append(value)
+            }
+        }
+
+        #expect(values == ["first", "second"])
+        #expect(SequencedStreamingURLProtocol.capturedRequests(for: streamURL).count == 4)
+    }
+
     @Test("stream() retries handshake failures through RetryPolicy before reading the body")
     func streamRetriesHandshakeFailureThroughRetryPolicy() async throws {
         let definition = LineCounterStream()

@@ -25,6 +25,30 @@ struct NetworkOperationTests {
         #expect(await operation.failureSummary() == nil)
     }
 
+    @Test("An upload operation returns the value decoded by the multipart pipeline")
+    func uploadOperationReturnsDecodedValue() async throws {
+        let session = MockURLSession()
+        try session.setMockJSON(PreviewResponse(id: "upload-42"))
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(baseURL: "https://api.example.com/v1"),
+            session: session
+        )
+
+        let operation = client.startUpload(PreviewUpload())
+        let value = try await operation.value()
+        var events: [NetworkOperationEvent] = []
+        for await event in operation.events {
+            events.append(event)
+        }
+
+        #expect(value == PreviewResponse(id: "upload-42"))
+        #expect(events == [.started(id: operation.id), .succeeded(id: operation.id)])
+        #expect(await operation.failureSummary() == nil)
+        let sent = try #require(session.capturedRequest)
+        #expect(sent.httpMethod == "POST")
+        #expect(sent.value(forHTTPHeaderField: "Content-Type")?.hasPrefix("multipart/form-data") == true)
+    }
+
     @Test("Cancellation maps to the value-only failure contract")
     func mapsCancellation() async throws {
         let endpoint = PreviewEndpoint()
@@ -737,4 +761,17 @@ private struct PreviewEndpoint: APIDefinition {
 
 private struct PreviewResponse: Codable, Sendable, Equatable {
     let id: String
+}
+
+private struct PreviewUpload: MultipartAPIDefinition {
+    typealias APIResponse = PreviewResponse
+
+    var sessionAuthentication: SessionAuthentication { .anonymous }
+    var method: HTTPMethod { .post }
+    var path: String { "/preview-upload" }
+    var multipartFormData: MultipartFormData {
+        var formData = MultipartFormData()
+        formData.append("preview", name: "title")
+        return formData
+    }
 }
