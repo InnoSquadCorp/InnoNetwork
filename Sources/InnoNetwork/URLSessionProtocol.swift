@@ -149,6 +149,13 @@ extension URLSession: URLSessionProtocol {
             context: context,
             sessionHeaderNames: redirectSensitiveSessionHeaderNames
         )
+        guard context.allowsURLCacheStorage else {
+            // `data(for:delegate:)` never asks the task delegate
+            // `willCacheResponse`, so the session's URLCache would store a
+            // response this request must keep out of it. A data task with
+            // the same policy delegate is asked; collect its body instead.
+            return try await isolatedData(for: request, policyDelegate: delegate)
+        }
         do {
             let result = try await data(for: request, delegate: delegate)
             if let redirectFailure = delegate.redirectFailure {
@@ -333,7 +340,7 @@ private extension URLSession {
 }
 
 
-private final class RequestTaskDelegate: NSObject, URLSessionDataDelegate {
+final class RequestTaskDelegate: NSObject, URLSessionDataDelegate {
     private let request: URLRequest
     private let context: NetworkRequestContext
     private let uploadBodyFileURL: URL?
@@ -526,14 +533,52 @@ extension URLSession: ChunkedTransferSession {
         )
     }
 
+    /// Buffers a whole response through the delegate-driven data task, the
+    /// one transport Foundation consults before storing a response in the
+    /// session's URLCache.
+    ///
+    /// The bridge collects the body itself and hands it over once, so the
+    /// response is held in one buffer, as `data(for:delegate:)` holds it,
+    /// instead of also queueing in a chunk stream behind a slow consumer.
+    private func isolatedData(
+        for request: URLRequest,
+        policyDelegate: RequestTaskDelegate
+    ) async throws -> (Data, URLResponse) {
+        let transfer = try await runChunkedTransfer(
+            transportRequest: request,
+            policyDelegate: policyDelegate,
+            maxBytes: nil,
+            collectsWholeBody: true
+        )
+        var data = Data()
+        do {
+            for try await chunk in transfer.chunks {
+                // Taking the single collected chunk shares its storage.
+                if data.isEmpty { data = chunk } else { data.append(chunk) }
+            }
+            // Cancelling the consumer ends the chunk stream before the body
+            // arrives; that must never pass for an empty response.
+            try Task.checkCancellation()
+        } catch {
+            // Trust and redirect failures surface before the response, where
+            // `runChunkedTransfer` maps them. A failure here is the body's own;
+            // stop the task so the server cannot keep sending.
+            transfer.cancel()
+            throw error
+        }
+        return (data, transfer.response)
+    }
+
     private func runChunkedTransfer(
         transportRequest: URLRequest,
         policyDelegate: RequestTaskDelegate,
-        maxBytes: Int64?
+        maxBytes: Int64?,
+        collectsWholeBody: Bool = false
     ) async throws -> ChunkedTransfer {
         let bridge = ChunkedTransferBridge(
             forwardingPolicyCallbacksTo: policyDelegate,
-            maxBytes: maxBytes
+            maxBytes: maxBytes,
+            collectsWholeBody: collectsWholeBody
         )
         let task = dataTask(with: transportRequest)
         task.delegate = bridge
@@ -561,21 +606,34 @@ extension URLSession: ChunkedTransferSession {
 /// (redirects, trust, metrics, caching, upload body streams) forward to the
 /// shared ``RequestTaskDelegate`` so the chunked path enforces exactly the
 /// same admission rules as the buffered and byte-wise paths.
-private final class ChunkedTransferBridge: NSObject, URLSessionDataDelegate {
+final class ChunkedTransferBridge: NSObject, URLSessionDataDelegate {
     private struct State {
         var responseContinuation: CheckedContinuation<(URLResponse, URLRequest?), Error>?
         var chunkContinuation: AsyncThrowingStream<Data, Error>.Continuation?
         var observedBytes: Int64 = 0
         var limitFinished = false
+        /// The body received so far when the bridge collects it instead of
+        /// streaming it.
+        var collectedBody = Data()
+        /// Whether the task has reported completion, and with which error.
+        var didComplete = false
+        var completionError: (any Error)?
     }
 
     private let policyDelegate: RequestTaskDelegate
     private let maxBytes: Int64?
+    /// Whether the body is collected and yielded as one chunk on success.
+    private let collectsWholeBody: Bool
     private let state = OSAllocatedUnfairLock<State>(initialState: State())
 
-    init(forwardingPolicyCallbacksTo policyDelegate: RequestTaskDelegate, maxBytes: Int64?) {
+    init(
+        forwardingPolicyCallbacksTo policyDelegate: RequestTaskDelegate,
+        maxBytes: Int64?,
+        collectsWholeBody: Bool
+    ) {
         self.policyDelegate = policyDelegate
         self.maxBytes = maxBytes
+        self.collectsWholeBody = collectsWholeBody
     }
 
     func start(task: URLSessionDataTask) async throws -> ChunkedTransfer {
@@ -590,8 +648,22 @@ private final class ChunkedTransferBridge: NSObject, URLSessionDataDelegate {
         let (response, finalRequest) = try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation {
                 (checked: CheckedContinuation<(URLResponse, URLRequest?), Error>) in
-                state.withLock { $0.responseContinuation = checked }
-                task.resume()
+                // A task cancelled before this point, by an already-cancelled
+                // caller or an invalidated session, may have reported its
+                // completion already; `resume()` cannot restart it, so a
+                // continuation stored now would never be resumed.
+                let earlyCompletion = state.withLock { state -> (any Error)? in
+                    guard state.didComplete else {
+                        state.responseContinuation = checked
+                        return nil
+                    }
+                    return state.completionError ?? URLError(.badServerResponse)
+                }
+                if let earlyCompletion {
+                    checked.resume(throwing: earlyCompletion)
+                } else {
+                    task.resume()
+                }
             }
         } onCancel: {
             task.cancel()
@@ -626,6 +698,8 @@ private final class ChunkedTransferBridge: NSObject, URLSessionDataDelegate {
         enum Action {
             case yield(AsyncThrowingStream<Data, Error>.Continuation)
             case exceeded(AsyncThrowingStream<Data, Error>.Continuation, observed: Int64, limit: Int64)
+            /// Appended to the collected body, which is yielded on success.
+            case collected
             case drop
         }
         let action: Action = state.withLock { state in
@@ -639,6 +713,10 @@ private final class ChunkedTransferBridge: NSObject, URLSessionDataDelegate {
             if let maxBytes, observed > maxBytes {
                 state.limitFinished = true
                 return .exceeded(continuation, observed: observed, limit: maxBytes)
+            }
+            if collectsWholeBody {
+                state.collectedBody.append(data)
+                return .collected
             }
             return .yield(continuation)
         }
@@ -655,22 +733,28 @@ private final class ChunkedTransferBridge: NSObject, URLSessionDataDelegate {
                     .responseBodyLimitExceeded(limitBytes: limit, observedBytes: observed)
                 )
             )
-        case .drop:
+        case .collected, .drop:
             break
         }
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        let (responseContinuation, chunkContinuation) = state.withLock {
+        let (responseContinuation, chunkContinuation, collectedBody) = state.withLock {
             state -> (
                 CheckedContinuation<(URLResponse, URLRequest?), Error>?,
-                AsyncThrowingStream<Data, Error>.Continuation?
+                AsyncThrowingStream<Data, Error>.Continuation?,
+                Data
             ) in
             let response = state.responseContinuation
             let chunks = state.limitFinished ? nil : state.chunkContinuation
+            // Move the body out so the stream receives the only reference.
+            let body = state.collectedBody
             state.responseContinuation = nil
             state.chunkContinuation = nil
-            return (response, chunks)
+            state.collectedBody = Data()
+            state.didComplete = true
+            state.completionError = error
+            return (response, chunks, body)
         }
         if let responseContinuation {
             responseContinuation.resume(
@@ -681,6 +765,9 @@ private final class ChunkedTransferBridge: NSObject, URLSessionDataDelegate {
             if let error {
                 chunkContinuation.finish(throwing: error)
             } else {
+                if !collectedBody.isEmpty {
+                    chunkContinuation.yield(collectedBody)
+                }
                 chunkContinuation.finish()
             }
         }
