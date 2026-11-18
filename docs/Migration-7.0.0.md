@@ -382,6 +382,16 @@ ended on a status.
 - **Automatic retry resumes.** A retry continues from the resume data of the
   failed attempt instead of restarting from byte 0, and falls back to a fresh
   request when the server rejects the range.
+- **Redirected transfers resume.** `resume(_:)` and an automatic retry
+  continue a transfer that followed a redirect from the redirect target that
+  Foundation restores, when the download redirect policy would admit that
+  target unchanged. 6.x restarted every redirected transfer from byte 0. A
+  target the policy would refuse, such as an HTTPS-to-HTTP downgrade, still
+  restarts from the source URL. When the target refuses the resumed request
+  with any status, as an expired signed URL does, the task does not fail: the
+  next retry carries no resume data and asks the source, which redirects
+  afresh. That fallback spends one retry, so with retries disabled the task
+  fails with `.maxRetriesExceeded(lastError:)` instead.
 - **`pause(_:)` during a retry wait takes effect.** 6.x dropped a pause issued
   while a retry was waiting for backoff or a network change, and the task
   restarted. The task now ends `.paused` and keeps the resume data of the
@@ -416,8 +426,9 @@ tuning — a 15 s heartbeat, 8 attempts, 512 buffered events and more. Pass the
 other packs too if your app relies on a `safeDefaults` value. A
 `stabilityInterval` of `.infinity` never resets the budget, so `maxAttempts`
 caps the task's whole lifetime; a negative value is `0`, and NaN the
-standard 10 s. The interval is measured on the monotonic clock, so a
-wall-clock correction does not change it.
+standard 10 s. The interval is measured on the monotonic clock, and so is
+the `maxTotalDuration` reconnect window, which 6.x measured on the wall clock;
+a wall-clock correction changes neither.
 
 `WebSocketTask.attemptedReconnectCount` still reads `0` while a connection is
 open. If that connection drops before the interval, the earlier count is
@@ -596,9 +607,13 @@ setting that restores the old behavior, where one exists.
   restarts from the source URL after `416`. A `pause(_:)` issued while a retry
   waits now pauses the task, which keeps the resume data of the attempt that
   failed last, including a retry restored after a relaunch and a pause that
-  races the failure itself; 6.x dropped the pause and restarted the transfer. *Affected:*
-  downloads from servers that answer range requests incorrectly; apps that
-  pause during a retry wait. *Keep 6.x:* not configurable.
+  races the failure itself; 6.x dropped the pause and restarted the transfer.
+  A transfer that followed a redirect resumes from its target when the
+  download redirect policy would admit it unchanged, and asks the source again
+  on its next retry if the target refuses; 6.x restarted it from byte 0.
+  *Affected:* downloads from servers that answer range requests incorrectly;
+  apps that pause during a retry wait; redirected downloads with retries
+  disabled. *Keep 6.x:* not configurable.
 - [ ] **WebSocket reconnect budget.** A connection must stay open for
   `stabilityInterval` (default 10 s) before it resets `maxAttempts` and
   `maxTotalDuration`; one that drops sooner continues the earlier budget, so a

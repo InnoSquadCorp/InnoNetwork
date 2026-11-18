@@ -322,15 +322,18 @@ catalogs describe the new behavior:
   (`DownloadTransferPack(acceptableStatusCodes:)`, default `200..<300`).
   `DownloadError.maxRetriesExceeded` becomes
   `.maxRetriesExceeded(lastError:)`, and `.unacceptableStatusCode(_:)` is
-  added. An automatic retry resumes from the failed attempt's resume data, and
-  `pause(_:)` issued during a retry wait takes effect. A retry waits for a
+  added. An automatic retry resumes from the failed attempt's resume data, a
+  transfer that followed a redirect resumes from its target instead of
+  restarting from byte 0 (and asks the source again if the target refuses),
+  and `pause(_:)` issued during a retry wait takes effect. A retry waits for a
   network change only after a connectivity failure from the core module's
   table, so a retry after `URLError.cannotConnectToHost` goes straight to
   backoff.
 - **InnoNetworkWebSocket** adds `WebSocketReconnectPack(stabilityInterval:)`
   (default 10 s, measured on the monotonic clock). A connection that drops
   before the interval continues the earlier reconnect budget instead of
-  resetting it; `.infinity` never resets it.
+  resetting it; `.infinity` never resets it. The `maxTotalDuration` reconnect
+  window is measured on the monotonic clock as well.
 - **InnoNetworkPersistentCache** verifies the byte count and SHA-256 digest of
   every stored body, adds
   `PersistentResponseCacheEvictionReason.bodyIntegrityMismatch`, and uses

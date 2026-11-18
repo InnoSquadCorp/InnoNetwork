@@ -105,12 +105,18 @@ unreleased 7.0 line. See `docs/Migration-7.0.0.md`.
   including one restored after a relaunch or racing the failure, which keeps
   the latest failed attempt's resume data. The `206` answering a resumed range
   request is always accepted, and `resume(_:)` checks persisted resume data
-  before handing it to Foundation.
+  before handing it to Foundation. A transfer that followed a redirect resumes
+  from the redirect target when the download redirect policy would admit that
+  target unchanged; 6.x restarted every redirected transfer from byte 0. When
+  the target refuses the resumed request, as an expired signed URL does, the
+  next retry asks the source again instead of failing the task.
   `DownloadError.maxRetriesExceeded` carries the last attempt's error.
 - A WebSocket connection that drops before the stability interval, measured
   on the monotonic clock, continues the earlier reconnect budget instead of
-  resetting it; `.infinity` never resets it. `successfulReconnectCount`
-  counts manager reconnects but never a first connection.
+  resetting it; `.infinity` never resets it. The `maxTotalDuration` reconnect
+  window is measured on the monotonic clock as well, where 6.x used the wall
+  clock. `successfulReconnectCount` counts manager reconnects but never a
+  first connection.
 - The persistent cache index format is version 5; a 6.x cache directory is
   reset on first open. Opening drops an entry whose body file has the wrong
   length and removes staging files a crash left behind.
@@ -180,6 +186,9 @@ unreleased 7.0 line. See `docs/Migration-7.0.0.md`.
 - Give positive waits in the package's own tests a load-tolerant upper bound
   so `swift test --parallel` no longer fails when two thousand tests start in
   one process.
+- Fail a request whose transfer Foundation reports complete before the request
+  starts waiting for the response, as it does for a task cancelled at that
+  moment or a session invalidated then. The request could wait forever.
 
 ## [6.1.1] - 2026-10-07
 

@@ -56,6 +56,15 @@ extension UploadNetworkClient {
     ///
     /// The handle exposes the same execution as ``upload(_:tag:)`` and adds
     /// cancellation, lifecycle events, and an optional end-to-end deadline.
+    ///
+    /// - Parameters:
+    ///   - request: The multipart endpoint to execute.
+    ///   - replaySafety: Whether a restart may repeat the upload. Like the
+    ///     same argument of `start(_:replaySafety:deadline:)`, it affects only
+    ///     the recovery recommendation in
+    ///     ``NetworkOperationEvent/failed(id:summary:)``; it never makes the
+    ///     client retry.
+    ///   - deadline: One monotonic latency budget for the whole operation.
     public func startUpload<Request: MultipartAPIDefinition>(
         _ request: Request,
         replaySafety: NetworkOperationReplaySafety = .methodDefault,

@@ -174,6 +174,16 @@ If the resume data has been invalidated by the server (cache TTL, range support 
 the resumed task will fall back to a fresh download from byte 0. The transition is
 transparent to observers.
 
+A transfer that followed a redirect resumes from the redirect target Foundation restores
+from the resume data. The manager accepts that target only when the download redirect
+policy would have followed it from the source without removing anything, so an
+HTTPS-to-HTTP downgrade or a cross-origin target still carrying a credential header
+restarts from the source URL instead. A target can also stop answering while the transfer
+waits — a signed URL expires, a mirror rotates. When the target refuses the resumed
+request with any HTTP status, the task does not fail: the next retry carries no resume
+data and asks the source again, which redirects to a fresh target. That fallback spends
+one retry.
+
 An automatic retry uses resume data the same way. When a failed attempt produced resume
 data, the retry continues the transfer from that point instead of restarting from byte 0,
 and restarts from the source URL when the server rejects the range with `416`.

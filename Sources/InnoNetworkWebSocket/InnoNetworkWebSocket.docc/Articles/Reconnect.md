@@ -90,7 +90,9 @@ the remaining window. The coordinator checks expiry again after waking, and
 the manager checks once more after acquiring lifecycle admission. At the
 deadline (including a delayed timer wake-up), no new connection is started;
 the task fails with `reconnectWindowExceeded` and its pending worker is cleaned
-up. A zero cumulative duration keeps the limit disabled.
+up. A zero cumulative duration keeps the limit disabled. The window is measured
+on the monotonic clock, so a wall-clock correction neither extends nor
+shortens it.
 
 ## Reconnect budget and the stability interval
 
