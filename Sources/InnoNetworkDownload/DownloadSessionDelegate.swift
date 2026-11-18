@@ -454,8 +454,8 @@ package enum DownloadHTTPStatusFailure {
     package static let domain = "InnoNetworkDownload.HTTPStatus"
     /// Domain of a status that refused a resumed attempt because its resume
     /// point is stale: the server rejected the range (`416`), or the redirect
-    /// target restored from resume data refused it, as an expired signed URL
-    /// does. Neither says anything about the server, so the task restarts
+    /// target the resumed attempt reached refused it, as an expired signed
+    /// URL does. Neither says anything about the server, so the task restarts
     /// from the source at once, without resume data and without spending
     /// retry budget. The restarted attempt sends no range, so it cannot be
     /// stale in turn.

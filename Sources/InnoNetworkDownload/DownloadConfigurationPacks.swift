@@ -75,6 +75,11 @@ public struct DownloadTransferPack: Sendable {
 }
 
 /// Groups retry limits, backoff, and reachability coordination.
+///
+/// A resumed transfer whose resume point went stale, because the server
+/// rejected its range with `416` or its redirect target refused it, restarts
+/// from the source URL at once. That restart neither waits for backoff nor
+/// spends this budget, so it happens even with `maxRetryCount: 0`.
 public struct DownloadRetryPack: Sendable {
     private let maxRetryCount: Int
     private let maxTotalRetries: Int

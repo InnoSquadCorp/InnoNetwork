@@ -326,9 +326,39 @@ struct DownloadHTTPStatusValidationTests {
         #expect(reported == expected)
     }
 
-    @Test("A stale resume restarts from the source at once without spending retry budget, even when none is left")
+    @Test("A stale resume restarts from the source at once, without backoff, resume data, or retry budget")
     func staleResumeRestartsWithoutRetryBudget() async throws {
-        let (coordinator, task, persistence) = await makeStatusFailureCoordinator()
+        // A 30-second backoff would show up as a recorded sleep.
+        let clock = SleepRecordingClock()
+        let (coordinator, task, persistence) = await makeStatusFailureCoordinator(retryDelay: 30, clock: clock)
+        await task.restoreRetryCounts(retryCount: 3, totalRetryCount: 3)
+        let staleBlob = Data("resume point the server no longer honors".utf8)
+        await task.setResumeData(staleBlob)
+        let restarts = OSAllocatedUnfairLock<Int>(initialState: 0)
+
+        await coordinator.handleError(
+            task: task,
+            error: DownloadHTTPStatusFailure.make(statusCode: 403, url: task.url, staleResume: true),
+            resumeData: staleBlob,
+            restart: { _ in restarts.withLock { $0 += 1 } }
+        )
+
+        #expect(restarts.withLock { $0 } == 1)
+        #expect(clock.recordedSleeps.isEmpty)
+        #expect(await task.state == .downloading)
+        #expect(await task.resumeData == nil)
+        #expect(await task.retryCount == 3)
+        #expect(await task.totalRetryCount == 3)
+        let record = await persistence.record(forID: task.id)
+        #expect(record?.lifecycle == .retryPending)
+        #expect(record?.resumeData == nil)
+    }
+
+    @Test("A stale resume that cannot be recorded with no budget left fails as it did before the restart existed")
+    func unrecordedStaleResumeWithoutBudgetFails() async throws {
+        // `resume(_:)` records its attempt as active only after starting it,
+        // so the attempt's refusal can find the record still `.resuming`.
+        let (coordinator, task, _) = await makeStatusFailureCoordinator(lifecycle: .resuming)
         await task.restoreRetryCounts(retryCount: 3, totalRetryCount: 3)
         let restarts = OSAllocatedUnfairLock<Int>(initialState: 0)
 
@@ -338,12 +368,14 @@ struct DownloadHTTPStatusValidationTests {
             restart: { _ in restarts.withLock { $0 += 1 } }
         )
 
-        #expect(restarts.withLock { $0 } == 1)
-        #expect(await task.state == .downloading)
-        #expect(await task.resumeData == nil)
-        #expect(await task.retryCount == 3)
-        #expect(await task.totalRetryCount == 3)
-        #expect(await persistence.record(forID: task.id)?.lifecycle == .retryPending)
+        #expect(restarts.withLock { $0 } == 0)
+        #expect(await task.state == .failed)
+        let failure = await task.error
+        if case .maxRetriesExceeded? = failure {
+            #expect(failure?.httpStatusCode == 403)
+        } else {
+            Issue.record("Expected maxRetriesExceeded, got \(String(describing: failure))")
+        }
     }
 
     // MARK: Failure classification
@@ -589,8 +621,6 @@ private func makeStatusTestRoot(_ label: String) throws -> URL {
 }
 
 
-/// A failure coordinator with zero retry delay around one task whose
-/// in-memory state and durable phase the caller chooses.
 struct StaleResumeCase: Sendable, CustomTestStringConvertible {
     let atTarget: Bool
     let ranged: Bool
@@ -602,16 +632,20 @@ struct StaleResumeCase: Sendable, CustomTestStringConvertible {
     }
 }
 
+/// A failure coordinator around one task whose in-memory state and durable
+/// phase the caller chooses. The retry delay is zero unless given.
 func makeStatusFailureCoordinator(
     state: DownloadState = .downloading,
-    lifecycle: DownloadTaskPersistence.Record.Lifecycle = .active
+    lifecycle: DownloadTaskPersistence.Record.Lifecycle = .active,
+    retryDelay: TimeInterval = 0,
+    clock: any InnoNetworkClock = TestClock()
 ) async -> (
     DownloadFailureCoordinator, DownloadTask, DownloadTaskPersistence
 ) {
     let configuration = DownloadConfiguration(
         maxRetryCount: 3,
         maxTotalRetries: 3,
-        retryDelay: 0,
+        retryDelay: retryDelay,
         sessionIdentifier: makeDownloadTestSessionIdentifier("status-coordinator"),
         networkMonitor: nil
     )
@@ -641,11 +675,29 @@ func makeStatusFailureCoordinator(
             metricsReporter: configuration.eventMetricsReporter,
             hubKind: .downloadTask
         ),
-        clock: TestClock()
+        clock: clock
     )
     await runtimeRegistry.add(task)
     await task.restoreState(state)
     return (coordinator, task, persistence)
+}
+
+/// Records every sleep and returns at once, so a test can see whether a path
+/// waited without waiting itself.
+private final class SleepRecordingClock: InnoNetworkClock {
+    private let sleeps = OSAllocatedUnfairLock<[Duration]>(initialState: [])
+
+    var recordedSleeps: [Duration] {
+        sleeps.withLock { $0 }
+    }
+
+    func sleep(for duration: Duration) async throws {
+        sleeps.withLock { $0.append(duration) }
+    }
+
+    func now() -> Date {
+        Date(timeIntervalSince1970: 1_000_000)
+    }
 }
 
 

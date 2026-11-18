@@ -110,11 +110,10 @@ package struct DownloadFailureCoordinator {
         let restartsFromSource = DownloadHTTPStatusFailure.isStaleResume(error)
         let totalRetryCount = await task.totalRetryCount
         let retryCount = await task.retryCount
-        guard
-            restartsFromSource
-                || (totalRetryCount < configuration.maxTotalRetries
-                    && retryCount < configuration.maxRetryCount)
-        else {
+        let hasRetryBudget =
+            totalRetryCount < configuration.maxTotalRetries
+            && retryCount < configuration.maxRetryCount
+        guard restartsFromSource || hasRetryBudget else {
             await markTaskFailed(
                 task,
                 reason: .maxRetriesExceeded(lastError: error),
@@ -164,8 +163,9 @@ package struct DownloadFailureCoordinator {
         // earlier attempt left behind. It must be in place before the retry
         // marker becomes durable: from that write on, `pause(_:)` may take
         // the waiting task and persists the task's resume data as its own,
-        // so setting it any later would let a pause record a stale blob.
-        await task.setResumeData(resumeData)
+        // so setting it any later would let a pause record a stale blob. A
+        // stale resume point restarts from the source, so it keeps none.
+        await task.setResumeData(restartsFromSource ? nil : resumeData)
         do {
             let persisted = try await persistence.updateRetryState(
                 id: task.id,
@@ -174,6 +174,20 @@ package struct DownloadFailureCoordinator {
                 retryPlan: retryPlan
             )
             guard persisted else {
+                if restartsFromSource, !hasRetryBudget {
+                    // Without the restart this failure would have spent the
+                    // last of the budget, and the task would have failed
+                    // before reaching persistence. Keep that outcome: the
+                    // record can also still be `.resuming`, while `resume(_:)`
+                    // records this very attempt as active, and returning here
+                    // would leave the task without a transfer.
+                    await markTaskFailed(
+                        task,
+                        reason: .maxRetriesExceeded(lastError: error),
+                        onLifecycleAdmissionComplete: onAdmissionComplete
+                    )
+                    return
+                }
                 // A terminal/cancel path or a newer durable phase won while
                 // this delegate failure was being admitted. Do not revive it
                 // or surface a second terminal result from this stale job.
