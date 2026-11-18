@@ -274,6 +274,15 @@ package struct StreamingExecutor: Sendable {
                             logicalStart: logicalStart
                         )
                     {
+                        // A refresh that failed in transit while recovering
+                        // from a rejected token leaves that token rejected:
+                        // the retry recovers again instead of sending it,
+                        // because this handshake has already used its one
+                        // replay. A handshake failure is retried with the
+                        // token it sent.
+                        if failure.phase == .preparation {
+                            refreshReplayGeneration = failure.refreshGeneration
+                        }
                         continue
                     }
                 } catch {
@@ -402,12 +411,15 @@ package struct StreamingExecutor: Sendable {
                 // Nothing was sent: an interceptor, the session token or its
                 // refresh, or a signer failed. The retry policy judges the
                 // failure against this stream's request, as it would for a
-                // buffered request, instead of ending the stream.
+                // buffered request, instead of ending the stream. An attempt
+                // that was recovering from a rejected token hands that
+                // generation on, so its retry recovers again.
                 throw StreamingAttemptFailure(
                     error: error,
                     startedAt: attemptStartedAt,
                     phase: Self.isExplicitStreamingDeadline(error) ? .terminalDeadline : .preparation,
-                    request: requestBeforeInterceptors
+                    request: requestBeforeInterceptors,
+                    refreshGeneration: recoveringFromGeneration
                 )
             }
             urlRequest = adapted.request
@@ -1418,7 +1430,9 @@ private struct StreamingAttemptFailure: Error {
     let request: URLRequest?
     /// Refresh generation of the session token the failed attempt sent, when
     /// one was applied. A handshake `401` replays through the refresh
-    /// coordinator from this generation.
+    /// coordinator from this generation. For a preparation failure, it is
+    /// the generation the attempt was recovering from, so a retry recovers
+    /// again instead of sending the rejected token.
     let refreshGeneration: UInt64?
 
     init(

@@ -1238,6 +1238,59 @@ struct StreamingAPIDefinitionTests {
         #expect(await probe.refreshCalls == 2)
     }
 
+    @Test("stream() retries a refresh that failed in transit after a 401 by recovering again")
+    func streamRetriedRecoveryRefreshesAgain() async throws {
+        actor RefreshProbe {
+            private(set) var refreshCalls = 0
+
+            func refreshToken() throws -> String {
+                refreshCalls += 1
+                if refreshCalls == 1 { throw URLError(.timedOut) }
+                return "refreshed"
+            }
+        }
+
+        let definition = LineCounterStream(sessionAuthentication: .optional)
+        let baseURL = uniqueStreamingBaseURL()
+        let streamURL = baseURL.appendingPathComponent(definition.path)
+        let probe = RefreshProbe()
+
+        SequencedStreamingURLProtocol.enqueue(
+            url: streamURL,
+            steps: [
+                .success(statusCode: 401, data: Data()),
+                .success(statusCode: 200, data: Data("after-refresh\n".utf8)),
+            ])
+
+        let client = DefaultNetworkClient(
+            configuration: NetworkConfiguration(
+                baseURL: baseURL,
+                retryPolicy: ExponentialBackoffRetryPolicy(maxRetries: 2, retryDelay: 0, jitterRatio: 0),
+                refreshTokenPolicy: RefreshTokenPolicy(
+                    failureCooldown: .disabled,
+                    currentToken: { "expired" },
+                    refreshToken: { try await probe.refreshToken() }
+                )
+            ),
+            session: makeSequencedStreamingURLSession()
+        )
+
+        var values: [String] = []
+        for try await value in client.stream(definition) {
+            values.append(value)
+        }
+
+        // The refresh after the 401 timed out before anything was sent. The
+        // handshake had used its one replay, so a retry that sent the stored
+        // token would end on its 401; the retry refreshed again instead.
+        let captured = SequencedStreamingURLProtocol.capturedRequests(for: streamURL)
+        #expect(values == ["after-refresh"])
+        #expect(captured.count == 2)
+        #expect(captured.first?.value(forHTTPHeaderField: "Authorization") == "Bearer expired")
+        #expect(captured.last?.value(forHTTPHeaderField: "Authorization") == "Bearer refreshed")
+        #expect(await probe.refreshCalls == 2)
+    }
+
     @Test("stream() does not refresh anonymous handshakes")
     func streamDoesNotRefreshAnonymousHandshake() async throws {
         actor RefreshCounter {
