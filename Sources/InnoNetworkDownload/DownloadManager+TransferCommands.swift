@@ -491,38 +491,11 @@ extension DownloadManager {
                 await runtimeRegistry.removeAttemptRuntime(taskIdentifier: urlTask.taskIdentifier)
                 return
             }
-            do {
-                let persistence = self.persistence
-                let finalizedResume = try await Task.detached {
-                    try await persistence.transitionResumeState(
-                        id: task.id,
-                        from: .resuming,
-                        to: .active,
-                        resumeData: nil
-                    )
-                }.value
-                if !finalizedResume {
-                    let record = await persistence.record(forID: task.id)
-                    let currentState = await task.state
-                    if record?.lifecycle == .pausing || record?.lifecycle == .paused
-                        || currentState.isTerminal
-                    {
-                        // A concurrent pause/cancel owns the concrete attempt
-                        // and its durable phase. Never clobber it back to active.
-                        return
-                    }
-                    throw DownloadPersistenceStateError.failedToFinalizeResumingRecord(task.id)
-                }
-            } catch {
-                Self.logger.fault(
-                    "Failed to finalize active persistence for task \(task.id, privacy: .private(mask: .hash)) on resume: \(String(describing: error), privacy: .private(mask: .hash))"
-                )
-                urlTask.cancel()
-                await runtimeRegistry.removeAttemptRuntime(taskIdentifier: urlTask.taskIdentifier)
-                await transferCoordinator.markTaskFailedForPersistence(task, error: error)
-                return
-            }
-            await task.setResumeData(nil)
+            await transferCoordinator.finalizeResumedAttempt(
+                task,
+                urlTask: urlTask,
+                consumedResumeData: resumeData
+            )
         } else {
             guard await task.advanceAttempt(ifMatching: pausedLifecycle) != nil else { return }
             await transferCoordinator.startDownload(

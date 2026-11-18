@@ -307,17 +307,27 @@ package actor DownloadTaskPersistence {
         return false
     }
 
+    /// Makes a retry plan durable in place of an `.active` record or an
+    /// earlier `.retryPending` one.
+    ///
+    /// - Parameter admitsResumingRecord: Whether a `.resuming` record may be
+    ///   replaced too. `resume(_:)` starts its attempt before it records the
+    ///   attempt as active, so the admission of that attempt's failure can
+    ///   still find `.resuming`. A later rewrite of the plan passes `false`:
+    ///   by then a `.resuming` record belongs to a newer resume.
     package func updateRetryState(
         id: String,
         retryCount: Int,
         totalRetryCount: Int,
-        retryPlan: RetryPlan? = nil
+        retryPlan: RetryPlan? = nil,
+        admitsResumingRecord: Bool = false
     ) async throws -> Bool {
         try await store.updateRetryState(
             id: id,
             retryCount: retryCount,
             totalRetryCount: totalRetryCount,
-            retryPlan: retryPlan
+            retryPlan: retryPlan,
+            admitsResumingRecord: admitsResumingRecord
         )
     }
 

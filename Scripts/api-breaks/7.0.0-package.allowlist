@@ -21,3 +21,6 @@ API breakage: func WebSocketTask.beginReconnectWindowIfNeeded(now:) has paramete
 API breakage: var WebSocketTask.reconnectWindowStartedAt has declared type change from Foundation.Date? to Swift.Duration?
 API breakage: accessor WebSocketTask.reconnectWindowStartedAt.Get() has return type change from Foundation.Date? to Swift.Duration?
 API breakage: constructor WebSocketReconnectCoordinator.init(configuration:runtimeRegistry:clock:randomOffset:dateProvider:eventHub:) has been removed
+API breakage: func AppendLogDownloadTaskStore.updateRetryState(id:retryCount:totalRetryCount:retryPlan:) has been renamed to func updateRetryState(id:retryCount:totalRetryCount:retryPlan:admitsResumingRecord:)
+API breakage: func DownloadTaskPersistence.updateRetryState(id:retryCount:totalRetryCount:retryPlan:) has been renamed to func updateRetryState(id:retryCount:totalRetryCount:retryPlan:admitsResumingRecord:)
+API breakage: func DownloadTaskStore.updateRetryState(id:retryCount:totalRetryCount:retryPlan:) has been renamed to func updateRetryState(id:retryCount:totalRetryCount:retryPlan:admitsResumingRecord:)

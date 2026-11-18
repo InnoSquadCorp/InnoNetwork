@@ -354,11 +354,11 @@ struct DownloadHTTPStatusValidationTests {
         #expect(record?.resumeData == nil)
     }
 
-    @Test("A stale resume that cannot be recorded with no budget left fails as it did before the restart existed")
-    func unrecordedStaleResumeWithoutBudgetFails() async throws {
+    @Test("A stale resume refused before the resume recorded its attempt still restarts from the source")
+    func unrecordedStaleResumeRestartsFromSource() async throws {
         // `resume(_:)` records its attempt as active only after starting it,
         // so the attempt's refusal can find the record still `.resuming`.
-        let (coordinator, task, _) = await makeStatusFailureCoordinator(lifecycle: .resuming)
+        let (coordinator, task, persistence) = await makeStatusFailureCoordinator(lifecycle: .resuming)
         await task.restoreRetryCounts(retryCount: 3, totalRetryCount: 3)
         let restarts = OSAllocatedUnfairLock<Int>(initialState: 0)
 
@@ -368,14 +368,33 @@ struct DownloadHTTPStatusValidationTests {
             restart: { _ in restarts.withLock { $0 += 1 } }
         )
 
+        #expect(restarts.withLock { $0 } == 1)
+        #expect(await task.state == .downloading)
+        #expect(await task.error == nil)
+        #expect(await task.retryCount == 3)
+        let record = await persistence.record(forID: task.id)
+        #expect(record?.lifecycle == .retryPending)
+        #expect(record?.resumeData == nil)
+    }
+
+    @Test("A stale resume refusal that finds a pause in flight defers to it, even with no budget left")
+    func staleResumeDefersToPauseInFlight() async throws {
+        let (coordinator, task, persistence) = await makeStatusFailureCoordinator(lifecycle: .pausing)
+        await task.restoreRetryCounts(retryCount: 3, totalRetryCount: 3)
+        let restarts = OSAllocatedUnfairLock<Int>(initialState: 0)
+
+        await coordinator.handleError(
+            task: task,
+            error: DownloadHTTPStatusFailure.make(statusCode: 403, url: task.url, staleResume: true),
+            restart: { _ in restarts.withLock { $0 += 1 } }
+        )
+
+        // The pause owns the attempt and settles the task as paused; the
+        // failure neither restarts nor fails it.
         #expect(restarts.withLock { $0 } == 0)
-        #expect(await task.state == .failed)
-        let failure = await task.error
-        if case .maxRetriesExceeded? = failure {
-            #expect(failure?.httpStatusCode == 403)
-        } else {
-            Issue.record("Expected maxRetriesExceeded, got \(String(describing: failure))")
-        }
+        #expect(await task.state == .downloading)
+        #expect(await task.error == nil)
+        #expect(await persistence.record(forID: task.id)?.lifecycle == .pausing)
     }
 
     // MARK: Failure classification

@@ -213,6 +213,14 @@ public actor DownloadTask: Identifiable {
         return resumeData
     }
 
+    /// Drops `consumed` once the attempt it seeded is recorded as active.
+    /// Resume data that has replaced it in the meantime — what a failure or
+    /// a pause of that attempt left behind — is newer and stays.
+    func discardResumeData(ifIdenticalTo consumed: Data?) {
+        guard lifecycle.resumeData == consumed else { return }
+        lifecycle.resumeData = nil
+    }
+
     func setError(_ error: DownloadError?) {
         lifecycle.error = error
     }

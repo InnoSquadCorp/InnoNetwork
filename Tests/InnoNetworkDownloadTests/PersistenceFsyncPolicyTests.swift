@@ -84,9 +84,10 @@ private actor FailingUpsertDownloadTaskStore: DownloadTaskStore {
         id: String,
         retryCount: Int,
         totalRetryCount: Int,
-        retryPlan: DownloadTaskPersistence.RetryPlan?
+        retryPlan: DownloadTaskPersistence.RetryPlan?,
+        admitsResumingRecord: Bool
     ) async throws -> Bool {
-        _ = (id, retryCount, totalRetryCount, retryPlan)
+        _ = (id, retryCount, totalRetryCount, retryPlan, admitsResumingRecord)
         throw PersistenceTestError.upsertFailed
     }
 

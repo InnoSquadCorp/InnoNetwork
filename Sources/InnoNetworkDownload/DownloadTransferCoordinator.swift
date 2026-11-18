@@ -199,35 +199,56 @@ package struct DownloadTransferCoordinator {
             return
         }
         if mode == .resumingPersistedPause {
-            do {
-                let persistence = self.persistence
-                let finalizedResume = try await Task.detached {
-                    try await persistence.transitionResumeState(
-                        id: task.id,
-                        from: .resuming,
-                        to: .active,
-                        resumeData: nil
-                    )
-                }.value
-                if !finalizedResume {
-                    let record = await persistence.record(forID: task.id)
-                    let currentState = await task.state
-                    if record?.lifecycle == .pausing || record?.lifecycle == .paused
-                        || currentState.isTerminal
-                    {
-                        // Pause/cancel won after this attempt started. Its
-                        // durable marker is authoritative and must not be
-                        // overwritten by the resume finalizer.
-                        return
-                    }
-                    throw DownloadTransferPersistenceStateError.failedToFinalizeResume(task.id)
+            await finalizeResumedAttempt(task, urlTask: urlTask, consumedResumeData: nil)
+        }
+    }
+
+    /// Records a resumed attempt as active once its transport has started.
+    ///
+    /// The attempt starts while its record is still `.resuming`, so a
+    /// relaunch before this write restores the task as paused with its
+    /// resume data. Another path can take the attempt over in that window: a
+    /// pause, a cancellation, the attempt's completion, or its failure and
+    /// the retry that failure scheduled. That path owns the durable phase
+    /// from then on, so this write steps aside instead of overwriting the
+    /// phase or failing the task. Only a missing record for a task that is
+    /// still live is a persistence fault.
+    ///
+    /// - Parameter consumedResumeData: The blob the attempt was created
+    ///   from, or `nil`. The task drops it once the attempt is recorded, but
+    ///   keeps resume data that replaced it in the meantime, such as the
+    ///   blob a failure of the attempt left for its retry.
+    func finalizeResumedAttempt(
+        _ task: DownloadTask,
+        urlTask: any DownloadURLTask,
+        consumedResumeData: Data?
+    ) async {
+        do {
+            let persistence = self.persistence
+            let finalized = try await Task.detached {
+                try await persistence.transitionResumeState(
+                    id: task.id,
+                    from: .resuming,
+                    to: .active,
+                    resumeData: nil
+                )
+            }.value
+            if !finalized {
+                guard await persistence.record(forID: task.id) == nil,
+                    !(await task.state).isTerminal
+                else {
+                    return
                 }
-                await task.setResumeData(nil)
-            } catch {
-                urlTask.cancel()
-                await runtimeRegistry.removeAttemptRuntime(taskIdentifier: urlTask.taskIdentifier)
-                await markTaskFailedForPersistence(task, error: error)
+                throw DownloadTransferPersistenceStateError.failedToFinalizeResume(task.id)
             }
+            await task.discardResumeData(ifIdenticalTo: consumedResumeData)
+        } catch {
+            Self.logger.fault(
+                "Failed to record the resumed attempt of task \(task.id, privacy: .private(mask: .hash)) as active: \(String(describing: error), privacy: .private(mask: .hash))"
+            )
+            urlTask.cancel()
+            await runtimeRegistry.removeAttemptRuntime(taskIdentifier: urlTask.taskIdentifier)
+            await markTaskFailedForPersistence(task, error: error)
         }
     }
 

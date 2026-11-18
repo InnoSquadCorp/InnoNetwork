@@ -491,6 +491,149 @@ struct DownloadPauseResumeTests {
         #expect(await harness.manager.task(withId: task.id) == nil)
         #expect(await harness.manager.runtimeTaskIdentifier(for: task) == nil)
     }
+
+    // MARK: Failure of a resumed attempt
+
+    @Test(
+        "An attempt that fails before resume records it as active is retried instead of stranded",
+        arguments: ResumeStart.allCases
+    )
+    func failureBeforeResumeIsRecordedIsRetried(start: ResumeStart) async throws {
+        let fixture = try await PausedDownloadFixture(label: "resume-failure-before-recorded", start: start)
+        let harness = fixture.harness
+        let task = fixture.task
+        let failureResumeData = try makeRetryResumeData("failed-before-recorded")
+        await harness.store.setBeforeResumeFinalized { _ in
+            // The resumed attempt is running, and its record still says
+            // `.resuming`.
+            await harness.injectCompletion(
+                taskIdentifier: fixture.resumedStub.taskIdentifier,
+                error: retryWaitConnectionLost,
+                resumeData: failureResumeData
+            )
+        }
+
+        await harness.manager.resume(task)
+
+        // The failure scheduled a retry, and the resume did not record the
+        // finished attempt as active or fail the task over the lost write.
+        #expect(await fixture.clock.waitForEnqueuedCount(atLeast: 1, timeout: 10.0))
+        let waiting = await harness.store.record(forID: task.id)
+        #expect(waiting?.lifecycle == .retryPending)
+        #expect(waiting?.resumeData == failureResumeData)
+        #expect(await harness.manager.runtimeTaskIdentifier(for: task) == nil)
+        #expect(await task.state == .downloading)
+        #expect(await task.error == nil)
+        #expect(await task.retryCount == 1)
+
+        // When the backoff ends, the retry continues the transfer.
+        fixture.clock.advance(by: .seconds(60))
+        #expect(await waitForResumeCount(fixture.retryStub, atLeast: 1, timeout: 10.0))
+        #expect(harness.stubSession.lastResumeData == failureResumeData)
+        #expect(await harness.store.record(forID: task.id)?.lifecycle == .active)
+
+        await harness.manager.shutdown()
+    }
+
+    @Test(
+        "Resume data that a failure leaves just after resume records its attempt survives for the retry",
+        arguments: ResumeStart.allCases
+    )
+    func failureAfterResumeIsRecordedKeepsItsResumeData(start: ResumeStart) async throws {
+        let fixture = try await PausedDownloadFixture(label: "resume-failure-after-recorded", start: start)
+        let harness = fixture.harness
+        let task = fixture.task
+        let failureResumeData = try makeRetryResumeData("failed-after-recorded")
+        await harness.store.setAfterResumeFinalized { _ in
+            // The attempt is recorded as active, and resume has not yet
+            // dropped the resume data it started from.
+            await harness.injectCompletion(
+                taskIdentifier: fixture.resumedStub.taskIdentifier,
+                error: retryWaitConnectionLost,
+                resumeData: failureResumeData
+            )
+        }
+
+        await harness.manager.resume(task)
+
+        #expect(await fixture.clock.waitForEnqueuedCount(atLeast: 1, timeout: 10.0))
+        #expect(await task.resumeData == failureResumeData)
+        #expect(await harness.store.record(forID: task.id)?.lifecycle == .retryPending)
+
+        fixture.clock.advance(by: .seconds(60))
+        #expect(await waitForResumeCount(fixture.retryStub, atLeast: 1, timeout: 10.0))
+        #expect(harness.stubSession.lastResumeData == failureResumeData)
+
+        await harness.manager.shutdown()
+    }
+}
+
+
+/// How the next attempt of a paused task starts: from the resume data its
+/// pause produced, or as a fresh request when the pause produced none.
+enum ResumeStart: CaseIterable, Sendable, CustomTestStringConvertible {
+    case fromResumeData
+    case freshRequest
+
+    var testDescription: String {
+        switch self {
+        case .fromResumeData: "from resume data"
+        case .freshRequest: "as a fresh request"
+        }
+    }
+}
+
+
+/// A download that was started and paused once. Resuming it consumes
+/// `resumedStub`, and the retry after that attempt fails consumes
+/// `retryStub`. A 30-second backoff on a virtual clock holds the retry until
+/// the test advances it.
+private struct PausedDownloadFixture {
+    let harness: StubDownloadHarness
+    let clock: TestClock
+    let task: DownloadTask
+    let resumedStub: StubDownloadURLTask
+    let retryStub: StubDownloadURLTask
+
+    init(label: String, start: ResumeStart) async throws {
+        let downloadURL = try #require(URL(string: "https://example.invalid/file.zip"))
+        // Both stubs retain the source request, as a task Foundation rebuilds
+        // from genuine resume data does, so either passes resumed-task
+        // admission.
+        let resumedStub = StubDownloadURLTask(request: URLRequest(url: downloadURL))
+        let retryStub = StubDownloadURLTask(request: URLRequest(url: downloadURL))
+        let clock = TestClock()
+        let harness = try StubDownloadHarness(
+            maxRetryCount: 3,
+            retryDelay: 30,
+            clock: clock,
+            label: label,
+            prequeuedStubs: [resumedStub, retryStub]
+        )
+        let pauseResumeData: Data?
+        switch start {
+        case .fromResumeData:
+            pauseResumeData = try makeRetryResumeData("produced-by-pause")
+        case .freshRequest:
+            pauseResumeData = nil
+        }
+        harness.stubTask.scriptCancelResumeData(pauseResumeData)
+
+        let task = await harness.startDownload(url: downloadURL)
+        _ = try #require(
+            await waitForRuntimeTaskIdentifier(manager: harness.manager, task: task, timeout: 5.0)
+        )
+        #expect(await waitForTaskState(task, timeout: 5.0) { $0 == .downloading })
+        await harness.manager.pause(task)
+        #expect(await task.state == .paused)
+        #expect(await task.resumeData == pauseResumeData)
+
+        self.harness = harness
+        self.clock = clock
+        self.task = task
+        self.resumedStub = resumedStub
+        self.retryStub = retryStub
+    }
 }
 
 

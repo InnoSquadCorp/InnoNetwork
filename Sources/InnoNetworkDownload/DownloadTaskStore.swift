@@ -25,7 +25,8 @@ package protocol DownloadTaskStore: Actor {
         id: String,
         retryCount: Int,
         totalRetryCount: Int,
-        retryPlan: DownloadTaskPersistence.RetryPlan?
+        retryPlan: DownloadTaskPersistence.RetryPlan?,
+        admitsResumingRecord: Bool
     ) async throws -> Bool
     func beginCommit(
         id: String,

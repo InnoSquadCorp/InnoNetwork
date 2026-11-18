@@ -187,8 +187,13 @@ actor InMemoryDownloadTaskStore: DownloadTaskStore {
         if shouldFailUpsert {
             throw InMemoryDownloadTaskStoreError.upsertFailed(id)
         }
+        let finalizesResume = expectedLifecycle == .resuming && lifecycle == .active
         if lifecycle == .pausing, let hook = beforePausingWrite {
             beforePausingWrite = nil
+            await hook(id)
+        }
+        if finalizesResume, let hook = beforeResumeFinalized {
+            beforeResumeFinalized = nil
             await hook(id)
         }
         guard lifecycle != .committing,
@@ -213,6 +218,10 @@ actor InMemoryDownloadTaskStore: DownloadTaskStore {
             afterPausingWritten = nil
             await hook(id)
         }
+        if finalizesResume, let hook = afterResumeFinalized {
+            afterResumeFinalized = nil
+            await hook(id)
+        }
         return true
     }
 
@@ -230,11 +239,27 @@ actor InMemoryDownloadTaskStore: DownloadTaskStore {
         afterPausingWritten = hook
     }
 
+    /// One-shot hooks around the `.resuming` → `.active` write that records a
+    /// resumed attempt. The attempt is already running when that write is
+    /// issued, so a test injects its failure in one of them to reproduce, in
+    /// either order, the race between that write and the failure.
+    private var beforeResumeFinalized: (@Sendable (String) async -> Void)?
+    private var afterResumeFinalized: (@Sendable (String) async -> Void)?
+
+    func setBeforeResumeFinalized(_ hook: (@Sendable (String) async -> Void)?) {
+        beforeResumeFinalized = hook
+    }
+
+    func setAfterResumeFinalized(_ hook: (@Sendable (String) async -> Void)?) {
+        afterResumeFinalized = hook
+    }
+
     func updateRetryState(
         id: String,
         retryCount: Int,
         totalRetryCount: Int,
-        retryPlan: DownloadTaskPersistence.RetryPlan?
+        retryPlan: DownloadTaskPersistence.RetryPlan?,
+        admitsResumingRecord: Bool
     ) async throws -> Bool {
         if suspendsUpserts {
             await withCheckedContinuation { continuation in
@@ -246,6 +271,7 @@ actor InMemoryDownloadTaskStore: DownloadTaskStore {
         }
         guard let record = records[id],
             record.lifecycle == .active || record.lifecycle == .retryPending
+                || (admitsResumingRecord && record.lifecycle == .resuming)
         else { return false }
         records[id] = DownloadTaskPersistence.Record(
             id: id,

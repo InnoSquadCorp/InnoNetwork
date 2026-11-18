@@ -290,12 +290,14 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
         id: String,
         retryCount: Int,
         totalRetryCount: Int,
-        retryPlan: DownloadTaskPersistence.RetryPlan?
+        retryPlan: DownloadTaskPersistence.RetryPlan?,
+        admitsResumingRecord: Bool
     ) async throws -> Bool {
         let didUpdate = OSAllocatedUnfairLock(initialState: false)
         try await mutate {
             guard let existing = $0.records[id],
                 existing.lifecycle == .active || existing.lifecycle == .retryPending
+                    || (admitsResumingRecord && existing.lifecycle == .resuming)
             else { return [] }
             $0.records[id] = DownloadTaskPersistence.Record(
                 id: existing.id,

@@ -167,27 +167,19 @@ package struct DownloadFailureCoordinator {
         // stale resume point restarts from the source, so it keeps none.
         await task.setResumeData(restartsFromSource ? nil : resumeData)
         do {
+            // `resume(_:)` starts an attempt before it records the attempt as
+            // active, so the failed attempt's record can still be `.resuming`.
+            // That record is this attempt's own; leaving it in place would
+            // let the resume record a finished attempt as active and leave the
+            // task without a transfer.
             let persisted = try await persistence.updateRetryState(
                 id: task.id,
                 retryCount: updatedRetryCount,
                 totalRetryCount: updatedTotalRetryCount,
-                retryPlan: retryPlan
+                retryPlan: retryPlan,
+                admitsResumingRecord: true
             )
             guard persisted else {
-                if restartsFromSource, !hasRetryBudget {
-                    // Without the restart this failure would have spent the
-                    // last of the budget, and the task would have failed
-                    // before reaching persistence. Keep that outcome: the
-                    // record can also still be `.resuming`, while `resume(_:)`
-                    // records this very attempt as active, and returning here
-                    // would leave the task without a transfer.
-                    await markTaskFailed(
-                        task,
-                        reason: .maxRetriesExceeded(lastError: error),
-                        onLifecycleAdmissionComplete: onAdmissionComplete
-                    )
-                    return
-                }
                 // A terminal/cancel path or a newer durable phase won while
                 // this delegate failure was being admitted. Do not revive it
                 // or surface a second terminal result from this stale job.
