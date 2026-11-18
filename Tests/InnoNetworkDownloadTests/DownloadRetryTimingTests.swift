@@ -648,6 +648,58 @@ struct RestoredRetryClaimTests {
         #expect(await coordinator.persistence.record(forID: task.id)?.lifecycle == .active)
         #expect(restarts.withLock { $0 } == 0)
     }
+
+    @Test("A waiting retry leaves alone a newer retry's marker even when both plans have the same contents")
+    func waitingRetryLeavesNewerMarkerWithSameContents() async throws {
+        let clock = TestClock()
+        let (coordinator, task, store) = await makeCoordinatorWithStore(
+            configuration: Self.withoutNetworkMonitor,
+            clock: clock
+        )
+        let persistence = coordinator.persistence
+        await task.restoreState(.downloading)
+        let waitingLifecycle = await task.lifecycleSnapshot()
+        // Without a deadline or a baseline, two retries make plans with the
+        // same contents. Only their identity tells them apart.
+        let ownPlan = DownloadTaskPersistence.RetryPlan.waitingForNetwork(baseline: nil, deadline: nil)
+        let newerPlan = DownloadTaskPersistence.RetryPlan.waitingForNetwork(baseline: nil, deadline: nil)
+        #expect(ownPlan != newerPlan)
+        #expect(
+            try await persistence.updateRetryState(
+                id: task.id, retryCount: 1, totalRetryCount: 1, retryPlan: ownPlan)
+        )
+        // After the retry's lifecycle check and before its write, a pause and
+        // a resume start a newer attempt, which fails into a retry of its own.
+        await store.setBeforeRetryPlanRewrite { id in
+            guard await task.transitionToPausedRetainingResumeData(ifMatching: waitingLifecycle) else { return }
+            _ = try? await persistence.transitionResumeState(id: id, from: .retryPending, to: .paused, resumeData: nil)
+            let pausedLifecycle = await task.lifecycleSnapshot()
+            _ = await task.startNextAttempt(transitioningTo: .downloading, ifMatching: pausedLifecycle)
+            _ = try? await persistence.transitionResumeState(id: id, from: .paused, to: .active, resumeData: nil)
+            _ = try? await persistence.updateRetryState(
+                id: id, retryCount: 1, totalRetryCount: 2, retryPlan: newerPlan)
+        }
+
+        let restarts = OSAllocatedUnfairLock(initialState: 0)
+        await coordinator.resumePersistedRetry(
+            DownloadRestoredRetry(task: task, plan: ownPlan, waitingLifecycle: waitingLifecycle),
+            restart: { _ in restarts.withLock { $0 += 1 } })
+
+        // The newer retry's marker is untouched, so that retry can still
+        // rewrite it when its own wait ends instead of stopping short.
+        #expect(await persistence.record(forID: task.id)?.retryPlan == newerPlan)
+        #expect(restarts.withLock { $0 } == 0)
+        #expect(
+            try await persistence.rewriteRetryPlan(
+                id: task.id,
+                replacing: newerPlan,
+                with: .backoff(retryNotBefore: clock.now()),
+                retryCount: 1,
+                totalRetryCount: 2,
+                resumeData: nil
+            )
+        )
+    }
 }
 
 // MARK: - Helpers
@@ -657,23 +709,30 @@ private func makeCoordinator(
     configuration: DownloadConfiguration,
     clock: TestClock
 ) async -> (DownloadFailureCoordinator, DownloadTask) {
+    let (coordinator, task, _) = await makeCoordinatorWithStore(configuration: configuration, clock: clock)
+    return (coordinator, task)
+}
+
+private func makeCoordinatorWithStore(
+    configuration: DownloadConfiguration,
+    clock: TestClock
+) async -> (DownloadFailureCoordinator, DownloadTask, InMemoryDownloadTaskStore) {
     let runtimeRegistry = DownloadRuntimeRegistry()
     let task = DownloadTask(
         url: URL(string: "https://example.invalid/test.bin")!,
         destinationURL: URL(fileURLWithPath: "/tmp/\(UUID().uuidString).bin")
     )
-    let persistence = DownloadTaskPersistence(
-        store: InMemoryDownloadTaskStore(
-            seed: [
-                DownloadTaskPersistence.Record(
-                    id: task.id,
-                    url: task.url,
-                    destinationURL: task.destinationURL,
-                    lifecycle: .active
-                )
-            ]
-        )
+    let store = InMemoryDownloadTaskStore(
+        seed: [
+            DownloadTaskPersistence.Record(
+                id: task.id,
+                url: task.url,
+                destinationURL: task.destinationURL,
+                lifecycle: .active
+            )
+        ]
     )
+    let persistence = DownloadTaskPersistence(store: store)
     let eventHub = TaskEventHub<DownloadEvent>(
         policy: configuration.eventDeliveryPolicy,
         metricsReporter: configuration.eventMetricsReporter,
@@ -687,7 +746,7 @@ private func makeCoordinator(
         clock: clock
     )
     await runtimeRegistry.add(task)
-    return (coordinator, task)
+    return (coordinator, task, store)
 }
 
 

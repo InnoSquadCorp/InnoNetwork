@@ -299,6 +299,10 @@ actor InMemoryDownloadTaskStore: DownloadTaskStore {
         totalRetryCount: Int,
         resumeData: Data?
     ) async throws -> Bool {
+        if let hook = beforeRetryPlanRewrite {
+            beforeRetryPlanRewrite = nil
+            await hook(id)
+        }
         if shouldFailUpsert {
             throw InMemoryDownloadTaskStoreError.upsertFailed(id)
         }
@@ -317,6 +321,15 @@ actor InMemoryDownloadTaskStore: DownloadTaskStore {
             retryPlan: retryPlan
         )
         return true
+    }
+
+    /// Called once, at the start of the next `rewriteRetryPlan` and before it
+    /// decides whether the marker is still the caller's, so a test can act
+    /// between a waiting retry's lifecycle check and its write.
+    private var beforeRetryPlanRewrite: (@Sendable (String) async -> Void)?
+
+    func setBeforeRetryPlanRewrite(_ hook: (@Sendable (String) async -> Void)?) {
+        beforeRetryPlanRewrite = hook
     }
 
     /// Called after `updateRetryState` makes a retry marker durable and before

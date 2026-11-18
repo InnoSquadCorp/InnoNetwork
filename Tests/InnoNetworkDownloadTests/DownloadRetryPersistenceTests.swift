@@ -636,10 +636,13 @@ struct DownloadRetryPersistenceTests {
             baseline: nil,
             deadline: Date(timeIntervalSince1970: 500)
         )
+        // A newer retry can wait for the same network state with the same
+        // deadline; only the plan's identity tells the two markers apart.
         let newerPlan = DownloadTaskPersistence.RetryPlan.waitingForNetwork(
             baseline: nil,
-            deadline: Date(timeIntervalSince1970: 900)
+            deadline: Date(timeIntervalSince1970: 500)
         )
+        #expect(newerPlan != waitingPlan)
         let backoffPlan = DownloadTaskPersistence.RetryPlan.backoff(
             retryNotBefore: Date(timeIntervalSince1970: 600)
         )
@@ -736,6 +739,28 @@ struct DownloadRetryPersistenceTests {
         #expect(decoded.retryCount == 2)
         #expect(decoded.totalRetryCount == 4)
         #expect(decoded.retryPlan == nil)
+    }
+
+    @Test("a retry plan persisted before plans carried an identity still decodes")
+    func retryPlanWithoutIdentityDecodes() throws {
+        let plan = DownloadTaskPersistence.RetryPlan.waitingForNetwork(
+            baseline: nil,
+            deadline: Date(timeIntervalSince1970: 500)
+        )
+        var encoded = try #require(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(plan)) as? [String: Any]
+        )
+        #expect(encoded.removeValue(forKey: "id") != nil)
+
+        let decoded = try JSONDecoder().decode(
+            DownloadTaskPersistence.RetryPlan.self,
+            from: JSONSerialization.data(withJSONObject: encoded)
+        )
+
+        #expect(decoded.id == nil)
+        #expect(decoded.phase == .waitingForNetwork)
+        #expect(decoded.networkWaitDeadline == plan.networkWaitDeadline)
+        #expect(decoded != plan)
     }
 
     @Test("expired network wait observes downtime changes and checkpoints reset backoff")

@@ -102,6 +102,12 @@ package actor DownloadTaskPersistence {
         package let retryNotBefore: Date?
         package let networkBaseline: RetryNetworkSnapshot?
         package let networkWaitDeadline: Date?
+        /// Distinguishes this plan from every other one. Two retries that
+        /// wait for the same network state with no deadline make plans that
+        /// are otherwise equal, so a waiting retry compares the whole plan,
+        /// identity included, to tell its own marker from a newer retry's.
+        /// `nil` in a plan persisted before plans carried one.
+        package let id: UUID?
 
         package init(
             phase: Phase,
@@ -113,6 +119,7 @@ package actor DownloadTaskPersistence {
             self.retryNotBefore = retryNotBefore
             self.networkBaseline = networkBaseline
             self.networkWaitDeadline = networkWaitDeadline
+            self.id = UUID()
         }
 
         package static func waitingForNetwork(
@@ -339,7 +346,9 @@ package actor DownloadTaskPersistence {
     ///   The write applies only while the record is still `.retryPending`
     ///   with this plan. Any other phase belongs to a pause, a resume, or a
     ///   newer attempt, and a marker with another plan belongs to a newer
-    ///   retry; the task id alone cannot tell them apart.
+    ///   retry; the task id alone cannot tell them apart. Every plan carries
+    ///   its own ``RetryPlan/id``, so this holds even when both retries wait
+    ///   for the same network state with no deadline.
     /// - Returns: Whether the marker was still this retry's and was rewritten.
     package func rewriteRetryPlan(
         id: String,
