@@ -214,16 +214,20 @@ package struct DownloadFailureCoordinator {
     /// Continues a durable retry plan reconstructed during launch restoration.
     /// The caller owns task registration and tracks this async job through the
     /// manager's deferred-failure registry so shutdown can drain it safely.
+    ///
+    /// The restart is claimed against `retry.waitingLifecycle`, which
+    /// restoration took before it admitted any public command. A pause,
+    /// resume, or cancellation issued after launch changes the task's
+    /// lifecycle, so this job ends without restarting it, however late the
+    /// job itself starts.
     package func resumePersistedRetry(
-        task: DownloadTask,
-        plan: DownloadTaskPersistence.RetryPlan,
+        _ retry: DownloadRestoredRetry,
         restart: @Sendable (DownloadTask) async -> Void
     ) async {
-        let waitingLifecycle = await task.lifecycleSnapshot()
         await continueRetry(
-            task: task,
-            plan: plan,
-            waitingLifecycle: waitingLifecycle,
+            task: retry.task,
+            plan: retry.plan,
+            waitingLifecycle: retry.waitingLifecycle,
             restart: restart
         )
     }

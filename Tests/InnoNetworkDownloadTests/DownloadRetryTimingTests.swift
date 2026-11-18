@@ -485,10 +485,14 @@ struct LargeRestoredDownloadTimingTests {
         let (coordinator, task) = await makeCoordinator(configuration: .advanced(), clock: clock)
         await task.restoreState(.downloading)
         let restarts = OSAllocatedUnfairLock(initialState: 0)
+        let retry = DownloadRestoredRetry(
+            task: task,
+            plan: .backoff(retryNotBefore: clock.now().addingTimeInterval(seconds)),
+            waitingLifecycle: await task.lifecycleSnapshot()
+        )
         let job = Task {
             await coordinator.resumePersistedRetry(
-                task: task,
-                plan: .backoff(retryNotBefore: clock.now().addingTimeInterval(seconds)),
+                retry,
                 restart: { _ in restarts.withLock { $0 += 1 } })
         }
         await withTaskCancellationHandler {
@@ -512,8 +516,11 @@ struct LargeRestoredDownloadTimingTests {
         await task.restoreState(.downloading)
         let restarts = OSAllocatedUnfairLock(initialState: 0)
         await coordinator.resumePersistedRetry(
-            task: task,
-            plan: .backoff(retryNotBefore: Date(timeIntervalSince1970: seconds)),
+            DownloadRestoredRetry(
+                task: task,
+                plan: .backoff(retryNotBefore: Date(timeIntervalSince1970: seconds)),
+                waitingLifecycle: await task.lifecycleSnapshot()
+            ),
             restart: { _ in restarts.withLock { $0 += 1 } })
         #expect(await task.state == .failed)
         #expect(restarts.withLock { $0 } == 0)
@@ -523,6 +530,46 @@ struct LargeRestoredDownloadTimingTests {
             return
         }
         #expect(error.domain == "InnoNetwork.DownloadRestoration")
+    }
+}
+
+@Suite("Restored retry claim", .timeLimit(.minutes(1)))
+struct RestoredRetryClaimTests {
+    @Test("A restored retry leaves alone a task paused and resumed before its job starts")
+    func restoredRetryYieldsToPauseAndResumeBeforeItsJobStarts() async {
+        let clock = TestClock()
+        let (coordinator, task) = await makeCoordinator(configuration: .advanced(), clock: clock)
+        await task.restoreState(.downloading)
+        let waitingLifecycle = await task.lifecycleSnapshot()
+        let retry = DownloadRestoredRetry(
+            task: task,
+            plan: .backoff(retryNotBefore: clock.now().addingTimeInterval(30)),
+            waitingLifecycle: waitingLifecycle
+        )
+
+        // Once restoration releases public commands, a pause and a resume
+        // can both finish before the deferred retry job runs. The resumed
+        // attempt is the caller's, not the restored retry's.
+        #expect(await task.transitionToPausedRetainingResumeData(ifMatching: waitingLifecycle))
+        let pausedLifecycle = await task.lifecycleSnapshot()
+        let resumedLifecycle = await task.startNextAttempt(
+            transitioningTo: .downloading,
+            ifMatching: pausedLifecycle
+        )
+        #expect(resumedLifecycle != nil)
+
+        let restarts = OSAllocatedUnfairLock(initialState: 0)
+        let job = Task {
+            await coordinator.resumePersistedRetry(
+                retry,
+                restart: { _ in restarts.withLock { $0 += 1 } })
+        }
+        #expect(await clock.waitForWaiters(count: 1))
+        clock.advance(by: .seconds(30))
+        await job.value
+
+        #expect(restarts.withLock { $0 } == 0)
+        #expect(await task.lifecycleSnapshot() == resumedLifecycle)
     }
 }
 

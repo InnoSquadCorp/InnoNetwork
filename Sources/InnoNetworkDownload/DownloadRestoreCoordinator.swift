@@ -5,6 +5,10 @@ import OSLog
 package struct DownloadRestoredRetry: Sendable {
     package let task: DownloadTask
     package let plan: DownloadTaskPersistence.RetryPlan
+    /// The task's lifecycle as restoration left it waiting, taken before any
+    /// public command could change it. The retry restarts the task only
+    /// while its lifecycle still matches.
+    let waitingLifecycle: DownloadTaskLifecycleSnapshot
 }
 
 package struct DownloadRestoreResult: Sendable {
@@ -268,6 +272,12 @@ package struct DownloadRestoreCoordinator {
                 // retry instead of ignoring it, and the deferred retry, which
                 // compares against this lifecycle, then does not restart it.
                 await restoredTask.restoreState(.downloading)
+                // Taken while the restoration barrier still holds every
+                // public command back. The deferred retry claims its restart
+                // against this snapshot, so a pause or resume issued after
+                // launch wins even when it finishes before the retry job
+                // starts.
+                let waitingLifecycle = await restoredTask.lifecycleSnapshot()
                 guard !Task.isCancelled else { return .empty }
                 await runtimeRegistry.add(restoredTask)
                 deferredRetries.append(
@@ -277,7 +287,8 @@ package struct DownloadRestoreCoordinator {
                         // restart promptly, but still outside the one-shot
                         // restoration barrier.
                         plan: record.retryPlan
-                            ?? .backoff(retryNotBefore: .distantPast)
+                            ?? .backoff(retryNotBefore: .distantPast),
+                        waitingLifecycle: waitingLifecycle
                     )
                 )
                 continue

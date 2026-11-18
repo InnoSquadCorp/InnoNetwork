@@ -366,10 +366,7 @@ extension DownloadManager {
         for retry in retries {
             let jobID = UUID()
             let job = Task { [weak self] in
-                await failureCoordinator.resumePersistedRetry(
-                    task: retry.task,
-                    plan: retry.plan
-                ) { task in
+                await failureCoordinator.resumePersistedRetry(retry) { task in
                     await transferCoordinator.startDownload(
                         task,
                         mode: .automaticRetry
