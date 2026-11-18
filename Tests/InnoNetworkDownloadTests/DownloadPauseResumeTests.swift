@@ -566,6 +566,40 @@ struct DownloadPauseResumeTests {
 
         await harness.manager.shutdown()
     }
+
+    @Test("A failure's resume data with the consumed blob's bytes survives for the retry")
+    func failureAfterResumeIsRecordedKeepsResumeDataWithTheConsumedBytes() async throws {
+        let fixture = try await PausedDownloadFixture(label: "resume-failure-same-bytes", start: .fromResumeData)
+        let harness = fixture.harness
+        let task = fixture.task
+        // The failed attempt received nothing new, so its resume data has the
+        // same bytes as the blob the attempt was resumed from. It is still a
+        // newer write than the one resume consumed.
+        let failureResumeData = try #require(await task.resumeData)
+        await harness.store.setAfterResumeFinalized { _ in
+            await harness.injectCompletion(
+                taskIdentifier: fixture.resumedStub.taskIdentifier,
+                error: retryWaitConnectionLost,
+                resumeData: failureResumeData
+            )
+        }
+
+        await harness.manager.resume(task)
+
+        #expect(await fixture.clock.waitForEnqueuedCount(atLeast: 1, timeout: 10.0))
+        #expect(await task.resumeData == failureResumeData)
+        #expect(await harness.store.record(forID: task.id)?.lifecycle == .retryPending)
+
+        // A pause during the retry wait keeps the checkpoint for the next
+        // resume instead of recording a pause without one.
+        await harness.manager.pause(task)
+        #expect(await task.state == .paused)
+        let paused = await harness.store.record(forID: task.id)
+        #expect(paused?.lifecycle == .paused)
+        #expect(paused?.resumeData == failureResumeData)
+
+        await harness.manager.shutdown()
+    }
 }
 
 

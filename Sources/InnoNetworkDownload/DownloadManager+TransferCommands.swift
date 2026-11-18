@@ -368,7 +368,8 @@ extension DownloadManager {
             await runtimeRegistry.removeAttemptRuntime(taskIdentifier: staleURLTask.taskIdentifier)
         }
 
-        let retainedResumeData = await task.resumeData
+        let retained = await task.resumeDataWithVersion()
+        let retainedResumeData = retained.data
         guard await task.lifecycleSnapshot() == pausedLifecycle else { return }
         do {
             let markedResuming = try await persistence.transitionResumeState(
@@ -494,7 +495,7 @@ extension DownloadManager {
             await transferCoordinator.finalizeResumedAttempt(
                 task,
                 urlTask: urlTask,
-                consumedResumeData: resumeData
+                consumedResumeDataVersion: retained.version
             )
         } else {
             guard await task.advanceAttempt(ifMatching: pausedLifecycle) != nil else { return }

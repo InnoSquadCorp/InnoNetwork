@@ -199,7 +199,7 @@ package struct DownloadTransferCoordinator {
             return
         }
         if mode == .resumingPersistedPause {
-            await finalizeResumedAttempt(task, urlTask: urlTask, consumedResumeData: nil)
+            await finalizeResumedAttempt(task, urlTask: urlTask, consumedResumeDataVersion: nil)
         }
     }
 
@@ -214,14 +214,16 @@ package struct DownloadTransferCoordinator {
     /// phase or failing the task. Only a missing record for a task that is
     /// still live is a persistence fault.
     ///
-    /// - Parameter consumedResumeData: The blob the attempt was created
-    ///   from, or `nil`. The task drops it once the attempt is recorded, but
-    ///   keeps resume data that replaced it in the meantime, such as the
-    ///   blob a failure of the attempt left for its retry.
+    /// - Parameter consumedResumeDataVersion: The write of the task's resume
+    ///   data that the attempt was created from, or `nil` when it started
+    ///   without resume data. The task drops that blob once the attempt is
+    ///   recorded, but keeps resume data written since, such as the blob a
+    ///   failure of the attempt left for its retry — even when its bytes are
+    ///   the same as the consumed blob's.
     func finalizeResumedAttempt(
         _ task: DownloadTask,
         urlTask: any DownloadURLTask,
-        consumedResumeData: Data?
+        consumedResumeDataVersion: UInt64?
     ) async {
         do {
             let persistence = self.persistence
@@ -241,7 +243,9 @@ package struct DownloadTransferCoordinator {
                 }
                 throw DownloadTransferPersistenceStateError.failedToFinalizeResume(task.id)
             }
-            await task.discardResumeData(ifIdenticalTo: consumedResumeData)
+            if let consumedResumeDataVersion {
+                await task.discardResumeData(ifUnchangedSince: consumedResumeDataVersion)
+            }
         } catch {
             Self.logger.fault(
                 "Failed to record the resumed attempt of task \(task.id, privacy: .private(mask: .hash)) as active: \(String(describing: error), privacy: .private(mask: .hash))"
