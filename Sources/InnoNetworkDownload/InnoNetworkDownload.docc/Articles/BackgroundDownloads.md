@@ -171,8 +171,11 @@ Server-side invalidation, OS resume-data incompatibility, or cache/range-policy 
 can still force a fresh download from byte 0.
 
 If the resume data has been invalidated by the server (cache TTL, range support change),
-the resumed task will fall back to a fresh download from byte 0. The transition is
-transparent to observers.
+the resumed task falls back to a fresh download from byte 0. When the server answers the
+range request with the whole resource, Foundation does this within the same attempt. When
+the server rejects the range, the manager restarts the task from the source, which
+publishes `.waiting` and `.downloading` again. Either way the transfer starts over from
+byte 0, and so does its progress.
 
 A transfer that followed a redirect resumes from the redirect target Foundation restores
 from the resume data. The manager accepts that target only when the download redirect
