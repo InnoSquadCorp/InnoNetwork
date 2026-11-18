@@ -91,7 +91,10 @@ public enum DownloadError: Error, Sendable {
     /// example `403` for an expired signed URL or `404` for a missing object.
     /// Nothing is written to the destination. Statuses that another attempt
     /// can clear (`408`, `416`, `429`, `5xx`) are retried instead and end as
-    /// ``maxRetriesExceeded(lastError:)`` when the budget runs out.
+    /// ``maxRetriesExceeded(lastError:)`` when the budget runs out. A resumed
+    /// attempt refused for its stale resume point, by a `416` or by the
+    /// redirect target it continued at, restarts from the source URL at once
+    /// without spending that budget.
     case unacceptableStatusCode(Int)
     case noResumeData
     case restorationMissingSystemTask

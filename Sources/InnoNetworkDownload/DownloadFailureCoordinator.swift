@@ -64,9 +64,8 @@ package struct DownloadFailureCoordinator {
             // refusal (expired signature, missing object, ...). Asking again
             // returns the same status, so surface the typed status failure
             // without spending retry budget. Retryable statuses fall through
-            // to the ordinary retry path below, and so does a refusal of an
-            // attempt resumed at a redirect target: its retry carries no
-            // resume data, so it asks the source again for a fresh target.
+            // to the ordinary retry path below, and a refusal of a stale
+            // resume point to the immediate restart from the source.
             await markTaskFailed(
                 task,
                 reason: .unacceptableStatusCode(statusCode),
@@ -103,10 +102,18 @@ package struct DownloadFailureCoordinator {
             )
             return
         }
+        // A stale resume point (a rejected range, or a redirect target that
+        // stopped answering) says nothing about the server. The task restarts
+        // from the source at once, without resume data, backoff, or retry
+        // budget, so it recovers even when no retry is left. The restarted
+        // attempt sends no range, so it cannot be stale in turn.
+        let restartsFromSource = DownloadHTTPStatusFailure.isStaleResume(error)
         let totalRetryCount = await task.totalRetryCount
         let retryCount = await task.retryCount
-        guard totalRetryCount < configuration.maxTotalRetries,
-            retryCount < configuration.maxRetryCount
+        guard
+            restartsFromSource
+                || (totalRetryCount < configuration.maxTotalRetries
+                    && retryCount < configuration.maxRetryCount)
         else {
             await markTaskFailed(
                 task,
@@ -115,18 +122,27 @@ package struct DownloadFailureCoordinator {
             )
             return
         }
-        let updatedTotalRetryCount = await task.incrementTotalRetryCount()
-        let updatedRetryCount = await task.incrementRetryCount()
+        let updatedTotalRetryCount: Int
+        let updatedRetryCount: Int
+        if restartsFromSource {
+            updatedTotalRetryCount = totalRetryCount
+            updatedRetryCount = retryCount
+        } else {
+            updatedTotalRetryCount = await task.incrementTotalRetryCount()
+            updatedRetryCount = await task.incrementRetryCount()
+        }
         let retryPlan: DownloadTaskPersistence.RetryPlan
-        // Only a connectivity failure can be cured by a path change. A
-        // retryable HTTP status, a timeout, or a TLS failure on a working
-        // network goes straight to backoff instead of idling for the whole
-        // `networkChangeTimeout` before every attempt. The table is the
-        // core's, so downloads and requests agree on what "offline" means.
-        if configuration.waitsForNetworkChanges,
+        if restartsFromSource {
+            retryPlan = .backoff(retryNotBefore: clock.now())
+        } else if configuration.waitsForNetworkChanges,
             NetworkError.isConnectivityFailure(error),
             let monitor = configuration.networkMonitor
         {
+            // Only a connectivity failure can be cured by a path change. A
+            // retryable HTTP status, a timeout, or a TLS failure on a working
+            // network goes straight to backoff instead of idling for the whole
+            // `networkChangeTimeout` before every attempt. The table is the
+            // core's, so downloads and requests agree on what "offline" means.
             let baseline = await monitor.currentSnapshot()
             let deadline = configuration.networkChangeTimeout.map {
                 clock.now().addingTimeInterval(

@@ -264,27 +264,46 @@ struct DownloadHTTPStatusValidationTests {
         #expect(DownloadHTTPStatusFailure.statusCode(from: transportError) == nil)
     }
 
-    @Test("A refusal of an attempt resumed at a redirect target keeps its status but is never final")
-    func resumedRedirectTargetRefusalIsNotTerminal() throws {
+    @Test("A refusal of a stale resume point keeps its status but is never final")
+    func staleResumeRefusalIsNotTerminal() throws {
         let target = try #require(URL(string: "https://cdn.example.invalid/objects/file.bin?sig=1"))
-        let refusal = DownloadHTTPStatusFailure.make(statusCode: 403, url: target, resumedAtRedirectTarget: true)
+        let refusal = DownloadHTTPStatusFailure.make(statusCode: 403, url: target, staleResume: true)
         let ordinary = DownloadHTTPStatusFailure.make(statusCode: 403, url: target)
 
         #expect(DownloadHTTPStatusFailure.statusCode(from: refusal) == 403)
         #expect(DownloadHTTPStatusFailure.terminalStatusCode(from: refusal) == nil)
+        #expect(DownloadHTTPStatusFailure.isStaleResume(refusal))
         #expect(DownloadHTTPStatusFailure.terminalStatusCode(from: ordinary) == 403)
+        #expect(!DownloadHTTPStatusFailure.isStaleResume(ordinary))
         #expect(DownloadError.maxRetriesExceeded(lastError: refusal).httpStatusCode == 403)
     }
 
-    @Test("Only a ranged attempt at a target other than its source is a resumed redirect target")
-    func resumedRedirectTargetNeedsRangeAndRedirect() throws {
+    @Test(
+        "Only a ranged attempt refused for its range, or refused but not busy at a redirect target, is stale",
+        arguments: [
+            StaleResumeCase(atTarget: true, ranged: true, status: 403, isStale: true),
+            StaleResumeCase(atTarget: true, ranged: true, status: 404, isStale: true),
+            StaleResumeCase(atTarget: true, ranged: true, status: 416, isStale: true),
+            // A busy target is retried under the ordinary rules.
+            StaleResumeCase(atTarget: true, ranged: true, status: 429, isStale: false),
+            StaleResumeCase(atTarget: true, ranged: true, status: 503, isStale: false),
+            // A fresh attempt that followed the redirect live sends no range.
+            StaleResumeCase(atTarget: true, ranged: false, status: 403, isStale: false),
+            // A resumed attempt at the source itself is refused for good,
+            // unless the source rejects only the range.
+            StaleResumeCase(atTarget: false, ranged: true, status: 403, isStale: false),
+            StaleResumeCase(atTarget: false, ranged: true, status: 416, isStale: true),
+            StaleResumeCase(atTarget: false, ranged: false, status: 416, isStale: false),
+        ]
+    )
+    func staleResumeClassification(_ scenario: StaleResumeCase) throws {
         let source = try #require(URL(string: "https://downloads.example.invalid/file.bin"))
         let target = try #require(URL(string: "https://cdn.example.invalid/objects/file.bin?sig=1"))
-        func reportedDomain(currentURL: URL, range: String?) -> String? {
+        func reportedDomain(currentURL: URL, range: String?, status: Int) -> String? {
             var current = URLRequest(url: currentURL)
             current.setValue(range, forHTTPHeaderField: "Range")
             let task = StubDownloadURLTask(request: URLRequest(url: source), currentRequest: current)
-            task.scriptHTTPStatus(403, url: currentURL)
+            task.scriptHTTPStatus(status, url: currentURL)
             let reported = OSAllocatedUnfairLock<String?>(initialState: nil)
             let callbacks = DownloadSessionDelegateCallbacks()
             callbacks.setHandlers(
@@ -298,14 +317,33 @@ struct DownloadHTTPStatusValidationTests {
             delegate.handleFinishedDownload(task, location: FileManager.default.temporaryDirectory)
             return reported.withLock { $0 }
         }
-        let retryable = DownloadHTTPStatusFailure.resumedRedirectTargetDomain
-        let terminal = DownloadHTTPStatusFailure.domain
+        let reported = reportedDomain(
+            currentURL: scenario.atTarget ? target : source,
+            range: scenario.ranged ? "bytes=1024-" : nil,
+            status: scenario.status
+        )
+        let expected = scenario.isStale ? DownloadHTTPStatusFailure.staleResumeDomain : DownloadHTTPStatusFailure.domain
+        #expect(reported == expected)
+    }
 
-        #expect(reportedDomain(currentURL: target, range: "bytes=1024-") == retryable)
-        // A fresh attempt that followed the redirect live sends no range.
-        #expect(reportedDomain(currentURL: target, range: nil) == terminal)
-        // A resumed attempt at the source itself is refused for good.
-        #expect(reportedDomain(currentURL: source, range: "bytes=1024-") == terminal)
+    @Test("A stale resume restarts from the source at once without spending retry budget, even when none is left")
+    func staleResumeRestartsWithoutRetryBudget() async throws {
+        let (coordinator, task, persistence) = await makeStatusFailureCoordinator()
+        await task.restoreRetryCounts(retryCount: 3, totalRetryCount: 3)
+        let restarts = OSAllocatedUnfairLock<Int>(initialState: 0)
+
+        await coordinator.handleError(
+            task: task,
+            error: DownloadHTTPStatusFailure.make(statusCode: 403, url: task.url, staleResume: true),
+            restart: { _ in restarts.withLock { $0 += 1 } }
+        )
+
+        #expect(restarts.withLock { $0 } == 1)
+        #expect(await task.state == .downloading)
+        #expect(await task.resumeData == nil)
+        #expect(await task.retryCount == 3)
+        #expect(await task.totalRetryCount == 3)
+        #expect(await persistence.record(forID: task.id)?.lifecycle == .retryPending)
     }
 
     // MARK: Failure classification
@@ -553,6 +591,17 @@ private func makeStatusTestRoot(_ label: String) throws -> URL {
 
 /// A failure coordinator with zero retry delay around one task whose
 /// in-memory state and durable phase the caller chooses.
+struct StaleResumeCase: Sendable, CustomTestStringConvertible {
+    let atTarget: Bool
+    let ranged: Bool
+    let status: Int
+    let isStale: Bool
+
+    var testDescription: String {
+        "\(status) \(ranged ? "ranged" : "unranged") at \(atTarget ? "redirect target" : "source")"
+    }
+}
+
 func makeStatusFailureCoordinator(
     state: DownloadState = .downloading,
     lifecycle: DownloadTaskPersistence.Record.Lifecycle = .active

@@ -61,9 +61,11 @@ struct DownloadRetryResumeDataTests {
         let payload = makeScriptedPayload()
         let deliveredBeforeFailure = 200 * 1024
         let failureGate = ScriptedGate()
+        // The one retry goes to the interrupted attempt; the restart after
+        // the rejected range needs none.
         let context = try ScriptedDownloadContext(
             label: "retry-resume-416",
-            maxRetryCount: 3,
+            maxRetryCount: 1,
             retryDelay: 0
         ) { request, index in
             if request.value(forHTTPHeaderField: "Range") != nil {
@@ -95,7 +97,7 @@ struct DownloadRetryResumeDataTests {
         #expect(ranges.first == .some(nil))
         #expect(ranges.dropFirst().first.flatMap { $0 } != nil)
         #expect(ranges.last == .some(nil))
-        #expect(await task.retryCount == 2)
+        #expect(await task.retryCount == 1)
 
         await context.tearDown()
     }
@@ -147,10 +149,11 @@ struct DownloadRetryResumeDataTests {
         let deliveredBeforeFailure = 200 * 1024
         let failureGate = ScriptedGate()
         let cdn = ScriptedCDN()
-        // Every visit to the source signs a new target URL.
+        // Every visit to the source signs a new target URL. The one retry goes
+        // to the interrupted attempt; the restart after the refusal needs none.
         let context = try ScriptedDownloadContext(
             label: "retry-resume-redirect-expired",
-            maxRetryCount: 3,
+            maxRetryCount: 1,
             retryDelay: 0
         ) { _, index in
             cdn.redirect(signature: index + 1)
@@ -191,7 +194,7 @@ struct DownloadRetryResumeDataTests {
             "\(request.url?.query ?? "") \(request.value(forHTTPHeaderField: "Range") == nil ? "full" : "range")"
         }
         #expect(attempts == ["sig=1 full", "sig=1 range", "sig=2 full"])
-        #expect(await task.retryCount == 2)
+        #expect(await task.retryCount == 1)
 
         await context.tearDown()
         cdn.tearDown()

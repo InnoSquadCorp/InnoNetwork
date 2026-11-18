@@ -35,10 +35,11 @@ public struct DownloadTransferPack: Sendable {
     ///     `206 Partial Content` that answers a resumed download's range
     ///     request is accepted even when the set omits it. A
     ///     response with any other status is never saved to the destination:
-    ///     `408`, `429`, and `500...599` are retried under the retry pack's
-    ///     budget, as is a `416` (a resumed transfer whose range the server
-    ///     rejected restarts from the beginning). Every other status fails
-    ///     the task immediately with
+    ///     `408`, `416`, `429`, and `500...599` are retried under the retry
+    ///     pack's budget. A resumed transfer whose range the server rejects
+    ///     with `416`, or whose redirect target refuses it, restarts from the
+    ///     source URL at once without spending that budget. Every other status
+    ///     fails the task immediately with
     ///     ``DownloadError/unacceptableStatusCode(_:)``. A retried status that
     ///     outlasts the budget fails with
     ///     ``DownloadError/maxRetriesExceeded(lastError:)``; read the status
