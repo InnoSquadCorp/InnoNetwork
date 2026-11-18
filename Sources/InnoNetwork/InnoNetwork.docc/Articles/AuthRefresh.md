@@ -117,9 +117,12 @@ A `401` that arrives during the failure cooldown fails with the stored refresh
 error, classified by the same rules. A retry that runs during the cooldown
 therefore receives that error again without calling `refreshToken`, and still
 uses up one retry. When a transient refresh failure should reach the refresh
-endpoint again on the next retry, keep the retry policy's delay at least as
-long as the cooldown. A `401` that the server returns after a successful
-refresh stays ``NetworkError/statusCode(_:)``.
+endpoint again on the next retry, keep the retry policy's shortest delay,
+after jitter, at least as long as the cooldown. With the defaults of
+``ExponentialBackoffRetryPolicy``, the first retry runs 0.8 to 1.2 seconds
+after the failure, so it can still fall inside the default 1-second cooldown.
+A `401` that the server returns after a successful refresh stays
+``NetworkError/statusCode(_:)``.
 
 ## URLSession Cache Policy
 
