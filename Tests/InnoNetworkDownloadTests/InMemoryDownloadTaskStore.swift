@@ -261,6 +261,10 @@ actor InMemoryDownloadTaskStore: DownloadTaskStore {
         retryPlan: DownloadTaskPersistence.RetryPlan?,
         admitsResumingRecord: Bool
     ) async throws -> Bool {
+        if let hook = beforeRetryMarkerWritten {
+            beforeRetryMarkerWritten = nil
+            await hook(id)
+        }
         if suspendsUpserts {
             await withCheckedContinuation { continuation in
                 pendingUpsertWaiters.append(continuation)
@@ -306,6 +310,9 @@ actor InMemoryDownloadTaskStore: DownloadTaskStore {
         if shouldFailUpsert {
             throw InMemoryDownloadTaskStoreError.upsertFailed(id)
         }
+        if resumeData != nil, failsRetryPlanRewritesCarryingResumeData {
+            throw InMemoryDownloadTaskStoreError.upsertFailed(id)
+        }
         guard let record = records[id],
             record.lifecycle == .retryPending,
             record.retryPlan == expectedPlan
@@ -320,7 +327,36 @@ actor InMemoryDownloadTaskStore: DownloadTaskStore {
             totalRetryCount: totalRetryCount,
             retryPlan: retryPlan
         )
+        if throwsAfterNextRetryPlanRewrite {
+            // Like a log append that succeeded before a later step failed.
+            throwsAfterNextRetryPlanRewrite = false
+            throw InMemoryDownloadTaskStoreError.upsertFailed(id)
+        }
         return true
+    }
+
+    /// Fails every retry-plan rewrite that carries resume data, as a write
+    /// that does not fit while a smaller one still does.
+    private var failsRetryPlanRewritesCarryingResumeData = false
+
+    func setFailsRetryPlanRewritesCarryingResumeData(_ fails: Bool) {
+        failsRetryPlanRewritesCarryingResumeData = fails
+    }
+
+    /// Applies the next retry-plan rewrite, then throws.
+    private var throwsAfterNextRetryPlanRewrite = false
+
+    func setThrowsAfterNextRetryPlanRewrite() {
+        throwsAfterNextRetryPlanRewrite = true
+    }
+
+    /// Called once, at the start of the next `updateRetryState` and before it
+    /// writes anything: the admission has retired the attempt's runtime and
+    /// its retry marker is not durable yet.
+    private var beforeRetryMarkerWritten: (@Sendable (String) async -> Void)?
+
+    func setBeforeRetryMarkerWritten(_ hook: (@Sendable (String) async -> Void)?) {
+        beforeRetryMarkerWritten = hook
     }
 
     /// Called once, at the start of the next `rewriteRetryPlan` and before it

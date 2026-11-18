@@ -22,6 +22,11 @@ struct DownloadManagerState {
     var pausingTaskIDs: Set<String> = []
     var resumingTaskIDs: Set<String> = []
     var pausingTaskIdentifiers: [String: Int] = [:]
+    /// Tasks whose attempt completion the delegate consumer is handling. The
+    /// handling retires the attempt's runtime before it admits the outcome,
+    /// so `pause(_:)` waits for it instead of deciding from the gap between.
+    var completionHandlingTaskIDs: [String: Int] = [:]
+    var completionHandlingWaiters: [String: [CheckedContinuation<Void, Never>]] = [:]
     /// Tasks whose retry-wait pause is already visible in memory but not yet
     /// durable. `resume(_:)` treats them as still pausing.
     var retryWaitPausingTaskIDs: Set<String> = []

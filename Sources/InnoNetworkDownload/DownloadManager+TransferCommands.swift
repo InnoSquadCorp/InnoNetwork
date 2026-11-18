@@ -55,6 +55,10 @@ extension DownloadManager {
         guard await runtimeRegistry.owns(task) else { return }
         guard managerState.pausingTaskIDs.insert(task.id).inserted else { return }
         defer { managerState.pausingTaskIDs.remove(task.id) }
+        // A failed attempt's runtime is retired before its retry marker is
+        // durable. Deciding inside that gap would ignore the pause, or let a
+        // resume start a newer attempt whose record the admission overwrites.
+        await waitForCompletionHandling(taskID: task.id)
 
         let expectedLifecycle = await task.lifecycleSnapshot()
         guard expectedLifecycle.state == .downloading else { return }
@@ -198,12 +202,17 @@ extension DownloadManager {
     /// this pause produced or, failing that, what the failure left on the
     /// task.
     ///
+    /// The completion that retired the attempt may still be admitting it, so
+    /// this waits for that handling first: the failure's resume data is on
+    /// the task only once its admission has run.
+    ///
     /// - Returns: `true` when this method decided the outcome, so the caller
     ///   must not also act on the task.
     private func settlePauseOfEndedAttempt(
         _ task: DownloadTask,
         producedResumeData: Data?
     ) async -> Bool {
+        await waitForCompletionHandling(taskID: task.id)
         guard await runtimeRegistry.urlTask(for: task.id) == nil,
             await persistence.record(forID: task.id)?.lifecycle == .pausing
         else {
@@ -270,10 +279,11 @@ extension DownloadManager {
         expectedLifecycle: DownloadTaskLifecycleSnapshot
     ) async {
         // The durable retry marker is the only authoritative evidence of
-        // this window. Every other attempt-less `.downloading` moment (a
-        // failure still being admitted, a resume creating its attempt, a
-        // completion being committed) is owned by that lifecycle path and
-        // keeps the historical no-op.
+        // this window. `pause(_:)` has already waited out a completion being
+        // handled, so a failure still being admitted or a completion being
+        // committed is over by now. Any other attempt-less `.downloading`
+        // moment, such as a resume creating its attempt, is owned by that
+        // lifecycle path and keeps the historical no-op.
         guard await persistence.record(forID: task.id)?.lifecycle == .retryPending else { return }
 
         // The in-memory pause below becomes visible before its durable

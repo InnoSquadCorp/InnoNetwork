@@ -614,6 +614,163 @@ struct DownloadPauseDuringRetryWaitTests {
         await harness.store.setUpsertFailure(false)
         await harness.manager.shutdown()
     }
+
+    @Test("A pause issued while a failure is being admitted waits for it and pauses the waiting retry")
+    func pauseDuringFailureAdmissionPausesTheRetry() async throws {
+        let harness = try StubDownloadHarness(
+            maxRetryCount: 3,
+            maxTotalRetries: 3,
+            retryDelay: 30,
+            clock: TestClock(),
+            label: "pause-during-admission"
+        )
+        let task = await harness.startDownload(destinationURL: makeRetryWaitDestinationURL())
+        let identifier = try #require(
+            await waitForRuntimeTaskIdentifier(manager: harness.manager, task: task, timeout: 10.0)
+        )
+        #expect(await waitForTaskState(task, timeout: 10.0) { $0 == .downloading })
+        let failureResumeData = try makeRetryResumeData("failed-during-admission")
+        let pause = ConcurrentJob()
+        await harness.store.setBeforeRetryMarkerWritten { _ in
+            // The failure has retired the attempt's runtime and its retry
+            // marker is not durable yet. A pause used to read this gap as
+            // nothing to pause.
+            pause.start { await harness.manager.pause(task) }
+            _ = await eventually {
+                await harness.manager.completionHandlingWaiterCount(taskID: task.id) == 1 || pause.isFinished
+            }
+        }
+
+        await harness.injectCompletion(
+            taskIdentifier: identifier,
+            error: retryWaitConnectionLost,
+            resumeData: failureResumeData
+        )
+        await pause.wait()
+
+        #expect(await task.state == .paused)
+        #expect(await task.resumeData == failureResumeData)
+        let paused = await harness.store.record(forID: task.id)
+        #expect(paused?.lifecycle == .paused)
+        #expect(paused?.resumeData == failureResumeData)
+
+        await harness.manager.shutdown()
+    }
+
+    @Test("A pause that settles an attempt whose failure is still being admitted keeps the failure's resume data")
+    func pauseSettlingDuringFailureAdmissionKeepsItsResumeData() async throws {
+        let monitor = SnapshotHoldingNetworkMonitor()
+        let harness = try StubDownloadHarness(
+            maxRetryCount: 3,
+            maxTotalRetries: 3,
+            retryDelay: 30,
+            networkMonitor: monitor,
+            waitsForNetworkChanges: true,
+            clock: TestClock(),
+            label: "pause-settles-during-admission"
+        )
+        let task = await harness.startDownload(destinationURL: makeRetryWaitDestinationURL())
+        let identifier = try #require(
+            await waitForRuntimeTaskIdentifier(manager: harness.manager, task: task, timeout: 10.0)
+        )
+        #expect(await waitForTaskState(task, timeout: 10.0) { $0 == .downloading })
+        let failureResumeData = try makeRetryResumeData("failed-while-pause-settles")
+        let injection = ConcurrentJob()
+        await harness.store.setAfterPausingWritten { _ in
+            // The failure retires the attempt's runtime, then stops before it
+            // records its resume data on the task.
+            injection.start {
+                await harness.injectCompletion(
+                    taskIdentifier: identifier,
+                    error: retryWaitConnectionLost,
+                    resumeData: failureResumeData
+                )
+            }
+            _ = await eventually { await monitor.isHolding }
+        }
+
+        let pause = ConcurrentJob()
+        pause.start { await harness.manager.pause(task) }
+        // The pause finds no runtime and settles the ended attempt. Before
+        // the fix it settled at once, without the failure's resume data.
+        _ = await eventually {
+            await harness.manager.completionHandlingWaiterCount(taskID: task.id) == 1 || pause.isFinished
+        }
+        await monitor.release()
+        await injection.wait()
+        await pause.wait()
+
+        #expect(await task.state == .paused)
+        #expect(await task.resumeData == failureResumeData)
+        let paused = await harness.store.record(forID: task.id)
+        #expect(paused?.lifecycle == .paused)
+        #expect(paused?.resumeData == failureResumeData)
+
+        await harness.manager.shutdown()
+    }
+}
+
+/// Runs one job concurrently and reports whether it has returned.
+private final class ConcurrentJob: Sendable {
+    private let state = OSAllocatedUnfairLock<(job: Task<Void, Never>?, finished: Bool)>(
+        initialState: (nil, false)
+    )
+
+    var isFinished: Bool { state.withLock { $0.finished } }
+
+    func start(_ body: @escaping @Sendable () async -> Void) {
+        let job = Task {
+            await body()
+            self.state.withLock { $0.finished = true }
+        }
+        state.withLock { $0.job = job }
+    }
+
+    func wait() async {
+        await state.withLock { $0.job }?.value
+    }
+}
+
+/// Holds `currentSnapshot()` until released, so a failure's admission stops
+/// after the attempt's runtime is retired and before its resume data is set.
+private actor SnapshotHoldingNetworkMonitor: NetworkMonitoring {
+    private var holds: [CheckedContinuation<Void, Never>] = []
+    private var released = false
+
+    var isHolding: Bool { !holds.isEmpty }
+
+    func currentSnapshot() async -> NetworkSnapshot? {
+        if !released {
+            await withCheckedContinuation { holds.append($0) }
+        }
+        return NetworkSnapshot(status: .unsatisfied, interfaceTypes: [])
+    }
+
+    func waitForChange(from snapshot: NetworkSnapshot?, timeout: TimeInterval?) async -> NetworkSnapshot? {
+        nil
+    }
+
+    func release() {
+        released = true
+        let held = holds
+        holds.removeAll()
+        for hold in held {
+            hold.resume()
+        }
+    }
+}
+
+/// Polls `condition` until it holds or the wait budget runs out.
+private func eventually(
+    timeout: TimeInterval = 10,
+    _ condition: @Sendable () async -> Bool
+) async -> Bool {
+    let deadline = Date().addingTimeInterval(TestWaitBudget.upperBound(timeout))
+    while Date() < deadline {
+        if await condition() { return true }
+        try? await Task.sleep(for: .milliseconds(5))
+    }
+    return await condition()
 }
 
 
