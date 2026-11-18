@@ -700,6 +700,158 @@ struct RestoredRetryClaimTests {
             )
         )
     }
+
+    @Test("A restored retry whose task was paused before its job ran does not wait for a network change")
+    func restoredNetworkWaitOfPausedTaskDoesNotWait() async throws {
+        let clock = TestClock()
+        let monitor = GatedNetworkMonitor()
+        let configuration = DownloadConfiguration(
+            maxRetryCount: 3,
+            maxTotalRetries: 3,
+            retryDelay: 0,
+            retryJitterRatio: 0,
+            sessionIdentifier: "test.restored-retry-paused-wait.\(UUID().uuidString)",
+            networkMonitor: monitor,
+            waitsForNetworkChanges: true
+        )
+        let (coordinator, task) = await makeCoordinator(configuration: configuration, clock: clock)
+        await task.restoreState(.downloading)
+        let waitingLifecycle = await task.lifecycleSnapshot()
+        #expect(await task.transitionToPausedRetainingResumeData(ifMatching: waitingLifecycle))
+
+        let finished = OSAllocatedUnfairLock(initialState: false)
+        let job = Task {
+            await coordinator.resumePersistedRetry(
+                DownloadRestoredRetry(task: task, plan: Self.waitingPlan, waitingLifecycle: waitingLifecycle),
+                restart: { _ in })
+            finished.withLock { $0 = true }
+        }
+        // A job that waits for the monitor is released after the budget, so
+        // a regression fails here instead of holding the test process.
+        let deadline = ContinuousClock.now + TestWaitBudget.upperBound(.seconds(10))
+        while !finished.withLock({ $0 }), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        let endedWithoutWaiting = finished.withLock { $0 }
+        if !endedWithoutWaiting {
+            await monitor.reportChange(NetworkSnapshot(status: .satisfied, interfaceTypes: [.wifi]))
+        }
+        await job.value
+
+        #expect(endedWithoutWaiting)
+    }
+
+    @Test("Resetting the retry count after a network change requires the retry to still own the task")
+    func retryCountResetRequiresOwnership() async {
+        let task = DownloadTask(
+            url: URL(string: "https://example.invalid/reset.bin")!,
+            destinationURL: URL(fileURLWithPath: "/tmp/\(UUID().uuidString).bin")
+        )
+        await task.restoreState(.downloading)
+        await task.restoreRetryCounts(retryCount: 2, totalRetryCount: 2)
+        let waitingLifecycle = await task.lifecycleSnapshot()
+        #expect(await task.transitionToPausedRetainingResumeData(ifMatching: waitingLifecycle))
+
+        #expect(await task.resetRetryCount(ifMatching: waitingLifecycle) == false)
+        #expect(await task.retryCount == 2)
+        #expect(await task.resetRetryCount(ifMatching: await task.lifecycleSnapshot()))
+        #expect(await task.retryCount == 0)
+    }
+
+    @Test("A waiting retry that lost its task does not fail it over a storage error of its own write")
+    func lostRetryDoesNotFailNewerAttemptOnStorageError() async throws {
+        let clock = TestClock()
+        let (coordinator, task, store) = await makeCoordinatorWithStore(
+            configuration: Self.withoutNetworkMonitor,
+            clock: clock
+        )
+        await task.restoreState(.downloading)
+        let waitingLifecycle = await task.lifecycleSnapshot()
+        #expect(
+            try await coordinator.persistence.updateRetryState(
+                id: task.id, retryCount: 1, totalRetryCount: 1, retryPlan: Self.waitingPlan)
+        )
+        // A pause and a resume hand the task to a newer attempt, and the
+        // retry's own write then fails.
+        await store.setBeforeRetryPlanRewrite { _ in
+            guard await task.transitionToPausedRetainingResumeData(ifMatching: waitingLifecycle) else { return }
+            let pausedLifecycle = await task.lifecycleSnapshot()
+            _ = await task.startNextAttempt(transitioningTo: .downloading, ifMatching: pausedLifecycle)
+            await store.setUpsertFailure(true)
+        }
+
+        let restarts = OSAllocatedUnfairLock(initialState: 0)
+        await coordinator.resumePersistedRetry(
+            DownloadRestoredRetry(task: task, plan: Self.waitingPlan, waitingLifecycle: waitingLifecycle),
+            restart: { _ in restarts.withLock { $0 += 1 } })
+        await store.setUpsertFailure(false)
+
+        #expect(await task.state == .downloading)
+        #expect(await task.error == nil)
+        #expect(restarts.withLock { $0 } == 0)
+    }
+
+    @Test("A plan rewrite that cannot take the resume data still persists the plan and continues the retry")
+    func rewriteWithoutRoomForResumeDataKeepsTheRetry() async throws {
+        let clock = TestClock()
+        let (coordinator, task, store) = await makeCoordinatorWithStore(
+            configuration: Self.withoutNetworkMonitor,
+            clock: clock
+        )
+        let resumeData = Data("resume point of the failed attempt".utf8)
+        await task.restoreState(.downloading)
+        await task.setResumeData(resumeData)
+        let waitingLifecycle = await task.lifecycleSnapshot()
+        #expect(
+            try await coordinator.persistence.updateRetryState(
+                id: task.id, retryCount: 1, totalRetryCount: 1, retryPlan: Self.waitingPlan)
+        )
+        await store.setFailsRetryPlanRewritesCarryingResumeData(true)
+
+        let restarts = OSAllocatedUnfairLock(initialState: 0)
+        await coordinator.resumePersistedRetry(
+            DownloadRestoredRetry(task: task, plan: Self.waitingPlan, waitingLifecycle: waitingLifecycle),
+            restart: { _ in restarts.withLock { $0 += 1 } })
+
+        // The plan is durable without the blob; this process retries from
+        // the blob it still holds.
+        let record = await coordinator.persistence.record(forID: task.id)
+        #expect(record?.lifecycle == .retryPending)
+        #expect(record?.retryPlan?.phase == .backoff)
+        #expect(record?.resumeData == nil)
+        #expect(await task.resumeData == resumeData)
+        #expect(restarts.withLock { $0 } == 1)
+    }
+
+    @Test("A plan rewrite that reached the store before it threw still continues the retry")
+    func rewriteThatLandedBeforeThrowingKeepsTheRetry() async throws {
+        let clock = TestClock()
+        let (coordinator, task, store) = await makeCoordinatorWithStore(
+            configuration: Self.withoutNetworkMonitor,
+            clock: clock
+        )
+        let resumeData = Data("resume point of the failed attempt".utf8)
+        await task.restoreState(.downloading)
+        await task.setResumeData(resumeData)
+        let waitingLifecycle = await task.lifecycleSnapshot()
+        #expect(
+            try await coordinator.persistence.updateRetryState(
+                id: task.id, retryCount: 1, totalRetryCount: 1, retryPlan: Self.waitingPlan)
+        )
+        await store.setThrowsAfterNextRetryPlanRewrite()
+
+        let restarts = OSAllocatedUnfairLock(initialState: 0)
+        await coordinator.resumePersistedRetry(
+            DownloadRestoredRetry(task: task, plan: Self.waitingPlan, waitingLifecycle: waitingLifecycle),
+            restart: { _ in restarts.withLock { $0 += 1 } })
+
+        let record = await coordinator.persistence.record(forID: task.id)
+        #expect(record?.lifecycle == .retryPending)
+        #expect(record?.retryPlan?.phase == .backoff)
+        #expect(record?.resumeData == resumeData)
+        #expect(await task.state == .downloading)
+        #expect(restarts.withLock { $0 } == 1)
+    }
 }
 
 // MARK: - Helpers

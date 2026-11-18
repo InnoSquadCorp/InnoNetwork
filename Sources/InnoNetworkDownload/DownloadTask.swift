@@ -202,8 +202,14 @@ public actor DownloadTask: Identifiable {
         return lifecycle.totalRetryCount
     }
 
-    func resetRetryCount() {
+    /// Resets the consecutive retry count for the retry that `expected`
+    /// describes, in the same actor turn that checks it still owns the task.
+    /// A pause and a resume between a separate check and the reset would
+    /// otherwise reset a newer attempt's count.
+    func resetRetryCount(ifMatching expected: DownloadTaskLifecycleSnapshot) -> Bool {
+        guard lifecycleSnapshot() == expected else { return false }
         lifecycle.retryCount = 0
+        return true
     }
 
     func setResumeData(_ data: Data?) {

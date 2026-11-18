@@ -246,6 +246,11 @@ package struct DownloadFailureCoordinator {
         var activePlan = plan
 
         if activePlan.phase == .waitingForNetwork {
+            // A pause, resume, cancellation, or manual retry may have taken
+            // the task before this job started, as when a restored retry's
+            // task is paused at launch. Such a job must not wait for a
+            // network change that may never come.
+            guard await task.lifecycleSnapshot() == waitingLifecycle else { return }
             let baseline = activePlan.networkBaseline?.value
             var observedNetworkChange = false
             if let monitor = configuration.networkMonitor {
@@ -276,40 +281,29 @@ package struct DownloadFailureCoordinator {
                     observedNetworkChange = true
                 }
             }
-            // With or without a wait, a pause, resume, cancellation, or manual
-            // retry may have taken the task since this retry was scheduled. A
-            // restored retry has no monitor wait at all when the relaunched
-            // process configures none. Leave such a task and its record alone.
-            guard await task.lifecycleSnapshot() == waitingLifecycle else { return }
+            // The task can also be taken during the wait. One actor turn checks
+            // that this retry still owns it and, after a network change,
+            // resets the consecutive retry count, so a newer attempt's count
+            // is never reset.
+            let ownsTask: Bool
             if observedNetworkChange {
-                await task.resetRetryCount()
+                ownsTask = await task.resetRetryCount(ifMatching: waitingLifecycle)
+            } else {
+                ownsTask = await task.lifecycleSnapshot() == waitingLifecycle
             }
+            guard ownsTask else { return }
 
             let backoffPlan = makeBackoffPlan(
                 retryCount: await task.retryCount
             )
-            do {
-                // The check above and this write are separate steps, so the
-                // store decides again whether the marker is still this
-                // retry's: it rewrites only a `.retryPending` record that
-                // carries the plan this retry has been waiting out. The
-                // retained resume data goes into the same write.
-                let persisted = try await persistence.rewriteRetryPlan(
-                    id: task.id,
+            guard
+                await rewriteOwnMarker(
+                    task: task,
                     replacing: activePlan,
                     with: backoffPlan,
-                    retryCount: await task.retryCount,
-                    totalRetryCount: await task.totalRetryCount,
-                    resumeData: await task.resumeData
+                    waitingLifecycle: waitingLifecycle
                 )
-                guard persisted else { return }
-            } catch {
-                await markTaskFailed(
-                    task,
-                    reason: .fileSystemError(SendableUnderlyingError(error))
-                )
-                return
-            }
+            else { return }
             activePlan = backoffPlan
         }
 
@@ -356,6 +350,67 @@ package struct DownloadFailureCoordinator {
     /// Best effort by design: the retry itself is already durable. If this
     /// write fails or a newer phase has replaced the marker, the only loss
     /// is that a relaunched retry restarts from the source URL.
+    /// Makes `backoffPlan` durable in place of this retry's own marker, the
+    /// `.retryPending` record that carries `activePlan`.
+    ///
+    /// The store decides again, in the same write, whether the marker is
+    /// still this retry's: the ownership check before it is a separate step.
+    /// The retained resume data is best effort, as it is when the marker is
+    /// first written. A write that cannot take the blob, for example on a
+    /// nearly full disk, is repeated with the plan alone, and this process
+    /// continues from the blob it holds; only a relaunch would start over. A
+    /// write can also reach the log and still throw from a later step, so a
+    /// refused repeat first checks whether the marker already carries
+    /// `backoffPlan`.
+    ///
+    /// - Returns: Whether this retry still owns the task and may continue.
+    private func rewriteOwnMarker(
+        task: DownloadTask,
+        replacing activePlan: DownloadTaskPersistence.RetryPlan,
+        with backoffPlan: DownloadTaskPersistence.RetryPlan,
+        waitingLifecycle: DownloadTaskLifecycleSnapshot
+    ) async -> Bool {
+        let retryCount = await task.retryCount
+        let totalRetryCount = await task.totalRetryCount
+        do {
+            return try await persistence.rewriteRetryPlan(
+                id: task.id,
+                replacing: activePlan,
+                with: backoffPlan,
+                retryCount: retryCount,
+                totalRetryCount: totalRetryCount,
+                resumeData: await task.resumeData
+            )
+        } catch {
+            Self.logger.error(
+                "Failed to persist the retry plan of task \(task.id, privacy: .private(mask: .hash)) with its resume data: \(String(describing: error), privacy: .private(mask: .hash)). Persisting the plan alone; a relaunched retry will restart from the source URL."
+            )
+        }
+        do {
+            let rewritten = try await persistence.rewriteRetryPlan(
+                id: task.id,
+                replacing: activePlan,
+                with: backoffPlan,
+                retryCount: retryCount,
+                totalRetryCount: totalRetryCount,
+                resumeData: nil
+            )
+            if rewritten { return true }
+            let record = await persistence.record(forID: task.id)
+            return record?.lifecycle == .retryPending && record?.retryPlan == backoffPlan
+        } catch {
+            // Only a retry that still owns the task reports the storage
+            // failure. A pause and a resume may have handed the task to a
+            // newer attempt in the meantime.
+            await markTaskFailed(
+                task,
+                reason: .fileSystemError(SendableUnderlyingError(error)),
+                ifMatching: waitingLifecycle
+            )
+            return false
+        }
+    }
+
     private func persistRetainedResumeData(for task: DownloadTask) async {
         guard let resumeData = await task.resumeData else { return }
         do {
@@ -467,7 +522,34 @@ package struct DownloadFailureCoordinator {
         reason: DownloadError,
         onLifecycleAdmissionComplete: @escaping @Sendable () -> Void = {}
     ) async {
-        guard await task.transitionToFailureFinalizing(error: reason) == .transitioned else {
+        let transition = await task.transitionToFailureFinalizing(error: reason)
+        await finalizeFailure(
+            task,
+            reason: reason,
+            transition: transition,
+            onLifecycleAdmissionComplete: onLifecycleAdmissionComplete
+        )
+    }
+
+    /// Fails `task` only while its lifecycle still matches `expected`, so a
+    /// job that has lost the task to a pause, a resume, or a newer attempt
+    /// cannot fail it.
+    func markTaskFailed(
+        _ task: DownloadTask,
+        reason: DownloadError,
+        ifMatching expected: DownloadTaskLifecycleSnapshot
+    ) async {
+        let transition = await task.transitionToFailureFinalizing(error: reason, ifMatching: expected)
+        await finalizeFailure(task, reason: reason, transition: transition, onLifecycleAdmissionComplete: {})
+    }
+
+    private func finalizeFailure(
+        _ task: DownloadTask,
+        reason: DownloadError,
+        transition: DownloadTerminalTransitionResult,
+        onLifecycleAdmissionComplete: @escaping @Sendable () -> Void
+    ) async {
+        guard transition == .transitioned else {
             onLifecycleAdmissionComplete()
             return
         }
