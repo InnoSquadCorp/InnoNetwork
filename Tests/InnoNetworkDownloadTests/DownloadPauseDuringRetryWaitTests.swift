@@ -545,7 +545,10 @@ struct DownloadPauseDuringRetryWaitTests {
         #expect(await task.state == .paused)
         #expect(await task.error == nil)
         #expect(await harness.store.record(forID: task.id)?.lifecycle == .paused)
-        // The scheduled retry ends without restarting the paused task.
+        // The scheduled retry ends without restarting the paused task. Its
+        // backoff sleeper is registered out of band; one registered after the
+        // advance would outlast it and the drain below would never return.
+        #expect(await clock.waitForEnqueuedCount(atLeast: 1, timeout: 10.0))
         clock.advance(by: .seconds(60))
         await harness.manager.drainDeferredFailureTasks()
         #expect(harness.stubSession.createdTasks.count == 1)
@@ -631,14 +634,16 @@ struct DownloadPauseDuringRetryWaitTests {
         #expect(await waitForTaskState(task, timeout: 10.0) { $0 == .downloading })
         let failureResumeData = try makeRetryResumeData("failed-during-admission")
         let pause = ConcurrentJob()
+        let pauseMetAdmission = OSAllocatedUnfairLock(initialState: false)
         await harness.store.setBeforeRetryMarkerWritten { _ in
             // The failure has retired the attempt's runtime and its retry
             // marker is not durable yet. A pause used to read this gap as
             // nothing to pause.
             pause.start { await harness.manager.pause(task) }
-            _ = await eventually {
+            let met = await eventually {
                 await harness.manager.completionHandlingWaiterCount(taskID: task.id) == 1 || pause.isFinished
             }
+            pauseMetAdmission.withLock { $0 = met }
         }
 
         await harness.injectCompletion(
@@ -648,6 +653,12 @@ struct DownloadPauseDuringRetryWaitTests {
         )
         await pause.wait()
 
+        // A pause that only ran once the marker was durable would pass the
+        // checks below without meeting the gap.
+        #expect(
+            pauseMetAdmission.withLock { $0 },
+            "The pause did not start while the failure was being admitted"
+        )
         #expect(await task.state == .paused)
         #expect(await task.resumeData == failureResumeData)
         let paused = await harness.store.record(forID: task.id)
@@ -676,6 +687,7 @@ struct DownloadPauseDuringRetryWaitTests {
         #expect(await waitForTaskState(task, timeout: 10.0) { $0 == .downloading })
         let failureResumeData = try makeRetryResumeData("failed-while-pause-settles")
         let injection = ConcurrentJob()
+        let failureStoppedInAdmission = OSAllocatedUnfairLock(initialState: false)
         await harness.store.setAfterPausingWritten { _ in
             // The failure retires the attempt's runtime, then stops before it
             // records its resume data on the task.
@@ -686,16 +698,25 @@ struct DownloadPauseDuringRetryWaitTests {
                     resumeData: failureResumeData
                 )
             }
-            _ = await eventually { await monitor.isHolding }
+            let stopped = await eventually { await monitor.isHolding }
+            failureStoppedInAdmission.withLock { $0 = stopped }
         }
 
         let pause = ConcurrentJob()
         pause.start { await harness.manager.pause(task) }
         // The pause finds no runtime and settles the ended attempt. Before
         // the fix it settled at once, without the failure's resume data.
-        _ = await eventually {
+        let pauseMetAdmission = await eventually {
             await harness.manager.completionHandlingWaiterCount(taskID: task.id) == 1 || pause.isFinished
         }
+        // Had either wait run out, the admission would be let go before the
+        // pause settles, and the checks below would pass without meeting
+        // the gap.
+        #expect(
+            failureStoppedInAdmission.withLock { $0 },
+            "The failure did not stop inside its admission"
+        )
+        #expect(pauseMetAdmission, "The pause did not settle while the failure was being admitted")
         await monitor.release()
         await injection.wait()
         await pause.wait()
