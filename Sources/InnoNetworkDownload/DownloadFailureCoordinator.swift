@@ -343,13 +343,6 @@ package struct DownloadFailureCoordinator {
         await restart(task)
     }
 
-    /// Attaches the task's retained resume data to its durable retry marker
-    /// through the same resume-state transition a pause uses, so a relaunch
-    /// during the wait can still continue the transfer.
-    ///
-    /// Best effort by design: the retry itself is already durable. If this
-    /// write fails or a newer phase has replaced the marker, the only loss
-    /// is that a relaunched retry restarts from the source URL.
     /// Makes `backoffPlan` durable in place of this retry's own marker, the
     /// `.retryPending` record that carries `activePlan`.
     ///
@@ -411,6 +404,13 @@ package struct DownloadFailureCoordinator {
         }
     }
 
+    /// Attaches the task's retained resume data to its durable retry marker
+    /// through the same resume-state transition a pause uses, so a relaunch
+    /// during the wait can still continue the transfer.
+    ///
+    /// Best effort by design: the retry itself is already durable. If this
+    /// write fails or a newer phase has replaced the marker, the only loss
+    /// is that a relaunched retry restarts from the source URL.
     private func persistRetainedResumeData(for task: DownloadTask) async {
         guard let resumeData = await task.resumeData else { return }
         do {
