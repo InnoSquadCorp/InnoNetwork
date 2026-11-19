@@ -181,7 +181,9 @@ the request that has not yet delivered a body byte. A transient handshake
 failure is retried under the same budget, idempotency, and network-wait rules
 as a buffered request. A handshake rejected with a refreshable status (`401`
 by default) on a session-authenticated stream is first replayed once with a
-refreshed token.
+refreshed token. A handshake that ends because the stream's own
+first-response or total budget ran out is not retried, whatever the policy;
+see <doc:StreamingGuide>.
 
 After the handshake is accepted the retry policy no longer applies.
 Re-establishing a disconnected stream is a higher-level concern that depends

@@ -394,7 +394,13 @@ public final class DefaultNetworkClient: NetworkClient, UploadNetworkClient, Sen
     /// connection, the first one and each reconnect alike: a failure while
     /// the request is adapted, signed, or given its session token, and a
     /// failed handshake, are retried when the policy allows, because that
-    /// connection has delivered nothing yet. The policy never replays a
+    /// connection has delivered nothing yet. The stream's own time budget is
+    /// the exception: when the first-response or total budget of the
+    /// endpoint's ``StreamingTimeoutPolicy`` runs out before the handshake is
+    /// accepted, the stream ends with
+    /// ``NetworkError/timeout(reason:underlying:)`` and the policy is not
+    /// asked, even one that retries timeouts. A timeout that the transport
+    /// reports on its own still goes to the policy. The policy never replays a
     /// connection whose handshake was accepted, because a half-consumed
     /// stream cannot be replayed transparently; whether to reconnect after it
     /// ends is decided by the endpoint's ``StreamingResumePolicy``. The

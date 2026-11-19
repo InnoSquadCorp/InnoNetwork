@@ -130,7 +130,11 @@ request in three ways:
   ends by disconnecting.
 - **Retry.** The configured ``RetryPolicy`` applies to a failed handshake,
   and to a failure before it, while the request is adapted, signed, or given
-  its session token, because nothing has been sent yet.
+  its session token, because nothing has been sent yet. The stream's own
+  first-response and total budgets are the exception: when one runs out, the
+  stream ends with ``NetworkError/timeout(reason:underlying:)`` and the
+  policy is not asked, even one that retries timeouts. A timeout that the
+  transport reports on its own still goes to the policy.
   `waitsForNetworkChanges` defers a handshake retry only after a connectivity
   failure, as it does for buffered requests.
 
