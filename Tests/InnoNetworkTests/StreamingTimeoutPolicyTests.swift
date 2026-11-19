@@ -635,6 +635,47 @@ struct StreamingTimeoutPolicyTests {
         await client.shutdown()
     }
 
+    @Test(
+        "A policy that retries timeouts is not asked about a stream deadline that ends the handshake",
+        arguments: HandshakeDeadline.allCases
+    )
+    func handshakeDeadlineNeverReachesRetryPolicy(_ deadline: HandshakeDeadline) async throws {
+        let clock = TestClock()
+        let sessionConfiguration = URLSessionConfiguration.ephemeral
+        sessionConfiguration.protocolClasses = [ImmediateStreamingTimeoutURLProtocol.self]
+        let urlSession = URLSession(configuration: sessionConfiguration)
+        defer { urlSession.invalidateAndCancel() }
+        let session = LateFirstResponseSession(session: urlSession, clock: clock)
+        let policy = TimeoutRetryingPolicy()
+        let configuration = NetworkConfiguration(
+            baseURL: URL(string: "https://stream-timeout.example.com")!,
+            retryPolicy: policy,
+            networkMonitor: nil
+        )
+        let client = DefaultNetworkClient(
+            configuration: configuration,
+            session: session,
+            clock: clock
+        )
+
+        let stream = client.stream(HandshakeDeadlineStream(timeoutPolicy: deadline.timeoutPolicy))
+        var iterator = stream.makeAsyncIterator()
+        do {
+            _ = try await iterator.next()
+            Issue.record("Expected the \(deadline.rawValue) deadline to end the stream")
+        } catch {
+            guard case .timeout(deadline.timeoutReason, _) = error else {
+                Issue.record("Expected the \(deadline.rawValue) timeout, got \(error)")
+                await client.shutdown()
+                return
+            }
+        }
+
+        #expect(policy.askedCount == 0)
+        #expect(session.bytesCallCount == 1)
+        await client.shutdown()
+    }
+
     @Test("Control-only EOF cannot complete after the absolute total deadline")
     func controlOnlyEOFCannotBypassTotalDeadline() async throws {
         let clock = TestClock()
@@ -935,6 +976,60 @@ private struct AbsoluteFirstResponseDeadlineStream: StreamingAPIDefinition {
     let timeoutPolicy = StreamingTimeoutPolicy(firstResponse: .seconds(1))
 
     func decode(line: String) throws -> String? { line }
+}
+
+/// The stream budgets that can run out before a handshake is accepted.
+enum HandshakeDeadline: String, CaseIterable, Sendable {
+    case firstResponse
+    case total
+
+    var timeoutPolicy: StreamingTimeoutPolicy {
+        switch self {
+        case .firstResponse: StreamingTimeoutPolicy(firstResponse: .seconds(1))
+        case .total: StreamingTimeoutPolicy(total: .seconds(1))
+        }
+    }
+
+    var timeoutReason: TimeoutReason {
+        switch self {
+        case .firstResponse: .requestTimeout
+        case .total: .resourceTimeout
+        }
+    }
+}
+
+private struct HandshakeDeadlineStream: StreamingAPIDefinition {
+    typealias Output = String
+
+    let method = HTTPMethod.get
+    let path = "events"
+    let sessionAuthentication = SessionAuthentication.anonymous
+    let timeoutPolicy: StreamingTimeoutPolicy
+
+    func decode(line: String) throws -> String? { line }
+}
+
+/// Retries every timeout and counts how often it is asked.
+private final class TimeoutRetryingPolicy: RetryPolicy {
+    let maxRetries = 1
+    let maxTotalRetries = 1
+    let retryDelay: TimeInterval = 0
+    private let asked = OSAllocatedUnfairLock(initialState: 0)
+
+    var askedCount: Int { asked.withLock { $0 } }
+
+    func retryDelay(for _: Int) -> TimeInterval { retryDelay }
+
+    func shouldRetry(
+        error: NetworkError,
+        retryIndex: Int,
+        request: URLRequest?,
+        response: HTTPURLResponse?
+    ) -> RetryDecision {
+        asked.withLock { $0 += 1 }
+        guard retryIndex < maxRetries, case .timeout = error else { return .noRetry }
+        return .retry
+    }
 }
 
 private struct LateControlOnlyEOFStream: StreamingAPIDefinition {
