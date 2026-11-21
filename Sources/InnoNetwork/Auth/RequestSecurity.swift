@@ -253,4 +253,17 @@ public enum RequestSecurityFailure: Int, Error, Sendable {
     var networkError: NetworkError {
         .authentication(.credential(self))
     }
+
+    /// Whether the failure reports a credential contract the integrating code
+    /// got wrong, rather than a credential that renewing or signing in again
+    /// could fix.
+    var isIntegrationMistake: Bool {
+        switch self {
+        case .invalidRequirements, .originMismatch, .credentialConflict, .unsupportedExecution:
+            true
+        case .selectionFailed, .credentialUnavailable, .identityChanged, .scopeMetadataUnavailable,
+            .insufficientScope, .credentialExpired, .refreshFailed:
+            false
+        }
+    }
 }

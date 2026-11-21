@@ -274,6 +274,15 @@ package struct StreamingExecutor: Sendable {
                             logicalStart: logicalStart
                         )
                     {
+                        // A refresh that failed in transit while recovering
+                        // from a rejected token leaves that token rejected:
+                        // the retry recovers again instead of sending it,
+                        // because this handshake has already used its one
+                        // replay. A handshake failure is retried with the
+                        // token it sent.
+                        if failure.phase == .preparation {
+                            refreshReplayGeneration = failure.refreshGeneration
+                        }
                         continue
                     }
                 } catch {
@@ -378,22 +387,39 @@ package struct StreamingExecutor: Sendable {
             )
 
             let requestBeforeInterceptors = urlRequest
-            let adapted = try await withStreamingTimeout(
-                phase: .total,
-                phaseBudget: nil,
-                totalBudget: timeoutPolicy.total,
-                logicalStart: logicalStart,
-                clock: executionRuntime.clock
-            ) {
-                try await applyRequestInterceptors(
-                    requestBeforeInterceptors,
-                    sessionInterceptors: configuration.requestInterceptors,
-                    endpointInterceptors: request.requestInterceptors,
-                    sessionSigners: configuration.requestSigners,
-                    endpointSigners: request.requestSigners,
-                    sessionAuthentication: request.sessionAuthentication,
-                    refreshCoordinator: executionRuntime.refreshCoordinator,
-                    recoveringFromGeneration: recoveringFromGeneration
+            let adapted: (request: URLRequest, refreshGeneration: UInt64?)
+            do {
+                adapted = try await withStreamingTimeout(
+                    phase: .total,
+                    phaseBudget: nil,
+                    totalBudget: timeoutPolicy.total,
+                    logicalStart: logicalStart,
+                    clock: executionRuntime.clock
+                ) {
+                    try await applyRequestInterceptors(
+                        requestBeforeInterceptors,
+                        sessionInterceptors: configuration.requestInterceptors,
+                        endpointInterceptors: request.requestInterceptors,
+                        sessionSigners: configuration.requestSigners,
+                        endpointSigners: request.requestSigners,
+                        sessionAuthentication: request.sessionAuthentication,
+                        refreshCoordinator: executionRuntime.refreshCoordinator,
+                        recoveringFromGeneration: recoveringFromGeneration
+                    )
+                }
+            } catch {
+                // Nothing was sent: an interceptor, the session token or its
+                // refresh, or a signer failed. The retry policy judges the
+                // failure against this stream's request, as it would for a
+                // buffered request, instead of ending the stream. An attempt
+                // that was recovering from a rejected token hands that
+                // generation on, so its retry recovers again.
+                throw StreamingAttemptFailure(
+                    error: error,
+                    startedAt: attemptStartedAt,
+                    phase: Self.isExplicitStreamingDeadline(error) ? .terminalDeadline : .preparation,
+                    request: requestBeforeInterceptors,
+                    refreshGeneration: recoveringFromGeneration
                 )
             }
             urlRequest = adapted.request
@@ -499,10 +525,14 @@ package struct StreamingExecutor: Sendable {
                         }
                     )
                 } catch {
+                    // Classify before the breaker judges it, as buffered
+                    // requests do: a custom trust policy reports a raw
+                    // `TrustEvaluationError` here, which only the mapped
+                    // `.trustEvaluationFailed` lets the breaker recognize.
                     await executionRuntime.circuitBreakers.recordFailure(
                         request: transportRequest,
                         policy: circuitPolicy,
-                        error: error,
+                        error: Self.mapTransportError(error, startedAt: attemptStartedAt),
                         probe: circuitProbe
                     )
                     throw StreamingAttemptFailure(
@@ -925,14 +955,20 @@ package struct StreamingExecutor: Sendable {
         timeoutPolicy: StreamingTimeoutPolicy,
         logicalStart: Duration
     ) async throws -> Bool {
-        guard failure.phase == .handshake,
+        guard failure.phase == .handshake || failure.phase == .preparation,
             let policy = configuration.retryPolicy
         else {
             return false
         }
 
         let networkError = Self.mapTransportError(failure.error, startedAt: failure.startedAt)
-        let request = networkError.underlyingRequest ?? failure.request
+        // A preparation failure is judged against the stream's own request:
+        // a response it carries came from another exchange, such as the
+        // session refresh, and its request is not the one being retried.
+        let request =
+            failure.phase == .preparation
+            ? failure.request
+            : networkError.underlyingRequest ?? failure.request
         let decision = policy.shouldRetry(
             error: networkError,
             retryIndex: state.retryIndex,
@@ -1378,6 +1414,11 @@ private enum StreamingAttemptResult {
 
 private struct StreamingAttemptFailure: Error {
     enum Phase {
+        /// Failed before transport while adapting, authenticating, or signing
+        /// the request. Nothing was sent, so the retry policy may replay it
+        /// like a failed handshake, but it is never a handshake `401` to
+        /// replay through the refresh coordinator.
+        case preparation
         case handshake
         case body
         case terminalDeadline
@@ -1389,7 +1430,9 @@ private struct StreamingAttemptFailure: Error {
     let request: URLRequest?
     /// Refresh generation of the session token the failed attempt sent, when
     /// one was applied. A handshake `401` replays through the refresh
-    /// coordinator from this generation.
+    /// coordinator from this generation. For a preparation failure, it is
+    /// the generation the attempt was recovering from, so a retry recovers
+    /// again instead of sending the rejected token.
     let refreshGeneration: UInt64?
 
     init(

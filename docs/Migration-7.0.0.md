@@ -67,7 +67,8 @@ let response = try await upload.value()
 ```
 
 `request(_:)` and `upload(_:)` are unchanged. Use them when you only need the
-value; use `start` when you need cancellation without retaining the client,
+value; use `start` when you need cancellation without keeping your own
+reference to the client,
 lifecycle events, or an end-to-end deadline.
 
 ## One error type
@@ -234,6 +235,9 @@ One rule now decides whether a failure is transient, and `isRetriableHint`,
 | Open circuit, full rate-limit or admission queue | Retried | Not retried |
 | Session that cannot be renewed | Retried when the refresh error arrived as `.underlying` | Not retried (`.authentication(.refreshFailed)`) |
 | Refresh that failed on the network or with `408`, `429` or `5xx` | Retried | Retried (unchanged) |
+| The same refresh before the first attempt of a `.required` request, or for a stream | Not retried | Retried |
+| Deterministic `URLError`: ATS block, malformed or unsupported URL, redirect loop, untrusted certificate, refused credential, local file or size limit | Retried; counted against the host (a certificate failure only when the policy counts transport-security failures) | Not retried; not counted (a certificate failure still counts when the policy counts transport-security failures) |
+| Device without a network path (`.notConnectedToInternet`, `.cellularDataUnavailable`) | Counted against every host | Not counted (still retried) |
 | `waitsForNetworkChanges: true` | Waited before every retry | Waits only after a connectivity failure |
 
 `waitsForNetworkChanges` deferred every retry until the network path changed
@@ -334,6 +338,9 @@ error body of an expired signed URL to the destination and published
 
 - `DownloadTransferPack` gains `acceptableStatusCodes` (default `200..<300`).
 - `408`, `416`, `429` and `5xx` are retried under `DownloadRetryPack`.
+- A resumed transfer whose range the server rejects with `416`, or whose
+  redirect target refuses it, restarts from the source URL at once without
+  spending the retry budget.
 - Any other unacceptable status fails immediately with
   `DownloadError.unacceptableStatusCode(_:)`. Nothing is written to the
   destination.
@@ -378,6 +385,16 @@ ended on a status.
 - **Automatic retry resumes.** A retry continues from the resume data of the
   failed attempt instead of restarting from byte 0, and falls back to a fresh
   request when the server rejects the range.
+- **Redirected transfers resume.** `resume(_:)` and an automatic retry
+  continue a transfer that followed a redirect from the redirect target that
+  Foundation restores, when the download redirect policy would admit that
+  target unchanged. 6.x restarted every redirected transfer from byte 0. A
+  target the policy would refuse, such as an HTTPS-to-HTTP downgrade, still
+  restarts from the source URL. When the target refuses the resumed request
+  with a status other than `408`, `429` or `5xx`, as an expired signed URL
+  does, the task does not fail: it restarts from the source at once, which
+  redirects afresh. Like the restart after a rejected range, it waits for no
+  backoff and spends no retry, so it works with retries disabled.
 - **`pause(_:)` during a retry wait takes effect.** 6.x dropped a pause issued
   while a retry was waiting for backoff or a network change, and the task
   restarted. The task now ends `.paused` and keeps the resume data of the
@@ -407,13 +424,23 @@ let configuration = WebSocketConfiguration.advanced(
 )
 ```
 
+`safeDefaults()` takes no packs, so the snippet starts from the `advanced`
+tuning — a 15 s heartbeat, 8 attempts, 512 buffered events and more. Pass the
+other packs too if your app relies on a `safeDefaults` value. A
+`stabilityInterval` of `.infinity` never resets the budget, so `maxAttempts`
+caps the task's whole lifetime; a negative value is `0`, and NaN the
+standard 10 s. The interval is measured on the monotonic clock, and so is
+the `maxTotalDuration` reconnect window, which 6.x measured on the wall clock;
+a wall-clock correction changes neither.
+
 `WebSocketTask.attemptedReconnectCount` still reads `0` while a connection is
 open. If that connection drops before the interval, the earlier count is
 restored and keeps growing.
 
 `WebSocketTask.successfulReconnectCount` now increments when the manager
 reconnects. In 6.x it stayed at `0`, so a dashboard built on it starts
-reporting real values.
+reporting real values. Only a connection after an earlier one counts: a first
+connection whose handshake had to be retried does not.
 
 ## Persistent cache
 
@@ -421,6 +448,9 @@ reporting real values.
   `get(_:)` verifies both. A mismatch is a miss that scrubs the entry with
   the new `PersistentResponseCacheEvictionReason.bodyIntegrityMismatch`. A
   `switch` over that enum without `default` must handle the new case.
+- Opening the cache already drops an entry whose body file is not the
+  recorded length, reported with the same reason, and removes a body staging
+  file a crash left behind once it is more than an hour old.
 - The index format is version 5. A cache directory written by 6.x is reset on
   first open: the index and bodies are removed and the cache starts empty. The
   key file and unrelated files are kept.
@@ -506,7 +536,10 @@ setting that restores the old behavior, where one exists.
   of a retry. *Keep 6.x:* rethrow the `URLError` or `NetworkError` from the
   closure for failures that should stay retryable, and report an outage of
   the token service with a transient error such as
-  `URLError(.badServerResponse)`, as `Examples/Auth` does.
+  `URLError(.badServerResponse)`, as `Examples/Auth` does. A transient
+  refresh failure is retried on every path, including the proactive refresh
+  and streams, and its `.statusCode` carries the refresh endpoint's response
+  without the refresh request, whose body or headers hold the refresh token.
 - [ ] **Named-credential provider failures.** A provider whose own transport
   fails transiently (a `URLError` other than a credential rejection, or a
   transient `NetworkError`) produces that failure's secret-free
@@ -517,8 +550,10 @@ setting that restores the old behavior, where one exists.
   request's host. 6.x reported every provider failure as
   `.credentialUnavailable` or `.refreshFailed`, which was never retried. A
   transient HTTP status from the provider still becomes
-  `.credentialUnavailable`. *Affected:* `RequestSecurity` providers that call
-  a backend. *Keep 6.x:* throw your own error type from the provider; it
+  `.credentialUnavailable`. A renewal stopped by a local policy rejection, a
+  trust failure or a configuration failure of the provider's transport keeps
+  that classification as well, instead of `.refreshFailed`. *Affected:*
+  `RequestSecurity` providers that call a backend. *Keep 6.x:* throw your own error type from the provider; it
   becomes `.credentialUnavailable`, or `.refreshFailed` for a renewal, and is
   not retried.
 - [ ] **Local rejections and authentication failures are not retried or
@@ -529,6 +564,31 @@ setting that restores the old behavior, where one exists.
   apps that relied on an automatic retry after these failures. *Keep 6.x:* a
   custom `RetryPolicy` can return `.retry` for `.policyRejected`; breaker
   counting cannot be restored.
+- [ ] **Deterministic transport failures are not retried or counted.** An
+  `.underlying` failure whose `URLError` cannot change on a replay — App
+  Transport Security blocked the request, a malformed or unsupported URL, a
+  redirect loop or a redirect to nowhere, a server certificate the system
+  does not trust, a refused client certificate or credential, or a local file
+  or size limit — is no longer transient: `isRetriableHint` is `false`, the
+  built-in policy does not retry it, the summary recommends `.doNotRetry`, and
+  the breaker does not count it. A certificate failure is the exception for the
+  breaker: as in 6.x, it counts when `countsTransportSecurityFailures` is
+  `true`. *Affected:* apps that relied on an automatic retry after these.
+  *Keep 6.x:* a custom `RetryPolicy` can return `.retry` for them; breaker
+  counting cannot be restored.
+- [ ] **An offline device does not open circuits.** A
+  `.reachability(.notConnectedToInternet)` or `.cellularDataUnavailable`
+  failure is still retried but no longer counts toward the host's circuit
+  breaker, so circuits are not open when the device reconnects. *Affected:*
+  apps that relied on the breaker tripping while offline. *Keep 6.x:* not
+  configurable.
+- [ ] **Credential setup mistakes are not user-visible.** `isUserVisible` is
+  `false` for `.authentication(.credential(_:))` with `.invalidRequirements`,
+  `.originMismatch`, `.credentialConflict` or `.unsupportedExecution`: the
+  user cannot act on them. Route sign-in on `summary.recovery ==
+  .reauthenticate` rather than on the `.authentication` category.
+  *Affected:* UI that shows every user-visible error. *Keep 6.x:* not
+  configurable.
 - [ ] **Stream handshakes refresh and use the circuit breaker.** A
   session-authenticated stream whose handshake is rejected with `401` is
   replayed once with a refreshed token instead of surfacing the `401`. With a
@@ -543,28 +603,36 @@ setting that restores the old behavior, where one exists.
   longer completes the download. Nothing is written to the destination; `408`,
   `416`, `429` and `5xx` are retried, and other statuses fail with
   `.unacceptableStatusCode(_:)`. 6.x saved the error body and published
-  `.completed`. *Affected:* servers that answer a download outside `2xx` on
-  purpose. *Keep 6.x:* widen `DownloadTransferPack(acceptableStatusCodes:)`.
+  `.completed`. The `206` that answers a resumed attempt's range request is
+  accepted even when the configured set omits it. *Affected:* servers that
+  answer a download outside `2xx` on purpose. *Keep 6.x:* widen
+  `DownloadTransferPack(acceptableStatusCodes:)`.
 - [ ] **Download retries resume, and `pause(_:)` works during a retry wait.**
   An automatic retry continues from the failed attempt's resume data and
-  restarts from the source URL after `416`. A `pause(_:)` issued while a retry
+  restarts from the source URL at once, without spending a retry, after a
+  `416`. A `pause(_:)` issued while a retry
   waits now pauses the task, which keeps the resume data of the attempt that
-  failed last; 6.x dropped the pause and restarted the transfer. *Affected:*
-  downloads from servers that answer range requests incorrectly; apps that
-  pause during a retry wait. *Keep 6.x:* not configurable.
+  failed last, including a retry restored after a relaunch and a pause that
+  races the failure itself; 6.x dropped the pause and restarted the transfer.
+  A transfer that followed a redirect resumes from its target when the
+  download redirect policy would admit it unchanged, and restarts from the
+  source at once if the target refuses; 6.x restarted it from byte 0.
+  *Affected:* downloads from servers that answer range requests incorrectly;
+  apps that pause during a retry wait. *Keep 6.x:* not configurable.
 - [ ] **WebSocket reconnect budget.** A connection must stay open for
   `stabilityInterval` (default 10 s) before it resets `maxAttempts` and
   `maxTotalDuration`; one that drops sooner continues the earlier budget, so a
   server that accepts and closes every connection exhausts `maxAttempts`.
   `successfulReconnectCount` now increments when the manager reconnects; it
-  stayed at `0` in 6.x. *Affected:* connections that normally last less than
+  stayed at `0` in 6.x, and a first connection never counts. *Affected:* connections that normally last less than
   10 s; dashboards built on the counters. *Keep 6.x:*
   `WebSocketReconnectPack(stabilityInterval: 0)` for the budget; the counter
   has no switch.
 - [ ] **Persistent cache format 5.** A cache directory written by 6.x is reset
   on first open, so the first launch after the upgrade starts with an empty
   cache. Every `get(_:)` verifies the body's byte count and SHA-256 digest; a
-  mismatch is a miss that scrubs the entry with `.bodyIntegrityMismatch`.
+  mismatch is a miss that scrubs the entry with `.bodyIntegrityMismatch`, and
+  opening the cache scrubs an entry whose body file has the wrong length.
   *Affected:* apps that read cached responses offline right after upgrading.
   *Keep 6.x:* not possible; a 6.x index has no digests to verify.
 - [ ] **An unreconcilable `304` removes the stored entry.** When a `304`'s
@@ -578,6 +646,12 @@ setting that restores the old behavior, where one exists.
   stale-while-revalidate refreshes follow the same rule. *Affected:* servers
   with inconsistent validators, which now serve one full response. *Keep 6.x:*
   not configurable.
+- [ ] **Each `events` access is its own stream.** `NetworkOperation.events`
+  returns a new stream on every access that replays the lifecycle so far, so
+  every consumer receives `.started` and the terminal event. In 6.x each
+  access returned the same stream, and consumers iterating it at the same time
+  divided the two events between them. *Affected:* code that observes
+  `events` from more than one place. *Keep 6.x:* not configurable.
 - [ ] **Inactive VPN path on Swift 6.2 and 6.3.** Built with those toolchains,
   `NetworkSnapshot` reports `NetworkUnsatisfiedReason.vpnInactive` instead of
   `.unknown`. *Affected:* code that treats `.unknown` specially. *Keep 6.x:*

@@ -115,6 +115,23 @@ public struct Response: CustomDebugStringConvertible, Equatable, Sendable {
         )
     }
 
+    /// The same response without the request that produced it.
+    ///
+    /// A response that belongs to another exchange, such as a session
+    /// refresh, must not hand that exchange's request, or a credential in its
+    /// headers or body, to the caller of the request that failed.
+    package func droppingRequest() -> Response {
+        guard request != nil, let response else { return self }
+        return Response(
+            statusCode: statusCode,
+            data: data,
+            request: nil,
+            response: response,
+            kind: kind,
+            transportTimingID: transportTimingID
+        )
+    }
+
     static func strippingURLCredentials(_ request: URLRequest) -> URLRequest {
         guard let url = request.url,
             var components = URLComponents(url: url, resolvingAgainstBaseURL: false),

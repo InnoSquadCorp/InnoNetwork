@@ -551,6 +551,163 @@ struct DownloadRetryPersistenceTests {
         #expect(replayed.retryPlan?.networkBaseline?.value == baseline)
     }
 
+    @Test("a retry marker replaces a resuming record only for the failure of the resumed attempt")
+    func retryMarkerAdmitsResumingRecordOnlyWhenAsked() async throws {
+        let baseDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(
+                "inno-retry-resuming-\(UUID().uuidString)",
+                isDirectory: true
+            )
+        defer { try? FileManager.default.removeItem(at: baseDirectory) }
+        let sessionIdentifier = "retry-resuming-admission"
+        let taskID = "retry-resuming-\(UUID().uuidString)"
+        let sourceURL = URL(string: "https://example.invalid/retry-resuming.bin")!
+        let destinationURL = baseDirectory.appendingPathComponent("retry-resuming.bin")
+        let pausedResumeData = Data("resume point of the pause".utf8)
+        let plan = DownloadTaskPersistence.RetryPlan.backoff(
+            retryNotBefore: Date(timeIntervalSince1970: 456)
+        )
+        let writer = try DownloadTaskPersistence(
+            sessionIdentifier: sessionIdentifier,
+            baseDirectoryURL: baseDirectory
+        )
+        try await writer.upsert(
+            id: taskID,
+            url: sourceURL,
+            destinationURL: destinationURL
+        )
+        #expect(
+            try await writer.transitionResumeState(
+                id: taskID,
+                from: .active,
+                to: .resuming,
+                resumeData: pausedResumeData
+            )
+        )
+
+        // Without the flag, a retry write never takes a resume's record.
+        #expect(
+            try await writer.updateRetryState(
+                id: taskID,
+                retryCount: 1,
+                totalRetryCount: 1,
+                retryPlan: plan
+            ) == false
+        )
+        let untouched = try #require(await writer.record(forID: taskID))
+        #expect(untouched.lifecycle == .resuming)
+        #expect(untouched.resumeData == pausedResumeData)
+
+        // The failure of the attempt that resume started does.
+        #expect(
+            try await writer.updateRetryState(
+                id: taskID,
+                retryCount: 1,
+                totalRetryCount: 1,
+                retryPlan: plan,
+                admitsResumingRecord: true
+            )
+        )
+        let reader = try DownloadTaskPersistence(
+            sessionIdentifier: sessionIdentifier,
+            baseDirectoryURL: baseDirectory
+        )
+        let replayed = try #require(await reader.record(forID: taskID))
+        #expect(replayed.lifecycle == .retryPending)
+        #expect(replayed.resumeData == nil)
+        #expect(replayed.retryCount == 1)
+        #expect(replayed.retryPlan == plan)
+    }
+
+    @Test("a plan rewrite replaces only the marker of the retry that is waiting it out")
+    func planRewriteReplacesOnlyItsOwnMarker() async throws {
+        let baseDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(
+                "inno-retry-rewrite-\(UUID().uuidString)",
+                isDirectory: true
+            )
+        defer { try? FileManager.default.removeItem(at: baseDirectory) }
+        let sessionIdentifier = "retry-plan-rewrite"
+        let taskID = "retry-rewrite-\(UUID().uuidString)"
+        let sourceURL = URL(string: "https://example.invalid/retry-rewrite.bin")!
+        let destinationURL = baseDirectory.appendingPathComponent("retry-rewrite.bin")
+        let failureResumeData = Data("resume point of the failed attempt".utf8)
+        let waitingPlan = DownloadTaskPersistence.RetryPlan.waitingForNetwork(
+            baseline: nil,
+            deadline: Date(timeIntervalSince1970: 500)
+        )
+        // A newer retry can wait for the same network state with the same
+        // deadline; only the plan's identity tells the two markers apart.
+        let newerPlan = DownloadTaskPersistence.RetryPlan.waitingForNetwork(
+            baseline: nil,
+            deadline: Date(timeIntervalSince1970: 500)
+        )
+        #expect(newerPlan != waitingPlan)
+        let backoffPlan = DownloadTaskPersistence.RetryPlan.backoff(
+            retryNotBefore: Date(timeIntervalSince1970: 600)
+        )
+        let writer = try DownloadTaskPersistence(
+            sessionIdentifier: sessionIdentifier,
+            baseDirectoryURL: baseDirectory
+        )
+        try await writer.upsert(id: taskID, url: sourceURL, destinationURL: destinationURL)
+        @Sendable func rewrite() async throws -> Bool {
+            try await writer.rewriteRetryPlan(
+                id: taskID,
+                replacing: waitingPlan,
+                with: backoffPlan,
+                retryCount: 2,
+                totalRetryCount: 2,
+                resumeData: failureResumeData
+            )
+        }
+
+        // The record of an attempt that a pause and a resume started.
+        #expect(try await rewrite() == false)
+        #expect(await writer.record(forID: taskID)?.lifecycle == .active)
+
+        // The marker of a newer retry, which waits out its own plan.
+        #expect(
+            try await writer.updateRetryState(
+                id: taskID, retryCount: 1, totalRetryCount: 1, retryPlan: newerPlan)
+        )
+        #expect(try await rewrite() == false)
+        #expect(await writer.record(forID: taskID)?.retryPlan == newerPlan)
+
+        // A pause that took the waiting retry.
+        #expect(
+            try await writer.updateRetryState(
+                id: taskID, retryCount: 1, totalRetryCount: 1, retryPlan: waitingPlan)
+        )
+        #expect(
+            try await writer.transitionResumeState(
+                id: taskID, from: .retryPending, to: .paused, resumeData: failureResumeData)
+        )
+        #expect(try await rewrite() == false)
+        #expect(await writer.record(forID: taskID)?.lifecycle == .paused)
+
+        // The waiting retry's own marker is rewritten, resume data included.
+        #expect(
+            try await writer.transitionResumeState(
+                id: taskID, from: .paused, to: .active, resumeData: nil)
+        )
+        #expect(
+            try await writer.updateRetryState(
+                id: taskID, retryCount: 1, totalRetryCount: 1, retryPlan: waitingPlan)
+        )
+        #expect(try await rewrite())
+        let reader = try DownloadTaskPersistence(
+            sessionIdentifier: sessionIdentifier,
+            baseDirectoryURL: baseDirectory
+        )
+        let replayed = try #require(await reader.record(forID: taskID))
+        #expect(replayed.lifecycle == .retryPending)
+        #expect(replayed.retryPlan == backoffPlan)
+        #expect(replayed.retryCount == 2)
+        #expect(replayed.totalRetryCount == 2)
+        #expect(replayed.resumeData == failureResumeData)
+    }
+
     @Test("legacy retry records decode without schedule metadata")
     func legacyRetryRecordDecodesWithoutPlan() throws {
         struct LegacyRecord: Codable {
@@ -582,6 +739,28 @@ struct DownloadRetryPersistenceTests {
         #expect(decoded.retryCount == 2)
         #expect(decoded.totalRetryCount == 4)
         #expect(decoded.retryPlan == nil)
+    }
+
+    @Test("a retry plan persisted before plans carried an identity still decodes")
+    func retryPlanWithoutIdentityDecodes() throws {
+        let plan = DownloadTaskPersistence.RetryPlan.waitingForNetwork(
+            baseline: nil,
+            deadline: Date(timeIntervalSince1970: 500)
+        )
+        var encoded = try #require(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(plan)) as? [String: Any]
+        )
+        #expect(encoded.removeValue(forKey: "id") != nil)
+
+        let decoded = try JSONDecoder().decode(
+            DownloadTaskPersistence.RetryPlan.self,
+            from: JSONSerialization.data(withJSONObject: encoded)
+        )
+
+        #expect(decoded.id == nil)
+        #expect(decoded.phase == .waitingForNetwork)
+        #expect(decoded.networkWaitDeadline == plan.networkWaitDeadline)
+        #expect(decoded != plan)
     }
 
     @Test("expired network wait observes downtime changes and checkpoints reset backoff")

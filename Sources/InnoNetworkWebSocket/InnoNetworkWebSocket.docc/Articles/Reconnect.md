@@ -90,7 +90,9 @@ the remaining window. The coordinator checks expiry again after waking, and
 the manager checks once more after acquiring lifecycle admission. At the
 deadline (including a delayed timer wake-up), no new connection is started;
 the task fails with `reconnectWindowExceeded` and its pending worker is cleaned
-up. A zero cumulative duration keeps the limit disabled.
+up. A zero cumulative duration keeps the limit disabled. The window is measured
+on the monotonic clock, so a wall-clock correction neither extends nor
+shortens it.
 
 ## Reconnect budget and the stability interval
 
@@ -111,7 +113,10 @@ let configuration = WebSocketConfiguration.advanced(
 )
 ```
 
-Pass `stabilityInterval: 0` to reset the budget on every opened connection.
+Pass `stabilityInterval: 0` to reset the budget on every opened connection, or
+`.infinity` to never reset it, so that `maxAttempts` caps the task's whole
+lifetime. How long a connection stayed open is measured on the monotonic
+clock, so a wall-clock correction does not change the outcome.
 ``WebSocketConfiguration/safeDefaults()`` uses the same 10-second default.
 
 ## Attempt accounting
@@ -124,7 +129,8 @@ Pass `stabilityInterval: 0` to reset the budget on every opened connection.
   before the stability interval, the earlier count is restored and keeps growing, so the
   counter measures attempts since the last connection that stayed up.
 - ``WebSocketTask/successfulReconnectCount`` — attempts that re-entered the `connected`
-  state. Useful for SLO dashboards. It is not reset by a successful connection.
+  state. Useful for SLO dashboards. It is not reset by a successful connection, and a
+  first connection never counts, even when its handshake had to be retried.
 
 When a reconnect budget is exhausted, observers receive exactly one public
 `.error(.maxReconnectAttemptsExceeded)` or

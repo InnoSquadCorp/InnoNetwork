@@ -290,12 +290,14 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
         id: String,
         retryCount: Int,
         totalRetryCount: Int,
-        retryPlan: DownloadTaskPersistence.RetryPlan?
+        retryPlan: DownloadTaskPersistence.RetryPlan?,
+        admitsResumingRecord: Bool
     ) async throws -> Bool {
         let didUpdate = OSAllocatedUnfairLock(initialState: false)
         try await mutate {
             guard let existing = $0.records[id],
                 existing.lifecycle == .active || existing.lifecycle == .retryPending
+                    || (admitsResumingRecord && existing.lifecycle == .resuming)
             else { return [] }
             $0.records[id] = DownloadTaskPersistence.Record(
                 id: existing.id,
@@ -325,6 +327,54 @@ package actor AppendLogDownloadTaskStore: DownloadTaskStore {
             ]
         }
         return didUpdate.withLock { $0 }
+    }
+
+    package func rewriteRetryPlan(
+        id: String,
+        replacing expectedPlan: DownloadTaskPersistence.RetryPlan,
+        with retryPlan: DownloadTaskPersistence.RetryPlan,
+        retryCount: Int,
+        totalRetryCount: Int,
+        resumeData: Data?
+    ) async throws -> Bool {
+        let didRewrite = OSAllocatedUnfairLock(initialState: false)
+        try await mutate {
+            // Only the waiting retry's own marker: the record a pause, a
+            // resume, or a newer attempt wrote since is not this retry's, and
+            // neither is the marker of a newer retry, which carries its own
+            // plan.
+            guard let existing = $0.records[id],
+                existing.lifecycle == .retryPending,
+                existing.retryPlan == expectedPlan
+            else { return [] }
+            $0.records[id] = DownloadTaskPersistence.Record(
+                id: existing.id,
+                url: existing.url,
+                destinationURL: existing.destinationURL,
+                resumeData: resumeData,
+                lifecycle: .retryPending,
+                retryCount: retryCount,
+                totalRetryCount: totalRetryCount,
+                retryPlan: retryPlan
+            )
+            didRewrite.withLock { $0 = true }
+            return [
+                Event(
+                    sequence: $0.nextSequence,
+                    timestamp: .now,
+                    kind: .upsert,
+                    taskID: existing.id,
+                    url: existing.url,
+                    destinationURL: existing.destinationURL,
+                    resumeData: resumeData,
+                    lifecycle: .retryPending,
+                    retryCount: retryCount,
+                    totalRetryCount: totalRetryCount,
+                    retryPlan: retryPlan
+                )
+            ]
+        }
+        return didRewrite.withLock { $0 }
     }
 
     package func beginCommit(

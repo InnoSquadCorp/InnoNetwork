@@ -1187,6 +1187,110 @@ struct StreamingAPIDefinitionTests {
         #expect(SequencedStreamingURLProtocol.capturedRequests(for: streamURL).count == 1)
     }
 
+    @Test("stream() retries a session refresh that failed in transit, as a buffered request would")
+    func streamRetriesRefreshFailureInTransit() async throws {
+        actor RefreshProbe {
+            private(set) var refreshCalls = 0
+
+            func refreshToken() throws -> String {
+                refreshCalls += 1
+                if refreshCalls == 1 { throw URLError(.timedOut) }
+                return "retried-stream-token"
+            }
+        }
+
+        let definition = AuthenticatedLineCounterStream()
+        let baseURL = uniqueStreamingBaseURL()
+        let streamURL = baseURL.appendingPathComponent(definition.path)
+        let probe = RefreshProbe()
+
+        SequencedStreamingURLProtocol.enqueue(
+            url: streamURL,
+            steps: [
+                .success(statusCode: 200, data: Data("authorized\n".utf8))
+            ]
+        )
+
+        let client = DefaultNetworkClient(
+            configuration: NetworkConfiguration(
+                baseURL: baseURL,
+                retryPolicy: ExponentialBackoffRetryPolicy(maxRetries: 2, retryDelay: 0, jitterRatio: 0),
+                refreshTokenPolicy: RefreshTokenPolicy(
+                    failureCooldown: .disabled,
+                    currentToken: { nil },
+                    refreshToken: { try await probe.refreshToken() }
+                )
+            ),
+            session: makeSequencedStreamingURLSession()
+        )
+
+        var values: [String] = []
+        for try await value in client.stream(definition) {
+            values.append(value)
+        }
+
+        // The first proactive refresh timed out before anything was sent;
+        // the retry refreshed again and opened the stream once.
+        let captured = SequencedStreamingURLProtocol.capturedRequests(for: streamURL)
+        #expect(values == ["authorized"])
+        #expect(captured.count == 1)
+        #expect(captured.first?.value(forHTTPHeaderField: "Authorization") == "Bearer retried-stream-token")
+        #expect(await probe.refreshCalls == 2)
+    }
+
+    @Test("stream() retries a refresh that failed in transit after a 401 by recovering again")
+    func streamRetriedRecoveryRefreshesAgain() async throws {
+        actor RefreshProbe {
+            private(set) var refreshCalls = 0
+
+            func refreshToken() throws -> String {
+                refreshCalls += 1
+                if refreshCalls == 1 { throw URLError(.timedOut) }
+                return "refreshed"
+            }
+        }
+
+        let definition = LineCounterStream(sessionAuthentication: .optional)
+        let baseURL = uniqueStreamingBaseURL()
+        let streamURL = baseURL.appendingPathComponent(definition.path)
+        let probe = RefreshProbe()
+
+        SequencedStreamingURLProtocol.enqueue(
+            url: streamURL,
+            steps: [
+                .success(statusCode: 401, data: Data()),
+                .success(statusCode: 200, data: Data("after-refresh\n".utf8)),
+            ])
+
+        let client = DefaultNetworkClient(
+            configuration: NetworkConfiguration(
+                baseURL: baseURL,
+                retryPolicy: ExponentialBackoffRetryPolicy(maxRetries: 2, retryDelay: 0, jitterRatio: 0),
+                refreshTokenPolicy: RefreshTokenPolicy(
+                    failureCooldown: .disabled,
+                    currentToken: { "expired" },
+                    refreshToken: { try await probe.refreshToken() }
+                )
+            ),
+            session: makeSequencedStreamingURLSession()
+        )
+
+        var values: [String] = []
+        for try await value in client.stream(definition) {
+            values.append(value)
+        }
+
+        // The refresh after the 401 timed out before anything was sent. The
+        // handshake had used its one replay, so a retry that sent the stored
+        // token would end on its 401; the retry refreshed again instead.
+        let captured = SequencedStreamingURLProtocol.capturedRequests(for: streamURL)
+        #expect(values == ["after-refresh"])
+        #expect(captured.count == 2)
+        #expect(captured.first?.value(forHTTPHeaderField: "Authorization") == "Bearer expired")
+        #expect(captured.last?.value(forHTTPHeaderField: "Authorization") == "Bearer refreshed")
+        #expect(await probe.refreshCalls == 2)
+    }
+
     @Test("stream() does not refresh anonymous handshakes")
     func streamDoesNotRefreshAnonymousHandshake() async throws {
         actor RefreshCounter {
@@ -1284,6 +1388,54 @@ struct StreamingAPIDefinitionTests {
 
         // The third stream never reached transport.
         #expect(SequencedStreamingURLProtocol.capturedRequests(for: streamURL).count == 2)
+    }
+
+    @Test("A half-open stream probe is settled by its handshake, so the next stream can probe again")
+    func halfOpenStreamProbeIsSettledByItsHandshake() async throws {
+        let definition = LineCounterStream()
+        let baseURL = uniqueStreamingBaseURL()
+        let streamURL = baseURL.appendingPathComponent(definition.path)
+
+        SequencedStreamingURLProtocol.enqueue(
+            url: streamURL,
+            steps: [
+                .success(statusCode: 503, data: Data()),
+                .failure(URLError(.networkConnectionLost)),
+                .success(statusCode: 200, data: Data("first\n".utf8)),
+                .success(statusCode: 200, data: Data("second\n".utf8)),
+            ])
+
+        // With no reset delay every rejection is followed by a half-open
+        // probe. A probe the stream neither recorded nor released would keep
+        // the single probe slot, and the next stream would be rejected
+        // locally instead of reaching transport.
+        let client = DefaultNetworkClient(
+            configuration: NetworkConfiguration(
+                baseURL: baseURL,
+                circuitBreakerPolicy: CircuitBreakerPolicy(failureThreshold: 1, windowSize: 1, resetAfter: .zero)
+            ),
+            session: makeSequencedStreamingURLSession()
+        )
+
+        for expectedFailure in 0..<2 {
+            do {
+                for try await _ in client.stream(definition) {}
+                Issue.record("Expected stream \(expectedFailure) to fail")
+            } catch {
+                if case .policyRejected = error {
+                    Issue.record("A probe slot was left behind: \(error)")
+                }
+            }
+        }
+        var values: [String] = []
+        for _ in 0..<2 {
+            for try await value in client.stream(definition) {
+                values.append(value)
+            }
+        }
+
+        #expect(values == ["first", "second"])
+        #expect(SequencedStreamingURLProtocol.capturedRequests(for: streamURL).count == 4)
     }
 
     @Test("stream() retries handshake failures through RetryPolicy before reading the body")

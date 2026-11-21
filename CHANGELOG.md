@@ -61,14 +61,24 @@ unreleased 7.0 line. See `docs/Migration-7.0.0.md`.
   instead of `underlying`. `NetworkError.errorCode` returns their specific
   codes. A refresh that failed on the network, timed out or received a `408`,
   `429` or `5xx`, and a credential provider whose own transport failed
-  transiently, keep that failure's own classification. The proactive refresh
-  of a request that has no token yet follows the same rule.
+  transiently, keep that failure's own classification, and so does a transport
+  failure a replay cannot cure that rejects no credential, such as an untrusted
+  certificate. The proactive refresh of a request that has no token yet
+  follows the same rule.
 - Report `URLError.dataNotAllowed`, `.internationalRoamingOff` and
   `.callIsActive` as `reachability(.cellularDataUnavailable, …)` instead of
   `underlying`.
 - Decide transience in one place for `isRetriableHint`, the built-in retry
   policy, the circuit breaker and the recovery recommendation. Policy
   rejections and authentication failures are no longer retried or counted.
+  Neither is a `URLError` a replay cannot change (an App Transport Security
+  block, a malformed or unsupported URL, a redirect loop, an untrusted
+  certificate, a refused credential, a local file or size limit), except that
+  a certificate failure still counts when the policy counts transport-security
+  failures, and a device without a network path no longer counts toward any
+  host's breaker.
+- `NetworkError.isUserVisible` is `false` for a request credential contract
+  the integrating code got wrong.
 - `waitsForNetworkChanges` defers a retry only after a connectivity failure,
   for buffered requests, streaming handshakes and downloads, which share one
   connectivity table. `URLError.cannotConnectToHost` is a connection timeout,
@@ -85,18 +95,39 @@ unreleased 7.0 line. See `docs/Migration-7.0.0.md`.
   `.useProtocolCachePolicy` does not read it either, with either preset. Only
   an explicitly cache-first policy opts out.
 - A credential provider that cannot be reached no longer counts against the
-  API host's circuit breaker, and a renewal that failed in transit leaves the
-  request's single renewal for a retry.
+  API host's circuit breaker, and a renewal that failed in transit, or was
+  stopped by a local decision about the provider's transport, leaves the
+  request's single renewal for a retry instead of asking to sign in.
+- A transient session-refresh failure reaches the retry policy on every path,
+  including the proactive refresh and streams, which retries it like any
+  transient failure: only for a request that may be replayed and while retries
+  remain. Its `statusCode` carries the refresh endpoint's response without the
+  refresh request.
 - Streaming handshakes replay once through the session refresh and take part
-  in the circuit breaker.
+  in the circuit breaker, which judges a custom trust policy's rejection like
+  any other transport-security failure.
 - Downloads validate the HTTP status before staging the file, resume from
   resume data on automatic retry, and honor `pause(_:)` during a retry wait,
-  which keeps the latest failed attempt's resume data.
+  including one restored after a relaunch or racing the failure, which keeps
+  the latest failed attempt's resume data. The `206` answering a resumed range
+  request is always accepted, and `resume(_:)` checks persisted resume data
+  before handing it to Foundation. A transfer that followed a redirect resumes
+  from the redirect target when the download redirect policy would admit that
+  target unchanged; 6.x restarted every redirected transfer from byte 0. When
+  the target refuses the resumed request, as an expired signed URL does, or
+  the server rejects a resumed range with `416`, the transfer restarts from
+  the source at once, without backoff or retry budget, instead of failing the
+  task.
   `DownloadError.maxRetriesExceeded` carries the last attempt's error.
-- A WebSocket connection that drops before the stability interval continues
-  the earlier reconnect budget instead of resetting it.
+- A WebSocket connection that drops before the stability interval, measured
+  on the monotonic clock, continues the earlier reconnect budget instead of
+  resetting it; `.infinity` never resets it. The `maxTotalDuration` reconnect
+  window is measured on the monotonic clock as well, where 6.x used the wall
+  clock. `successfulReconnectCount` counts manager reconnects but never a
+  first connection.
 - The persistent cache index format is version 5; a 6.x cache directory is
-  reset on first open.
+  reset on first open. Opening drops an entry whose body file has the wrong
+  length and removes staging files a crash left behind.
 
 ### Removed
 
@@ -163,6 +194,18 @@ unreleased 7.0 line. See `docs/Migration-7.0.0.md`.
 - Give positive waits in the package's own tests a load-tolerant upper bound
   so `swift test --parallel` no longer fails when two thousand tests start in
   one process.
+- Fail a request whose transfer Foundation reports complete before the request
+  starts waiting for the response, as it does for a task cancelled at that
+  moment or a session invalidated then. The request could wait forever.
+- Give every access to `NetworkOperation.events` its own stream that replays
+  the lifecycle so far. Consumers that shared the one stream divided its two
+  events between them, so one saw only `.started` and another only the
+  terminal event.
+- Schedule the retry of a resumed download attempt that fails before
+  `resume(_:)` has recorded it as active. The retry was dropped, and the task
+  stayed `.downloading` with no transfer: `pause(_:)` had no effect, and only
+  `cancel(_:)` or a relaunch ended it. A failure just after that point now
+  also keeps its resume data for the retry.
 
 ## [6.1.1] - 2026-10-07
 

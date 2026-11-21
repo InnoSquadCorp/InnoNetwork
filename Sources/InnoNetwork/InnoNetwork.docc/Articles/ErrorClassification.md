@@ -95,7 +95,8 @@ the proactive refresh of a `.required` request that has no token yet. A
 refresh that failed for a reason that says nothing about the session keeps its
 own case, because the session may still be valid: cancellation, a connectivity
 failure, a timeout, a `408`, `429`, or `5xx` from the refresh endpoint (the
-``NetworkError/statusCode(_:)`` then carries the refresh endpoint's response),
+``NetworkError/statusCode(_:)`` then carries the refresh endpoint's response,
+but never the refresh request, whose body or headers hold the refresh token),
 an unclassified transport error, a configuration failure including an offline
 device, a local policy rejection such as an open circuit for the token host,
 or a trust failure. Only an error that comes from a transport — a
@@ -113,7 +114,10 @@ reports that failure's secret-free classification, for example
 ``NetworkError/reachability(_:_:_:)`` whose underlying error keeps the domain
 and code with the message "Credential-protected transport failed.", instead of
 ``RequestSecurityFailure/credentialUnavailable`` or
-``RequestSecurityFailure/refreshFailed``. A transient HTTP status from a
+``RequestSecurityFailure/refreshFailed``. A renewal stopped by a local policy
+rejection, a trust failure, or a configuration failure of the provider's own
+transport keeps that classification too, as a session refresh does, instead of
+asking the user to sign in. A transient HTTP status from a
 provider still becomes `.credentialUnavailable`, because a status would expose
 the provider's response. A failure while preparing a named credential is never
 counted against the request's host by the circuit breaker. See
@@ -122,17 +126,22 @@ counted against the request's host by the circuit breaker. See
 ## One classification for retry, circuit breaker, and recovery
 
 One rule decides whether a failure is transient. ``NetworkError/isRetriableHint``,
-``ExponentialBackoffRetryPolicy``, the circuit breaker, and
-``NetworkErrorSummary/recovery`` all read it, so a failure cannot be transient
-for one of them and terminal for another.
+``ExponentialBackoffRetryPolicy``, and ``NetworkErrorSummary/recovery`` all read
+it, so a failure cannot be transient for one of them and terminal for another.
+The circuit breaker reads the same rule for an unclassified transport error and
+adds rules of its own: a TLS failure counts only when
+``CircuitBreakerPolicy/countsTransportSecurityFailures`` is `true`, even one
+that is not transient, and a `4xx` response, a device without a network path,
+and a failure while a request credential is prepared are not counted. The last
+column of the table shows the result.
 
 | Case | ``NetworkError/category`` | Transient | Counts toward the circuit breaker |
 |------|---------------------------|-----------|-----------------------------------|
 | `.statusCode` with `5xx` | `.statusCode` | Yes | Yes |
 | `.statusCode` with `408` or `429` | `.statusCode` | Yes | No; a `4xx` response is excluded from the rolling window |
 | `.statusCode` with any other status | `.statusCode` | No | No |
-| `.underlying` (not a cancellation) | `.transport` | Yes | Yes, except a TLS failure, which counts only when the policy counts transport-security failures, and an unreconcilable `304`, which is raised after the `304` was recorded as a success |
-| `.reachability` | `.reachability` | Yes | Yes |
+| `.underlying` (not a cancellation) | `.transport` | Yes, except a deterministic `URLError` (below) | Yes, except a deterministic `URLError` and an unreconcilable `304`, which is raised after the `304` was recorded as a success. A TLS failure, including a deterministic certificate failure, counts only when the policy counts transport-security failures |
+| `.reachability` | `.reachability` | Yes | Yes, except `.notConnectedToInternet` and `.cellularDataUnavailable` |
 | `.timeout` | `.timeout` | Yes | Yes |
 | `.trustEvaluationFailed` | `.trust` | No | Only when ``CircuitBreakerPolicy/countsTransportSecurityFailures`` is `true` |
 | `.configuration` | `.configuration` | No | No |
@@ -141,9 +150,30 @@ for one of them and terminal for another.
 | `.policyRejected` | `.policy` | No | No |
 | `.authentication` | `.authentication` | No | No |
 
+A deterministic `URLError` is one whose outcome replaying the same request
+cannot change: App Transport Security blocked the request
+(`.appTransportSecurityRequiresSecureConnection`), the URL is malformed or
+unsupported (`.badURL`, `.unsupportedURL`), the redirects loop or lead nowhere
+(`.httpTooManyRedirects`, `.redirectToNonExistentLocation`), the system does
+not trust the server certificate or refused the client certificate
+(`.serverCertificateUntrusted`, `.serverCertificateHasBadDate`,
+`.serverCertificateNotYetValid`, `.serverCertificateHasUnknownRoot`,
+`.clientCertificateRejected`, `.clientCertificateRequired`), the server
+refused the credential (`.userAuthenticationRequired`,
+`.userCancelledAuthentication`), or a local file or size limit failed
+(`.fileDoesNotExist`, `.fileIsDirectory`, `.noPermissionsToReadFile`,
+`.dataLengthExceedsMaximum`). The built-in retry policy does not retry it, and
+the circuit breaker does not count it, except that a certificate failure
+counts when ``CircuitBreakerPolicy/countsTransportSecurityFailures`` is
+`true`, like any other TLS failure.
+
 The breaker column describes failures of the request's own exchange. A failure
 raised while a named request credential is acquired, renewed, or signed is not
-counted, whatever its case, and neither is a failed session refresh.
+counted, whatever its case, and neither is a failed session refresh. A device
+with no usable network path — ``ReachabilityReason/notConnectedToInternet`` or
+``ReachabilityReason/cellularDataUnavailable`` — is not evidence about any one
+host either: counting it would open the circuit of every host used while
+offline, and the first requests after reconnecting would be rejected.
 
 ``NetworkError/isRetriableHint`` answers only whether the error class is
 usually transient. It does not override ``RetryPolicy``, which also checks the
@@ -169,7 +199,10 @@ func presentation(for error: NetworkError) -> ErrorPresentation {
     case .policy:
         return .locallyRejected  // a retry gives the same result
     case .authentication:
-        return .signInRequired
+        // Only an expired session or credential needs the user. A credential
+        // contract the code got wrong is not user-visible.
+        if error.summary.recovery == .reauthenticate { return .signInRequired }
+        return error.isUserVisible ? .credentialUnavailable : .developerIssue
     }
 }
 ```

@@ -24,7 +24,12 @@ private struct DownloadTaskLifecycleState {
     var progress: DownloadProgress = .zero
     var retryCount = 0
     var totalRetryCount = 0
-    var resumeData: Data?
+    var resumeData: Data? {
+        didSet { resumeDataVersion &+= 1 }
+    }
+    /// Counts writes of `resumeData`, so the attempt that consumed a blob can
+    /// tell it from a newer write of the same bytes.
+    var resumeDataVersion: UInt64 = 0
     var error: DownloadError?
     /// Outer epoch counter. Bumped each time the download is fully re-driven.
     var generation = 0
@@ -197,8 +202,14 @@ public actor DownloadTask: Identifiable {
         return lifecycle.totalRetryCount
     }
 
-    func resetRetryCount() {
+    /// Resets the consecutive retry count for the retry that `expected`
+    /// describes, in the same actor turn that checks it still owns the task.
+    /// A pause and a resume between a separate check and the reset would
+    /// otherwise reset a newer attempt's count.
+    func resetRetryCount(ifMatching expected: DownloadTaskLifecycleSnapshot) -> Bool {
+        guard lifecycleSnapshot() == expected else { return false }
         lifecycle.retryCount = 0
+        return true
     }
 
     func setResumeData(_ data: Data?) {
@@ -211,6 +222,21 @@ public actor DownloadTask: Identifiable {
         let resumeData = lifecycle.resumeData
         lifecycle.resumeData = nil
         return resumeData
+    }
+
+    /// The retained resume data and the write that stored it. Any later
+    /// write changes the version, even one that stores the same bytes.
+    func resumeDataWithVersion() -> (data: Data?, version: UInt64) {
+        (lifecycle.resumeData, lifecycle.resumeDataVersion)
+    }
+
+    /// Drops the resume data an attempt was created from once that attempt
+    /// is recorded as active. `version` is the write the attempt consumed.
+    /// Resume data written since — what a failure or a pause of that attempt
+    /// left behind — is newer and stays, even when its bytes are the same.
+    func discardResumeData(ifUnchangedSince version: UInt64) {
+        guard lifecycle.resumeDataVersion == version else { return }
+        lifecycle.resumeData = nil
     }
 
     func setError(_ error: DownloadError?) {

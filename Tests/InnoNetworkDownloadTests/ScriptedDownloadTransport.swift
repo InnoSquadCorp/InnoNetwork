@@ -23,6 +23,9 @@ final class ScriptedDownloadURLProtocol: URLProtocol, @unchecked Sendable {
         /// that needs resume data with a known non-zero offset opens the
         /// gate once the session has reported those bytes as written.
         var failureGate: ScriptedGate?
+        /// When set, the response redirects here instead of loading `body`.
+        /// The target's host must have a script of its own.
+        var redirectLocation: URL?
     }
 
     /// Produces the step for one transport request. The second argument is
@@ -85,6 +88,11 @@ final class ScriptedDownloadURLProtocol: URLProtocol, @unchecked Sendable {
             client?.urlProtocol(self, didFailWithError: URLError(.resourceUnavailable))
             return
         }
+        if let location = step.redirectLocation {
+            // The session delegate decides whether the redirect is followed.
+            client?.urlProtocol(self, wasRedirectedTo: URLRequest(url: location), redirectResponse: response)
+            return
+        }
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         if !step.body.isEmpty {
             client?.urlProtocol(self, didLoad: step.body)
@@ -110,6 +118,35 @@ final class ScriptedDownloadURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     override func stopLoading() {}
+}
+
+
+/// A second scripted host the source redirects to, standing in for a CDN or
+/// a store that hands out signed URLs.
+final class ScriptedCDN: Sendable {
+    let host = "\(UUID().uuidString.lowercased()).scripted-cdn.invalid"
+
+    func url(signature: Int) -> URL {
+        URL(string: "https://\(host)/objects/payload.bin?sig=\(signature)")!
+    }
+
+    /// A source step that redirects to the target signed with `signature`.
+    func redirect(signature: Int) -> ScriptedDownloadURLProtocol.Step {
+        let location = url(signature: signature)
+        return .init(statusCode: 302, headers: ["Location": location.absoluteString], redirectLocation: location)
+    }
+
+    func serve(_ responder: @escaping ScriptedDownloadURLProtocol.Responder) {
+        ScriptedDownloadURLProtocol.register(host: host, responder: responder)
+    }
+
+    var requests: [URLRequest] {
+        ScriptedDownloadURLProtocol.requests(forHost: host)
+    }
+
+    func tearDown() {
+        ScriptedDownloadURLProtocol.unregister(host: host)
+    }
 }
 
 

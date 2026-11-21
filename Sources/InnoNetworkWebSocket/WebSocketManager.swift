@@ -133,7 +133,6 @@ public actor WebSocketManager {
             configuration: configuration,
             runtimeRegistry: runtimeRegistry,
             clock: clock,
-            dateProvider: { clock.now() },
             eventHub: eventHub
         )
     }

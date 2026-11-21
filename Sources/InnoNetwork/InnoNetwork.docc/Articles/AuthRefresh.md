@@ -92,7 +92,8 @@ request then follows the ordinary retry and recovery rules:
   timeout stays ``NetworkError/timeout(reason:underlying:)``.
 - A `408`, `429`, or `5xx` from the refresh endpoint stays
   ``NetworkError/statusCode(_:)``. Its ``Response`` is the refresh endpoint's
-  response, not the response to your request.
+  response, not the response to your request, and carries no request: the
+  refresh request's body and headers hold the refresh token.
 - Any other `URLError` is an unclassified transport error and stays
   ``NetworkError/underlying(_:_:)``.
 - A configuration failure, including an offline device, stays
@@ -113,8 +114,17 @@ reject the refresh credential, and `URLError(.badServerResponse)` for any other
 unsuccessful status, which keeps the request retryable.
 
 A `401` that arrives during the failure cooldown fails with the stored refresh
-error, classified by the same rules. A `401` that the server returns after a
-successful refresh stays ``NetworkError/statusCode(_:)``.
+error, classified by the same rules. A retry that runs during the cooldown
+therefore receives that error again without calling `refreshToken`, and still
+uses up one retry. When a transient refresh failure should reach the refresh
+endpoint again on the next retry, keep the retry policy's shortest delay,
+after jitter, at least as long as the cooldown. The default cooldown is 1
+second after the first failure and doubles with each consecutive failure of
+the same realm, up to 30 seconds. With the defaults of
+``ExponentialBackoffRetryPolicy``, the first retry runs 0.8 to 1.2 seconds
+after the failure, so it can fall inside even the first cooldown.
+A `401` that the server returns after a successful refresh stays
+``NetworkError/statusCode(_:)``.
 
 ## URLSession Cache Policy
 

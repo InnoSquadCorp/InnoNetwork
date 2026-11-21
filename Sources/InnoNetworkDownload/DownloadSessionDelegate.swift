@@ -102,6 +102,35 @@ package final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegat
         handleFinishedDownload(downloadTask, location: location)
     }
 
+    /// Whether `statusCode` shows that the resume point `downloadTask`
+    /// continued from is stale rather than that the server is failing.
+    ///
+    /// Only an attempt rebuilt from resume data asks for a range: a download
+    /// takes no request headers, so a `Range` header is Foundation's own. Such
+    /// an attempt is stale when the server rejects its range (`416`), or when
+    /// it continued at a redirect target, which keeps the source as its
+    /// original request, and the target refuses it with anything but a busy
+    /// status. A target taken from resume data can stop answering while the
+    /// transfer waits, as a signed URL that expires does. A busy target
+    /// (`408`, `429`, `5xx`) is retried under the ordinary rules instead.
+    private static func isStaleResume(statusCode: Int, downloadTask: any DownloadURLTask) -> Bool {
+        guard let currentRequest = downloadTask.currentRequest,
+            currentRequest.value(forHTTPHeaderField: "Range") != nil
+        else {
+            return false
+        }
+        if statusCode == 416 {
+            return true
+        }
+        guard let currentURL = currentRequest.url,
+            let originalURL = downloadTask.originalRequest?.url,
+            currentURL != originalURL
+        else {
+            return false
+        }
+        return !DownloadHTTPStatusFailure.reportsBusyServer(statusCode: statusCode)
+    }
+
     /// Transport-independent body of `didFinishDownloadingTo`. Foreground
     /// attempts and background-session attempts redelivered after a relaunch
     /// both arrive here, so admission decisions made in this method apply to
@@ -114,7 +143,7 @@ package final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegat
             return
         }
         if let statusCode = (downloadTask.response as? HTTPURLResponse)?.statusCode,
-            !acceptableStatusCodes.contains(statusCode)
+            !admitsStatusCode(statusCode, for: downloadTask)
         {
             // A download task does not fail on 4xx/5xx: Foundation hands over
             // the error body as if it were the requested file. Never stage
@@ -128,7 +157,8 @@ package final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegat
                 location: nil,
                 error: DownloadHTTPStatusFailure.make(
                     statusCode: statusCode,
-                    url: downloadTask.currentRequest?.url
+                    url: downloadTask.currentRequest?.url,
+                    staleResume: Self.isStaleResume(statusCode: statusCode, downloadTask: downloadTask)
                 )
             )
             return
@@ -275,6 +305,17 @@ package final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegat
     private func isRejectedRedirectTask(_ taskIdentifier: Int) -> Bool {
         rejectedRedirectTaskIdentifiers.withLock { $0.contains(taskIdentifier) }
     }
+
+    /// The configured set governs every status except a `206 Partial
+    /// Content` that answers the byte range a resumed attempt asked for.
+    /// Automatic retries resume from resume data, so a set without `206`
+    /// would otherwise turn each resumed transfer into a terminal failure.
+    private func admitsStatusCode(_ statusCode: Int, for downloadTask: any DownloadURLTask) -> Bool {
+        if acceptableStatusCodes.contains(statusCode) { return true }
+        guard statusCode == 206 else { return false }
+        return downloadTask.currentRequest?.value(forHTTPHeaderField: "Range") != nil
+            || downloadTask.originalRequest?.value(forHTTPHeaderField: "Range") != nil
+    }
 }
 
 
@@ -336,8 +377,16 @@ package enum DownloadAttemptResumeData {
     }
 
     /// Whether a task Foundation rebuilt from opaque resume data still
-    /// targets the admitted logical source. Shared by `resume(_:)` and the
+    /// belongs to the admitted logical source. Shared by `resume(_:)` and the
     /// automatic retry so both apply one admission rule.
+    ///
+    /// The rebuilt task's original request must be the source. Its current
+    /// request is the source too, unless the transfer followed a redirect:
+    /// Foundation then restores the redirect target, with the range it asks
+    /// for, as the current request. A target is admitted only where a live
+    /// redirect from the source could have led under the policy the session
+    /// applies, and only when that policy would not have had to strip
+    /// anything from it; anything else restarts from the source.
     package static func admits(
         _ urlTask: any DownloadURLTask,
         expectedURL: URL,
@@ -345,17 +394,50 @@ package enum DownloadAttemptResumeData {
     ) -> Bool {
         guard
             let originalURL = urlTask.originalRequest?.url,
-            let currentURL = urlTask.currentRequest?.url,
+            let currentRequest = urlTask.currentRequest,
+            let currentURL = currentRequest.url,
             originalURL == expectedURL,
-            currentURL == expectedURL
+            admitsURL(expectedURL, allowsInsecureHTTP: allowsInsecureHTTP)
         else {
             return false
         }
+        guard currentURL != expectedURL else { return true }
+        return admitsRedirectTarget(currentRequest, from: expectedURL, allowsInsecureHTTP: allowsInsecureHTTP)
+    }
+
+    /// Replays the live redirect decision for `target`. The source request is
+    /// rebuilt bare, as the manager creates every download from a URL alone.
+    /// The target keeps the headers Foundation restored with it — `Range`,
+    /// `If-Range`, and its default `Accept` fields — which the policy never
+    /// strips, so only a credential the live redirect would have removed
+    /// makes the two differ.
+    private static func admitsRedirectTarget(
+        _ target: URLRequest,
+        from sourceURL: URL,
+        allowsInsecureHTTP: Bool
+    ) -> Bool {
+        guard let targetURL = target.url,
+            let redirect = HTTPURLResponse(
+                url: sourceURL,
+                statusCode: 302,
+                httpVersion: nil,
+                headerFields: ["Location": targetURL.absoluteString]
+            ),
+            let admitted = DefaultRedirectPolicy().redirect(
+                request: target,
+                response: redirect,
+                originalRequest: URLRequest(url: sourceURL)
+            ),
+            (admitted.allHTTPHeaderFields ?? [:]) == (target.allHTTPHeaderFields ?? [:])
+        else {
+            return false
+        }
+        return admitsURL(targetURL, allowsInsecureHTTP: allowsInsecureHTTP)
+    }
+
+    private static func admitsURL(_ url: URL, allowsInsecureHTTP: Bool) -> Bool {
         do {
-            try NetworkURLAdmission.validate(
-                expectedURL,
-                policy: .http(allowsInsecure: allowsInsecureHTTP)
-            )
+            try NetworkURLAdmission.validate(url, policy: .http(allowsInsecure: allowsInsecureHTTP))
             return true
         } catch {
             return false
@@ -370,20 +452,43 @@ package enum DownloadAttemptResumeData {
 /// ``DownloadError/networkError(_:)``.
 package enum DownloadHTTPStatusFailure {
     package static let domain = "InnoNetworkDownload.HTTPStatus"
+    /// Domain of a status that refused a resumed attempt because its resume
+    /// point is stale: the server rejected the range (`416`), or the redirect
+    /// target the resumed attempt reached refused it, as an expired signed
+    /// URL does. Neither says anything about the server, so the task restarts
+    /// from the source at once, without resume data and without spending
+    /// retry budget. The restarted attempt sends no range, so it cannot be
+    /// stale in turn.
+    package static let staleResumeDomain = "InnoNetworkDownload.HTTPStatus.StaleResume"
     /// Successful responses, including the 206 a resumed transfer returns.
     package static let defaultAcceptableStatusCodes = Set(200..<300)
 
-    package static func make(statusCode: Int, url: URL?) -> SendableUnderlyingError {
+    package static func make(
+        statusCode: Int,
+        url: URL?,
+        staleResume: Bool = false
+    ) -> SendableUnderlyingError {
         let target = NetworkError.diagnosticURLString(for: url)
         return SendableUnderlyingError(
-            domain: domain,
+            domain: staleResume ? staleResumeDomain : domain,
             code: statusCode,
             message: "Download from \(target) finished with unacceptable HTTP status \(statusCode)."
         )
     }
 
     package static func statusCode(from error: SendableUnderlyingError) -> Int? {
-        guard error.domain == domain else { return nil }
+        guard error.domain == domain || error.domain == staleResumeDomain else { return nil }
+        return error.code
+    }
+
+    /// Whether `error` refused a resumed attempt whose resume point is stale.
+    package static func isStaleResume(_ error: SendableUnderlyingError) -> Bool {
+        error.domain == staleResumeDomain
+    }
+
+    /// The status of a failure no other attempt can clear, or `nil`.
+    package static func terminalStatusCode(from error: SendableUnderlyingError) -> Int? {
+        guard error.domain == domain, !isRetryable(statusCode: error.code) else { return nil }
         return error.code
     }
 
@@ -393,12 +498,18 @@ package enum DownloadHTTPStatusFailure {
     /// - `408`, `429`, `500...599`: request timeout, throttling, and
     ///   server-side failures.
     /// - `416`: only a range request can be answered this way, and only an
-    ///   attempt rebuilt from resume data sends one. The status failure
-    ///   carries no resume data, so the retry restarts from the source URL
-    ///   instead of turning an unusable resume point into a terminal error.
+    ///   attempt rebuilt from resume data sends one. Such a refusal arrives
+    ///   in ``staleResumeDomain`` and restarts at once; a `416` to a request
+    ///   without a range is retried like a busy status, from the source URL.
     package static func isRetryable(statusCode: Int) -> Bool {
+        statusCode == 416 || reportsBusyServer(statusCode: statusCode)
+    }
+
+    /// Statuses that report a busy or failing server: `408`, `429`, and
+    /// `500...599`.
+    package static func reportsBusyServer(statusCode: Int) -> Bool {
         switch statusCode {
-        case 408, 416, 429, 500...599:
+        case 408, 429, 500...599:
             return true
         default:
             return false

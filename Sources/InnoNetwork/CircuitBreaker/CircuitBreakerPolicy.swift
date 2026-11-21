@@ -374,47 +374,48 @@ package actor CircuitBreakerRegistry {
         if isTransportSecurityError(error) {
             return policy.countsTransportSecurityFailures
         }
-        if let networkError = error as? NetworkError {
-            switch networkError {
-            case .timeout:
-                return true
-            case .trustEvaluationFailed:
+        // A raw `URLError` is judged by the same classification a request
+        // reports, so both arrive at one answer.
+        let networkError = (error as? NetworkError) ?? NetworkError.mapTransportError(error)
+        switch networkError {
+        case .timeout:
+            return true
+        case .trustEvaluationFailed:
+            return policy.countsTransportSecurityFailures
+        case .policyRejected, .authentication:
+            // A local decision or a credential failure is not evidence
+            // about the host's health.
+            return false
+        case .underlying(let underlying, _):
+            if isTransportSecurityUnderlying(underlying) {
                 return policy.countsTransportSecurityFailures
-            case .policyRejected, .authentication:
-                // A local decision or a credential failure is not evidence
-                // about the host's health.
-                return false
-            case .underlying(let underlying, _):
-                if NetworkError.isCancellation(underlying) { return false }
-                if isTransportSecurityUnderlying(underlying) {
-                    return policy.countsTransportSecurityFailures
-                }
-                return true
-            case .reachability:
-                // Connectivity-class URLErrors (`notConnectedToInternet`,
-                // `dnsLookupFailed`, `cannotFindHost`, `networkConnectionLost`)
-                // were `.underlying` before round 1 and counted toward the
-                // breaker via the `.underlying` arm. Preserve that contract
-                // after the typed-throws refactor — a host that drops
-                // reachability should still trip the circuit. `RetryPolicy`
-                // got the same explicit arm in round 3; this is the symmetric
-                // fix for the breaker side.
-                return true
-            default:
-                return false
             }
+            // The transience rule already excludes cancellation and the
+            // deterministic client-side failures, such as an ATS block, a
+            // malformed URL or a refused credential. None of them is evidence
+            // about the host's health.
+            return networkError.isTransient
+        case .reachability(let reason, _, _):
+            // A host that cannot be resolved or reached, or that drops the
+            // connection, trips its circuit. A device with no usable network
+            // path says nothing about any one host: counting it would open
+            // the circuit of every host used while offline, and the first
+            // requests after reconnecting would then be rejected without a
+            // retry.
+            return !reason.isDeviceConnectivityFailure
+        default:
+            return false
         }
-        return true
     }
 
     private func isTransportSecurityError(_ error: Error) -> Bool {
+        // Errors that are not yet a `NetworkError`; the classification
+        // below answers for `.trustEvaluationFailed` itself.
         if let urlError = error as? URLError, isTransportSecurityURLErrorCode(urlError.code) {
             return true
         }
-        if let networkError = error as? NetworkError, case .trustEvaluationFailed = networkError {
-            return true
-        }
-        return false
+        // A custom trust policy's rejection before it is mapped.
+        return error is TrustEvaluationError
     }
 
     private func isTransportSecurityUnderlying(_ underlying: SendableUnderlyingError) -> Bool {

@@ -129,7 +129,7 @@ the circuit breaker, and ``NetworkErrorSummary/recovery`` read the same rule:
 | ``NetworkError/statusCode(_:)`` with `408`, `429`, or `5xx` | Yes |
 | ``NetworkError/statusCode(_:)`` with any other status | No |
 | ``NetworkError/reachability(_:_:_:)``, ``NetworkError/timeout(reason:underlying:)`` | Yes |
-| ``NetworkError/underlying(_:_:)`` (an unclassified transport error) | Yes |
+| ``NetworkError/underlying(_:_:)`` (an unclassified transport error) | Yes, unless its `URLError` cannot change on a replay: an App Transport Security block, a malformed or unsupported URL, a redirect loop, an untrusted certificate, a refused credential, or a local file or size limit |
 | ``NetworkError/policyRejected(_:)`` — body limit, open circuit, full rate-limit or admission queue, non-HTTP response | No |
 | ``NetworkError/authentication(_:)`` — a session that cannot be renewed, or a failed request credential | No |
 | ``NetworkError/configuration(reason:)``, ``NetworkError/decoding(stage:underlying:response:)``, ``NetworkError/trustEvaluationFailed(_:)``, ``NetworkError/cancelled`` | No |
@@ -181,7 +181,9 @@ the request that has not yet delivered a body byte. A transient handshake
 failure is retried under the same budget, idempotency, and network-wait rules
 as a buffered request. A handshake rejected with a refreshable status (`401`
 by default) on a session-authenticated stream is first replayed once with a
-refreshed token.
+refreshed token. A handshake that ends because the stream's own
+first-response or total budget ran out is not retried, whatever the policy;
+see <doc:StreamingGuide>.
 
 After the handshake is accepted the retry policy no longer applies.
 Re-establishing a disconnected stream is a higher-level concern that depends

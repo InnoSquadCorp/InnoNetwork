@@ -167,6 +167,56 @@ struct NetworkErrorModelTests {
         }
     }
 
+    @Test(
+        "A refresh transport failure that a replay cannot cure keeps its identity",
+        arguments: [
+            URLError.Code.serverCertificateUntrusted, .serverCertificateHasBadDate,
+            .serverCertificateNotYetValid, .serverCertificateHasUnknownRoot,
+            .appTransportSecurityRequiresSecureConnection, .badURL, .unsupportedURL,
+            .httpTooManyRedirects, .redirectToNonExistentLocation, .dataLengthExceedsMaximum,
+        ]
+    )
+    func deterministicRefreshFailureKeepsItsIdentity(code: URLError.Code) {
+        let thrownErrors: [any Error] = [
+            URLError(code),
+            NetworkError.underlying(SendableUnderlyingError(URLError(code)), nil),
+        ]
+        for thrown in thrownErrors {
+            let surfaced = NetworkError.sessionRefreshFailed(thrown)
+
+            // Signing in again cannot cure a certificate, URL, redirect or
+            // local failure of the token request, so it is no verdict on the
+            // session.
+            guard case .underlying(let underlying, _) = surfaced else {
+                Issue.record("\(code) is no verdict on the session, got \(surfaced)")
+                continue
+            }
+            #expect(underlying.domain == NSURLErrorDomain)
+            #expect(underlying.code == code.rawValue)
+            #expect(!surfaced.isRetriableHint)
+            #expect(surfaced.summary(method: .get, authentication: .required).recovery == .doNotRetry)
+        }
+        #expect(NetworkError.isCredentialNeutralTransportFailure(URLError(code)))
+    }
+
+    @Test(
+        "A refresh rejected with a credential-rejection URLError ends the session",
+        arguments: [
+            URLError.Code.userAuthenticationRequired, .userCancelledAuthentication,
+            .clientCertificateRejected, .clientCertificateRequired,
+        ]
+    )
+    func credentialRejectionRefreshEndsTheSession(code: URLError.Code) {
+        let surfaced = NetworkError.sessionRefreshFailed(URLError(code))
+
+        guard case .authentication(.refreshFailed) = surfaced else {
+            Issue.record("A rejected refresh credential must end the session, got \(surfaced)")
+            return
+        }
+        #expect(surfaced.summary(method: .get, authentication: .required).recovery == .reauthenticate)
+        #expect(!NetworkError.isCredentialNeutralTransportFailure(URLError(code)))
+    }
+
     @Test("A failed refresh keeps transient causes transient and wraps everything else")
     func sessionRefreshFailureMapping() {
         struct AppRejected: Error {}

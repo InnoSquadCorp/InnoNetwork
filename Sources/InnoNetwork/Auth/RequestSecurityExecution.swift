@@ -37,6 +37,20 @@ package actor RequestSecurityExecution {
         return PreparedRequestSecurity(security: security, selection: selection, execution: self)
     }
 
+    /// Whether a renewal failed on a local decision about the provider's own
+    /// transport — a policy rejection such as an open circuit for its host, a
+    /// trust failure, or a configuration failure — the same cases a session
+    /// refresh keeps as they are. None of them is a verdict on the grant, so
+    /// none should send the user to sign in again.
+    private static func isLocalNonVerdict(_ error: any Error) -> Bool {
+        switch error as? NetworkError {
+        case .policyRejected?, .trustEvaluationFailed?, .configuration?:
+            true
+        default:
+            false
+        }
+    }
+
     func scheduleOAuthRefresh() -> Bool {
         guard !didRefreshOAuth, !oauthRefreshRequested else { return false }
         oauthRefreshRequested = true
@@ -49,6 +63,7 @@ package actor RequestSecurityExecution {
         guard !didRefreshOAuth, let selection,
             let provider = security.provider as? any OAuthCredentialRefreshing
         else { throw RequestSecurityFailure.credentialExpired.networkError }
+        let renewalWasRequested = oauthRefreshRequested
         didRefreshOAuth = true
         oauthRefreshRequested = false
         do {
@@ -61,14 +76,19 @@ package actor RequestSecurityExecution {
             return credential
         } catch {
             if NetworkError.isCancellation(error) || Task.isCancelled { throw CancellationError() }
-            // A transient transport failure of the provider says nothing
-            // about the grant. Keep its secret-free retry classification
-            // instead of reporting a failed renewal, whose recovery is
-            // reauthentication. The renewal never reached a verdict, so it
-            // does not use up this request's single renewal either: a retry
-            // of the request may renew again.
-            if NetworkError.isTransientTransportFailure(error) {
+            // A transport failure of the provider that rejects no credential
+            // — a transient one, or one a replay cannot cure, such as a
+            // certificate the system does not trust — says nothing about the
+            // grant. Keep its secret-free classification instead of
+            // reporting a failed renewal, whose recovery is reauthentication.
+            // The renewal never reached a verdict, so it does not use up this
+            // request's single renewal either: a retry of the request may
+            // renew again. A renewal the server asked for with
+            // `invalid_token` is still owed, so that retry renews before it
+            // sends anything instead of sending the rejected token again.
+            if NetworkError.isCredentialNeutralTransportFailure(error) || Self.isLocalNonVerdict(error) {
                 didRefreshOAuth = false
+                oauthRefreshRequested = renewalWasRequested
                 throw CredentialRedaction.failure(error)
             }
             throw RequestSecurityFailure.refreshFailed.networkError
@@ -144,7 +164,9 @@ struct PreparedRequestSecurity: Sendable {
                 if forceRefresh { throw error }
                 // Same rule as a renewal: an offline or failing transport is
                 // not a missing credential.
-                if NetworkError.isTransientTransportFailure(error) { throw CredentialRedaction.failure(error) }
+                if NetworkError.isCredentialNeutralTransportFailure(error) {
+                    throw CredentialRedaction.failure(error)
+                }
                 throw RequestSecurityFailure.credentialUnavailable.networkError
             }
             try Task.checkCancellation()

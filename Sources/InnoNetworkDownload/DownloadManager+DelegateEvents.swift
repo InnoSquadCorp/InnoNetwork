@@ -88,6 +88,11 @@ extension DownloadManager {
             await rejectCompletionPayload(payload)
             return
         }
+        // From here the attempt's runtime can be retired while its outcome
+        // is still being admitted. A pause waits until this handling ends, so
+        // it decides from the admitted outcome, never from the gap.
+        beginCompletionHandling(taskID: task.id)
+        defer { endCompletionHandling(taskID: task.id) }
 
         let hasCorrelatedCompletionURLs =
             originalRequestURL == task.url
@@ -311,6 +316,44 @@ extension DownloadManager {
         )
     }
 
+    private func beginCompletionHandling(taskID: String) {
+        managerState.completionHandlingTaskIDs[taskID, default: 0] += 1
+    }
+
+    private func endCompletionHandling(taskID: String) {
+        guard let count = managerState.completionHandlingTaskIDs[taskID] else { return }
+        guard count <= 1 else {
+            managerState.completionHandlingTaskIDs[taskID] = count - 1
+            return
+        }
+        managerState.completionHandlingTaskIDs.removeValue(forKey: taskID)
+        let waiters = managerState.completionHandlingWaiters.removeValue(forKey: taskID) ?? []
+        for waiter in waiters {
+            waiter.resume()
+        }
+    }
+
+    /// Waits until no completion of `taskID` is being handled.
+    ///
+    /// A completion retires its attempt's runtime first and admits the
+    /// outcome afterwards: a failure's resume data and retry marker, a
+    /// terminal failure, or a commit. Until then the task looks like it has
+    /// no attempt and no retry. The handling never waits for a public
+    /// command or an app callback, so this wait is bounded.
+    func waitForCompletionHandling(taskID: String) async {
+        while managerState.completionHandlingTaskIDs[taskID] != nil {
+            await withCheckedContinuation { continuation in
+                managerState.completionHandlingWaiters[taskID, default: []].append(continuation)
+            }
+        }
+    }
+
+    /// Visible for tests: how many callers wait for the completion handling
+    /// of `taskID` to end.
+    package func completionHandlingWaiterCount(taskID: String) -> Int {
+        managerState.completionHandlingWaiters[taskID]?.count ?? 0
+    }
+
     /// Package-test compatibility path. Production delegate events carry a
     /// deterministic journal payload.
     func handleCompletion(
@@ -366,10 +409,7 @@ extension DownloadManager {
         for retry in retries {
             let jobID = UUID()
             let job = Task { [weak self] in
-                await failureCoordinator.resumePersistedRetry(
-                    task: retry.task,
-                    plan: retry.plan
-                ) { task in
+                await failureCoordinator.resumePersistedRetry(retry) { task in
                     await transferCoordinator.startDownload(
                         task,
                         mode: .automaticRetry

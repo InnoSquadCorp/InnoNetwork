@@ -85,6 +85,8 @@ extension PersistentResponseCache {
         var scrubbedMissingBytes = 0
         var scrubbedOversizedCount = 0
         var scrubbedOversizedBytes = 0
+        var scrubbedMismatchedCount = 0
+        var scrubbedMismatchedBytes = 0
         var evictedCount = 0
         var evictedBytes = 0
 
@@ -103,6 +105,18 @@ extension PersistentResponseCache {
                 budgetedIndex.entries.removeValue(forKey: id)
                 scrubbedMissingCount += 1
                 scrubbedMissingBytes += entry.byteCost
+                didMutate = true
+                continue
+            }
+            if bodySize != entry.bodyByteCount {
+                // The body was truncated or grew after it was written, so it
+                // can never verify. Drop it now, from its size alone, instead
+                // of charging the budget for the corrupted size until a
+                // lookup reads and hashes it.
+                budgetedIndex.entries.removeValue(forKey: id)
+                removableBodyFileNames.append(entry.bodyFileName)
+                scrubbedMismatchedCount += 1
+                scrubbedMismatchedBytes += entry.byteCost
                 didMutate = true
                 continue
             }
@@ -184,6 +198,15 @@ extension PersistentResponseCache {
                 )
             )
         }
+        if scrubbedMismatchedCount > 0 {
+            telemetry.append(
+                .scrubbedEntries(
+                    reason: .bodyIntegrityMismatch,
+                    count: scrubbedMismatchedCount,
+                    byteCount: scrubbedMismatchedBytes
+                )
+            )
+        }
         if evictedCount > 0 {
             telemetry.append(
                 .scrubbedEntries(
@@ -194,6 +217,20 @@ extension PersistentResponseCache {
             )
         }
         return OpenResult(index: budgetedIndex, telemetryEvents: telemetry)
+    }
+
+    /// How old a staging file must be before opening the cache removes it.
+    static let abandonedStagingAge: TimeInterval = 60 * 60
+
+    /// A body staging file, `.<body file>.tmp-<UUID>`, that a crash or
+    /// termination left behind mid-write. The directory has no
+    /// inter-process lock, so only a file older than
+    /// ``abandonedStagingAge`` counts: a write still in flight elsewhere is
+    /// never pulled out from under its writer.
+    static func isAbandonedStagingFile(named name: String, information: stat, now: Date) -> Bool {
+        guard name.hasPrefix("."), name.contains(".body.tmp-") else { return false }
+        let modifiedAt = Date(timeIntervalSince1970: TimeInterval(information.st_mtimespec.tv_sec))
+        return now.timeIntervalSince(modifiedAt) > abandonedStagingAge
     }
 
     @discardableResult
@@ -230,7 +267,10 @@ extension PersistentResponseCache {
             }
             let type = information.st_mode & S_IFMT
             guard type == S_IFREG || type == S_IFLNK || type == S_IFIFO else { continue }
-            guard bodyFileName.hasSuffix(".body") else { continue }
+            guard
+                bodyFileName.hasSuffix(".body")
+                    || isAbandonedStagingFile(named: bodyFileName, information: information, now: Date())
+            else { continue }
             if storage.removeBody(fileName: bodyFileName) {
                 scrubbedCount += 1
             } else if errno != ENOENT {

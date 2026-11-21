@@ -92,6 +92,25 @@ func waitForResumeCount(
 }
 
 
+/// Waits for a stub transport to observe the requested number of
+/// `cancelByProducingResumeData()` calls, the point at which a pause owns
+/// the attempt and waits for its resume data.
+func waitForCancelByProducingResumeDataCount(
+    _ task: StubDownloadURLTask,
+    atLeast count: Int,
+    timeout: TimeInterval = 2.0
+) async -> Bool {
+    let deadline = ContinuousClock.now + TestWaitBudget.upperBound(.seconds(timeout))
+    while ContinuousClock.now < deadline {
+        if task.cancelByProducingResumeDataCount >= count {
+            return true
+        }
+        try? await Task.sleep(nanoseconds: 10_000_000)
+    }
+    return task.cancelByProducingResumeDataCount >= count
+}
+
+
 /// Waits for `task.state` to satisfy `predicate`.
 func waitForTaskState(
     _ task: DownloadTask,

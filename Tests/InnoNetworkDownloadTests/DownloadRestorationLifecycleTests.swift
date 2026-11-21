@@ -655,7 +655,7 @@ struct DownloadRestorationLifecycleTests {
     func foreignResumeTaskFallsBackToPersistedURL() async throws {
         let expectedURL = URL(string: "https://downloads.example.invalid/archive.zip")!
         let foreignURL = URL(string: "https://attacker.example.invalid/archive.zip")!
-        let resumeData = Data("opaque-resume-data".utf8)
+        let resumeData = try makeRetryResumeData("opaque-resume-data")
         let foreignTask = StubDownloadURLTask(
             request: URLRequest(url: foreignURL),
             currentRequest: URLRequest(url: foreignURL)
@@ -693,10 +693,85 @@ struct DownloadRestorationLifecycleTests {
         await harness.manager.shutdown()
     }
 
+    @Test("A transfer that followed a redirect resumes from the redirect target Foundation restores")
+    func redirectedResumeTaskIsAdmitted() async throws {
+        let expectedURL = URL(string: "https://downloads.example.invalid/archive.zip")!
+        let resumeData = try makeRetryResumeData("redirected-resume-data")
+        // What Foundation rebuilds from such a blob: the bare source as the
+        // original request, and as current the redirect target with the
+        // range, its validator, and the default fields of the live request.
+        var targetRequest = URLRequest(url: URL(string: "https://cdn.example.invalid/archive.zip")!)
+        targetRequest.allHTTPHeaderFields = [
+            "Range": "bytes=1024-",
+            "If-Range": "\"v1\"",
+            "Accept": "*/*",
+            "Accept-Encoding": "gzip, deflate",
+            "Accept-Language": "en-US,en;q=0.9",
+        ]
+        let redirectedTask = StubDownloadURLTask(
+            request: URLRequest(url: expectedURL),
+            currentRequest: targetRequest
+        )
+        let harness = try StubDownloadHarness(
+            label: "redirected-resume-task",
+            prequeuedStubs: [redirectedTask]
+        )
+        harness.stubTask.scriptCancelResumeData(resumeData)
+
+        let logicalTask = await harness.startDownload(url: expectedURL)
+        await harness.manager.pause(logicalTask)
+        #expect(await logicalTask.state == .paused)
+
+        await harness.manager.resume(logicalTask)
+
+        #expect(redirectedTask.cancelCount == 0)
+        #expect(redirectedTask.resumeCount == 1)
+        #expect(harness.stubSession.lastResumeData == resumeData)
+        #expect(
+            await harness.manager.runtimeTaskIdentifier(for: logicalTask)
+                == redirectedTask.taskIdentifier
+        )
+
+        await harness.manager.shutdown()
+    }
+
+    @Test(
+        "A redirect target the live redirect policy would refuse restarts from the source",
+        arguments: RefusedResumeRedirect.allCases
+    )
+    func refusedRedirectTargetRestartsFromSource(_ refusal: RefusedResumeRedirect) async throws {
+        let expectedURL = URL(string: "https://downloads.example.invalid/archive.zip")!
+        let resumeData = try makeRetryResumeData("refused-redirect-resume-data")
+        let refusedTask = StubDownloadURLTask(
+            request: URLRequest(url: expectedURL),
+            currentRequest: refusal.currentRequest
+        )
+        let safeFreshTask = StubDownloadURLTask(
+            request: URLRequest(url: expectedURL),
+            currentRequest: URLRequest(url: expectedURL)
+        )
+        let harness = try StubDownloadHarness(
+            label: "refused-redirect-resume-task",
+            prequeuedStubs: [refusedTask, safeFreshTask]
+        )
+        harness.stubTask.scriptCancelResumeData(resumeData)
+
+        let logicalTask = await harness.startDownload(url: expectedURL)
+        await harness.manager.pause(logicalTask)
+        await harness.manager.resume(logicalTask)
+
+        #expect(refusedTask.cancelCount == 1)
+        #expect(refusedTask.resumeCount == 0)
+        #expect(safeFreshTask.resumeCount == 1)
+        #expect(harness.stubSession.lastURL == expectedURL)
+
+        await harness.manager.shutdown()
+    }
+
     @Test("Opaque resume task without retained requests is cancelled before safe fresh restart")
     func requestlessResumeTaskFallsBackToPersistedURL() async throws {
         let expectedURL = URL(string: "https://downloads.example.invalid/requestless.zip")!
-        let resumeData = Data("requestless-resume-data".utf8)
+        let resumeData = try makeRetryResumeData("requestless-resume-data")
         let requestlessTask = StubDownloadURLTask(
             request: nil,
             currentRequest: nil
@@ -838,4 +913,26 @@ private func waitForLifecycleCondition(
         try? await Task.sleep(for: .milliseconds(10))
     }
     return await predicate()
+}
+
+
+/// Redirect targets a resumed task may carry that a live redirect from the
+/// source would not have reached as they are.
+enum RefusedResumeRedirect: CaseIterable, Sendable {
+    /// An HTTPS source redirected to plain HTTP.
+    case httpsDowngrade
+    /// A cross-origin target still carrying a credential header, which the
+    /// live policy strips.
+    case crossOriginCredential
+
+    var currentRequest: URLRequest {
+        switch self {
+        case .httpsDowngrade:
+            return URLRequest(url: URL(string: "http://cdn.example.invalid/archive.zip")!)
+        case .crossOriginCredential:
+            var request = URLRequest(url: URL(string: "https://cdn.example.invalid/archive.zip")!)
+            request.setValue("Bearer fixture-secret", forHTTPHeaderField: "Authorization")
+            return request
+        }
+    }
 }

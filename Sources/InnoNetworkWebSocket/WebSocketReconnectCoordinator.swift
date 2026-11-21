@@ -16,7 +16,6 @@ package struct WebSocketReconnectCoordinator {
     let runtimeRegistry: WebSocketRuntimeRegistry
     let clock: any InnoNetworkClock
     let randomOffset: @Sendable (ClosedRange<Double>) -> Double
-    let dateProvider: @Sendable () -> Date
     let eventHub: TaskEventHub<WebSocketEvent>?
 
     package init(
@@ -26,14 +25,12 @@ package struct WebSocketReconnectCoordinator {
         randomOffset: @escaping @Sendable (ClosedRange<Double>) -> Double = { range in
             Double.random(in: range)
         },
-        dateProvider: @escaping @Sendable () -> Date = { Date() },
         eventHub: TaskEventHub<WebSocketEvent>? = nil
     ) {
         self.configuration = configuration
         self.runtimeRegistry = runtimeRegistry
         self.clock = clock
         self.randomOffset = randomOffset
-        self.dateProvider = dateProvider
         self.eventHub = eventHub
     }
 
@@ -58,7 +55,9 @@ package struct WebSocketReconnectCoordinator {
             return .terminal
         }
 
-        let now = dateProvider()
+        // Both budgets are intervals, so they are measured on the monotonic
+        // clock: a wall-clock correction must neither extend nor cut them.
+        let now = clock.monotonicNow()
         // The connection that just ended cleared the budget when it opened.
         // If it did not stay open for the stability interval, that reset is
         // revoked here so a server that accepts and immediately drops
@@ -76,7 +75,7 @@ package struct WebSocketReconnectCoordinator {
 
         if configuration.reconnectMaxTotalDuration > 0,
             let started = await task.reconnectWindowStartedAt,
-            now.timeIntervalSince(started) >= configuration.reconnectMaxTotalDuration
+            (now - started) / .seconds(1) >= configuration.reconnectMaxTotalDuration
         {
             // Bump the counter so observers see the rejected attempt before
             // returning .exceeded — mirrors the maxReconnectAttempts semantics.
@@ -124,7 +123,7 @@ package struct WebSocketReconnectCoordinator {
         let reconnectTask = Task { [eventHub] in
             await WebSocketRuntimeWorkerContext.$workerID.withValue(workerID) {
                 let reconnectCount = await task.attemptedReconnectCount
-                await task.beginReconnectWindowIfNeeded(now: dateProvider())
+                await task.beginReconnectWindowIfNeeded(now: clock.monotonicNow())
                 let remaining = await remainingReconnectDuration(task: task)
                 do {
                     let delay = min(try reconnectDelay(forAttempt: reconnectCount), remaining ?? .infinity)
@@ -179,7 +178,7 @@ package struct WebSocketReconnectCoordinator {
     /// budget until ``reconnectAction(task:previousState:)`` decides whether
     /// the connection lasted long enough to keep it cleared.
     package func connectionDidOpen(task: WebSocketTask) async {
-        await task.noteConnectionOpened(at: dateProvider())
+        await task.noteConnectionOpened(at: clock.monotonicNow())
     }
 
     package func hasExpiredReconnectWindow(task: WebSocketTask) async -> Bool {
@@ -191,7 +190,8 @@ package struct WebSocketReconnectCoordinator {
         guard configuration.reconnectMaxTotalDuration > 0,
             let started = await task.reconnectWindowStartedAt
         else { return nil }
-        return max(0, configuration.reconnectMaxTotalDuration - dateProvider().timeIntervalSince(started))
+        let elapsed = (clock.monotonicNow() - started) / .seconds(1)
+        return max(0, configuration.reconnectMaxTotalDuration - elapsed)
     }
 
     private func reconnectDelay(forAttempt reconnectCount: Int) throws -> TimeInterval {

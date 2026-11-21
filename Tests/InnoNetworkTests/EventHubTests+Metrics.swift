@@ -173,13 +173,16 @@ extension EventHubTests {
         #expect(await clock.waitForWaiters(count: 2))
         clock.advance(by: .milliseconds(1_100))
 
-        let reconciledBaselineMetrics = try await eventHubWaitForConsumerMetrics(
-            recorder: recorder,
-            partitionID: "stream-reconcile",
-            minimumCount: 2
-        )
+        // Wait for the emission that follows the advance. Counting metrics is
+        // not enough: the queue-depth-2 metric published before the advance
+        // can satisfy a count while its oldest age is still 0.
         let reconciledBaselineMetric = try #require(
-            reconciledBaselineMetrics.last(where: { $0.consumerID == initialMetric.consumerID && $0.queueDepth == 2 })
+            await eventHubWaitForConsumerMetric(
+                recorder: recorder,
+                partitionID: "stream-reconcile",
+                consumerID: initialMetric.consumerID,
+                predicate: { $0.queueDepth == 2 && ($0.oldestQueuedEventAge ?? 0) > initialOldestAge }
+            )
         )
         let reconciledBaselineOldestAge = try #require(reconciledBaselineMetric.oldestQueuedEventAge)
         #expect(reconciledBaselineOldestAge > initialOldestAge)
@@ -187,13 +190,13 @@ extension EventHubTests {
         #expect(await clock.waitForWaiters(count: 2))
         clock.advance(by: .milliseconds(1_100))
 
-        let latestMetrics = try await eventHubWaitForConsumerMetrics(
-            recorder: recorder,
-            partitionID: "stream-reconcile",
-            minimumCount: 3
-        )
         let latestMetric = try #require(
-            latestMetrics.last(where: { $0.consumerID == initialMetric.consumerID })
+            await eventHubWaitForConsumerMetric(
+                recorder: recorder,
+                partitionID: "stream-reconcile",
+                consumerID: initialMetric.consumerID,
+                predicate: { ($0.oldestQueuedEventAge ?? 0) > reconciledBaselineOldestAge }
+            )
         )
         let latestOldestAge = try #require(latestMetric.oldestQueuedEventAge)
         #expect(latestMetric.queueDepth == reconciledBaselineMetric.queueDepth)

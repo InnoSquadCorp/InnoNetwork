@@ -59,7 +59,7 @@ struct LargeSocketTimingTests {
                 delay: 1e308, jitterRatio: overflowingBackoff ? 1 : 0, maxDelay: 0, maxAttempts: 10))
         let coordinator = WebSocketReconnectCoordinator(
             configuration: configuration,
-            runtimeRegistry: registry, clock: clock, randomOffset: { $0.upperBound }, dateProvider: { clock.now() })
+            runtimeRegistry: registry, clock: clock, randomOffset: { $0.upperBound })
         let task = WebSocketTask(url: try #require(URL(string: "wss://example.invalid/large")))
         await task.restoreStateForTesting(.reconnecting)
         if overflowingBackoff { for _ in 0..<3 { _ = await task.incrementAttemptedReconnectCount() } }

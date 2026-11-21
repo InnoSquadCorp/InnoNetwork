@@ -85,7 +85,10 @@ public enum PersistentResponseCacheEvictionReason: String, Sendable, Equatable {
     /// a crash, or another process or restore tool replacing the file).
     ///
     /// The lookup that detects the mismatch is reported as a miss and the
-    /// body is never returned. The digest is an unkeyed corruption check:
+    /// body is never returned. Opening the cache already drops entries whose
+    /// body file has a different length, reported in
+    /// ``PersistentResponseCacheTelemetryEvent/scrubbedEntries(reason:count:byteCount:)``.
+    /// The digest is an unkeyed corruption check:
     /// it is not tamper protection against a party that can also rewrite
     /// the cache index.
     case bodyIntegrityMismatch

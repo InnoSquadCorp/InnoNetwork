@@ -61,9 +61,11 @@ struct DownloadRetryResumeDataTests {
         let payload = makeScriptedPayload()
         let deliveredBeforeFailure = 200 * 1024
         let failureGate = ScriptedGate()
+        // The one retry goes to the interrupted attempt; the restart after
+        // the rejected range needs none.
         let context = try ScriptedDownloadContext(
             label: "retry-resume-416",
-            maxRetryCount: 3,
+            maxRetryCount: 1,
             retryDelay: 0
         ) { request, index in
             if request.value(forHTTPHeaderField: "Range") != nil {
@@ -95,9 +97,107 @@ struct DownloadRetryResumeDataTests {
         #expect(ranges.first == .some(nil))
         #expect(ranges.dropFirst().first.flatMap { $0 } != nil)
         #expect(ranges.last == .some(nil))
-        #expect(await task.retryCount == 2)
+        #expect(await task.retryCount == 1)
 
         await context.tearDown()
+    }
+
+    @Test("A retry of a transfer that followed a redirect resumes at the redirect target")
+    func automaticRetryResumesAtRedirectTarget() async throws {
+        let payload = makeScriptedPayload()
+        let deliveredBeforeFailure = 200 * 1024
+        let failureGate = ScriptedGate()
+        let cdn = ScriptedCDN()
+        let context = try ScriptedDownloadContext(
+            label: "retry-resume-redirect",
+            maxRetryCount: 2,
+            retryDelay: 0
+        ) { _, _ in
+            cdn.redirect(signature: 1)
+        }
+        cdn.serve { request, index in
+            scriptedResumableStep(
+                for: request,
+                index: index,
+                payload: payload,
+                deliveredBeforeFailure: deliveredBeforeFailure,
+                failureGate: failureGate
+            )
+        }
+        await context.dropConnection(through: failureGate, afterWriting: deliveredBeforeFailure)
+
+        let task = await context.startDownload()
+
+        #expect(await waitForTaskState(task, timeout: 30.0) { $0.isTerminal })
+        #expect(await task.state == .completed)
+        #expect(try Data(contentsOf: context.destinationURL) == payload)
+        // The source was asked once: the retry went straight to the target
+        // Foundation restored from the resume data and asked for the rest.
+        #expect(context.transportRequests.count == 1)
+        let ranges = cdn.requests.map { $0.value(forHTTPHeaderField: "Range") }
+        #expect(ranges.count == 2)
+        #expect(ranges.first == .some(nil))
+        #expect(ranges.last.flatMap { $0 }.flatMap(scriptedRangeOffset).map { $0 > 0 } == true)
+
+        await context.tearDown()
+        cdn.tearDown()
+    }
+
+    @Test("A redirect target that refuses the resumed request sends the next attempt back to the source")
+    func expiredRedirectTargetRestartsFromSource() async throws {
+        let payload = makeScriptedPayload()
+        let deliveredBeforeFailure = 200 * 1024
+        let failureGate = ScriptedGate()
+        let cdn = ScriptedCDN()
+        // Every visit to the source signs a new target URL. The one retry goes
+        // to the interrupted attempt; the restart after the refusal needs none.
+        let context = try ScriptedDownloadContext(
+            label: "retry-resume-redirect-expired",
+            maxRetryCount: 1,
+            retryDelay: 0
+        ) { _, index in
+            cdn.redirect(signature: index + 1)
+        }
+        cdn.serve { request, _ in
+            switch (request.url?.query, request.value(forHTTPHeaderField: "Range")) {
+            case ("sig=1", nil):
+                return scriptedResumableStep(
+                    for: request,
+                    index: 0,
+                    payload: payload,
+                    deliveredBeforeFailure: deliveredBeforeFailure,
+                    failureGate: failureGate
+                )
+            case ("sig=1", .some):
+                // The signature expired while the transfer was interrupted.
+                return .init(statusCode: 403, body: Data("Request has expired".utf8))
+            default:
+                return scriptedResumableStep(
+                    for: request,
+                    index: 1,
+                    payload: payload,
+                    deliveredBeforeFailure: deliveredBeforeFailure
+                )
+            }
+        }
+        await context.dropConnection(through: failureGate, afterWriting: deliveredBeforeFailure)
+
+        let task = await context.startDownload()
+
+        #expect(await waitForTaskState(task, timeout: 30.0) { $0.isTerminal })
+        #expect(await task.state == .completed)
+        #expect(try Data(contentsOf: context.destinationURL) == payload)
+        // Interrupted attempt, refused resumed attempt, fresh attempt that
+        // the source redirected to a newly signed target.
+        #expect(context.transportRequests.count == 2)
+        let attempts = cdn.requests.map { request in
+            "\(request.url?.query ?? "") \(request.value(forHTTPHeaderField: "Range") == nil ? "full" : "range")"
+        }
+        #expect(attempts == ["sig=1 full", "sig=1 range", "sig=2 full"])
+        #expect(await task.retryCount == 1)
+
+        await context.tearDown()
+        cdn.tearDown()
     }
 
     // MARK: Delegate extraction

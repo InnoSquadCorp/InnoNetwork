@@ -60,24 +60,31 @@ extension PersistentResponseCacheTests {
         try resizeInPlace(bodyURL, toByteCount: remainingByteCount)
         #expect(try Data(contentsOf: bodyURL) == payload.prefix(remainingByteCount))
 
-        // Opening re-derives the budget cost from the truncated file but does
-        // not hash bodies, so the entry stays indexed until it is read.
-        let cache = reopenBeforeRead ? try PersistentResponseCache(configuration: configuration) : writer
-        let prior = await cache.statistics()
-        let admittedByteCost = reopenBeforeRead ? remainingByteCount : payload.count
-        #expect(prior.entryCount == 1)
-        #expect(prior.byteCount == admittedByteCost)
-        #expect(await cache.telemetrySnapshot().isEmpty)
+        if reopenBeforeRead {
+            // Opening compares each body file's length with the recorded
+            // byte count, so the truncated body never reaches the index.
+            let cache = try PersistentResponseCache(configuration: configuration)
+            try await expectOpenTimeLengthScrub(in: cache, directory: directory, scrubbedByteCost: payload.count)
+            #expect(await cache.get(key) == nil)
+            try await expectFreshEntryRoundTrips(in: cache, key: key, directory: directory)
+            return
+        }
 
-        #expect(await cache.get(key) == nil)
+        // An open cache verifies the body when it is read.
+        let prior = await writer.statistics()
+        #expect(prior.entryCount == 1)
+        #expect(prior.byteCount == payload.count)
+        #expect(await writer.telemetrySnapshot().isEmpty)
+
+        #expect(await writer.get(key) == nil)
 
         try await expectBodyIntegrityScrub(
-            in: cache,
+            in: writer,
             directory: directory,
             prior: prior,
-            scrubbedByteCost: admittedByteCost
+            scrubbedByteCost: payload.count
         )
-        try await expectFreshEntryRoundTrips(in: cache, key: key, directory: directory)
+        try await expectFreshEntryRoundTrips(in: writer, key: key, directory: directory)
     }
 
     @Test("get() scrubs a body that grew but still fits maxEntryBytes")
@@ -217,6 +224,17 @@ extension PersistentResponseCacheTests {
         #expect(try bodySnapshots(in: directory) == bodySnapshot)
 
         let cache = try PersistentResponseCache(configuration: configuration)
+        switch corruption {
+        case .negativeByteCount, .offByOneByteCount:
+            // A recorded length the body file does not have is scrubbed when
+            // the cache opens, before any lookup.
+            try await expectOpenTimeLengthScrub(in: cache, directory: directory, scrubbedByteCost: payload.count)
+            #expect(await cache.get(key) == nil)
+            try await expectFreshEntryRoundTrips(in: cache, key: key, directory: directory)
+            return
+        case .emptyDigest, .shortDigest, .zeroedDigest, .overlongDigest:
+            break
+        }
         let prior = await cache.statistics()
         #expect(prior.entryCount == 1)
 
@@ -229,6 +247,31 @@ extension PersistentResponseCacheTests {
             scrubbedByteCost: payload.count
         )
         try await expectFreshEntryRoundTrips(in: cache, key: key, directory: directory)
+    }
+
+    @Test("Opening removes a staging file a crash left behind, never one still being written")
+    func openRemovesOnlyAbandonedStagingFiles() async throws {
+        let directory = makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configuration = PersistentResponseCacheConfiguration(directoryURL: directory)
+        let key = ResponseCacheKey(method: "GET", url: "https://example.com/staging-files")
+        let payload = Data("kept-body".utf8)
+        let writer = try PersistentResponseCache(configuration: configuration)
+        await writer.set(key, CachedResponse(data: payload))
+
+        let bodiesURL = directory.appendingPathComponent("bodies", isDirectory: true)
+        let abandoned = bodiesURL.appendingPathComponent(".abandoned.body.tmp-\(UUID().uuidString)")
+        let inFlight = bodiesURL.appendingPathComponent(".in-flight.body.tmp-\(UUID().uuidString)")
+        try Data("partial".utf8).write(to: abandoned)
+        try Data("partial".utf8).write(to: inFlight)
+        let staleDate = Date().addingTimeInterval(-(PersistentResponseCache.abandonedStagingAge + 60))
+        try FileManager.default.setAttributes([.modificationDate: staleDate], ofItemAtPath: abandoned.path)
+
+        let reopened = try PersistentResponseCache(configuration: configuration)
+
+        #expect(!FileManager.default.fileExists(atPath: abandoned.path))
+        #expect(FileManager.default.fileExists(atPath: inFlight.path))
+        #expect(await reopened.get(key)?.data == payload)
     }
 
     @Test("A version 4 index without body digests cold-resets on open")
@@ -446,6 +489,27 @@ extension PersistentResponseCacheTests {
         #expect(stats.hitCount == prior.hitCount, sourceLocation: sourceLocation)
         #expect(stats.missCount == prior.missCount + 1, sourceLocation: sourceLocation)
         #expect(stats.evictionCount == prior.evictionCount + 1, sourceLocation: sourceLocation)
+        #expect(
+            await cache.telemetrySnapshot()
+                == [.scrubbedEntries(reason: .bodyIntegrityMismatch, count: 1, byteCount: scrubbedByteCost)],
+            sourceLocation: sourceLocation
+        )
+    }
+
+    /// Opening compares each body file's length with its recorded byte count,
+    /// so a length mismatch is scrubbed before any lookup and reported with
+    /// the same reason a lookup would report.
+    func expectOpenTimeLengthScrub(
+        in cache: PersistentResponseCache,
+        directory: URL,
+        scrubbedByteCost: Int,
+        sourceLocation: SourceLocation = #_sourceLocation
+    ) async throws {
+        #expect(try existingBodyURLs(in: directory).isEmpty, sourceLocation: sourceLocation)
+        #expect(try indexEntryCount(in: directory) == 0, sourceLocation: sourceLocation)
+        let stats = await cache.statistics()
+        #expect(stats.entryCount == 0, sourceLocation: sourceLocation)
+        #expect(stats.byteCount == 0, sourceLocation: sourceLocation)
         #expect(
             await cache.telemetrySnapshot()
                 == [.scrubbedEntries(reason: .bodyIntegrityMismatch, count: 1, byteCount: scrubbedByteCost)],

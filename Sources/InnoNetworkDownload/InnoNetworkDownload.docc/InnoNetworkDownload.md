@@ -39,6 +39,9 @@ never saved to the destination.
   the budget runs out the task fails with
   ``DownloadError/maxRetriesExceeded(lastError:)``; `lastError` is the failure
   of the final attempt.
+- A resumed transfer whose range the server rejects with `416`, or whose
+  redirect target refuses it, restarts from the source URL at once without
+  spending the retry budget.
 - Any other unacceptable status fails immediately with
   ``DownloadError/unacceptableStatusCode(_:)`` — for example `403` for an
   expired signed URL or `404` for a missing object — without spending the

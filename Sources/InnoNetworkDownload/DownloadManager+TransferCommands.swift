@@ -55,6 +55,10 @@ extension DownloadManager {
         guard await runtimeRegistry.owns(task) else { return }
         guard managerState.pausingTaskIDs.insert(task.id).inserted else { return }
         defer { managerState.pausingTaskIDs.remove(task.id) }
+        // A failed attempt's runtime is retired before its retry marker is
+        // durable. Deciding inside that gap would ignore the pause, or let a
+        // resume start a newer attempt whose record the admission overwrites.
+        await waitForCompletionHandling(taskID: task.id)
 
         let expectedLifecycle = await task.lifecycleSnapshot()
         guard expectedLifecycle.state == .downloading else { return }
@@ -79,6 +83,13 @@ extension DownloadManager {
                 resumeData: nil
             )
             guard markedPausing else {
+                // The attempt failed while this pause was starting and its
+                // retry marker became durable first. Pause the waiting retry
+                // instead of failing a task that only lost its attempt.
+                if await persistence.record(forID: task.id)?.lifecycle == .retryPending {
+                    await pausePendingRetry(task, expectedLifecycle: await task.lifecycleSnapshot())
+                    return
+                }
                 throw DownloadPersistenceStateError.missingPausingRecord(task.id)
             }
         } catch is CancellationError {
@@ -107,6 +118,7 @@ extension DownloadManager {
             let currentURLTask = await runtimeRegistry.urlTask(for: task.id),
             currentURLTask.taskIdentifier == expectedTaskIdentifier
         else {
+            if await settlePauseOfEndedAttempt(task, producedResumeData: nil) { return }
             _ = try? await persistence.transitionResumeState(
                 id: task.id,
                 from: .pausing,
@@ -133,6 +145,9 @@ extension DownloadManager {
             let currentURLTask = await runtimeRegistry.urlTask(for: task.id),
             currentURLTask.taskIdentifier == expectedTaskIdentifier
         else {
+            // A failure that retired the attempt in the meantime deferred to
+            // this pause; finish it from what both left behind.
+            if await settlePauseOfEndedAttempt(task, producedResumeData: resumeData) { return }
             // The physical attempt has already been cancelled. Keeping the
             // durable `.pausing` marker is the crash-safe outcome: restoration
             // reconstructs a paused handle and restarts from the admitted URL.
@@ -177,6 +192,83 @@ extension DownloadManager {
         await callbackDeliveryQueue.enqueueStateChanged(task, .paused)
     }
 
+    /// Finishes a pause whose attempt ended while the pause was in flight.
+    ///
+    /// A failure of the attempt that finds the durable `.pausing` phase
+    /// defers to the pause: it retires the attempt and neither retries nor
+    /// fails the task. Unless something else has since taken the task — a
+    /// newer attempt, a terminal outcome, or a phase other than `.pausing` —
+    /// the pause owns the outcome and ends `.paused`, keeping the resume data
+    /// this pause produced or, failing that, what the failure left on the
+    /// task.
+    ///
+    /// The completion that retired the attempt may still be admitting it, so
+    /// this waits for that handling first: the failure's resume data is on
+    /// the task only once its admission has run.
+    ///
+    /// - Returns: `true` when this method decided the outcome, so the caller
+    ///   must not also act on the task.
+    private func settlePauseOfEndedAttempt(
+        _ task: DownloadTask,
+        producedResumeData: Data?
+    ) async -> Bool {
+        await waitForCompletionHandling(taskID: task.id)
+        guard await runtimeRegistry.urlTask(for: task.id) == nil,
+            await persistence.record(forID: task.id)?.lifecycle == .pausing
+        else {
+            return false
+        }
+        let endedLifecycle = await task.lifecycleSnapshot()
+        guard endedLifecycle.state == .downloading else { return false }
+        // A successful attempt also leaves no runtime behind while its file
+        // is being committed. Completion owns that task; only a claim that
+        // closes completion admission makes the outcome this pause's.
+        guard await claimDestructiveLifecycle(taskID: task.id) else { return false }
+        await task.endRestoredSuccessAdmission()
+        let retainedResumeData: Data?
+        if let producedResumeData {
+            retainedResumeData = producedResumeData
+        } else {
+            retainedResumeData = await task.resumeData
+        }
+
+        do {
+            // Same order as an ordinary pause: the durable phase first, so a
+            // resume never acts on a record that is still `.pausing`.
+            let persistence = self.persistence
+            let markedPaused = try await Task.detached {
+                try await persistence.transitionResumeState(
+                    id: task.id,
+                    from: .pausing,
+                    to: .paused,
+                    resumeData: retainedResumeData
+                )
+            }.value
+            guard markedPaused else {
+                throw DownloadPersistenceStateError.missingPausingRecord(task.id)
+            }
+        } catch {
+            await transferCoordinator.markTaskFailedForPersistence(
+                task,
+                error: error,
+                ifMatching: endedLifecycle
+            )
+            return true
+        }
+
+        guard await task.transitionToPaused(resumeData: retainedResumeData, ifMatching: endedLifecycle) else {
+            // As in an ordinary pause, never rewrite `.paused` to `.active`
+            // once no attempt is left: the winner owns the record now.
+            return true
+        }
+        let pausedLifecycle = await task.lifecycleSnapshot()
+        await eventHub.publishIfCurrent(.stateChanged(.paused), for: task.id) {
+            await task.lifecycleSnapshot() == pausedLifecycle
+        }
+        await callbackDeliveryQueue.enqueueStateChanged(task, .paused)
+        return true
+    }
+
     /// Pauses a logical task whose automatic retry has not started its next
     /// attempt yet. The task ends `.paused` with the same durable `.paused`
     /// phase an ordinary pause leaves behind, keeps any resume data the
@@ -187,10 +279,11 @@ extension DownloadManager {
         expectedLifecycle: DownloadTaskLifecycleSnapshot
     ) async {
         // The durable retry marker is the only authoritative evidence of
-        // this window. Every other attempt-less `.downloading` moment (a
-        // failure still being admitted, a resume creating its attempt, a
-        // completion being committed) is owned by that lifecycle path and
-        // keeps the historical no-op.
+        // this window. `pause(_:)` has already waited out a completion being
+        // handled, so a failure still being admitted or a completion being
+        // committed is over by now. Any other attempt-less `.downloading`
+        // moment, such as a resume creating its attempt, is owned by that
+        // lifecycle path and keeps the historical no-op.
         guard await persistence.record(forID: task.id)?.lifecycle == .retryPending else { return }
 
         // The in-memory pause below becomes visible before its durable
@@ -285,7 +378,8 @@ extension DownloadManager {
             await runtimeRegistry.removeAttemptRuntime(taskIdentifier: staleURLTask.taskIdentifier)
         }
 
-        let retainedResumeData = await task.resumeData
+        let retained = await task.resumeDataWithVersion()
+        let retainedResumeData = retained.data
         guard await task.lifecycleSnapshot() == pausedLifecycle else { return }
         do {
             let markedResuming = try await persistence.transitionResumeState(
@@ -320,13 +414,22 @@ extension DownloadManager {
         }
         guard await task.lifecycleSnapshot() == pausedLifecycle else { return }
         if let resumeData = retainedResumeData {
-            let urlTask = session.makeDownloadTask(withResumeData: resumeData)
-            guard admitsResumedURLTask(urlTask, expectedURL: task.url) else {
+            // A persisted blob is untrusted input, and Foundation raises an
+            // Objective-C exception for one that is not a property-list
+            // dictionary. Check its shape before handing it over, as an
+            // automatic retry does.
+            let candidateTask: (any DownloadURLTask)? =
+                DownloadAttemptResumeData.isStructurallyUsable(resumeData)
+                ? session.makeDownloadTask(withResumeData: resumeData)
+                : nil
+            guard let urlTask = candidateTask,
+                admitsResumedURLTask(urlTask, expectedURL: task.url)
+            else {
                 // Resume data is opaque and can carry a different request
                 // than the persisted logical task. Never start or register an
                 // untrusted task; discard the blob and restart from the URL
                 // that already passed admission.
-                urlTask.cancel()
+                candidateTask?.cancel()
                 await task.setResumeData(nil)
                 do {
                     let discardedOpaqueData = try await persistence.transitionResumeState(
@@ -399,38 +502,11 @@ extension DownloadManager {
                 await runtimeRegistry.removeAttemptRuntime(taskIdentifier: urlTask.taskIdentifier)
                 return
             }
-            do {
-                let persistence = self.persistence
-                let finalizedResume = try await Task.detached {
-                    try await persistence.transitionResumeState(
-                        id: task.id,
-                        from: .resuming,
-                        to: .active,
-                        resumeData: nil
-                    )
-                }.value
-                if !finalizedResume {
-                    let record = await persistence.record(forID: task.id)
-                    let currentState = await task.state
-                    if record?.lifecycle == .pausing || record?.lifecycle == .paused
-                        || currentState.isTerminal
-                    {
-                        // A concurrent pause/cancel owns the concrete attempt
-                        // and its durable phase. Never clobber it back to active.
-                        return
-                    }
-                    throw DownloadPersistenceStateError.failedToFinalizeResumingRecord(task.id)
-                }
-            } catch {
-                Self.logger.fault(
-                    "Failed to finalize active persistence for task \(task.id, privacy: .private(mask: .hash)) on resume: \(String(describing: error), privacy: .private(mask: .hash))"
-                )
-                urlTask.cancel()
-                await runtimeRegistry.removeAttemptRuntime(taskIdentifier: urlTask.taskIdentifier)
-                await transferCoordinator.markTaskFailedForPersistence(task, error: error)
-                return
-            }
-            await task.setResumeData(nil)
+            await transferCoordinator.finalizeResumedAttempt(
+                task,
+                urlTask: urlTask,
+                consumedResumeDataVersion: retained.version
+            )
         } else {
             guard await task.advanceAttempt(ifMatching: pausedLifecycle) != nil else { return }
             await transferCoordinator.startDownload(

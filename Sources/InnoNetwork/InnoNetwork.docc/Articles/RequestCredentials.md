@@ -106,9 +106,10 @@ reason. Ordinary transport/status retries still retain selection.
 
 A provider that cannot reach its own backend has not shown that a credential
 is missing. When credential acquisition or an OAuth renewal fails with a
-transient transport failure — a `URLError` other than a credential rejection
-described below, or a ``NetworkError`` such as a connectivity failure, a
-timeout, or an unclassified transport error — the request reports that
+transport failure — a `URLError` other than a credential rejection described
+below, including one a replay cannot change such as an untrusted certificate,
+or a ``NetworkError`` such as a connectivity failure, a timeout, or an
+unclassified transport error — the request reports that
 failure's secret-free classification instead of
 ``RequestSecurityFailure/credentialUnavailable`` or
 ``RequestSecurityFailure/refreshFailed``. For example, an offline provider
@@ -120,6 +121,13 @@ An offline ``NetworkError/configuration(reason:)`` stays
 ordinary retry and recovery rules, so a retry reacquires the credential for the
 same selection. A renewal that fails this way has not reached a verdict, so it
 does not use up the request's single renewal: a retry may renew again.
+
+The same holds for a renewal stopped by a local decision about the provider's
+own transport — a ``NetworkError/policyRejected(_:)`` such as an open circuit or
+a full queue on the provider's client, a trust failure, or a configuration
+failure — exactly as for a session refresh. The request reports that failure's
+secret-free classification instead of ``RequestSecurityFailure/refreshFailed``,
+so the user is not asked to sign in for a problem signing in cannot fix.
 
 A `URLError` that reports a rejected credential — `.userAuthenticationRequired`,
 `.userCancelledAuthentication`, `.clientCertificateRejected`, or

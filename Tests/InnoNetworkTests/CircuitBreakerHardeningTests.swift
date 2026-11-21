@@ -378,20 +378,18 @@ struct CircuitBreakerRegistryHardeningTests {
     }
 
     @Test(
-        "NetworkError.reachability(reason:) counts toward the breaker for every reason",
+        "A host that cannot be resolved, reached or kept connected counts toward its breaker",
         arguments: [
-            ReachabilityReason.notConnectedToInternet,
             ReachabilityReason.dnsLookupFailed,
             ReachabilityReason.cannotFindHost,
             ReachabilityReason.networkConnectionLost,
         ]
     )
     func reachabilityIsCountable(_ reason: ReachabilityReason) async throws {
-        // Round 1 reclassified four URLErrors from `.underlying` into the
-        // typed `.reachability` case. Without an explicit arm in
-        // `isCountable(...)`, those failures stopped tripping the breaker —
-        // the regression the RetryPolicy parallel test covers on the retry
-        // side. Lock the breaker side too.
+        // These URLErrors became the typed `.reachability` case. Without an
+        // explicit arm in `isCountable(...)` they would stop tripping the
+        // breaker, the regression the RetryPolicy parallel test covers on
+        // the retry side.
         let registry = CircuitBreakerRegistry()
         let policy = CircuitBreakerPolicy(failureThreshold: 1, windowSize: 1)
         let request = URLRequest(url: URL(string: "https://api.example.com/x")!)
@@ -407,6 +405,67 @@ struct CircuitBreakerRegistryHardeningTests {
         await #expect(throws: NetworkError.self) {
             try await registry.prepare(request: request, policy: policy)
         }
+    }
+
+    @Test(
+        "A device without a usable network path does not count against the host",
+        arguments: [
+            NetworkError.reachability(
+                .notConnectedToInternet,
+                SendableUnderlyingError(
+                    domain: NSURLErrorDomain,
+                    code: URLError.notConnectedToInternet.rawValue,
+                    message: "offline"
+                ),
+                nil
+            ),
+            NetworkError.reachability(
+                .cellularDataUnavailable,
+                SendableUnderlyingError(
+                    domain: NSURLErrorDomain,
+                    code: URLError.dataNotAllowed.rawValue,
+                    message: "cellular"
+                ),
+                nil
+            ),
+        ]
+    )
+    func deviceConnectivityFailureNotCountable(_ error: NetworkError) async throws {
+        // Counting it would open the circuit of every host used while the
+        // device was offline, and the first requests after reconnecting
+        // would then be rejected without a retry.
+        let registry = CircuitBreakerRegistry()
+        let policy = CircuitBreakerPolicy(failureThreshold: 1, windowSize: 1)
+        let request = URLRequest(url: URL(string: "https://api.example.com/x")!)
+
+        await registry.recordFailure(request: request, policy: policy, error: error)
+        await registry.recordFailure(request: request, policy: policy, error: URLError(.notConnectedToInternet))
+
+        try await registry.prepare(request: request, policy: policy)
+    }
+
+    @Test(
+        "A deterministic client-side transport failure is neither transient nor counted",
+        arguments: [
+            URLError.Code.appTransportSecurityRequiresSecureConnection,
+            URLError.Code.badURL,
+            URLError.Code.unsupportedURL,
+            URLError.Code.httpTooManyRedirects,
+            URLError.Code.userAuthenticationRequired,
+        ]
+    )
+    func deterministicTransportFailureNotCountable(_ code: URLError.Code) async throws {
+        let error = NetworkError.mapTransportError(URLError(code))
+        #expect(!error.isTransient)
+        #expect(!error.isRetriableHint)
+
+        let registry = CircuitBreakerRegistry()
+        let policy = CircuitBreakerPolicy(failureThreshold: 1, windowSize: 1)
+        let request = URLRequest(url: URL(string: "https://api.example.com/x")!)
+        await registry.recordFailure(request: request, policy: policy, error: error)
+        await registry.recordFailure(request: request, policy: policy, error: URLError(code))
+
+        try await registry.prepare(request: request, policy: policy)
     }
 
     @Test("Transport security URL failures count when countsTransportSecurityFailures is true")
@@ -437,6 +496,47 @@ struct CircuitBreakerRegistryHardeningTests {
         await registry.recordFailure(request: request, policy: policy, error: trustError)
 
         try await registry.prepare(request: request, policy: policy)
+    }
+
+    @Test(
+        "A configuration failure says nothing about the host and does not count",
+        arguments: [
+            NetworkError.configuration(reason: .invalidRequest("malformed request")),
+            NetworkError.configuration(reason: .offline("reachability check failed")),
+        ]
+    )
+    func configurationFailureNotCountable(_ error: NetworkError) async throws {
+        let registry = CircuitBreakerRegistry()
+        let policy = CircuitBreakerPolicy(failureThreshold: 1, windowSize: 1)
+        let request = URLRequest(url: URL(string: "https://api.example.com/x")!)
+
+        await registry.recordFailure(request: request, policy: policy, error: error)
+
+        try await registry.prepare(request: request, policy: policy)
+    }
+
+    @Test("A custom trust policy's raw rejection follows the transport-security opt-in")
+    func rawTrustEvaluationErrorFollowsOptIn() async throws {
+        // A stream handshake under a custom trust policy reports this raw
+        // error; it must not count unless transport-security failures do.
+        let request = URLRequest(url: URL(string: "https://api.example.com/x")!)
+        let rejection = TrustEvaluationError.failed(.missingServerTrust, nil)
+
+        let defaultRegistry = CircuitBreakerRegistry()
+        let defaultPolicy = CircuitBreakerPolicy(failureThreshold: 1, windowSize: 1)
+        await defaultRegistry.recordFailure(request: request, policy: defaultPolicy, error: rejection)
+        try await defaultRegistry.prepare(request: request, policy: defaultPolicy)
+
+        let optedInRegistry = CircuitBreakerRegistry()
+        let optedInPolicy = CircuitBreakerPolicy(
+            failureThreshold: 1,
+            windowSize: 1,
+            countsTransportSecurityFailures: true
+        )
+        await optedInRegistry.recordFailure(request: request, policy: optedInPolicy, error: rejection)
+        await #expect(throws: NetworkError.self) {
+            try await optedInRegistry.prepare(request: request, policy: optedInPolicy)
+        }
     }
 
     @Test(

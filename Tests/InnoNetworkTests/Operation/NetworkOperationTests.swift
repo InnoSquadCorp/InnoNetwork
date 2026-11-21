@@ -25,6 +25,85 @@ struct NetworkOperationTests {
         #expect(await operation.failureSummary() == nil)
     }
 
+    @Test("Every access to events delivers the whole lifecycle, to early and late consumers alike")
+    func everyConsumerReceivesTheWholeLifecycle() async throws {
+        let endpoint = PreviewEndpoint()
+        let stub = StubNetworkClient()
+        stub.register(
+            PreviewResponse(id: "never"),
+            for: endpoint,
+            behavior: .delayed(seconds: 60)
+        )
+        let operation = stub.start(endpoint)
+        let first = operation.events
+        let second = operation.events
+        // A consumer that stops early leaves the other streams untouched.
+        let abandoned = Task {
+            for await _ in operation.events {}
+        }
+        abandoned.cancel()
+        await abandoned.value
+
+        operation.cancel()
+        let summary = try #require(await operation.failureSummary())
+        let late = operation.events
+
+        let lifecycle: [NetworkOperationEvent] = [
+            .started(id: operation.id),
+            .failed(id: operation.id, summary: summary),
+        ]
+        #expect(await collectEvents(first) == lifecycle)
+        #expect(await collectEvents(second) == lifecycle)
+        #expect(await collectEvents(late) == lifecycle)
+    }
+
+    @Test("The event log delivers to subscribers live, replays to late ones, and ignores events after the end")
+    func eventLogDeliversLiveAndReplays() async {
+        let log = NetworkOperationEventLog()
+        let id = UUID()
+        let summary = NetworkError.cancelled.summary
+        let lifecycle: [NetworkOperationEvent] = [.started(id: id), .failed(id: id, summary: summary)]
+
+        // Subscribed before anything is recorded, so both events must arrive
+        // live, while this consumer may already be waiting for them.
+        let early = log.subscribe()
+        let earlyConsumer = Task { await collectEvents(early) }
+        log.record(.started(id: id))
+        let afterStart = log.subscribe()
+        log.finish(with: .failed(id: id, summary: summary))
+        let afterFinish = log.subscribe()
+        log.record(.started(id: id))
+        log.finish(with: .succeeded(id: id))
+
+        #expect(await earlyConsumer.value == lifecycle)
+        #expect(await collectEvents(afterStart) == lifecycle)
+        #expect(await collectEvents(afterFinish) == lifecycle)
+    }
+
+    @Test("An upload operation returns the value decoded by the multipart pipeline")
+    func uploadOperationReturnsDecodedValue() async throws {
+        let session = MockURLSession()
+        try session.setMockJSON(PreviewResponse(id: "upload-42"))
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(baseURL: "https://api.example.com/v1"),
+            session: session
+        )
+
+        let operation = client.startUpload(PreviewUpload())
+        let value = try await operation.value()
+        var events: [NetworkOperationEvent] = []
+        for await event in operation.events {
+            events.append(event)
+        }
+
+        #expect(value == PreviewResponse(id: "upload-42"))
+        #expect(events == [.started(id: operation.id), .succeeded(id: operation.id)])
+        #expect(await operation.failureSummary() == nil)
+        let sent = try #require(session.capturedRequest)
+        #expect(sent.httpMethod == "POST")
+        #expect(sent.value(forHTTPHeaderField: "Content-Type")?.hasPrefix("multipart/form-data") == true)
+    }
+
     @Test("Cancellation maps to the value-only failure contract")
     func mapsCancellation() async throws {
         let endpoint = PreviewEndpoint()
@@ -511,6 +590,14 @@ struct NetworkOperationTests {
     }
 }
 
+private func collectEvents(_ events: AsyncStream<NetworkOperationEvent>) async -> [NetworkOperationEvent] {
+    var collected: [NetworkOperationEvent] = []
+    for await event in events {
+        collected.append(event)
+    }
+    return collected
+}
+
 /// Awaits a failing operation and returns its contextual summary.
 private func failure<Value: Sendable>(
     from operation: NetworkOperation<Value>,
@@ -737,4 +824,17 @@ private struct PreviewEndpoint: APIDefinition {
 
 private struct PreviewResponse: Codable, Sendable, Equatable {
     let id: String
+}
+
+private struct PreviewUpload: MultipartAPIDefinition {
+    typealias APIResponse = PreviewResponse
+
+    var sessionAuthentication: SessionAuthentication { .anonymous }
+    var method: HTTPMethod { .post }
+    var path: String { "/preview-upload" }
+    var multipartFormData: MultipartFormData {
+        var formData = MultipartFormData()
+        formData.append("preview", name: "title")
+        return formData
+    }
 }

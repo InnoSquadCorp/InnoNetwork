@@ -56,6 +56,15 @@ extension UploadNetworkClient {
     ///
     /// The handle exposes the same execution as ``upload(_:tag:)`` and adds
     /// cancellation, lifecycle events, and an optional end-to-end deadline.
+    ///
+    /// - Parameters:
+    ///   - request: The multipart endpoint to execute.
+    ///   - replaySafety: Whether a restart may repeat the upload. Like the
+    ///     same argument of `start(_:replaySafety:deadline:)`, it affects only
+    ///     the recovery recommendation in
+    ///     ``NetworkOperationEvent/failed(id:summary:)``; it never makes the
+    ///     client retry.
+    ///   - deadline: One monotonic latency budget for the whole operation.
     public func startUpload<Request: MultipartAPIDefinition>(
         _ request: Request,
         replaySafety: NetworkOperationReplaySafety = .methodDefault,
@@ -146,9 +155,9 @@ extension EncodedRequestClient {
 
 // MARK: - Shared lifecycle
 
-/// Runs one client call as a ``NetworkOperation``: registers the lifecycle
-/// stream, enforces the optional deadline, forwards cancellation, and
-/// normalizes every failure to ``NetworkError``.
+/// Runs one client call as a ``NetworkOperation``: records the lifecycle,
+/// enforces the optional deadline, forwards cancellation, and normalizes
+/// every failure to ``NetworkError``.
 package enum NetworkOperationRunner {
     package static func start<Output: Sendable>(
         method: HTTPMethod,
@@ -160,9 +169,7 @@ package enum NetworkOperationRunner {
     ) -> NetworkOperation<Output> {
         let id = UUID()
         let tag = CancellationTag(id.uuidString)
-        let (events, continuation) = AsyncStream<NetworkOperationEvent>.makeStream(
-            bufferingPolicy: .bufferingNewest(8)
-        )
+        let eventLog = NetworkOperationEventLog()
         let deadlineBudget = deadline.map {
             TimingBudget(duration: $0.duration, startedAt: deadlineClock.monotonicNow())
         }
@@ -170,10 +177,9 @@ package enum NetworkOperationRunner {
         @Sendable func finish(
             _ result: Result<Output, NetworkError>
         ) -> Result<Output, NetworkOperationFailure> {
-            defer { continuation.finish() }
             switch result {
             case .success(let value):
-                continuation.yield(.succeeded(id: id))
+                eventLog.finish(with: .succeeded(id: id))
                 return .success(value)
             case .failure(let error):
                 let summary = error.summary(
@@ -181,13 +187,13 @@ package enum NetworkOperationRunner {
                     authentication: authentication,
                     replaySafety: replaySafety
                 )
-                continuation.yield(.failed(id: id, summary: summary))
+                eventLog.finish(with: .failed(id: id, summary: summary))
                 return .failure(NetworkOperationFailure(error: error, summary: summary))
             }
         }
 
         let task = Task<Result<Output, NetworkOperationFailure>, Never> {
-            continuation.yield(.started(id: id))
+            eventLog.record(.started(id: id))
             let tracker = NetworkOperationDeadlineTracker()
             tracker.mark(.requestPreparation)
 
@@ -247,6 +253,6 @@ package enum NetworkOperationRunner {
             requestTask.cancel()
             return finish(result)
         }
-        return NetworkOperation(id: id, events: events, task: task)
+        return NetworkOperation(id: id, eventLog: eventLog, task: task)
     }
 }

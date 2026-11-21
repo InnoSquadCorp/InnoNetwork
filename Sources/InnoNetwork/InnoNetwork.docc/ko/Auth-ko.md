@@ -94,7 +94,8 @@ do {
   ``NetworkError/timeout(reason:underlying:)`` 으로 남습니다.
 - 갱신 endpoint 가 반환한 `408`, `429`, `5xx` 는
   ``NetworkError/statusCode(_:)`` 로 남습니다. 이때 ``Response`` 는 원래 요청의
-  응답이 아니라 갱신 endpoint 의 응답입니다.
+  응답이 아니라 갱신 endpoint 의 응답이며, 요청은 담지 않습니다. 갱신 요청의
+  본문과 헤더에는 refresh token 이 들어 있기 때문입니다.
 - 그 밖의 `URLError` 는 분류되지 않은 transport 오류이며
   ``NetworkError/underlying(_:_:)`` 로 남습니다.
 - 기기 오프라인을 포함한 configuration 실패는
@@ -114,7 +115,13 @@ credential 을 거부하는 `400`, `401`, `403` 에는
 가능하게 남기는 `URLError(.badServerResponse)` 를 던집니다.
 
 실패 cooldown 중에 도착한 `401` 은 저장된 갱신 오류로 실패하며, 같은 규칙으로
-분류됩니다. 갱신이 성공한 뒤 서버가 반환한 `401` 은
+분류됩니다. 그래서 cooldown 중에 실행된 재시도는 `refreshToken` 을 부르지 않고
+같은 오류를 다시 받으며, 재시도 한 번을 씁니다. 일시적인 갱신 실패 뒤 다음
+재시도가 갱신 endpoint 까지 다시 가야 한다면, 지터를 적용한 재시도 정책의 가장
+짧은 지연을 cooldown 보다 짧지 않게 두세요. 기본 cooldown 은 첫 실패 뒤 1초이고,
+같은 realm 에서 갱신이 연속으로 실패할 때마다 두 배가 되어 최대 30초까지
+늘어납니다. ``ExponentialBackoffRetryPolicy`` 기본값에서는 첫 재시도가 실패
+0.8~1.2초 뒤에 실행되므로, 첫 cooldown 안에도 들 수 있습니다. 갱신이 성공한 뒤 서버가 반환한 `401` 은
 ``NetworkError/statusCode(_:)`` 로 남습니다.
 
 ## URLSession cache policy

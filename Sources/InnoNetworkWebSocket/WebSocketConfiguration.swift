@@ -163,11 +163,22 @@ public struct WebSocketConfiguration: Sendable {
     /// - `> 0`: a drop sooner than this many seconds keeps counting against
     ///   `maxReconnectAttempts` and `reconnectMaxTotalDuration`.
     /// - `0`: every opened connection resets the budget (the pre-7.0 rule).
+    /// - `.infinity`: no connection resets it, so `maxReconnectAttempts`
+    ///   caps the task's whole lifetime.
     ///
-    /// Negative values are clamped to `0`.
+    /// Negative values are clamped to `0`, and NaN becomes the standard
+    /// interval.
     package let reconnectStabilityInterval: TimeInterval
     /// Default for ``reconnectStabilityInterval``: ten seconds.
     package static let standardReconnectStabilityInterval: TimeInterval = 10
+
+    /// Normalizes a requested stability interval. `.infinity` keeps its
+    /// meaning — never stable — instead of collapsing to `0`, which would
+    /// mean the opposite.
+    package static func normalizedStabilityInterval(_ interval: TimeInterval) -> TimeInterval {
+        if interval.isNaN { return standardReconnectStabilityInterval }
+        return max(0, interval)
+    }
     /// Whether cellular data is allowed for socket connections.
     package let allowsCellularAccess: Bool
     /// Allows plain `ws` connections. Defaults to `false`; production
@@ -367,7 +378,7 @@ public struct WebSocketConfiguration: Sendable {
         self.maxReconnectAttempts = max(0, maxReconnectAttempts)
         self.reconnectMaxTotalDuration = max(0, reconnectMaxTotalDuration)
         self.reconnectStabilityInterval =
-            reconnectStabilityInterval.isFinite ? max(0, reconnectStabilityInterval) : 0
+            Self.normalizedStabilityInterval(reconnectStabilityInterval)
         self.allowsCellularAccess = allowsCellularAccess
         self.allowsInsecureWebSocket = allowsInsecureWebSocket
         self.requestHeaders = requestHeaders

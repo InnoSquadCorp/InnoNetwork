@@ -172,20 +172,22 @@ private actor PrincipalAwareSigningSession: URLSessionProtocol {
     var requestCount: Int { requests.count }
 }
 
+/// Records requests per host. Every test gives its client a unique host, so
+/// tests that run in parallel never see, or clear, one another's requests.
 private final class PrincipalCacheURLProtocol: URLProtocol {
-    nonisolated(unsafe) private static var capturedStorage: [URLRequest] = []
+    nonisolated(unsafe) private static var capturedStorage: [String: [URLRequest]] = [:]
     private static let lock = NSLock()
 
-    static func reset() {
+    static func reset(host: String) {
         lock.lock()
-        capturedStorage.removeAll()
+        capturedStorage[host] = nil
         lock.unlock()
     }
 
-    static var capturedRequests: [URLRequest] {
+    static func capturedRequests(host: String) -> [URLRequest] {
         lock.lock()
         defer { lock.unlock() }
-        return capturedStorage
+        return capturedStorage[host] ?? []
     }
 
     override class func canInit(with request: URLRequest) -> Bool { true }
@@ -199,7 +201,7 @@ private final class PrincipalCacheURLProtocol: URLProtocol {
         }
 
         Self.lock.lock()
-        Self.capturedStorage.append(request)
+        Self.capturedStorage[url.host ?? "", default: []].append(request)
         Self.lock.unlock()
 
         do {
@@ -221,11 +223,39 @@ private final class PrincipalCacheURLProtocol: URLProtocol {
                 return
             }
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .allowed)
-            client?.urlProtocol(self, didLoad: data)
+            // Two loads, so a transport that collects the body must join them.
+            let half = data.count / 2
+            client?.urlProtocol(self, didLoad: data.prefix(half))
+            client?.urlProtocol(self, didLoad: data.dropFirst(half))
             client?.urlProtocolDidFinishLoading(self)
         } catch {
             client?.urlProtocol(self, didFailWithError: error)
         }
+    }
+}
+
+/// Sends the start of a body, then loses the connection.
+private final class MidBodyConnectionLossURLProtocol: URLProtocol {
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func stopLoading() {}
+
+    override func startLoading() {
+        guard
+            let url = request.url,
+            let response = HTTPURLResponse(
+                url: url,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Length": "64", "Content-Type": "application/json"]
+            )
+        else {
+            client?.urlProtocol(self, didFailWithError: URLError(.badURL))
+            return
+        }
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(#"{"value":"trunc"#.utf8))
+        client?.urlProtocol(self, didFailWithError: URLError(.networkConnectionLost))
     }
 }
 
@@ -426,7 +456,10 @@ struct RequestSignerPipelineTests {
 
     @Test("Signed principals bypass URLSession's protocol cache even without Vary")
     func endpointSignerPrincipalsBypassURLSessionCache() async throws {
-        PrincipalCacheURLProtocol.reset()
+        let baseURL = try #require(
+            URL(string: "https://signed-cache-\(UUID().uuidString).example.com/v1")
+        )
+        let host = try #require(baseURL.host)
         let cache = URLCache(memoryCapacity: 1_024 * 1_024, diskCapacity: 0)
         let sessionConfiguration = URLSessionConfiguration.default
         sessionConfiguration.protocolClasses = [PrincipalCacheURLProtocol.self]
@@ -436,12 +469,9 @@ struct RequestSignerPipelineTests {
         defer {
             cache.removeAllCachedResponses()
             session.invalidateAndCancel()
-            PrincipalCacheURLProtocol.reset()
+            PrincipalCacheURLProtocol.reset(host: host)
         }
 
-        let baseURL = try #require(
-            URL(string: "https://signed-cache-\(UUID().uuidString).example.com/v1")
-        )
         let client = DefaultNetworkClient(
             configuration: NetworkConfiguration(baseURL: baseURL),
             session: session
@@ -458,11 +488,90 @@ struct RequestSignerPipelineTests {
 
         #expect(first.value == "Bearer principal-a")
         #expect(second.value == "Bearer principal-b")
-        let originRequests = PrincipalCacheURLProtocol.capturedRequests
+        let originRequests = PrincipalCacheURLProtocol.capturedRequests(host: host)
         #expect(originRequests.count == 2)
         #expect(
             originRequests.map { $0.value(forHTTPHeaderField: "Authorization") }
                 == ["Bearer principal-a", "Bearer principal-b"]
         )
+    }
+
+    // `URLSession.data(for:delegate:)` never asks its task delegate whether to
+    // cache, so these paths must not rely on that delegate to refuse storage.
+    @Test(
+        "A credentialed response stays out of URLSession's cache on the whole-body paths",
+        arguments: [ResponseBodyBufferingPolicy.buffered(maxBytes: nil), .streaming(maxBytes: nil)]
+    )
+    func credentialedResponseStaysOutOfURLCache(policy: ResponseBodyBufferingPolicy) async throws {
+        let credentialedHost = "credentialed-\(UUID().uuidString).example.com"
+        let anonymousHost = "anonymous-\(UUID().uuidString).example.com"
+        let credentialedBase = "https://\(credentialedHost)/v1"
+        let anonymousBase = "https://\(anonymousHost)/v1"
+        let cache = URLCache(memoryCapacity: 1_024 * 1_024, diskCapacity: 0)
+        let sessionConfiguration = URLSessionConfiguration.default
+        sessionConfiguration.protocolClasses = [PrincipalCacheURLProtocol.self]
+        sessionConfiguration.requestCachePolicy = .useProtocolCachePolicy
+        sessionConfiguration.urlCache = cache
+        let session = URLSession(configuration: sessionConfiguration)
+        defer {
+            cache.removeAllCachedResponses()
+            session.invalidateAndCancel()
+            PrincipalCacheURLProtocol.reset(host: credentialedHost)
+            PrincipalCacheURLProtocol.reset(host: anonymousHost)
+        }
+        func client(_ baseURL: String) -> DefaultNetworkClient {
+            DefaultNetworkClient(
+                configuration: makeTestNetworkConfiguration(baseURL: baseURL, responseBodyBufferingPolicy: policy),
+                session: session
+            )
+        }
+
+        _ = try await client(credentialedBase).request(
+            SignerPipelineEndpoint(endpointSigners: [JWTBearerInterceptor { _ in "principal-a" }])
+        )
+        _ = try await client(anonymousBase).request(SignerPipelineEndpoint(endpointSigners: []))
+
+        // The anonymous response shows this session stores what it may. Once
+        // it is stored, the credentialed response must still be absent.
+        let anonymousRequest = URLRequest(url: try #require(URL(string: anonymousBase + "/signed")))
+        var anonymousStored = false
+        for _ in 0..<100 where !anonymousStored {
+            anonymousStored = cache.cachedResponse(for: anonymousRequest) != nil
+            if !anonymousStored { try await Task.sleep(for: .milliseconds(20)) }
+        }
+        #expect(anonymousStored)
+        let credentialedRequest = URLRequest(url: try #require(URL(string: credentialedBase + "/signed")))
+        #expect(cache.cachedResponse(for: credentialedRequest) == nil)
+    }
+
+    @Test(
+        "A credentialed whole-body request that loses its connection mid-body fails instead of returning part of it",
+        arguments: [ResponseBodyBufferingPolicy.buffered(maxBytes: nil), .streaming(maxBytes: nil)]
+    )
+    func credentialedWholeBodyLostMidBodyFails(policy: ResponseBodyBufferingPolicy) async throws {
+        let sessionConfiguration = URLSessionConfiguration.ephemeral
+        sessionConfiguration.protocolClasses = [MidBodyConnectionLossURLProtocol.self]
+        let session = URLSession(configuration: sessionConfiguration)
+        defer { session.invalidateAndCancel() }
+        let client = DefaultNetworkClient(
+            configuration: makeTestNetworkConfiguration(
+                baseURL: "https://mid-body-\(UUID().uuidString).example.com/v1",
+                responseBodyBufferingPolicy: policy
+            ),
+            session: session
+        )
+
+        do {
+            _ = try await client.request(
+                SignerPipelineEndpoint(endpointSigners: [JWTBearerInterceptor { _ in "principal-a" }])
+            )
+            Issue.record("A body cut off mid-transfer must not reach the decoder as a response")
+        } catch {
+            guard case .reachability(.networkConnectionLost, let underlying, _) = error else {
+                Issue.record("Expected the connection loss, got \(error)")
+                return
+            }
+            #expect(underlying.code == URLError.Code.networkConnectionLost.rawValue)
+        }
     }
 }

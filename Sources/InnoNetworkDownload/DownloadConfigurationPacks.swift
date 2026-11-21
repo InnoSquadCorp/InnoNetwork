@@ -21,22 +21,25 @@ public struct DownloadTransferPack: Sendable {
     ///     the request times out.
     ///   - timeoutForResource: Seconds the whole transfer may take. Defaults
     ///     to 24 hours.
-    ///   - taskInactivityTimeout: Per-task watchdog that fails a transfer
-    ///     reporting no progress for this long. Values below 100 milliseconds
-    ///     are raised to that floor; `nil` disables the watchdog.
+    ///   - taskInactivityTimeout: Per-task watchdog that cancels a transfer
+    ///     reporting no progress for this long; the task ends `.cancelled`.
+    ///     Values below 100 milliseconds are raised to that floor; `nil`
+    ///     disables the watchdog.
     ///   - allowsCellularAccess: Whether transfers may use cellular
     ///     connectivity. Defaults to `false`; opt in when the product accepts
     ///     the cellular transfer cost.
     ///   - allowsInsecureHTTP: Whether plain `http` download sources are
     ///     accepted. Defaults to `false`.
     ///   - acceptableStatusCodes: HTTP status codes that count as a
-    ///     successfully finished transfer. Defaults to `200..<300`, which
-    ///     includes the `206 Partial Content` a resumed download returns. A
+    ///     successfully finished transfer. Defaults to `200..<300`. The
+    ///     `206 Partial Content` that answers a resumed download's range
+    ///     request is accepted even when the set omits it. A
     ///     response with any other status is never saved to the destination:
-    ///     `408`, `429`, and `500...599` are retried under the retry pack's
-    ///     budget, as is a `416` (a resumed transfer whose range the server
-    ///     rejected restarts from the beginning). Every other status fails
-    ///     the task immediately with
+    ///     `408`, `416`, `429`, and `500...599` are retried under the retry
+    ///     pack's budget. A resumed transfer whose range the server rejects
+    ///     with `416`, or whose redirect target refuses it, restarts from the
+    ///     source URL at once without spending that budget. Every other status
+    ///     fails the task immediately with
     ///     ``DownloadError/unacceptableStatusCode(_:)``. A retried status that
     ///     outlasts the budget fails with
     ///     ``DownloadError/maxRetriesExceeded(lastError:)``; read the status
@@ -72,6 +75,11 @@ public struct DownloadTransferPack: Sendable {
 }
 
 /// Groups retry limits, backoff, and reachability coordination.
+///
+/// A resumed transfer whose resume point went stale, because the server
+/// rejected its range with `416` or its redirect target refused it, restarts
+/// from the source URL at once. That restart neither waits for backoff nor
+/// spends this budget, so it happens even with `maxRetryCount: 0`.
 public struct DownloadRetryPack: Sendable {
     private let maxRetryCount: Int
     private let maxTotalRetries: Int

@@ -125,9 +125,11 @@ internal property decides transience and every consumer reads it:
 | `.statusCode` 5xx | `.statusCode` | yes | yes |
 | `.statusCode` 408, 429 | `.statusCode` | yes | no (4xx rule below) |
 | `.statusCode` other 4xx | `.statusCode` | no | no (4xx rule below) |
-| `.underlying` (not cancellation) | `.transport` | yes | yes; a TLS-class error only when the policy counts transport-security failures |
+| `.underlying` (not cancellation, not a deterministic `URLError`) | `.transport` | yes | yes; a TLS-class error only when the policy counts transport-security failures |
+| `.underlying` with a deterministic `URLError` (below) | `.transport` | no | no; a certificate failure only when the policy counts transport-security failures |
 | `.underlying`, domain `InnoNetwork.ResponseCache` (unreconcilable `304`) | `.transport` | yes; the replay is unconditional | no; the `304` was recorded as a success |
-| `.reachability`, every reason including `.cellularDataUnavailable` | `.reachability` | yes | yes |
+| `.reachability`: `.dnsLookupFailed`, `.cannotFindHost`, `.networkConnectionLost` | `.reachability` | yes | yes |
+| `.reachability`: `.notConnectedToInternet`, `.cellularDataUnavailable` | `.reachability` | yes | no; the device has no path, which says nothing about the host |
 | `.timeout` | `.timeout` | yes | yes |
 | `.trustEvaluationFailed` | `.trust` | no | only when the policy counts transport-security failures |
 | `.configuration`, `.decoding`, `.cancelled` | unchanged | no | no |
@@ -138,6 +140,15 @@ internal property decides transience and every consumer reads it:
 `NetworkErrorSummary.recovery` read one internal property, `isTransient`. The
 circuit breaker applies the right-hand column, and the streaming handshake
 uses the same retry policy and breaker.
+
+A deterministic `URLError` is one whose outcome a replay of the same request
+cannot change: an App Transport Security block, a malformed or unsupported
+URL, a redirect loop or a redirect to nowhere, a server certificate the system
+does not trust or a refused client certificate, a refused credential, or a
+local file or size limit. Earlier drafts of 7.0 treated every `.underlying`
+except cancellation as transient, which retried these and recommended
+`.retry` for them, and counted a device that was offline against every host's
+breaker, which left circuits open after the device reconnected.
 
 The breaker reads the status of every completed response, not only of thrown
 errors. A 5xx is a failure. A 4xx shows a working transport with a
@@ -167,7 +178,8 @@ says nothing about the session keeps its own case, because the session may
 still be valid, and follows the ordinary retry and recovery rules:
 cancellation, a connectivity failure, a timeout, a `408`, `429` or `5xx` from
 the refresh endpoint (the `.statusCode` then carries the refresh endpoint's
-response), any other `URLError` as an unclassified transport error, a
+response, without the refresh request and the refresh token in it), any other
+`URLError` as an unclassified transport error, a
 configuration failure including an offline device, a local policy rejection
 such as an open circuit for the token host, and a trust failure. Only an error
 that comes from a transport — a `NetworkError` or a `URLError` — can count as
@@ -192,6 +204,9 @@ message "Credential-protected transport failed.", or
 `.configuration(reason: .offline)`. It is not reported as
 `.credential(.credentialUnavailable)` or `.credential(.refreshFailed)`, and a
 renewal that fails this way does not use up the request's single renewal. A
+renewal stopped by a local policy rejection, a trust failure, or a
+configuration failure of the provider's own transport — the cases a session
+refresh keeps — is handled the same way rather than as a failed renewal. A
 transient HTTP status from a provider still becomes `.credentialUnavailable`,
 because a status would expose the provider's response. Credential preparation
 — acquisition, renewal and signing — happens before anything reaches the

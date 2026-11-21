@@ -280,7 +280,14 @@ package actor RefreshTokenCoordinator {
             expectedGeneration: observedGeneration
         )
         guard case .refreshed(let token) = resolution else {
-            return try await applyCurrentTokenWithGeneration(to: request)
+            // A peer already refreshed, so this only reads the token it
+            // stored. A failure here is not a failed renewal: it is
+            // classified like the same read on a first attempt.
+            do {
+                return try await applyCurrentTokenWithGeneration(to: request)
+            } catch {
+                throw SessionTokenReadFailure(underlying: error)
+            }
         }
         try Task.checkCancellation()
         return RefreshTokenApplication(
@@ -480,6 +487,13 @@ package struct RefreshTokenApplication: Sendable {
     package let request: URLRequest
     package let generation: UInt64
     package let didApplyToken: Bool
+}
+
+/// The current token could not be read after a peer had already refreshed
+/// it. ``NetworkError/sessionRefreshFailed(_:)`` classifies the underlying
+/// error as it would on a first attempt, not as a failed renewal.
+package struct SessionTokenReadFailure: Error {
+    package let underlying: any Error
 }
 
 

@@ -1,4 +1,5 @@
 import Foundation
+import InnoNetworkTestSupport
 import Testing
 import os
 
@@ -14,10 +15,12 @@ struct WebSocketReconnectStabilityTests {
     private struct Fixture {
         let coordinator: WebSocketReconnectCoordinator
         let task: WebSocketTask
-        let now: OSAllocatedUnfairLock<Date>
+        /// Drives the monotonic clock the coordinator measures both budgets
+        /// on: how long a connection stayed open, and the reconnect window.
+        let clock: TestClock
 
         func advance(by interval: TimeInterval) {
-            now.withLock { $0 = $0.addingTimeInterval(interval) }
+            clock.advance(by: .seconds(interval))
         }
     }
 
@@ -26,7 +29,7 @@ struct WebSocketReconnectStabilityTests {
         reconnectMaxTotalDuration: TimeInterval = 0,
         stabilityInterval: TimeInterval = 10
     ) -> Fixture {
-        let now = OSAllocatedUnfairLock<Date>(initialState: Self.start)
+        let clock = TestClock(epoch: Self.start)
         let coordinator = WebSocketReconnectCoordinator(
             configuration: WebSocketConfiguration(
                 reconnectDelay: 0,
@@ -36,10 +39,10 @@ struct WebSocketReconnectStabilityTests {
                 reconnectStabilityInterval: stabilityInterval
             ),
             runtimeRegistry: WebSocketRuntimeRegistry(),
-            dateProvider: { now.withLock { $0 } }
+            clock: clock
         )
         let task = WebSocketTask(url: URL(string: "wss://example.invalid/stability")!)
-        return Fixture(coordinator: coordinator, task: task, now: now)
+        return Fixture(coordinator: coordinator, task: task, clock: clock)
     }
 
     @Test("A server that accepts and immediately drops connections exhausts the attempt budget")
@@ -118,6 +121,32 @@ struct WebSocketReconnectStabilityTests {
         #expect(await fixture.coordinator.reconnectAction(task: fixture.task) == .exceeded(reason: .duration))
     }
 
+    @Test("A wall-clock correction neither spends nor refills the reconnect window")
+    func wallClockCorrectionLeavesReconnectWindowAlone() async {
+        let clock = WallClockCorrectingClock(base: TestClock(epoch: Self.start))
+        let coordinator = WebSocketReconnectCoordinator(
+            configuration: WebSocketConfiguration(
+                reconnectDelay: 0,
+                reconnectJitterRatio: 0,
+                maxReconnectAttempts: 1_000,
+                reconnectMaxTotalDuration: 5
+            ),
+            runtimeRegistry: WebSocketRuntimeRegistry(),
+            clock: clock
+        )
+        let task = WebSocketTask(url: URL(string: "wss://example.invalid/wall-clock")!)
+
+        #expect(await coordinator.reconnectAction(task: task) == .retry)
+        // The wall clock jumps an hour ahead: the window must not expire.
+        clock.correct(by: 3_600)
+        #expect(await coordinator.reconnectAction(task: task) == .retry)
+        // It jumps back two hours while five real seconds pass: the window
+        // must expire on schedule instead of gaining an hour.
+        clock.correct(by: -7_200)
+        clock.base.advance(by: .seconds(5))
+        #expect(await coordinator.reconnectAction(task: task) == .exceeded(reason: .duration))
+    }
+
     @Test("Reset discards the budget carried across a short connection")
     func resetDiscardsCarriedBudget() async {
         let fixture = makeFixture(maxReconnectAttempts: 2)
@@ -132,7 +161,21 @@ struct WebSocketReconnectStabilityTests {
         #expect(await fixture.task.attemptedReconnectCount == 1)
     }
 
-    @Test("The reconnect pack carries the stability interval and clamps invalid values")
+    @Test("An infinite stability interval never resets the budget, so attempts cap the task's lifetime")
+    func infiniteIntervalNeverResets() async {
+        let fixture = makeFixture(maxReconnectAttempts: 2, stabilityInterval: .infinity)
+
+        #expect(await fixture.coordinator.reconnectAction(task: fixture.task) == .retry)
+        await fixture.coordinator.connectionDidOpen(task: fixture.task)
+        fixture.advance(by: 86_400)
+        #expect(await fixture.coordinator.reconnectAction(task: fixture.task) == .retry)
+        await fixture.coordinator.connectionDidOpen(task: fixture.task)
+        fixture.advance(by: 86_400)
+
+        #expect(await fixture.coordinator.reconnectAction(task: fixture.task) == .exceeded(reason: .attempts))
+    }
+
+    @Test("The reconnect pack carries the stability interval and normalizes invalid values")
     func packPlumbsStabilityInterval() {
         let configured = WebSocketConfiguration.advanced(
             reconnect: WebSocketReconnectPack(stabilityInterval: 42)
@@ -140,14 +183,46 @@ struct WebSocketReconnectStabilityTests {
         let negative = WebSocketConfiguration.advanced(
             reconnect: WebSocketReconnectPack(stabilityInterval: -1)
         )
-        let nonFinite = WebSocketConfiguration.advanced(
+        let infinite = WebSocketConfiguration.advanced(
             reconnect: WebSocketReconnectPack(stabilityInterval: .infinity)
+        )
+        let notANumber = WebSocketConfiguration.advanced(
+            reconnect: WebSocketReconnectPack(stabilityInterval: .nan)
         )
 
         #expect(configured.reconnectStabilityInterval == 42)
         #expect(negative.reconnectStabilityInterval == 0)
-        #expect(nonFinite.reconnectStabilityInterval == 0)
+        // Infinity keeps its meaning, never stable, instead of becoming 0.
+        #expect(infinite.reconnectStabilityInterval == .infinity)
+        #expect(notANumber.reconnectStabilityInterval == 10)
         #expect(WebSocketConfiguration.safeDefaults().reconnectStabilityInterval == 10)
         #expect(WebSocketConfiguration.advanced().reconnectStabilityInterval == 10)
+    }
+}
+
+/// Moves only the wall clock, as an NTP or manual time correction does,
+/// while the monotonic clock keeps following `base`.
+private final class WallClockCorrectingClock: InnoNetworkClock, Sendable {
+    let base: TestClock
+    private let correction = OSAllocatedUnfairLock<TimeInterval>(initialState: 0)
+
+    init(base: TestClock) {
+        self.base = base
+    }
+
+    func correct(by interval: TimeInterval) {
+        correction.withLock { $0 += interval }
+    }
+
+    func sleep(for duration: Duration) async throws {
+        try await base.sleep(for: duration)
+    }
+
+    func now() -> Date {
+        base.now().addingTimeInterval(correction.withLock { $0 })
+    }
+
+    func monotonicNow() -> Duration {
+        base.monotonicNow()
     }
 }

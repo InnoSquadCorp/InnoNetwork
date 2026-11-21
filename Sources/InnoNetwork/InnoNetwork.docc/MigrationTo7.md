@@ -66,7 +66,8 @@ let response = try await upload.value()
 ```
 
 `request(_:)` and `upload(_:)` are unchanged. Use them when you only need the
-value; use `start` when you need cancellation without retaining the client,
+value; use `start` when you need cancellation without keeping your own
+reference to the client,
 lifecycle events, or an end-to-end deadline.
 
 ## One error type
@@ -222,6 +223,9 @@ circuit breaker, and ``NetworkErrorSummary/recovery`` all use it.
 | Open circuit, full rate-limit or admission queue | Retried | Not retried |
 | Session that cannot be renewed | Retried when the refresh error arrived as `.underlying` | Not retried (`.authentication(.refreshFailed)`) |
 | Refresh that failed on the network or with `408`, `429`, or `5xx` | Retried | Retried (unchanged) |
+| The same refresh before the first attempt of a `.required` request, or for a stream | Not retried | Retried |
+| Deterministic `URLError`: ATS block, malformed or unsupported URL, redirect loop, untrusted certificate, refused credential, local file or size limit | Retried; counted against the host (a certificate failure only when the policy counts transport-security failures) | Not retried; not counted (a certificate failure still counts when the policy counts transport-security failures) |
+| Device without a network path (``ReachabilityReason/notConnectedToInternet``, ``ReachabilityReason/cellularDataUnavailable``) | Counted against every host | Not counted (still retried) |
 | `waitsForNetworkChanges: true` | Waited before every retry | Waits only after a connectivity failure |
 
 `waitsForNetworkChanges` deferred every retry until the network path changed
@@ -318,18 +322,24 @@ catalogs describe the new behavior:
   (`DownloadTransferPack(acceptableStatusCodes:)`, default `200..<300`).
   `DownloadError.maxRetriesExceeded` becomes
   `.maxRetriesExceeded(lastError:)`, and `.unacceptableStatusCode(_:)` is
-  added. An automatic retry resumes from the failed attempt's resume data, and
-  `pause(_:)` issued during a retry wait takes effect. A retry waits for a
+  added. An automatic retry resumes from the failed attempt's resume data, a
+  transfer that followed a redirect resumes from its target instead of
+  restarting from byte 0 (and restarts from the source at once if the target
+  refuses),
+  and `pause(_:)` issued during a retry wait takes effect. A retry waits for a
   network change only after a connectivity failure from the core module's
   table, so a retry after `URLError.cannotConnectToHost` goes straight to
   backoff.
 - **InnoNetworkWebSocket** adds `WebSocketReconnectPack(stabilityInterval:)`
-  (default 10 s). A connection that drops before the interval continues the
-  earlier reconnect budget instead of resetting it.
+  (default 10 s, measured on the monotonic clock). A connection that drops
+  before the interval continues the earlier reconnect budget instead of
+  resetting it; `.infinity` never resets it. The `maxTotalDuration` reconnect
+  window is measured on the monotonic clock as well.
 - **InnoNetworkPersistentCache** verifies the byte count and SHA-256 digest of
   every stored body, adds
   `PersistentResponseCacheEvictionReason.bodyIntegrityMismatch`, and uses
-  index format 5. A cache directory written by 6.x is reset on first open.
+  index format 5. A cache directory written by 6.x is reset on first open,
+  and opening the cache drops an entry whose body file has the wrong length.
 
 ## Runtime behavior changes without compiler diagnostics
 
@@ -346,15 +356,21 @@ with more detail.
 | `waitsForNetworkChanges` waits only after a connectivity failure, for requests, stream handshakes, and downloads. | Apps that relied on the wait to space out retries after server errors | Lengthen the backoff delay |
 | Only a session that cannot be renewed becomes `.authentication(.refreshFailed)`, which is not retried, for the proactive refresh and the replay after a `401` alike. | Refresh closures that throw their own error type for a network problem | Rethrow the `URLError` or ``NetworkError`` |
 | A credential provider's transient transport failure keeps its secret-free classification, is retried, and does not use up the request's single renewal. | ``RequestSecurity`` providers that call a backend | Throw your own error type from the provider |
-| Policy rejections and authentication failures are not retried or counted by the circuit breaker. | Apps that relied on an automatic retry after them | A custom ``RetryPolicy`` for the retry |
+| Policy rejections and authentication failures are not retried by the built-in policy or counted by the circuit breaker. | Apps that relied on an automatic retry after them | A custom ``RetryPolicy`` for the retry; breaker counting cannot be restored |
+| A deterministic `URLError` (ATS block, malformed URL, redirect loop, untrusted certificate, refused credential, local file or size limit) is not transient: the built-in policy does not retry it, recovery `.doNotRetry`, and the circuit breaker does not count it unless it is a certificate failure and the policy counts transport-security failures. | Apps that relied on a retry after them | A custom ``RetryPolicy`` for the retry; breaker counting cannot be restored |
+| A device without a network path (``ReachabilityReason/notConnectedToInternet``, ``ReachabilityReason/cellularDataUnavailable``) no longer counts toward the circuit breaker; it is still retried. | Apps that relied on the breaker tripping while offline | Not configurable: the breaker excludes it whatever the ``RetryPolicy`` |
+| ``NetworkError/isUserVisible`` is `false` for a request credential contract the code got wrong (invalid requirements, origin mismatch, credential conflict, unsupported execution). | UI that shows every user-visible error | Not configurable; route sign-in on ``NetworkRecoveryDisposition/reauthenticate`` |
+| A refresh endpoint's transient status reaches the caller without the refresh request, and a renewal stopped by a local decision about the provider's transport is not reported as `.refreshFailed`. | Code that read the refresh request from the error | Not configurable |
 | Stream handshakes refresh once and take part in the circuit breaker. | Session-authenticated streams; clients with a breaker | An `.anonymous` stream; a separate client |
 | An unreconcilable `304` removes the stored entry, so a replay is unconditional. | Servers with inconsistent validators | Not configurable |
+| Every access to ``NetworkOperation/events`` returns its own stream that replays the lifecycle, so each consumer receives both events; consumers sharing the 6.x stream divided them. | Code that observes `events` from more than one place | Not configurable |
 | An inactive VPN path reports `.vpnInactive` instead of `.unknown` on Swift 6.2 and 6.3. | Code that treats ``NetworkUnsatisfiedReason/unknown`` specially | Not configurable |
 
 Downloads validate the HTTP status, resume a retry from resume data, and honor
-`pause(_:)` during a retry wait. A WebSocket connection must stay open for the
-stability interval before it resets the reconnect budget, and
-`successfulReconnectCount` now counts manager reconnects. The persistent cache
+`pause(_:)` during a retry wait, including after a relaunch. A WebSocket
+connection must stay open for the stability interval before it resets the
+reconnect budget, and `successfulReconnectCount` now counts manager reconnects
+but never a first connection. The persistent cache
 resets a 6.x directory on first open and verifies every body it returns.
 
 ## Removed names

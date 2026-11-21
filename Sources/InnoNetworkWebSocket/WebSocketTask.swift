@@ -13,12 +13,13 @@ public actor WebSocketTask: Identifiable {
     private var lifecycleState: WebSocketLifecycleState = .initial
     private var _attemptedReconnectCount: Int = 0
     private var _successfulReconnectCount: Int = 0
+    private var _hasConnectedBefore = false
     private var _pingCounter: Int = 0
     private var _inFlightSends: Int = 0
     private var _error: WebSocketError?
     private var _closeCode: WebSocketCloseCode?
     private var _closeDisposition: WebSocketCloseDisposition?
-    private var _reconnectWindowStartedAt: Date?
+    private var _reconnectWindowStartedAt: Duration?
     /// Reconnect budget that was in force when the current connection opened.
     /// Kept until the connection ends so a connection that drops before the
     /// stability interval can continue that budget.
@@ -49,9 +50,10 @@ public actor WebSocketTask: Identifiable {
     public var attemptedReconnectCount: Int { _attemptedReconnectCount }
 
     /// Cumulative number of reconnect attempts that successfully re-entered
-    /// the `.connected` state for the lifetime of this task. Unlike
-    /// ``attemptedReconnectCount`` this counter is **not** reset on each
-    /// successful connection — it only resets when `reset()` is invoked.
+    /// the `.connected` state for the lifetime of this task. The first
+    /// connection never counts, even when its handshake had to be retried.
+    /// Unlike ``attemptedReconnectCount`` this counter is **not** reset on
+    /// each successful connection — it only resets when `reset()` is invoked.
     /// Use this for SLO dashboards that need "how flaky was this socket?".
     public var successfulReconnectCount: Int { _successfulReconnectCount }
 
@@ -167,7 +169,7 @@ public actor WebSocketTask: Identifiable {
     /// The reconnect coordinator stamps this on the first reconnect attempt
     /// after a clean connection and uses ``reconnectWindowStartedAt`` to
     /// enforce `maxTotalDuration` from ``WebSocketReconnectPack``.
-    package func beginReconnectWindowIfNeeded(now: Date) {
+    package func beginReconnectWindowIfNeeded(now: Duration) {
         if _reconnectWindowStartedAt == nil {
             _reconnectWindowStartedAt = now
         }
@@ -179,11 +181,17 @@ public actor WebSocketTask: Identifiable {
         _reconnectWindowStartedAt = nil
     }
 
-    /// Records that a connection became ready at `now`: clears the attempt
-    /// counter and the reconnect window, and remembers what they were so
+    /// Whether a connection of this task has ever become ready. A later
+    /// connection is a reconnect.
+    package var hasConnectedBefore: Bool { _hasConnectedBefore }
+
+    /// Records that a connection became ready at the monotonic instant
+    /// `now`: clears the attempt counter and the reconnect window, and
+    /// remembers what they were so
     /// ``settleReconnectBudget(now:stabilityInterval:)`` can restore them if
     /// the connection turns out not to be stable.
-    package func noteConnectionOpened(at now: Date) {
+    package func noteConnectionOpened(at now: Duration) {
+        _hasConnectedBefore = true
         budgetBeforeCurrentConnection = ReconnectBudgetCarry(
             attemptedReconnectCount: _attemptedReconnectCount,
             reconnectWindowStartedAt: _reconnectWindowStartedAt,
@@ -193,17 +201,17 @@ public actor WebSocketTask: Identifiable {
         clearReconnectWindow()
     }
 
-    /// Decides, when a connection has ended, whether it lasted long enough to
-    /// count as recovered. A connection that stayed open for at least
-    /// `stabilityInterval` keeps the cleared budget. One that dropped sooner
-    /// continues the budget that was in force before it opened, so repeated
-    /// open-then-drop cycles consume the reconnect budget.
-    package func settleReconnectBudget(now: Date, stabilityInterval: TimeInterval) {
+    /// Decides, when a connection has ended at the monotonic instant `now`,
+    /// whether it lasted long enough to count as recovered. A connection
+    /// that stayed open for at least `stabilityInterval` keeps the cleared
+    /// budget. One that dropped sooner continues the budget that was in force
+    /// before it opened, so repeated open-then-drop cycles consume the
+    /// reconnect budget. An infinite interval is never reached.
+    package func settleReconnectBudget(now: Duration, stabilityInterval: TimeInterval) {
         guard let carry = budgetBeforeCurrentConnection else { return }
         budgetBeforeCurrentConnection = nil
-        guard stabilityInterval > 0,
-            now.timeIntervalSince(carry.openedAt) < stabilityInterval
-        else {
+        let openSeconds = (now - carry.openedAt) / .seconds(1)
+        guard stabilityInterval > 0, openSeconds < stabilityInterval else {
             return
         }
         _attemptedReconnectCount = carry.attemptedReconnectCount
@@ -211,7 +219,8 @@ public actor WebSocketTask: Identifiable {
         _reconnectWindowStartedAt = carry.reconnectWindowStartedAt
     }
 
-    package var reconnectWindowStartedAt: Date? { _reconnectWindowStartedAt }
+    /// Monotonic instant at which the current reconnect window started.
+    package var reconnectWindowStartedAt: Duration? { _reconnectWindowStartedAt }
 
     package func isConnecting(generation: Int) -> Bool {
         lifecycleState.generation == generation && lifecycleState.publicState == .connecting
@@ -345,6 +354,7 @@ public actor WebSocketTask: Identifiable {
         )
         _attemptedReconnectCount = 0
         _successfulReconnectCount = 0
+        _hasConnectedBefore = false
         _pingCounter = 0
         _inFlightSends = 0
         _error = nil
@@ -376,6 +386,8 @@ extension WebSocketTask: Hashable {
 /// connection that does not stay open can continue it.
 private struct ReconnectBudgetCarry: Sendable {
     let attemptedReconnectCount: Int
-    let reconnectWindowStartedAt: Date?
-    let openedAt: Date
+    let reconnectWindowStartedAt: Duration?
+    /// Monotonic instant at which the connection became ready. Wall-clock
+    /// corrections must not decide whether it stayed up long enough.
+    let openedAt: Duration
 }

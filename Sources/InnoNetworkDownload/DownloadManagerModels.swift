@@ -3,7 +3,6 @@ import Foundation
 enum DownloadPersistenceStateError: Error {
     case missingPausingRecord(String)
     case missingResumingRecord(String)
-    case failedToFinalizeResumingRecord(String)
 }
 
 public enum DownloadEvent: Sendable {

@@ -102,6 +102,12 @@ package actor DownloadTaskPersistence {
         package let retryNotBefore: Date?
         package let networkBaseline: RetryNetworkSnapshot?
         package let networkWaitDeadline: Date?
+        /// Distinguishes this plan from every other one. Two retries that
+        /// wait for the same network state with no deadline make plans that
+        /// are otherwise equal, so a waiting retry compares the whole plan,
+        /// identity included, to tell its own marker from a newer retry's.
+        /// `nil` in a plan persisted before plans carried one.
+        package let id: UUID?
 
         package init(
             phase: Phase,
@@ -113,6 +119,7 @@ package actor DownloadTaskPersistence {
             self.retryNotBefore = retryNotBefore
             self.networkBaseline = networkBaseline
             self.networkWaitDeadline = networkWaitDeadline
+            self.id = UUID()
         }
 
         package static func waitingForNetwork(
@@ -307,17 +314,57 @@ package actor DownloadTaskPersistence {
         return false
     }
 
+    /// Makes a retry plan durable in place of an `.active` record or an
+    /// earlier `.retryPending` one.
+    ///
+    /// - Parameter admitsResumingRecord: Whether a `.resuming` record may be
+    ///   replaced too. `resume(_:)` starts its attempt before it records the
+    ///   attempt as active, so the admission of that attempt's failure can
+    ///   still find `.resuming`. A later rewrite of the waiting retry's plan
+    ///   uses ``rewriteRetryPlan(id:replacing:with:retryCount:totalRetryCount:resumeData:)``
+    ///   instead, because by then any other phase belongs to a newer path.
     package func updateRetryState(
         id: String,
         retryCount: Int,
         totalRetryCount: Int,
-        retryPlan: RetryPlan? = nil
+        retryPlan: RetryPlan? = nil,
+        admitsResumingRecord: Bool = false
     ) async throws -> Bool {
         try await store.updateRetryState(
             id: id,
             retryCount: retryCount,
             totalRetryCount: totalRetryCount,
-            retryPlan: retryPlan
+            retryPlan: retryPlan,
+            admitsResumingRecord: admitsResumingRecord
+        )
+    }
+
+    /// Replaces the plan of a waiting retry's own `.retryPending` marker,
+    /// together with its retry counts and resume data.
+    ///
+    /// - Parameter expectedPlan: The plan the waiting retry is carrying out.
+    ///   The write applies only while the record is still `.retryPending`
+    ///   with this plan. Any other phase belongs to a pause, a resume, or a
+    ///   newer attempt, and a marker with another plan belongs to a newer
+    ///   retry; the task id alone cannot tell them apart. Every plan carries
+    ///   its own ``RetryPlan/id``, so this holds even when both retries wait
+    ///   for the same network state with no deadline.
+    /// - Returns: Whether the marker was still this retry's and was rewritten.
+    package func rewriteRetryPlan(
+        id: String,
+        replacing expectedPlan: RetryPlan,
+        with retryPlan: RetryPlan,
+        retryCount: Int,
+        totalRetryCount: Int,
+        resumeData: Data?
+    ) async throws -> Bool {
+        try await store.rewriteRetryPlan(
+            id: id,
+            replacing: expectedPlan,
+            with: retryPlan,
+            retryCount: retryCount,
+            totalRetryCount: totalRetryCount,
+            resumeData: resumeData
         )
     }
 

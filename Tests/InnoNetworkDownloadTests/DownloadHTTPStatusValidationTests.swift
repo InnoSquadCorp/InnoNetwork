@@ -206,6 +206,22 @@ struct DownloadHTTPStatusValidationTests {
         await fixture.tearDown()
     }
 
+    @Test("The 206 that answers a resumed range request is accepted even when the configured set omits it")
+    func resumedPartialContentIsAlwaysAccepted() async throws {
+        let fixture = try await StatusFixture(
+            label: "status-resumed-partial-content",
+            acceptableStatusCodes: [200]
+        )
+
+        fixture.finish(statusCode: 206, rangeRequested: true)
+
+        #expect(await waitForTaskState(fixture.task, timeout: 10.0) { $0.isTerminal })
+        #expect(await fixture.task.state == .completed)
+        #expect(try Data(contentsOf: fixture.destinationURL) == StatusFixture.body)
+
+        await fixture.tearDown()
+    }
+
     // MARK: Configuration plumbing
 
     @Test("The transfer pack carries acceptableStatusCodes into the configuration and its copies")
@@ -246,6 +262,139 @@ struct DownloadHTTPStatusValidationTests {
             message: "unrelated"
         )
         #expect(DownloadHTTPStatusFailure.statusCode(from: transportError) == nil)
+    }
+
+    @Test("A refusal of a stale resume point keeps its status but is never final")
+    func staleResumeRefusalIsNotTerminal() throws {
+        let target = try #require(URL(string: "https://cdn.example.invalid/objects/file.bin?sig=1"))
+        let refusal = DownloadHTTPStatusFailure.make(statusCode: 403, url: target, staleResume: true)
+        let ordinary = DownloadHTTPStatusFailure.make(statusCode: 403, url: target)
+
+        #expect(DownloadHTTPStatusFailure.statusCode(from: refusal) == 403)
+        #expect(DownloadHTTPStatusFailure.terminalStatusCode(from: refusal) == nil)
+        #expect(DownloadHTTPStatusFailure.isStaleResume(refusal))
+        #expect(DownloadHTTPStatusFailure.terminalStatusCode(from: ordinary) == 403)
+        #expect(!DownloadHTTPStatusFailure.isStaleResume(ordinary))
+        #expect(DownloadError.maxRetriesExceeded(lastError: refusal).httpStatusCode == 403)
+    }
+
+    @Test(
+        "Only a ranged attempt refused for its range, or refused but not busy at a redirect target, is stale",
+        arguments: [
+            StaleResumeCase(atTarget: true, ranged: true, status: 403, isStale: true),
+            StaleResumeCase(atTarget: true, ranged: true, status: 404, isStale: true),
+            StaleResumeCase(atTarget: true, ranged: true, status: 416, isStale: true),
+            // A busy target is retried under the ordinary rules.
+            StaleResumeCase(atTarget: true, ranged: true, status: 429, isStale: false),
+            StaleResumeCase(atTarget: true, ranged: true, status: 503, isStale: false),
+            // A fresh attempt that followed the redirect live sends no range.
+            StaleResumeCase(atTarget: true, ranged: false, status: 403, isStale: false),
+            // A resumed attempt at the source itself is refused for good,
+            // unless the source rejects only the range.
+            StaleResumeCase(atTarget: false, ranged: true, status: 403, isStale: false),
+            StaleResumeCase(atTarget: false, ranged: true, status: 416, isStale: true),
+            StaleResumeCase(atTarget: false, ranged: false, status: 416, isStale: false),
+        ]
+    )
+    func staleResumeClassification(_ scenario: StaleResumeCase) throws {
+        let source = try #require(URL(string: "https://downloads.example.invalid/file.bin"))
+        let target = try #require(URL(string: "https://cdn.example.invalid/objects/file.bin?sig=1"))
+        func reportedDomain(currentURL: URL, range: String?, status: Int) -> String? {
+            var current = URLRequest(url: currentURL)
+            current.setValue(range, forHTTPHeaderField: "Range")
+            let task = StubDownloadURLTask(request: URLRequest(url: source), currentRequest: current)
+            task.scriptHTTPStatus(status, url: currentURL)
+            let reported = OSAllocatedUnfairLock<String?>(initialState: nil)
+            let callbacks = DownloadSessionDelegateCallbacks()
+            callbacks.setHandlers(
+                onProgress: { _, _, _, _ in },
+                onCompletion: { _, _, _, _, _, error, _ in reported.withLock { $0 = error?.domain } }
+            )
+            let delegate = DownloadSessionDelegate(
+                callbacks: callbacks,
+                backgroundCompletionStore: BackgroundCompletionStore()
+            )
+            delegate.handleFinishedDownload(task, location: FileManager.default.temporaryDirectory)
+            return reported.withLock { $0 }
+        }
+        let reported = reportedDomain(
+            currentURL: scenario.atTarget ? target : source,
+            range: scenario.ranged ? "bytes=1024-" : nil,
+            status: scenario.status
+        )
+        let expected = scenario.isStale ? DownloadHTTPStatusFailure.staleResumeDomain : DownloadHTTPStatusFailure.domain
+        #expect(reported == expected)
+    }
+
+    @Test("A stale resume restarts from the source at once, without backoff, resume data, or retry budget")
+    func staleResumeRestartsWithoutRetryBudget() async throws {
+        // A 30-second backoff would show up as a recorded sleep.
+        let clock = SleepRecordingClock()
+        let (coordinator, task, persistence) = await makeStatusFailureCoordinator(retryDelay: 30, clock: clock)
+        await task.restoreRetryCounts(retryCount: 3, totalRetryCount: 3)
+        let staleBlob = Data("resume point the server no longer honors".utf8)
+        await task.setResumeData(staleBlob)
+        let restarts = OSAllocatedUnfairLock<Int>(initialState: 0)
+
+        await coordinator.handleError(
+            task: task,
+            error: DownloadHTTPStatusFailure.make(statusCode: 403, url: task.url, staleResume: true),
+            resumeData: staleBlob,
+            restart: { _ in restarts.withLock { $0 += 1 } }
+        )
+
+        #expect(restarts.withLock { $0 } == 1)
+        #expect(clock.recordedSleeps.isEmpty)
+        #expect(await task.state == .downloading)
+        #expect(await task.resumeData == nil)
+        #expect(await task.retryCount == 3)
+        #expect(await task.totalRetryCount == 3)
+        let record = await persistence.record(forID: task.id)
+        #expect(record?.lifecycle == .retryPending)
+        #expect(record?.resumeData == nil)
+    }
+
+    @Test("A stale resume refused before the resume recorded its attempt still restarts from the source")
+    func unrecordedStaleResumeRestartsFromSource() async throws {
+        // `resume(_:)` records its attempt as active only after starting it,
+        // so the attempt's refusal can find the record still `.resuming`.
+        let (coordinator, task, persistence) = await makeStatusFailureCoordinator(lifecycle: .resuming)
+        await task.restoreRetryCounts(retryCount: 3, totalRetryCount: 3)
+        let restarts = OSAllocatedUnfairLock<Int>(initialState: 0)
+
+        await coordinator.handleError(
+            task: task,
+            error: DownloadHTTPStatusFailure.make(statusCode: 403, url: task.url, staleResume: true),
+            restart: { _ in restarts.withLock { $0 += 1 } }
+        )
+
+        #expect(restarts.withLock { $0 } == 1)
+        #expect(await task.state == .downloading)
+        #expect(await task.error == nil)
+        #expect(await task.retryCount == 3)
+        let record = await persistence.record(forID: task.id)
+        #expect(record?.lifecycle == .retryPending)
+        #expect(record?.resumeData == nil)
+    }
+
+    @Test("A stale resume refusal that finds a pause in flight defers to it, even with no budget left")
+    func staleResumeDefersToPauseInFlight() async throws {
+        let (coordinator, task, persistence) = await makeStatusFailureCoordinator(lifecycle: .pausing)
+        await task.restoreRetryCounts(retryCount: 3, totalRetryCount: 3)
+        let restarts = OSAllocatedUnfairLock<Int>(initialState: 0)
+
+        await coordinator.handleError(
+            task: task,
+            error: DownloadHTTPStatusFailure.make(statusCode: 403, url: task.url, staleResume: true),
+            restart: { _ in restarts.withLock { $0 += 1 } }
+        )
+
+        // The pause owns the attempt and settles the task as paused; the
+        // failure neither restarts nor fails it.
+        #expect(restarts.withLock { $0 } == 0)
+        #expect(await task.state == .downloading)
+        #expect(await task.error == nil)
+        #expect(await persistence.record(forID: task.id)?.lifecycle == .pausing)
     }
 
     // MARK: Failure classification
@@ -454,17 +603,22 @@ private struct StatusFixture {
 
     /// A stand-in for the registered attempt as Foundation would present it
     /// to the delegate: same identifier, retained request, and task id.
-    func finishedAttempt() -> StubDownloadURLTask {
+    func finishedAttempt(rangeRequested: Bool = false) -> StubDownloadURLTask {
+        var request = URLRequest(url: sourceURL)
+        if rangeRequested {
+            // A task Foundation rebuilds from resume data asks for the rest.
+            request.setValue("bytes=1024-", forHTTPHeaderField: "Range")
+        }
         let attempt = StubDownloadURLTask(
             taskIdentifier: attemptIdentifier,
-            request: URLRequest(url: sourceURL)
+            request: request
         )
         attempt.taskDescription = task.id
         return attempt
     }
 
-    func finish(statusCode: Int) {
-        let attempt = finishedAttempt()
+    func finish(statusCode: Int, rangeRequested: Bool = false) {
+        let attempt = finishedAttempt(rangeRequested: rangeRequested)
         attempt.scriptHTTPStatus(statusCode, url: sourceURL)
         harness.delegate.handleFinishedDownload(attempt, location: bodyURL)
     }
@@ -486,18 +640,31 @@ private func makeStatusTestRoot(_ label: String) throws -> URL {
 }
 
 
-/// A failure coordinator with zero retry delay around one task whose
-/// in-memory state and durable phase the caller chooses.
+struct StaleResumeCase: Sendable, CustomTestStringConvertible {
+    let atTarget: Bool
+    let ranged: Bool
+    let status: Int
+    let isStale: Bool
+
+    var testDescription: String {
+        "\(status) \(ranged ? "ranged" : "unranged") at \(atTarget ? "redirect target" : "source")"
+    }
+}
+
+/// A failure coordinator around one task whose in-memory state and durable
+/// phase the caller chooses. The retry delay is zero unless given.
 func makeStatusFailureCoordinator(
     state: DownloadState = .downloading,
-    lifecycle: DownloadTaskPersistence.Record.Lifecycle = .active
+    lifecycle: DownloadTaskPersistence.Record.Lifecycle = .active,
+    retryDelay: TimeInterval = 0,
+    clock: any InnoNetworkClock = TestClock()
 ) async -> (
     DownloadFailureCoordinator, DownloadTask, DownloadTaskPersistence
 ) {
     let configuration = DownloadConfiguration(
         maxRetryCount: 3,
         maxTotalRetries: 3,
-        retryDelay: 0,
+        retryDelay: retryDelay,
         sessionIdentifier: makeDownloadTestSessionIdentifier("status-coordinator"),
         networkMonitor: nil
     )
@@ -527,11 +694,29 @@ func makeStatusFailureCoordinator(
             metricsReporter: configuration.eventMetricsReporter,
             hubKind: .downloadTask
         ),
-        clock: TestClock()
+        clock: clock
     )
     await runtimeRegistry.add(task)
     await task.restoreState(state)
     return (coordinator, task, persistence)
+}
+
+/// Records every sleep and returns at once, so a test can see whether a path
+/// waited without waiting itself.
+private final class SleepRecordingClock: InnoNetworkClock {
+    private let sleeps = OSAllocatedUnfairLock<[Duration]>(initialState: [])
+
+    var recordedSleeps: [Duration] {
+        sleeps.withLock { $0 }
+    }
+
+    func sleep(for duration: Duration) async throws {
+        sleeps.withLock { $0.append(duration) }
+    }
+
+    func now() -> Date {
+        Date(timeIntervalSince1970: 1_000_000)
+    }
 }
 
 

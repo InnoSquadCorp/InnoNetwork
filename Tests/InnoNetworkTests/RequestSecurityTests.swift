@@ -487,6 +487,37 @@ struct RequestSecurityTests {
         #expect(session.capturedRequest == nil)
     }
 
+    @Test("a credential provider whose certificate the system does not trust is not a missing credential")
+    func untrustedProviderCertificate() async throws {
+        // The provider's own message carries the secret, so the assertion
+        // below fails if the failure is not redacted.
+        let provider = CredentialProviderFixture(
+            failedScheme: "key",
+            failure: URLError(
+                .serverCertificateUntrusted,
+                userInfo: [NSLocalizedDescriptionKey: "fixture-secret"]
+            )
+        )
+        let session = MockURLSession()
+        let endpoint = CredentialEndpoint(requestSecurity: try security(provider))
+        do {
+            _ = try await client(session).request(endpoint)
+            Issue.record("Expected the provider's transport failure")
+        } catch {
+            guard case .underlying(let underlying, nil) = error else {
+                Issue.record("Lost the transport classification: \(error)")
+                return
+            }
+            #expect(underlying.domain == NSURLErrorDomain)
+            #expect(underlying.code == URLError.Code.serverCertificateUntrusted.rawValue)
+            #expect(underlying.message == "Credential-protected transport failed.")
+            #expect(error.credentialFailure == nil)
+            #expect(error.summary.recovery == .doNotRetry)
+            #expect(!String(reflecting: error).contains("fixture-secret"))
+        }
+        #expect(session.capturedRequest == nil)
+    }
+
     @Test("native session default auth headers cannot add or replace the selected identity")
     func sessionHeaderConflict() async throws {
         for header in ["Authorization", "Cookie", "x-custom-credential"] {
