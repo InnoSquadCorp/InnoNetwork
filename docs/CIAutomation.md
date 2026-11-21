@@ -430,12 +430,18 @@ cancelled with "The job was not acquired by Runner of type hosted even after
 multiple attempts", `CI Required` fails, and the PR stays red although none of
 its code ran. The rebase queue releases such a failed current-base PR to the
 next one, so nothing else would retry it. `ci-runner-retry.yml` runs after every
-completed PR CI run and reruns its failed jobs only when each failure is a job
+failed PR CI run and reruns its failed jobs only when each failure is a job
 cancelled before any runner took it, with that annotation, or a gate that only
 aggregates other jobs (`CI Required`, `Consumer Smoke`). Any other failure
 leaves the run alone. The third attempt is the last, so a longer outage is left
 to a human. The workflow checks out only the trusted default-main `Scripts`,
 holds no secret, and its token can only rerun jobs.
+
+A successful retry does not clear the PR by itself. A metadata-only gate that
+waited behind the failed attempt was admitted the moment that attempt ended and
+rejected it, and that verdict still blocks. The workflow therefore also runs
+after every successful PR validation and reruns such a gate, as described under
+[Metadata-only gate](#metadata-only-gate).
 
 ### Gradle updates land through a human replacement PR
 
@@ -611,9 +617,38 @@ is re-run, or until a newer metadata run with a newer check proves validation. A
 later aggregate from the older validation suite never replaces it.
 Exemption never counts as validation, and every other gate result blocks.
 
-A gate can still fail first if it is admitted before a newer validation of the
-same head, for example after a lane label change. Re-run that metadata job once
-the validation succeeds. Nothing reruns it automatically.
+A gate can still fail first. It is admitted the moment a validation attempt
+ends, so it rejects an attempt that lost a runner before the retry succeeds.
+The queue also does not admit runs in run-number order: on PR #187 a gate
+created in the same second as its validation ran first and found it still
+running. Either verdict keeps blocking after the validation succeeds. On
+2026-11-19 the gate `44557300966` of PR #199 failed at 18:14Z behind the
+lost-runner attempt of run `44557129210`. The retried validation succeeded at
+18:22Z, and only a manual re-run of the gate cleared the PR.
+
+`ci-runner-retry.yml` therefore runs after every successful PR validation, and
+`ci-runner-retry.py` reruns the failed job of one metadata run when all of these
+hold:
+
+- The successful run is the newest validation of its head, and GitHub does not
+  list its PR at another head. Otherwise the newer validation or head decides
+- The metadata run is the newest one created after that validation, for the same
+  PR and head. An older gate blocks nothing: PR #164 merged with one still
+  failed. Rerunning it would only add a fresh failed check
+- That run failed in its gate job alone, and the job started before the
+  validation run completed. A gate that started later has already judged the
+  success and fails for another reason, so one success reruns a gate at most
+  once
+- The metadata run is below its third attempt
+
+The rerun only asks again. The earlier verdict was reached before the
+validation completed; the rerun reads the finished validation and passes only
+if the gate's proof holds. A newest gate that has not finished is left alone:
+the shared group admits it only after the validation completes, so it judges
+that run itself. A validation that failed is never a trigger. A successful
+validation with no later gate costs two API reads. Re-run by hand a gate that
+was cancelled, failed after the validation succeeded, or failed its third
+attempt.
 
 GitHub events do not form an atomic lock with merging. `expectedHeadOid` pins
 the head, not main after the final read. With `strict=false`, an unobserved main
