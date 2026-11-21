@@ -636,15 +636,19 @@ hold:
   PR and head. An older gate blocks nothing: PR #164 merged with one still
   failed. Rerunning it would only add a fresh failed check
 - That run failed in its gate job alone, and the job started before the
-  validation's last job finished. A gate that started later has already judged
-  the success and fails for another reason, so one success reruns a gate at
-  most once
+  validation run completed. A gate that started later has already judged the
+  success and fails for another reason, so one success reruns a gate at most
+  once
 - The metadata run is below its third attempt
 
-The rerun cannot produce a pass: the gate proves the same evidence again and
-decides. A validation that failed is never a trigger. A successful validation
-with no later gate costs two API reads. Re-run by hand a gate that was
-cancelled, failed after the validation succeeded, or failed its third attempt.
+The rerun only asks again. The earlier verdict was reached before the
+validation completed; the rerun reads the finished validation and passes only
+if the gate's proof holds. A newest gate that has not finished is left alone:
+the shared group admits it only after the validation completes, so it judges
+that run itself. A validation that failed is never a trigger. A successful
+validation with no later gate costs two API reads. Re-run by hand a gate that
+was cancelled, failed after the validation succeeded, or failed its third
+attempt.
 
 GitHub events do not form an atomic lock with merging. `expectedHeadOid` pins
 the head, not main after the final read. With `strict=false`, an unobserved main

@@ -13,12 +13,14 @@ p = r.p
 
 # PR #199 on 2026-11-19: validation 1186 lost its watchOS runner, the metadata
 # gate queued behind it failed at 18:14, and the retried validation passed at 18:22.
+# Its last job finished at 18:22:11 and the run completed at 18:22:15.
 RUN, GATE = 44557129210, 44557300966
 PR, HEAD = 199, '73b348e99628f77526f04fe8189ebd8fdf601f30'
 BASE, SOURCE = '69ce733bfa70a7f728a46ee7ee513d79f12ce12b', '83d793175225dc736f0e11c5c09bb33538a84e17'
 LOST = 'The job was not acquired by Runner of type hosted even after multiple attempts'
 WATCHOS = 'Release Candidate / Validate watchOS Build'
-SUCCEEDED, TOO_EARLY, AFTERWARDS = '2026-11-19T18:22:11Z', '2026-11-19T18:14:07Z', '2026-11-19T18:22:19Z'
+LAST_JOB, COMPLETED = '2026-11-19T18:22:11Z', '2026-11-19T18:22:15Z'
+TOO_EARLY, AFTERWARDS = '2026-11-19T18:14:07Z', '2026-11-19T18:22:19Z'
 
 
 def validation(pr=PR, head=HEAD):
@@ -190,17 +192,20 @@ class StaleGateTests(unittest.TestCase):
         self.succeed()
         self.gate = self.metadata_run(GATE, 1187)
 
-    def succeed(self, attempt=2, completed=SUCCEEDED):
-        self.api.run.update(conclusion='success', run_attempt=attempt)
+    def succeed(self, attempt=2):
+        # A completed run was last updated when it completed.
+        self.api.run.update(conclusion='success', run_attempt=attempt, updated_at=COMPLETED)
         self.api.jobs[RUN] = []
         self.api.job('Lint (swift-format)', 'success', started='2026-11-19T18:03:42Z', completed='2026-11-19T18:03:59Z')
         # GitHub reports a skipped job as started after it completed.
         self.api.job('Consumer Examples', 'skipped', runner='', steps=0,
                      started='2026-11-19T18:14:10Z', completed='2026-11-19T18:14:04Z')
         self.api.job(WATCHOS, 'success', started='2026-11-19T18:17:04Z', completed='2026-11-19T18:21:52Z')
-        self.api.job('CI Required', 'success', started='2026-11-19T18:21:56Z', completed=completed)
+        self.api.job('CI Required', 'success', started='2026-11-19T18:21:56Z', completed=LAST_JOB)
 
     def metadata_run(self, run_id, number, started=TOO_EARLY, title=None, **fields):
+        # The gate's own completion is not the validation's.
+        fields.setdefault('updated_at', '2026-11-19T18:14:20Z')
         run = self.api.add(run_id, number, title or metadata(), **fields)
         self.api.job('CI Plan', 'skipped', runner='', steps=0, run=run_id)
         self.api.job('Lint (swift-format)', 'skipped', runner='', steps=0, run=run_id)
@@ -223,7 +228,7 @@ class StaleGateTests(unittest.TestCase):
         # 18:14:20, the gate admitted by that failure rejects it; no runner was lost.
         self.assertEqual(r.run(self.api, GATE), 'no job lost its runner')
         self.assertEqual(self.api.posts, [rerun(RUN)])
-        # 18:22:11, the retried validation succeeds and the gate is asked again.
+        # 18:22:15, the retried validation succeeds and the gate is asked again.
         self.succeed()
         self.assertEqual(r.run(self.api, RUN), f'rerun metadata gate {GATE}: it failed before validation {RUN} succeeded')
         self.assertEqual(self.api.posts, [rerun(RUN), rerun(GATE)])
@@ -246,16 +251,20 @@ class StaleGateTests(unittest.TestCase):
         self.assertIn('already judged this successful validation', r.run(self.api, RUN))
         self.assertEqual(self.api.posts, [rerun(GATE)])
 
-    def test_gate_started_no_earlier_than_the_success_is_left_alone(self):
-        for started in (SUCCEEDED, AFTERWARDS):
+    def test_gate_started_no_earlier_than_the_validation_run_completed_is_left_alone(self):
+        for started in (COMPLETED, AFTERWARDS):
             with self.subTest(started=started):
                 self.api.jobs[GATE][-1].update(started_at=started)
                 self.assertNothing('already judged this successful validation')
 
-    def test_gate_started_while_the_last_validation_job_still_ran_is_rerun(self):
-        self.api.jobs[GATE][-1].update(started_at='2026-11-19T18:22:00Z')
-        r.run(self.api, RUN)
-        self.assertEqual(self.api.posts, [rerun(GATE)])
+    def test_gate_started_before_the_validation_run_completed_is_rerun(self):
+        # The gate rejects a run that is not completed, even after its last job finished.
+        for started in ('2026-11-19T18:22:00Z', LAST_JOB, '2026-11-19T18:22:13Z'):
+            with self.subTest(started=started):
+                self.setUp()
+                self.api.jobs[GATE][-1].update(started_at=started)
+                r.run(self.api, RUN)
+                self.assertEqual(self.api.posts, [rerun(GATE)])
 
     def test_the_attempt_cap_bounds_gate_reruns(self):
         self.gate.update(run_attempt=r.MAX_ATTEMPT)
@@ -381,10 +390,10 @@ class StaleGateTests(unittest.TestCase):
         def another_event(api): api.fresh[GATE] = dict(event='push')
         def no_start(api): api.jobs[GATE][-1].update(started_at=None)
         def naive_start(api): api.jobs[GATE][-1].update(started_at='2026-11-19T18:14:07')
-        def unfinished_validation(api):
-            for job in api.jobs[RUN]: job.update(completed_at=None)
+        def no_completion(api): api.run.update(updated_at=None)
+        def naive_completion(api): api.run.update(updated_at='2026-11-19T18:22:15')
         for change in (unordered, foreign_gate, retitled_gate, another_run, another_workflow, another_repository,
-                       another_event, no_start, naive_start, unfinished_validation):
+                       another_event, no_start, naive_start, no_completion, naive_completion):
             with self.subTest(change=change.__name__):
                 self.setUp()
                 change(self.api)

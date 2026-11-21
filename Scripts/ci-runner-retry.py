@@ -123,6 +123,8 @@ def stale_gate(api, run):
     if not gates:
         return None, "no metadata gate ran after this validation"
     listed = max(gates, key=lambda r: r["run_number"])
+    # Such a gate shares this validation's concurrency group, which runs one CI
+    # run at a time, so a gate that has not finished reads this completed run.
     if listed.get("status") != "completed":
         return None, "the newest metadata gate has not finished; it judges this validation itself"
     if listed.get("conclusion") != "failure":
@@ -147,13 +149,11 @@ def stale_gate(api, run):
             any(step.get("name") == metadata.GATES[judged[0]["name"]] and step.get("conclusion") not in ("skipped", None)
                 for step in judged[0].get("steps") or [])):
         return None, "the newest metadata run is not a failed gate alone"
-    finished = [when(job["completed_at"])
-                for job in api.pages(p.route(f"actions/runs/{run['id']}/attempts/{attempt_of(run)}/jobs"), "jobs")
-                if job.get("completed_at")]
-    p.require(bool(finished), "successful validation has no finished job")
-    # A gate that started after the validation succeeded has judged that success.
-    # Its failure has another cause, so each success asks a gate at most once.
-    if when(judged[0].get("started_at")) >= max(finished):
+    # The gate rejects a validation whose run has not completed, and a completed
+    # run was last updated when it completed, seconds after its last job. A gate
+    # that started after that has judged the success. Its failure has another
+    # cause, so each success asks a gate at most once.
+    if when(judged[0].get("started_at")) >= when(run.get("updated_at")):
         return None, "the newest metadata gate already judged this successful validation"
     return gate["id"], f"rerun metadata gate {gate['id']}: it failed before validation {run['id']} succeeded"
 
