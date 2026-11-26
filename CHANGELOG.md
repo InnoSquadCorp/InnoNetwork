@@ -206,6 +206,10 @@ unreleased 7.0 line. See `docs/Migration-7.0.0.md`.
   stayed `.downloading` with no transfer: `pause(_:)` had no effect, and only
   `cancel(_:)` or a relaunch ended it. A failure just after that point now
   also keeps its resume data for the retry.
+- Forward the caller's cancellation to a buffered request or upload before
+  its work can start. The work could start first, and a cancellation that
+  arrived in between reached it only later: the work ran the next callback
+  and could return a value to a caller that had already cancelled.
 
 ## [6.1.1] - 2026-10-07
 

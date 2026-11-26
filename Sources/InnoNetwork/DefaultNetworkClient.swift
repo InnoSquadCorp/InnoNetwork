@@ -658,8 +658,10 @@ public final class DefaultNetworkClient: NetworkClient, UploadNetworkClient, Sen
         let startGate = TaskStartGate()
         let generation = inFlight.generation(for: tag)
         // Wrap the work in an unstructured Task so cancelAll() can reach it
-        // without the call site having to track individual Task handles.
-        // Outer-task cancellation is forwarded via withTaskCancellationHandler.
+        // without the call site having to track individual Task handles. The
+        // work waits at the start gate until both ways to cancel it exist:
+        // the registry entry for cancelAll() and the handler that forwards
+        // outer-task cancellation.
         let work = Task<D.APIResponse, Error> { [eventHub, configuration, session, requestBuilder, executionRuntime] in
             guard await startGate.wait() else { throw NetworkError.cancelled }
             let retryCoordinator = RetryCoordinator(eventHub: eventHub, clock: executionRuntime.clock)
@@ -681,10 +683,15 @@ public final class DefaultNetworkClient: NetworkClient, UploadNetworkClient, Sen
         }
         inFlight.register(id: requestID, tag: tag, generation: generation, cancelHandler: { work.cancel() })
         defer { inFlight.deregister(id: requestID) }
-        startGate.open()
 
+        // Open the gate only once the handler is installed. Opened before it,
+        // the work could run while the caller's cancellation had no way to
+        // reach it: the work passed its cancellation checks, ran the next
+        // callback, and could return a value to a caller that had cancelled.
+        // A cancellation that lands first now stops the work at the gate.
         return try await withTaskCancellationHandler {
-            try await work.value
+            startGate.open()
+            return try await work.value
         } onCancel: {
             work.cancel()
         }
