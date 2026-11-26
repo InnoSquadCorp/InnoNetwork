@@ -54,6 +54,33 @@ final class StubWebSocketURLTask: WebSocketURLTask, @unchecked Sendable {
             pendingReceiveWaiters = remaining
             return ready
         }
+
+        /// Takes the next scripted result, or else registers `continuation`
+        /// as a pending receive, in one critical section. When the check and
+        /// the registration ran in separate sections, a result scripted
+        /// between them was queued with nobody to read it, and this receive
+        /// waited for a result that never came.
+        mutating func takeScriptedReceiveOrWait(
+            _ continuation: CheckedContinuation<URLSessionWebSocketTask.Message, Error>,
+            id: UUID,
+            refusal: Error?
+        ) -> ReceiveRegistration {
+            if !scriptedReceives.isEmpty {
+                return .ready(scriptedReceives.removeFirst())
+            }
+            if let refusal {
+                return .refused(refusal)
+            }
+            pendingReceiveContinuations[id] = continuation
+            pendingOrder.append(id)
+            return .waiting(satisfiedWaiters: removeSatisfiedPendingReceiveWaiters())
+        }
+    }
+
+    private enum ReceiveRegistration: Sendable {
+        case ready(Result<URLSessionWebSocketTask.Message, Error>)
+        case refused(Error)
+        case waiting(satisfiedWaiters: [CheckedContinuation<Bool, Never>])
     }
 
     var maximumMessageSize: Int {
@@ -93,24 +120,6 @@ final class StubWebSocketURLTask: WebSocketURLTask, @unchecked Sendable {
     }
 
     func receive() async throws -> URLSessionWebSocketTask.Message {
-        let readyResult: Result<URLSessionWebSocketTask.Message, Error>? = stateLock.withLock {
-            state -> Result<URLSessionWebSocketTask.Message, Error>? in
-            if !state.scriptedReceives.isEmpty {
-                return state.scriptedReceives.removeFirst()
-            }
-            return nil
-        }
-        if let readyResult {
-            let message = try readyResult.get()
-            if let hook = beforeReceiveCancellationCheckHook.withLock({ $0 }) {
-                await hook()
-            }
-            if receiveCancellationBehavior == .cooperative {
-                try Task.checkCancellation()
-            }
-            return message
-        }
-
         let continuationID = UUID()
         let message: URLSessionWebSocketTask.Message
         switch receiveCancellationBehavior {
@@ -118,17 +127,14 @@ final class StubWebSocketURLTask: WebSocketURLTask, @unchecked Sendable {
             let stateLock = self.stateLock
             message = try await withTaskCancellationHandler {
                 try await withCheckedThrowingContinuation { continuation in
-                    let registration: (Bool, [CheckedContinuation<Bool, Never>]) =
-                        stateLock.withLock { state in
-                            if Task.isCancelled { return (true, []) }
-                            state.pendingReceiveContinuations[continuationID] = continuation
-                            state.pendingOrder.append(continuationID)
-                            return (false, state.removeSatisfiedPendingReceiveWaiters())
-                        }
-                    resumePendingReceiveWaiters(registration.1)
-                    if registration.0 {
-                        continuation.resume(throwing: CancellationError())
+                    let registration = stateLock.withLock { state in
+                        state.takeScriptedReceiveOrWait(
+                            continuation,
+                            id: continuationID,
+                            refusal: Task.isCancelled ? CancellationError() : nil
+                        )
                     }
+                    complete(continuation, with: registration)
                 }
             } onCancel: {
                 let removal:
@@ -147,16 +153,14 @@ final class StubWebSocketURLTask: WebSocketURLTask, @unchecked Sendable {
             }
         case .transportCancellationOnly:
             message = try await withCheckedThrowingContinuation { continuation in
-                let registration: (Bool, [CheckedContinuation<Bool, Never>]) = stateLock.withLock { state in
-                    if state.didCancelUnconditionally { return (true, []) }
-                    state.pendingReceiveContinuations[continuationID] = continuation
-                    state.pendingOrder.append(continuationID)
-                    return (false, state.removeSatisfiedPendingReceiveWaiters())
+                let registration = stateLock.withLock { state in
+                    state.takeScriptedReceiveOrWait(
+                        continuation,
+                        id: continuationID,
+                        refusal: state.didCancelUnconditionally ? URLError(.cancelled) : nil
+                    )
                 }
-                resumePendingReceiveWaiters(registration.1)
-                if registration.0 {
-                    continuation.resume(throwing: URLError(.cancelled))
-                }
+                complete(continuation, with: registration)
             }
         }
         if let hook = beforeReceiveCancellationCheckHook.withLock({ $0 }) {
@@ -166,6 +170,20 @@ final class StubWebSocketURLTask: WebSocketURLTask, @unchecked Sendable {
             try Task.checkCancellation()
         }
         return message
+    }
+
+    private func complete(
+        _ continuation: CheckedContinuation<URLSessionWebSocketTask.Message, Error>,
+        with registration: ReceiveRegistration
+    ) {
+        switch registration {
+        case .ready(let result):
+            continuation.resume(with: result)
+        case .refused(let error):
+            continuation.resume(throwing: error)
+        case .waiting(let satisfiedWaiters):
+            resumePendingReceiveWaiters(satisfiedWaiters)
+        }
     }
 
     func sendPing(pongReceiveHandler: @escaping @Sendable (Error?) -> Void) {
