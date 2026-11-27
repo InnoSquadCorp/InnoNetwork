@@ -4,6 +4,12 @@
 
 InnoNetwork 是面向 Apple 平台的类型安全异步 Swift 网络库。从显式 endpoint 结构体、`@APIDefinition` 和 `DefaultNetworkClient.request` 开始即可，无需预先链接所有可选产品。
 
+- **在构建时检查的类型化 endpoint。** 显式的 endpoint `struct` 持有输入和 `APIResponse`；`@APIDefinition` 派生协议实现，当 method、path、payload、response 或 auth 声明不完整时让构建失败。
+- **用多少，引入多少。** Download、Upload、WebSocket、持久化缓存、OpenAPI、AWS 签名和证书固定都是可选产品；大多数应用只需导入 `InnoNetwork`。
+- **为 Swift 6 并发而设计。** Swift 6 语言模式、由 actor 隔离的共享状态，以及每晚运行的 Thread Sanitizer。
+- **同样支持 Android 与 Web。** Android（OkHttp）和 Web/React 1.0.0 候选版本源码位于 [`Platforms`](Platforms/README.md)。
+- **面向编码代理。** 附带的 [Claude Code 与 Codex 技能](skills/README.md) 向代理说明当前 API。
+
 ## 当前版本与范围
 
 当前稳定版本为 **6.1.1**，于 2026-10-07 UTC 发布。该补丁修正文档与工具，不改变 6.1.0 的运行时或公共 API。标签对应 `44e4ca28c50c03f817231a077c0f3bdfdbc859c8`。七种语言的当前指南覆盖相同的安装、示例和契约范围；[英文 README](README.md) 提供详细参考。

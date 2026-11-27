@@ -4,6 +4,12 @@
 
 InnoNetwork는 Apple 플랫폼의 타입 안전한 비동기 네트워킹 라이브러리입니다. 명시적인 endpoint 구조체, `@APIDefinition`, `DefaultNetworkClient.request`로 시작하세요. 선택 기능을 위해 처음부터 모든 제품을 연결할 필요는 없습니다.
 
+- **빌드 시점에 검사되는 타입 있는 endpoint.** 명시적인 endpoint `struct`가 입력과 `APIResponse`를 소유하고, `@APIDefinition`이 프로토콜 구현을 만들어 method·path·payload·response·auth 선언이 빠지면 빌드를 실패시킵니다.
+- **쓰는 만큼만 가져갑니다.** Download, Upload, WebSocket, 영구 캐시, OpenAPI, AWS 서명, 피닝은 각각 선택형 제품이며, 대부분의 앱은 `InnoNetwork`만 import합니다.
+- **Swift 6 동시성 기준으로 설계.** Swift 6 언어 모드, actor로 격리한 공유 상태, 매일 밤 Thread Sanitizer 실행.
+- **Android와 Web도 지원.** Android(OkHttp)와 Web/React 1.0.0 릴리스 후보 소스가 [`Platforms`](Platforms/README.md)에 있습니다.
+- **코딩 에이전트 지원.** 함께 제공하는 [Claude Code·Codex 스킬](skills/README.md)이 에이전트에게 현재 API를 알려 줍니다.
+
 ## 현재 버전과 범위
 
 최신 안정 버전은 **6.1.1**이며 2026-10-07 UTC에 공개되었습니다. 이 패치는 6.1.0 대비 런타임·공개 API 변경 없이 문서와 도구를 수정합니다. 태그 revision은 `44e4ca28c50c03f817231a077c0f3bdfdbc859c8`입니다. 일곱 언어의 현재 안내는 같은 설치·예제·계약 범위를 다루며, 상세 영문 설명은 [README](README.md)에 있습니다.

@@ -30,6 +30,12 @@ Everything else—including Download, Upload, WebSocket,
 persistent cache, OpenAPI, AWS signing, pinning, and test support—is an
 optional product selected only when that capability is required.
 
+- **Typed endpoints checked at build time.** An explicit endpoint `struct` owns inputs and `APIResponse`; `@APIDefinition` derives the protocol witnesses and fails the build when method, path, payload, response, or auth declarations are incomplete.
+- **Pay only for what you use.** Download, Upload, WebSocket, persistent cache, OpenAPI, AWS signing, and pinning are separate opt-in products; most apps import only `InnoNetwork`.
+- **Built for Swift 6 concurrency.** Swift 6 language mode, actor-isolated shared state, and nightly Thread Sanitizer runs.
+- **Android and Web, too.** Android (OkHttp) and Web/React 1.0.0 release-candidate sources live under [`Platforms`](Platforms/README.md).
+- **Ready for coding agents.** A bundled [Claude Code and Codex skill](skills/README.md) teaches agents the current API.
+
 ## Current release
 
 **6.1.1** is the latest stable release, [published 2026-10-07 UTC](https://github.com/InnoSquadCorp/InnoNetwork/releases/tag/6.1.1).
