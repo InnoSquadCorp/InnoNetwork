@@ -1113,7 +1113,10 @@ package struct StreamingExecutor: Sendable {
         )
     }
 
-    private func withStreamingTimeout<Value: Sendable>(
+    /// Runs one streaming step under the earlier of its phase and total
+    /// deadlines. Internal rather than private so tests can run one step on
+    /// its own.
+    func withStreamingTimeout<Value: Sendable>(
         phase: StreamingTimeoutPhase,
         phaseBudget: Duration?,
         totalBudget: Duration?,
@@ -1142,7 +1145,17 @@ package struct StreamingExecutor: Sendable {
         // the deadline promptly while the losing task is cancelled and any
         // resource it acquires late is discarded by the supplied cleanup.
         let gate = StreamingTimeoutResultGate<Value>()
+        // The operation waits at the start gate until the handler below is
+        // installed. Started before it, the operation ran while the caller's
+        // cancellation had no way to reach it, so an interceptor chain could
+        // run its next callback after the caller had cancelled. A cancellation
+        // that lands first now stops the operation at the gate.
+        let startGate = TaskStartGate()
         let operationTask = Task {
+            guard await startGate.wait() else {
+                _ = await gate.resolve(.failure(CancellationError()))
+                return
+            }
             do {
                 let value = try await operation()
                 if clock.monotonicNow() >= selected.instant {
@@ -1172,7 +1185,8 @@ package struct StreamingExecutor: Sendable {
             _ = await gate.resolve(.failure(selected.phase.error))
         }
         let result = await withTaskCancellationHandler {
-            await gate.wait()
+            startGate.open()
+            return await gate.wait()
         } onCancel: {
             operationTask.cancel()
             timeoutTask.cancel()

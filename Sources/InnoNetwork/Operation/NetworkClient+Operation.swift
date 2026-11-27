@@ -209,7 +209,17 @@ package enum NetworkOperationRunner {
             }
 
             let gate = NetworkOperationResultGate<Output>()
+            // The request waits at the start gate until the handler below is
+            // installed. Started before it, the request ran while the
+            // operation's cancellation had no way to reach it, so the request
+            // could run its next callback after the operation was cancelled.
+            // A cancellation that lands first now stops the request at the gate.
+            let startGate = TaskStartGate()
             let requestTask = Task<Void, Never> {
+                guard await startGate.wait() else {
+                    gate.resolve(.failure(.cancelled))
+                    return
+                }
                 let result: Result<Output, NetworkError> = await NetworkOperationDeadlineContext.$tracker
                     .withValue(tracker) {
                         do throws(NetworkError) {
@@ -243,7 +253,8 @@ package enum NetworkOperationRunner {
             }
 
             let result = await withTaskCancellationHandler {
-                await gate.wait()
+                startGate.open()
+                return await gate.wait()
             } onCancel: {
                 requestTask.cancel()
                 deadlineTask?.cancel()
